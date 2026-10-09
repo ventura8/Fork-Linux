@@ -71,7 +71,7 @@ def run(ctx: Ctx) -> None:
             f"not enough free disk space for {ctx.paths.prefix}: {_gib(free)} free, {_gib(needed)} needed",
             hint="free some space (Wine, .NET and Fork take about 3 GB), or choose another prefix with --prefix",
         )
-    missing = hostdeps.missing_tools(ctx.runner, hostdeps.REQUIRED_TOOLS)
+    missing = hostdeps.missing_required_tools(ctx.runner)
     if missing:
         family = hostdeps.distro().family
         raise ForkLinuxError(

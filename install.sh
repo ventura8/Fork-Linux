@@ -481,6 +481,8 @@ from fork_linux import hostdeps
 info = hostdeps.distro()
 table = hostdeps.PACKAGES.get(info.family, {})
 names = [tool for tool in hostdeps.REQUIRED_TOOLS if shutil.which(tool) is None]
+if not any(shutil.which(tool) for tool in hostdeps.DOWNLOADERS):
+    names.append(hostdeps.DOWNLOADERS[0])
 names += hostdeps.missing_libs(hostdeps.REQUIRED_LIBS)
 for name in names:
     if name in table:

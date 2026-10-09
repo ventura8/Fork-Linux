@@ -20,6 +20,7 @@ license=('MIT')
 depends=(
 	'python'
 	'cabextract'
+	'curl'
 	'unzip'
 	'freetype2'
 	'fontconfig'

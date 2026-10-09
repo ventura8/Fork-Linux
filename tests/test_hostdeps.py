@@ -113,7 +113,10 @@ def test_missing_libs_with_ctypes() -> None:
 
 
 def test_every_family_maps_every_known_name() -> None:
-    names = {*hostdeps.REQUIRED_TOOLS, *hostdeps.OPTIONAL_TOOLS, *hostdeps.REQUIRED_LIBS, *hostdeps.OPTIONAL_LIBS}
+    names = {
+        *hostdeps.REQUIRED_TOOLS, *hostdeps.OPTIONAL_TOOLS, *hostdeps.REQUIRED_LIBS, *hostdeps.OPTIONAL_LIBS,
+        hostdeps.DOWNLOADERS[0],
+    }
     assert set(hostdeps.PACKAGES) == set(hostdeps.INSTALL_COMMANDS) == set(hostdeps.FAMILIES) - {"unknown"}
     for family, table in hostdeps.PACKAGES.items():
         assert set(table) == names, family
@@ -250,3 +253,27 @@ def test_install_hint_unknown_family() -> None:
 def test_install_hint_nothing_missing() -> None:
     assert hostdeps.install_hint("debian", [], []) == ""
     assert hostdeps.install_hint("unknown", iter(()), iter(())) == ""
+
+
+class _Which:
+    """Runner stand-in whose ``which`` finds only ``present``."""
+
+    def __init__(self, present: set[str]) -> None:
+        self.present = present
+
+    def which(self, name: str) -> str | None:
+        return f"/usr/bin/{name}" if name in self.present else None
+
+
+def test_missing_required_tools_needs_a_downloader() -> None:
+    runner = _Which({"cabextract", "unzip"})
+    assert hostdeps.missing_required_tools(runner) == ["curl"]
+
+
+def test_missing_required_tools_accepts_wget_or_aria2c() -> None:
+    assert hostdeps.missing_required_tools(_Which({"cabextract", "unzip", "wget"})) == []
+    assert hostdeps.missing_required_tools(_Which({"cabextract", "unzip", "aria2c"})) == []
+
+
+def test_missing_required_tools_lists_tools_before_downloader() -> None:
+    assert hostdeps.missing_required_tools(_Which(set())) == ["cabextract", "unzip", "curl"]

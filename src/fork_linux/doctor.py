@@ -483,7 +483,7 @@ def check_disk(ctx: DoctorCtx) -> Result:
 
 def check_tools(ctx: DoctorCtx) -> Result:
     """Required (and useful optional) host tools on PATH."""
-    required = hostdeps.missing_tools(ctx.runner, hostdeps.REQUIRED_TOOLS)
+    required = hostdeps.missing_required_tools(ctx.runner)
     optional = hostdeps.missing_tools(ctx.runner, hostdeps.OPTIONAL_TOOLS)
     if required:
         return Result("fail", f"missing: {', '.join(required)}", _install_hint(required, []))

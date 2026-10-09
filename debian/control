@@ -23,6 +23,7 @@ Depends:
  ${shlibs:Depends},
  python3 (>= 3.10),
  cabextract,
+ curl | wget,
  unzip,
  libfreetype6,
  libfontconfig1,

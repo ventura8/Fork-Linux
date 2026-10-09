@@ -24,6 +24,8 @@ OS_RELEASE = Path("/etc/os-release")
 LDD_TIMEOUT = 60.0
 
 REQUIRED_TOOLS = ("cabextract", "unzip")
+# winetricks downloads .NET and the core fonts itself and needs one of these.
+DOWNLOADERS = ("curl", "wget", "aria2c")
 OPTIONAL_TOOLS = ("7z", "zenity", "kdialog", "xdg-open", "git", "xdotool", "fc-list")
 
 REQUIRED_LIBS = (
@@ -83,6 +85,7 @@ _PACKAGE_TABLE: tuple[tuple[str, str, str, str, str], ...] = (
     ("libEGL.so.1", "libegl1", "libglvnd-egl", "libEGL1", "libglvnd"),
     ("cabextract", "cabextract", "cabextract", "cabextract", "cabextract"),
     ("unzip", "unzip", "unzip", "unzip", "unzip"),
+    ("curl", "curl", "curl", "curl", "curl"),
     ("7z", "7zip|p7zip-full", "7zip|p7zip-plugins", "7zip|p7zip-full", "7zip|p7zip"),
     ("zenity", "zenity", "zenity", "zenity", "zenity"),
     ("kdialog", "kdialog", "kdialog", "kdialog", "kdialog"),
@@ -175,6 +178,14 @@ def distro(os_release: Path = OS_RELEASE) -> DistroInfo:
 def missing_tools(runner: Runner, names: Iterable[str]) -> list[str]:
     """The tools in ``names`` that are not on ``PATH``, in order."""
     return [name for name in names if runner.which(name) is None]
+
+
+def missing_required_tools(runner: Runner) -> list[str]:
+    """Missing :data:`REQUIRED_TOOLS`, plus ``curl`` when none of :data:`DOWNLOADERS` is present."""
+    missing = missing_tools(runner, REQUIRED_TOOLS)
+    if all(runner.which(name) is None for name in DOWNLOADERS):
+        missing.append(DOWNLOADERS[0])
+    return missing
 
 
 def missing_libs(sonames: Iterable[str], loader: Callable[[str], object] | None = None) -> list[str]:

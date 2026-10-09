@@ -28,6 +28,7 @@ BuildRequires:  appstream
 # per user at first run) loads them; the wrapper itself links none of them.
 Requires:       python3 >= 3.10
 Requires:       cabextract
+Requires:       (curl or wget)
 Requires:       unzip
 Requires:       libfreetype.so.6()(64bit)
 Requires:       libfontconfig.so.1()(64bit)
