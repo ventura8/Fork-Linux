@@ -4,7 +4,7 @@
 #
 # Runs inside docker/Dockerfile.ppa. Versions: VERSION+ppa1~ubuntuNN.NN.1, e.g.
 # 0.1.0+ppa1~ubuntu22.04.1 (AGENTS.md §4.9). Each series is built from a private copy of the
-# tree whose debian/changelog gets the PPA entry (dch); the repository's changelog is never
+# tree whose debian/changelog gets the PPA entry; the repository's changelog is never
 # modified.
 #
 # Usage:
@@ -84,8 +84,16 @@ for series in "${SERIES[@]}"; do
 	echo "==> ${series}: fork-linux ${ppa_version}"
 	(
 		cd "${src}"
-		dch --newversion "${ppa_version}" --distribution "${series}" --force-distribution \
-			"PPA build of ${VERSION} for Ubuntu ${release} (${series})."
+		# The PPA entry, written directly (dch needs distro-info for every series and warns
+		# about the directory rename and its own deprecated dpkg API).
+		{
+			printf 'fork-linux (%s) %s; urgency=medium\n\n' "${ppa_version}" "${series}"
+			printf '  * PPA build of %s for Ubuntu %s (%s).\n\n' "${VERSION}" "${release}" "${series}"
+			printf ' -- %s <%s>  %s\n\n' "${DEBFULLNAME}" "${DEBEMAIL}" "$(date -R)"
+			cat debian/changelog
+		} >debian/changelog.ppa
+		mv debian/changelog.ppa debian/changelog
+		dpkg-parsechangelog --show-field Version | grep -qxF "${ppa_version}"
 		dpkg-buildpackage -S -sa -d "${SIGN_ARGS[@]}"
 	)
 	out="${OUT_ROOT}/${series}"

@@ -8,12 +8,11 @@ export PYTHONDONTWRITEBYTECODE = 1
 %:
 	dh $@ --buildsystem=meson
 
-# The bridge's C unit tests run in CI (lint / compat / coverage / bridge stages); dh_auto_test
-# runs the data checks (generated files current, desktop-file-validate, appstreamcli).
+# dh_auto_test runs meson test: the bridge's native C unit tests and the data checks
+# (generated files current, desktop-file-validate, appstreamcli).
 override_dh_auto_configure:
 	dh_auto_configure -- \
 		-Dbridge=enabled \
 		-Dflavor=deb \
 		-Dpython=/usr/bin/python3 \
-		-Dfork_alias=true \
-		-Dtests=false
+		-Dfork_alias=true

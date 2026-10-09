@@ -66,8 +66,7 @@ build() {
 		-Dbridge=enabled \
 		-Dflavor=arch \
 		-Dpython=/usr/bin/python3 \
-		-Dfork_alias=true \
-		-Dtests=false
+		-Dfork_alias=true
 	meson compile -C build
 }
 

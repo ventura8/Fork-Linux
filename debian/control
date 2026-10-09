@@ -1,5 +1,6 @@
 Source: fork-linux
 Section: vcs
+Priority: optional
 Maintainer: Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com>
 Build-Depends:
  debhelper-compat (= 13),

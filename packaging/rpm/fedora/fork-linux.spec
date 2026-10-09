@@ -76,9 +76,9 @@ problems at https://github.com/ventura8/Fork-Linux/issues.
 %autosetup -n fork-linux-%{version}
 
 %build
-# The bridge's C unit tests run in CI (lint / compat / bridge stages); %%check runs the
-# data checks (generated files current, desktop-file-validate, appstreamcli).
-%meson -Dbridge=enabled -Dflavor=rpm -Dpython=/usr/bin/python3 -Dfork_alias=true -Dtests=false
+# %%check runs meson test: the bridge's native C unit tests and the data checks
+# (generated files current, desktop-file-validate, appstreamcli).
+%meson -Dbridge=enabled -Dflavor=rpm -Dpython=/usr/bin/python3 -Dfork_alias=true
 %meson_build
 
 %install
