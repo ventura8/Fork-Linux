@@ -157,13 +157,19 @@ def run_unset(args: argparse.Namespace, ctx: AppContext) -> int:
 
 def run_apply_defaults(args: argparse.Namespace, ctx: AppContext) -> int:
     """Apply what the launcher applies before every start."""
-    from .. import launcher
+    from .. import bridge, launcher
 
     layout = _layout(ctx)
     procs.require_closed(ctx.paths.prefix)
     _existing(layout)
     wanted = launcher.desired_settings(
-        paths=ctx.paths, config=ctx.config, env=ctx.env, runner=ctx.runner, user=layout.user, layout=layout
+        paths=ctx.paths,
+        config=ctx.config,
+        env=ctx.env,
+        runner=ctx.runner,
+        user=layout.user,
+        layout=layout,
+        bridge_active=bridge.host_actions_active(ctx),
     )
     changed = fork_settings.apply(layout, wanted, backup_dir=_backup_dir(ctx))
     backups = fork_settings.list_backups(_backup_dir(ctx))

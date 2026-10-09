@@ -273,8 +273,7 @@ def _desired(config: Config, **overrides: Any) -> dict[str, object]:
     options: dict[str, Any] = {
         "user": USER,
         "theme": None,
-        "scale": None,
-        "shell_tool": None,
+        "tools": {},
         "home_win": None,
         "current": {},
     }
@@ -333,10 +332,35 @@ def test_desired_theme(tmp_path: Path, mode: str, theme: str | None, expected: d
         ("12345", None, None),
     ],
 )
-def test_desired_layout_scaling(tmp_path: Path, dpi: str, scale: Any, expected: int | None) -> None:
-    config = _config(tmp_path, fork__enforce_settings="", display__theme="off", display__dpi=dpi)
-    wanted = _desired(config, scale=scale)
-    assert wanted == ({} if expected is None else {"LayoutScaling": expected})
+def test_legacy_scaling(dpi: str, scale: Any, expected: int | None) -> None:
+    assert fs.legacy_scaling(dpi, scale) == expected
+
+
+def test_desired_never_sets_layout_scaling_by_itself(tmp_path: Path) -> None:
+    config = _config(tmp_path, fork__enforce_settings="", display__theme="off", display__dpi="144")
+    assert _desired(config, current={"LayoutScaling": 100}) == {}
+
+
+@pytest.mark.parametrize(
+    ("current", "reset", "expected"),
+    [
+        ({"LayoutScaling": 150}, 150, {"LayoutScaling": 100}),
+        ({"LayoutScaling": 125}, 150, {}),
+        ({"LayoutScaling": 100}, 100, {}),
+        ({}, 150, {}),
+        ({"LayoutScaling": 150}, None, {}),
+    ],
+)
+def test_desired_resets_an_old_layout_scaling(
+    tmp_path: Path, current: dict[str, Any], reset: int | None, expected: dict[str, object]
+) -> None:
+    config = _config(tmp_path, fork__enforce_settings="", display__theme="off")
+    assert _desired(config, current=current, reset_scaling=reset) == expected
+
+
+TERMINAL = {"Type": "Custom", "ApplicationPath": "Z:\\opt\\fl\\fork-linux-terminal", "Arguments": ""}
+DIFF = {"Type": "Custom", "ApplicationPath": "C:\\fork-linux\\bin\\fl-launch.exe", "Arguments": "diff"}
+EMPTY_TOOL = {"Type": "Custom", "ApplicationPath": "", "Arguments": ""}
 
 
 @pytest.mark.parametrize(
@@ -346,6 +370,7 @@ def test_desired_layout_scaling(tmp_path: Path, dpi: str, scale: Any, expected: 
         ({"ShellTool": None}, True),
         ({"ShellTool": {"Type": "CommandPrompt"}}, True),
         ({"ShellTool": {"Type": "Custom", "ApplicationPath": "c:\\FORK-LINUX\\old.exe", "Arguments": ""}}, True),
+        ({"ShellTool": {"Type": "Custom", "ApplicationPath": "Z:\\x\\fork-linux-terminal", "Arguments": ""}}, True),
         ({"ShellTool": {"Type": "Custom", "ApplicationPath": "C:\\tools\\wt.exe", "Arguments": ""}}, False),
         ({"ShellTool": {"Type": "Custom", "ApplicationPath": None}}, False),
         ({"ShellTool": "cmd"}, False),
@@ -353,9 +378,45 @@ def test_desired_layout_scaling(tmp_path: Path, dpi: str, scale: Any, expected: 
 )
 def test_desired_shell_tool(tmp_path: Path, current: dict[str, Any], replaced: bool) -> None:
     config = _config(tmp_path, fork__enforce_settings="", display__theme="off", display__dpi="0")
-    wanted = _desired(config, shell_tool=OUR_SHELL, current=current)
-    assert wanted == ({"ShellTool": OUR_SHELL} if replaced else {})
-    assert _desired(config, shell_tool=None, current=current) == {}
+    wanted = _desired(config, tools={"ShellTool": TERMINAL}, current=current)
+    assert wanted == ({"ShellTool": TERMINAL} if replaced and current.get("ShellTool") != TERMINAL else {})
+
+
+@pytest.mark.parametrize(
+    ("current", "expected"),
+    [
+        ({"ShellTool": OUR_SHELL}, {"ShellTool": None}),
+        ({"ShellTool": TERMINAL}, {"ShellTool": None}),
+        ({"ShellTool": {"Type": "CommandPrompt"}}, {}),
+        ({"ShellTool": None}, {}),
+        ({"MergeTool": DIFF}, {"MergeTool": EMPTY_TOOL}),
+        ({"ExternalDiffTool": DIFF}, {"ExternalDiffTool": EMPTY_TOOL}),
+        ({"ExternalDiffTool": {"Type": "Custom", "ApplicationPath": "C:\\bc\\bc.exe", "Arguments": ""}}, {}),
+    ],
+)
+def test_desired_restores_our_dead_tools(
+    tmp_path: Path, current: dict[str, Any], expected: dict[str, object]
+) -> None:
+    config = _config(tmp_path, fork__enforce_settings="", display__theme="off")
+    assert _desired(config, tools={}, current=current) == expected
+
+
+@pytest.mark.parametrize(
+    ("current", "replaced"),
+    [
+        ({}, True),
+        ({"MergeTool": EMPTY_TOOL}, True),
+        ({"MergeTool": DIFF}, True),
+        ({"MergeTool": {"Type": "Custom", "ApplicationPath": "C:\\km\\kdiff3.exe", "Arguments": ""}}, False),
+        ({"MergeTool": {"Type": "BeyondCompare"}}, False),
+        ({"MergeTool": "x"}, False),
+    ],
+)
+def test_desired_merge_tool(tmp_path: Path, current: dict[str, Any], replaced: bool) -> None:
+    config = _config(tmp_path, fork__enforce_settings="", display__theme="off")
+    merge = {"Type": "Custom", "ApplicationPath": "C:\\fork-linux\\bin\\fl-launch.exe", "Arguments": "merge"}
+    wanted = _desired(config, tools={"MergeTool": merge}, current=current)
+    assert wanted == ({"MergeTool": merge} if replaced else {})
 
 
 @pytest.mark.parametrize(

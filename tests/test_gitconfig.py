@@ -13,6 +13,7 @@ from fork_linux.config import Config
 from fork_linux.errors import ForkLinuxError, NotSetUpError, UsageError
 from fork_linux.pathmap import PathMap
 from fork_linux.paths import Paths
+from fork_linux.procrun import Completed, RecordingRunner
 
 USER = "tester"
 
@@ -401,10 +402,13 @@ def test_sync_writes_overlay_and_block(paths: Paths, pathmap: PathMap, tmp_path:
 
 
 def test_sync_without_host_config(paths: Paths, pathmap: PathMap, tmp_path: Path) -> None:
-    changed = gitconfig.sync(paths, USER, _home(tmp_path, None), pathmap)
+    root = tmp_path / "root"
+    changed = gitconfig.sync(paths, USER, _home(tmp_path, None), pathmap, host_root=root)
     user_dir = paths.wine_user_dir(USER)
     assert changed == [gitconfig.overlay_path(paths, USER), user_dir / ".gitconfig"]
-    assert gitconfig.overlay_path(paths, USER).read_text(encoding="utf-8") == gitconfig.HEADER
+    assert gitconfig.overlay_path(paths, USER).read_text(encoding="utf-8") == gitconfig.HEADER + (
+        gitconfig.MANAGED_HEADER + "[credential]\n\tcredentialStore = dpapi\n"
+    )
     assert (user_dir / ".gitconfig").read_text(encoding="utf-8") == BLOCK
 
 
@@ -545,7 +549,9 @@ def test_sync_translates_each_host_file_against_the_host_home(
         '[includeIf "gitdir:~/work/"]\n\tpath = .gitconfig-work\n[core]\n\texcludesFile = ~/.gitignore\n',
         encoding="utf-8",
     )
-    gitconfig.sync(paths, USER, home, pathmap)
+    root = tmp_path / "root"
+    (root / "home").mkdir(parents=True)
+    gitconfig.sync(paths, USER, home, pathmap, host_root=root)
     text = gitconfig.overlay_path(paths, USER).read_text(encoding="utf-8")
     z_home = "Z:" + str(home)
     assert text == (
@@ -555,4 +561,103 @@ def test_sync_translates_each_host_file_against_the_host_home(
         + "# from ~/.gitconfig\n"
         + f'[includeIf "gitdir:{z_home}/work/"]\n\tpath = {z_home}/.gitconfig-work\n'
         + f"[core]\n\texcludesFile = {z_home}/.gitignore\n"
+        + gitconfig.MANAGED_HEADER
+        + '[url "file:///Z:/home/"]\n\tinsteadOf = file:///home/\n'
+        + '[url "Z:/home/"]\n\tinsteadOf = /home/\n'
+        + "[credential]\n\tcredentialStore = dpapi\n"
     )
+
+
+# --- managed block, git version -----------------------------------------------------------------
+
+
+def test_rewrite_tops_lists_existing_directories(tmp_path: Path) -> None:
+    for name in ("mnt", "home", "nothere-file"):
+        (tmp_path / name).mkdir()
+    (tmp_path / "srv").write_text("", encoding="utf-8")
+    assert gitconfig.rewrite_tops(tmp_path) == ["home", "mnt"]
+
+
+def test_managed_text_skips_unreachable_tops(tmp_path: Path) -> None:
+    only_home = PathMap.with_drives({"c": tmp_path / "c", "h": "/home"})
+    text = gitconfig.managed_text(only_home, ["home", "mnt"])
+    assert '[url "file:///H:/"]\n\tinsteadOf = file:///home/\n[url "H:/"]\n\tinsteadOf = /home/\n' in text
+    assert "mnt" not in text
+    assert text.endswith("[credential]\n\tcredentialStore = dpapi\n")
+
+
+def _git_runner(stdout: str = "git version 2.53.0\n", code: int = 0) -> RecordingRunner:
+    return RecordingRunner({"git": Completed([], code, stdout, "")})
+
+
+def test_host_git_version_probes_and_caches(tmp_path: Path) -> None:
+    git = tmp_path / "bin" / "git"
+    git.parent.mkdir()
+    git.write_text("#!/bin/sh\n", encoding="utf-8")
+    runner = _git_runner()
+    runner.which_map["git"] = str(git)
+    cache = tmp_path / "cache"
+    assert gitconfig.host_git_version(runner, {"PATH": "/x"}, cache) == (2, 53, 0)
+    assert gitconfig.host_git_version(runner, {"PATH": "/x"}, cache) == (2, 53, 0)
+    assert len(runner.calls) == 1
+    git.write_text("#!/bin/sh\n# changed\n", encoding="utf-8")
+    runner.responses = {"git": Completed([], 0, "git version 2.34\n", "")}
+    assert gitconfig.host_git_version(runner, {}, cache) == (2, 34, 0)
+
+
+def test_host_git_version_without_git(tmp_path: Path) -> None:
+    runner = _git_runner()
+    runner.which_map["git"] = None
+    assert gitconfig.host_git_version(runner, {}, tmp_path) is None
+    runner.which_map["git"] = str(tmp_path / "vanished")
+    assert gitconfig.host_git_version(runner, {}, tmp_path) is None
+
+
+@pytest.mark.parametrize("response", [Completed([], 1, "", "boom"), Completed([], 0, "nonsense", "")])
+def test_host_git_version_unusable_answers(tmp_path: Path, response: Completed) -> None:
+    git = tmp_path / "git"
+    git.write_text("", encoding="utf-8")
+    runner = RecordingRunner({"git": response}, which_map={"git": str(git)})
+    assert gitconfig.host_git_version(runner, {}, tmp_path / "c") is None
+    assert not (tmp_path / "c").exists()
+
+
+def test_host_git_version_timeout_and_unwritable_cache(tmp_path: Path) -> None:
+    git = tmp_path / "git"
+    git.write_text("", encoding="utf-8")
+
+    def boom(argv: list[str]) -> Completed:
+        raise ForkLinuxError("timed out")
+
+    runner = RecordingRunner({"git": boom}, which_map={"git": str(git)})
+    assert gitconfig.host_git_version(runner, {}, tmp_path) is None
+    blocker = tmp_path / "blocker"
+    blocker.write_text("", encoding="utf-8")
+    ok = RecordingRunner({"git": "git version 2.48.1\n"}, which_map={"git": str(git)})
+    assert gitconfig.host_git_version(ok, {}, blocker / "sub") == (2, 48, 1)
+
+
+def test_host_git_version_ignores_a_corrupt_cache(tmp_path: Path) -> None:
+    git = tmp_path / "git"
+    git.write_text("", encoding="utf-8")
+    (tmp_path / gitconfig.GIT_VERSION_CACHE).write_text("[1, 2]", encoding="utf-8")
+    runner = RecordingRunner({"git": "git version 2.50.0\n"}, which_map={"git": str(git)})
+    assert gitconfig.host_git_version(runner, {}, tmp_path) == (2, 50, 0)
+    (tmp_path / gitconfig.GIT_VERSION_CACHE).write_text("{not json", encoding="utf-8")
+    assert gitconfig.host_git_version(runner, {}, tmp_path) == (2, 50, 0)
+
+
+@pytest.mark.parametrize(
+    ("version", "added"),
+    [((2, 48, 0), True), ((2, 53, 1), True), ((3, 0, 0), True), ((2, 47, 9), False), (None, False)],
+)
+def test_env_overrides_relative_worktrees(tmp_path: Path, version: tuple[int, int, int] | None, added: bool) -> None:
+    env = gitconfig.env_overrides(_config(tmp_path, env_overrides="core.filemode=false"), git_version=version)
+    pairs = {env[f"GIT_CONFIG_KEY_{n}"]: env[f"GIT_CONFIG_VALUE_{n}"] for n in range(int(env["GIT_CONFIG_COUNT"]))}
+    assert ("worktree.useRelativePaths" in pairs) is added
+
+
+def test_env_overrides_keeps_the_users_worktree_choice(tmp_path: Path) -> None:
+    config = _config(tmp_path, env_overrides="worktree.useRelativePaths=false")
+    env = gitconfig.env_overrides(config, git_version=(2, 50, 0))
+    assert env == {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "worktree.useRelativePaths", "GIT_CONFIG_VALUE_0": "false"}

@@ -186,3 +186,58 @@ def test_desktop_entry_packaged(xdg: Path, tmp_path: Path) -> None:
     integration.run_desktop(ctx)
     assert not (Path(os.environ["XDG_DATA_HOME"]) / "applications" / f"{APP_ID}.desktop").exists()
     assert integration.verify_desktop(ctx)
+
+
+# -- host_integration ------------------------------------------------------------------------------
+
+
+def test_host_integration_registers_redirects_and_the_home_drive(
+    xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fixtures.setup_ctx import FakeWine
+
+    from fork_linux import bootstrap
+
+    libexec = tmp_path / "libexec"
+    libexec.mkdir()
+    explorer = libexec / "fork-linux-explorer"
+    explorer.write_text("#!/bin/sh\n", encoding="utf-8")
+    explorer.chmod(0o755)
+    monkeypatch.setenv(resources.LIBEXEC_ENV, str(libexec))
+    ctx = make_ctx()
+    assert integration.integration_expected(ctx) == integration.open_expected()  # no prefix yet
+    fake = FakeWine(ctx.paths.prefix)
+    ctx.runner = fake.runner()
+    bootstrap.init_prefix_meta(ctx)
+    _drives(ctx)
+    explorer_win = "Z:" + str(explorer).replace("/", "\\")
+    expected = integration.integration_expected(ctx)
+    assert (integration.APP_PATHS_KEY + "\\explorer.exe", "", explorer_win) in expected
+    assert (integration.CLASSES_KEY + "\\.py", "", integration.PROGID) in expected
+    assert integration.integration_inputs(ctx)["home"] == str(ctx.host_home)
+    assert not integration.verify_integration(ctx)
+    integration.run_integration(ctx)
+    assert integration.verify_integration(ctx)
+    drive = integration.home_drive(ctx)
+    assert drive.is_symlink() and os.readlink(drive) == str(ctx.host_home)
+    # A drive h: the user mapped elsewhere is kept.
+    drive.unlink()
+    drive.symlink_to("/srv")
+    integration.run_integration(ctx)
+    assert os.readlink(drive) == "/srv"
+    assert integration.verify_integration(ctx)
+
+
+def test_host_integration_without_a_home_dir(xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from fixtures.setup_ctx import FakeWine
+
+    from fork_linux import bootstrap
+
+    monkeypatch.setenv(resources.LIBEXEC_ENV, str(tmp_path / "none"))
+    ctx = make_ctx(env={**os.environ, "HOME": str(tmp_path / "gone")})
+    ctx.runner = FakeWine(ctx.paths.prefix).runner()
+    bootstrap.init_prefix_meta(ctx)
+    _drives(ctx)
+    integration.run_integration(ctx)
+    assert not os.path.lexists(integration.home_drive(ctx))
+    assert integration.verify_integration(ctx)

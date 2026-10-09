@@ -27,6 +27,7 @@ KEY = "bridge"
 SHIM_EXES = ("fl-shim.exe", "fl-launch.exe")
 HELPER = "fl-bridge-helper"
 EXPERIMENTAL = "the native-git bridge is experimental"
+PORT_ENV = "FL_BRIDGE_PORT"
 
 
 def helper_path() -> Path:
@@ -106,3 +107,14 @@ def launch_env(ctx: Any) -> dict[str, str]:
     """
     del ctx
     return {}
+
+
+def host_actions_active(ctx: Any) -> bool:
+    """True when the launcher provides the daemon ``fl-launch.exe`` needs (:data:`PORT_ENV`).
+
+    Fork's terminal, diff and merge tools are pointed at ``fl-launch.exe``
+    only then; without the daemon ``fl-launch.exe`` exits at once and Fork's
+    buttons do nothing. Phase 7 must keep :func:`launch_env` cheap and free of
+    side effects for this check (or split the daemon start out of it).
+    """
+    return PORT_ENV in launch_env(ctx)

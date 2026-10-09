@@ -1,18 +1,24 @@
-"""Steps ``host_shims``, ``git_overlay``, ``ssh_sync``, ``icon`` and ``desktop_entry``.
+"""Steps ``host_shims``, ``host_integration``, ``git_overlay``, ``ssh_sync``, ``icon`` and ``desktop_entry``.
 
 Everything here connects Fork to the Linux side: our Windows shims in
-``C:\\fork-linux\\bin``, the translated git configuration and ssh keys, Fork's
-own icon extracted from the user's ``Fork.exe`` and the personal menu entry.
+``C:\\fork-linux\\bin``, the redirects that send "Show in File Explorer" and
+"Open" to the Linux file manager and default applications, the ``H:`` drive,
+the translated git configuration and ssh keys, Fork's own icon extracted from
+the user's ``Fork.exe`` and the personal menu entry.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
-from .. import desktop_integration, fsutil, gitconfig, resources, ssh_sync
+from .. import desktop_integration, fork_tools, fsutil, gitconfig, resources, ssh_sync
 from ..bootstrap import Ctx, Step
+from ..errors import ForkLinuxError
+from ..registry import RegBatch
+from . import prefix as prefix_steps
 
 log = logging.getLogger(__name__)
 
@@ -62,6 +68,91 @@ def verify_shims(ctx: Ctx) -> bool:
         if fsutil.sha256_file(target) != fsutil.sha256_file(source):
             return False
     return True
+
+
+# -- host_integration ----------------------------------------------------------------------
+
+# Wine's shell32 consults App Paths before searching PATH, so ShellExecute("explorer.exe", ...)
+# (Fork's "Show in File Explorer") runs our script; "explorer /desktop" uses CreateProcess.
+APP_PATHS_KEY = r"HKLM\Software\Microsoft\Windows\CurrentVersion\App Paths"
+EXPLORER_NAMES = ("explorer.exe", "explorer")
+CLASSES_KEY = r"HKLM\Software\Classes"
+PROGID = "ForkLinux.File"
+# winebrowser turns the file into a file:// URL and hands it to fork-linux-open-url.
+OPEN_COMMAND = 'C:\\windows\\system32\\winebrowser.exe "%1"'
+# Extensions Fork's "Open" should hand to the Linux default application (Wine knows none).
+OPEN_EXTENSIONS = (
+    "txt", "md", "markdown", "rst", "adoc", "log", "csv", "tsv", "json", "jsonc", "yaml", "yml", "toml",
+    "ini", "cfg", "conf", "xml", "html", "htm", "css", "scss", "sass", "less", "js", "mjs", "cjs", "ts",
+    "tsx", "jsx", "vue", "svelte", "py", "pyi", "rb", "pl", "pm", "php", "java", "kt", "kts", "scala",
+    "groovy", "gradle", "go", "rs", "c", "h", "cc", "cpp", "cxx", "hpp", "hh", "hxx", "cs", "fs", "vb",
+    "swift", "m", "mm", "sh", "bash", "zsh", "fish", "ps1", "bat", "cmd", "sql", "lua", "r", "dart",
+    "ex", "exs", "erl", "hs", "ml", "clj", "nix", "properties", "lock", "patch", "diff", "gitignore",
+    "gitattributes", "gitmodules", "editorconfig", "dockerfile", "mk", "cmake", "proto", "graphql",
+    "tex", "bib", "svg", "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tif", "tiff", "pdf",
+)
+HOME_DRIVE = "h:"
+
+
+def open_expected() -> list[tuple[str, str, object]]:
+    """``(key, name, value)`` of the ``ForkLinux.File`` association and its extensions."""
+    expected: list[tuple[str, str, object]] = [
+        (rf"{CLASSES_KEY}\{PROGID}", "", "Fork for Linux (unofficial): open with the Linux default application"),
+        (rf"{CLASSES_KEY}\{PROGID}\shell\open\command", "", OPEN_COMMAND),
+    ]
+    expected += [(rf"{CLASSES_KEY}\.{ext}", "", PROGID) for ext in OPEN_EXTENSIONS]
+    return expected
+
+
+def integration_expected(ctx: Ctx) -> list[tuple[str, str, object]]:
+    """Every registry value the ``host_integration`` step sets."""
+    expected = open_expected()
+    explorer = fork_tools.script_win(fork_tools.EXPLORER_SCRIPT, _pathmap(ctx))
+    if explorer is not None:
+        expected += [(rf"{APP_PATHS_KEY}\{name}", "", explorer) for name in EXPLORER_NAMES]
+    return expected
+
+
+def _pathmap(ctx: Ctx) -> Any:
+    """The prefix's drive mapping, or None before the prefix exists."""
+    try:
+        return ctx.pathmap
+    except ForkLinuxError:
+        return None
+
+
+def home_drive(ctx: Ctx) -> Path:
+    """``<prefix>/dosdevices/h:``."""
+    return ctx.paths.prefix / "dosdevices" / HOME_DRIVE
+
+
+def integration_inputs(ctx: Ctx) -> dict[str, Any]:
+    """The values to set and the home the ``H:`` drive points at."""
+    return {"registry": [list(item) for item in integration_expected(ctx)], "home": str(ctx.host_home)}
+
+
+def run_integration(ctx: Ctx) -> None:
+    """Import the redirects and give the Linux home a drive letter (``H:``) if that letter is free.
+
+    The drive lets users type ``H:\\src\\app`` in Wine's file dialogs, which do
+    not accept Linux paths. An ``h:`` the user mapped elsewhere is left alone;
+    Fork keeps seeing repositories under ``Z:`` (:class:`~fork_linux.pathmap.PathMap`
+    never uses ``H:`` for Linux-to-Windows conversion).
+    """
+    batch = RegBatch()
+    for key, name, value in integration_expected(ctx):
+        batch.set_sz(key, name, str(value))
+    prefix_steps.import_batch(ctx, batch, "host-integration")
+    drive = home_drive(ctx)
+    if not os.path.lexists(drive) and ctx.host_home.is_dir():
+        drive.symlink_to(ctx.host_home)
+
+
+def verify_integration(ctx: Ctx) -> bool:
+    """The registry values are in place and ``h:`` exists (ours or the user's)."""
+    return prefix_steps.reg_matches(ctx, integration_expected(ctx)) and (
+        os.path.lexists(home_drive(ctx)) or not ctx.host_home.is_dir()
+    )
 
 
 # -- git_overlay ---------------------------------------------------------------------------
@@ -182,10 +273,20 @@ HOST_SHIMS = Step(
     inputs=shims_inputs,
 )
 
+HOST_INTEGRATION = Step(
+    id="host_integration",
+    title="Connecting Fork to your file manager and apps",
+    rev=1,
+    weight=1,
+    run=run_integration,
+    verify=verify_integration,
+    inputs=integration_inputs,
+)
+
 GIT_OVERLAY = Step(
     id="git_overlay",
     title="Sharing your git configuration",
-    rev=1,
+    rev=gitconfig.OVERLAY_REVISION,
     weight=1,
     run=run_git,
     verify=verify_git,

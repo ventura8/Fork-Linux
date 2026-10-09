@@ -22,6 +22,9 @@ _WIN_DRIVE = re.compile(r"([A-Za-z]):(?:\\(.*))?", re.DOTALL)
 _WIN_UNSAFE = frozenset('\\<>:"|?*')
 _LONG_PREFIXES = ("\\\\?\\", "\\\\.\\", "\\??\\")
 _UNIX_NAMESPACE = "unix\\"
+# Typing shortcuts fork-linux adds (``h:`` -> the Linux home): never chosen for Linux-to-Windows
+# conversion while another drive reaches the path, so Fork keeps seeing repositories under Z:.
+ALIAS_DRIVES = frozenset({"h"})
 
 
 def _norm(path: str) -> str:
@@ -70,8 +73,8 @@ class PathMap:
 
     def __init__(self, drives: Mapping[str, Path], targets: list[tuple[str, str]]) -> None:
         self._drives = dict(drives)
-        # (normalised target, letter), longest target first, then by letter.
-        self._targets = sorted(set(targets), key=lambda item: (-len(item[0]), item[1]))
+        # (normalised target, letter): alias drives last, then longest target first, then by letter.
+        self._targets = sorted(set(targets), key=lambda item: (item[1] in ALIAS_DRIVES, -len(item[0]), item[1]))
 
     @classmethod
     def from_prefix(cls, prefix: Path | str) -> PathMap:

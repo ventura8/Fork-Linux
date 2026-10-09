@@ -269,7 +269,9 @@ def test_env_user(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize(
     ("env", "status", "words"),
     [
-        ({"DISPLAY": ":0"}, "ok", "x11 session, X11 display :0"),
+        ({"DISPLAY": ":0"}, "ok", "X11 display :0"),
+        ({"DISPLAY": ":96", "XDG_SESSION_TYPE": "wayland"}, "ok", "X11 display :96"),
+        ({"XDG_SESSION_TYPE": "x11"}, "warn", "x11 declared by XDG_SESSION_TYPE"),
         ({"DISPLAY": ":1", "WAYLAND_DISPLAY": "wayland-0"}, "ok", "XWayland"),
         ({"WAYLAND_DISPLAY": "wayland-0"}, "fail", "without XWayland"),
         ({"WAYLAND_DISPLAY": "wayland-0", "FORK_LINUX_WINE_DRIVER": "wayland"}, "warn", "experimental"),
@@ -879,6 +881,8 @@ def test_git_overlay() -> None:
     overlay.parent.mkdir(parents=True)
     overlay.write_text("# x\n", encoding="utf-8")
     (ctx.paths.wine_user_dir(USER) / ".gitconfig").write_text(gitconfig.ensure_block(""), encoding="utf-8")
+    assert "predates" in run(ctx, "git.overlay").detail
+    overlay.write_text("# x\n" + gitconfig.MANAGED_HEADER, encoding="utf-8")
     assert run(ctx, "git.overlay").status == "ok"
     ctx.paths.config_file.parent.mkdir(parents=True, exist_ok=True)
     ctx.paths.config_file.write_text("[git]\nconfig_overlay = off\nenv_overrides =\n", encoding="utf-8")
@@ -1172,3 +1176,185 @@ def test_newest_git_instance_sorts_numerically() -> None:
     names = ["2.9.0.windows.1", "2.50.1.windows.1", "2.50.1.windows.2"]
     assert max(names, key=doctor._version_key) == "2.50.1.windows.2"
     assert doctor._version_key("2.10-rc") > doctor._version_key("2.9")
+
+
+# -- fork tools, source folder, redirects ----------------------------------------------------------
+
+DEAD = {"Type": "Custom", "ApplicationPath": "C:\\fork-linux\\bin\\fl-launch.exe", "Arguments": "terminal"}
+
+
+def _libexec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *names: str) -> Path:
+    libexec = tmp_path / "libexec"
+    libexec.mkdir(exist_ok=True)
+    for name in names:
+        (libexec / name).write_text("#!/bin/sh\n", encoding="utf-8")
+        (libexec / name).chmod(0o755)
+    monkeypatch.setenv("FORK_LINUX_LIBEXEC_DIR", str(libexec))
+    return libexec
+
+
+def test_fork_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _libexec(tmp_path, monkeypatch)
+    ctx = make()
+    assert run(ctx, "fork.tools").status == "info"
+    ctx.layout.settings_file.parent.mkdir(parents=True, exist_ok=True)
+    ctx.layout.settings_file.write_text("{broken", encoding="utf-8")
+    assert run(ctx, "fork.tools").status == "info"
+    write_settings(ctx.layout, {"Guid": GUID, "ShellTool": None})
+    assert run(ctx, "fork.tools") == Result("ok", "no unusable tool configured")
+    write_settings(ctx.layout, {"Guid": GUID, "ShellTool": {"Type": "GitBash"}})
+    assert "Git Bash" in run(ctx, "fork.tools").detail
+    write_settings(ctx.layout, {"Guid": GUID, "ShellTool": {"Type": "Custom", "ApplicationPath": "Z:\\x\\fork-linux-terminal"}})
+    assert run(ctx, "fork.tools") == Result("ok", "terminal: Z:\\x\\fork-linux-terminal")
+    write_settings(ctx.layout, {"Guid": GUID, "ShellTool": DEAD, "MergeTool": {**DEAD, "Arguments": "merge"}})
+    result = run(ctx, "fork.tools")
+    assert result.status == "warn" and result.detail.startswith("ShellTool, MergeTool run(s) fl-launch.exe")
+    monkeypatch.setattr(doctor.bridge, "host_actions_active", lambda _ctx: True)
+    assert run(ctx, "fork.tools").status == "ok"
+
+
+def test_fix_fork_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    libexec = _libexec(tmp_path, monkeypatch)
+    ctx = make()
+    prefix(ctx)
+    write_settings(ctx.layout, {"Guid": GUID, "ShellTool": DEAD, "MergeTool": {**DEAD, "Arguments": "merge"}})
+    assert doctor.fix_fork_tools(ctx) == "reset ShellTool, MergeTool"
+    data = json.loads(ctx.layout.settings_file.read_text(encoding="utf-8"))
+    assert data["ShellTool"] is None and data["MergeTool"] == {"Type": "Custom", "ApplicationPath": "", "Arguments": ""}
+    assert doctor.fix_fork_tools(ctx) == "nothing to do"
+    _libexec(tmp_path, monkeypatch, "fork-linux-terminal")
+    write_settings(ctx.layout, {"Guid": GUID, "ShellTool": DEAD})
+    doctor.fix_fork_tools(ctx)
+    shell = json.loads(ctx.layout.settings_file.read_text(encoding="utf-8"))["ShellTool"]
+    assert shell["ApplicationPath"] == "Z:" + str(libexec / "fork-linux-terminal").replace("/", "\\")
+
+
+def test_source_dirs(monkeypatch: pytest.MonkeyPatch) -> None:
+    ctx = make()
+    prefix(ctx)
+    assert run(ctx, "fork.source_dirs").status == "info"
+    toml = ctx.layout.forkdata_dir / "repositories.toml"
+    toml.parent.mkdir(parents=True)
+    toml.write_text(f"source_dirs = ['C:\\users\\{USER}\\']\nscan_depth = 5\n", encoding="utf-8")
+    result = run(ctx, "fork.source_dirs")
+    assert result.status == "warn" and "inside the Wine prefix" in result.detail
+    assert doctor.fix_source_dirs(ctx).startswith("source folder set to Z:\\")
+    assert run(ctx, "fork.source_dirs").status == "ok"
+    assert doctor.fix_source_dirs(ctx) == "nothing to do"
+    toml.write_text("scan_depth = 5\n", encoding="utf-8")
+    assert run(ctx, "fork.source_dirs") == Result("ok", "source folder: (not set)")
+
+
+def test_integration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from fork_linux.steps import integration
+
+    _libexec(tmp_path, monkeypatch)
+    ctx = make()
+    assert run(ctx, "prefix.integration").status == "info"
+    prefix(ctx)
+    result = run(ctx, "prefix.integration")
+    assert result.status == "warn" and "redirects are missing" in result.detail
+    lines = [
+        '@="' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+        for _key, _name, value in integration.open_expected()
+    ]
+    for (key, _name, _value), line in zip(integration.open_expected(), lines):
+        add_values(ctx.paths.prefix, "system.reg", key.replace("HKLM\\", ""), [line])
+    result = run(ctx, "prefix.integration")
+    assert result.status == "info" and "fork-linux-explorer is not installed" in result.detail
+    assert "no H: drive" in result.detail
+    libexec = _libexec(tmp_path, monkeypatch, "fork-linux-explorer")
+    win = "Z:" + str(libexec / "fork-linux-explorer").replace("/", "\\")
+    for name in integration.EXPLORER_NAMES:
+        key = integration.APP_PATHS_KEY.replace("HKLM\\", "") + "\\" + name
+        add_values(ctx.paths.prefix, "system.reg", key, [f'@="{win}"'.replace("\\", "\\\\")])
+    (ctx.paths.prefix / "dosdevices" / "h:").symlink_to(ctx.host_home)
+    result = run(ctx, "prefix.integration")
+    assert result.status == "ok" and f"H: -> {ctx.host_home}" in result.detail
+
+
+# -- repositories ----------------------------------------------------------------------------------
+
+
+def _git_repo(path: Path, *, link: bool = True) -> Path:
+    import subprocess
+
+    env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1", "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@x",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@x"}
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-C", str(path), *args], check=True, capture_output=True, env=env)
+
+    path.mkdir(parents=True)
+    git("init", "-q")
+    (path / "t").write_text("t\n", encoding="utf-8")
+    if link:
+        (path / "l").symlink_to("t")
+    git("add", "-A")
+    git("commit", "-qm", "init")
+    hook = path / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\n", encoding="utf-8")
+    hook.chmod(0o755)
+    (path / ".gitmodules").write_text("", encoding="utf-8")
+    git("remote", "add", "o", "/opt/r.git")
+    return path
+
+
+def _known(ctx: DoctorCtx, *repos_: Path) -> None:
+    ctx.layout.forkdata_dir.mkdir(parents=True, exist_ok=True)
+    entries = "".join(
+        "[[repository]]\npath = '" + "Z:" + str(repo).replace("/", "\\") + "'\n" for repo in repos_
+    )
+    (ctx.layout.forkdata_dir / "repositories.toml").write_text(entries, encoding="utf-8")
+
+
+def _real_git(ctx: DoctorCtx) -> DoctorCtx:
+    from fork_linux.procrun import Runner
+
+    ctx.runner = Runner()
+    return ctx
+
+
+def test_repo_checks(xdg: Path) -> None:
+    ctx = _real_git(make(env={"GIT_CONFIG_NOSYSTEM": "1"}))
+    assert run(ctx, "repo.hooks") == Result("info", "no repositories opened in Fork yet")
+    prefix(ctx)
+    assert run(ctx, "repo.hooks").status == "info"
+    messy = _git_repo(xdg / "src" / "messy")
+    _known(ctx, messy)
+    hooks = run(ctx, "repo.hooks")
+    assert hooks.status == "warn" and "messy (pre-commit)" in hooks.detail and "git-bridge enable" in hooks.hint
+    assert "messy (l)" in run(ctx, "repo.symlinks").detail
+    assert "messy" in run(ctx, "repo.submodules").detail
+    assert "/opt/r.git" in run(ctx, "repo.remotes").detail
+    assert run(ctx, "repo.filemode").status == "warn"
+    from fork_linux import gitconfig
+
+    overlay = gitconfig.overlay_path(ctx.paths, USER)
+    overlay.parent.mkdir(parents=True)
+    overlay.write_text('[url "Z:/opt/"]\n\tinsteadOf = /opt/\n', encoding="utf-8")
+    ctx.reset()
+    assert run(ctx, "repo.remotes") == Result("ok", "1 repositories checked")
+
+
+def test_repo_checks_without_git() -> None:
+    ctx = make(RecordingRunner(which_map={"git": None}))
+    assert run(ctx, "repo.filemode") == Result("info", "skipped: git is not installed on this computer")
+    assert doctor.fix_repo_filemode(ctx) == "nothing to do"
+
+
+def test_repo_fixers_ask_first(xdg: Path) -> None:
+    from fixtures.setup_ctx import FakeUI
+
+    declined = FakeUI(answer=False)
+    ctx = _real_git(make(env={"GIT_CONFIG_NOSYSTEM": "1"}, ui=declined))
+    prefix(ctx)
+    messy = _git_repo(xdg / "src" / "messy")
+    _known(ctx, messy)
+    assert doctor.fix_repo_filemode(ctx) == "skipped (not confirmed)"
+    assert "Set core.filemode = false" in declined.kinds("confirm")[0][1]
+    ctx.ui = FakeUI(answer=True)
+    assert doctor.fix_repo_filemode(ctx) == f"{messy}: core.filemode = false"
+    assert doctor.fix_repo_filemode(ctx) == "nothing to do"
+    assert doctor.fix_repo_symlinks(ctx) == f"{messy}: skip-worktree for l"
+    assert run(ctx, "repo.symlinks").status == "ok"

@@ -86,3 +86,11 @@ def test_launch_env_is_empty_until_the_daemon_exists(built: Path) -> None:
     ctx = _ctx()
     bridge.enable(ctx)
     assert bridge.launch_env(ctx) == {}
+
+
+def test_host_actions_need_the_daemon_port(built: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ctx = _ctx()
+    bridge.enable(ctx)
+    assert bridge.host_actions_active(ctx) is False
+    monkeypatch.setattr(bridge, "launch_env", lambda _ctx: {bridge.PORT_ENV: "4242"})
+    assert bridge.host_actions_active(ctx) is True

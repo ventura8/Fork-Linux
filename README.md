@@ -124,14 +124,23 @@ Baseline: **Ubuntu 26.04**; oldest supported: **Ubuntu 22.04**. CI also covers U
 ## Troubleshooting
 
 - **Start with `fork-linux doctor`.** It checks the host, Wine, the prefix, Fork and the integrations, and prints a fix for every failure; `fork-linux doctor --fix` applies the safe ones.
-- **Logs**: `fork-linux logs` (files in `~/.local/state/fork-linux/logs/`). `fork-linux logs --bundle` creates a redacted archive to attach to an issue.
+- **Logs**: `fork-linux logs` (files in `~/.local/state/fork-linux/logs/`). `fork-linux logs --bundle` creates a redacted archive to attach to an issue. Earlier Fork sessions' `fork.log` files are kept there as `fork-<time>.log`.
+- **Repository problems**: `fork-linux repo check` lists what breaks per repository (hooks, symlinks, submodules, remotes given as Linux paths, `core.filemode`); `fork-linux repo fix PATH` sets `core.filemode=false` and marks tracked symlinks `skip-worktree` after asking, and `fork-linux repo undo PATH` reverts exactly that.
+
+What fork-linux connects for you:
+
+- **Open in Shell / the Console button** opens your desktop's terminal in the repository (`fork-linux-terminal`; `$FORK_LINUX_TERMINAL` or `[integration] terminal` picks the program).
+- **Show in File Explorer / Open In File Explorer** opens your Linux file manager with the file selected; **Open** on a file uses your Linux default application.
+- **File dialogs** (Open repository, Clone) do not accept Linux paths such as `/home/you/src`: type `H:\src` (the `H:` drive is your home) or `Z:\home\you\src`, or browse through `/`.
+- New clones go to your Linux home by default, never into the Wine prefix.
 
 Known Wine limitations:
 
-- **GitHub account sign-in (OAuth) can crash Fork under Wine.** Use a GitHub personal access token instead.
-- **"Show in Explorer"** may open Wine's own file explorer instead of your file manager.
+- **Hooks that start other programs are silently skipped** by Fork's bundled git under Wine (its `sh` dies after the first program, and the commit still succeeds). `fork-linux doctor` lists affected repositories; commit there from a terminal, or try the experimental git bridge (`fork-linux git-bridge enable`).
+- **Symlinks** look like modified files to Fork (and committing them through Fork's git turns them into plain files); **submodule update / init** does nothing; **Git Bash** exits at once. Use a terminal for these, or the experimental git bridge.
+- **Spell checking** does nothing under Wine; keep it disabled.
+- **GitHub account sign-in (OAuth) can crash Fork under Wine.** Use a GitHub personal access token instead. Credentials are stored with DPAPI inside the prefix.
 - **Wayland**: Fork runs through XWayland by default; Wine's native Wayland driver is opt-in and experimental.
-- **Repositories with symlinks or hooks**: Fork's bundled git under Wine can turn symlinks into plain files when committing, and hooks that start other programs can fail. Commit those from a terminal, or try the experimental git bridge (`fork-linux git-bridge enable`).
 - **License activations**: each new Wine prefix may count as a new machine for your Fork license (3 per license). **Deactivate the license in Fork before `fork-linux uninstall --purge`** or before deleting the prefix.
 
 ## Uninstall

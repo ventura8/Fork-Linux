@@ -10,15 +10,25 @@ user's own ``.gitconfig`` pulls the translation in; everything else in that
 file (Fork writes ``user.name`` / ``user.email`` there on first run) is kept,
 and because it comes after the include it wins.
 
+The overlay ends with a block fork-linux always adds (it comes last, so it
+wins over the translated host values): ``url.<Z:>.insteadOf`` rewrites that
+turn remotes written by Linux git (``file:///home/…``, ``/home/…``) into paths
+msys git can open, and ``credential.credentialStore = dpapi`` (the Windows
+credential store Git Credential Manager uses by default fails under Wine).
+
 :func:`env_overrides` turns ``[git] env_overrides`` into ``GIT_CONFIG_COUNT``
-/ ``GIT_CONFIG_KEY_n`` / ``GIT_CONFIG_VALUE_n`` for the launcher.
+/ ``GIT_CONFIG_KEY_n`` / ``GIT_CONFIG_VALUE_n`` for the launcher; with a host
+git >= 2.48 (:func:`host_git_version`) it adds ``worktree.useRelativePaths``.
 """
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 import re
 import shlex
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,6 +37,9 @@ from . import fsutil
 from .errors import ForkLinuxError, NotSetUpError, UsageError
 from .pathmap import PathMap
 from .paths import Paths
+from .procrun import Runner
+
+log = logging.getLogger(__name__)
 
 MARK_BEGIN = "# BEGIN fork-linux (managed; do not edit)"
 MARK_END = "# END fork-linux"
@@ -70,6 +83,18 @@ OPTIONAL_PREFIX = ":(optional)"
 INCLUDE_KEYS = frozenset({"include.path", "includeif.*.path"})
 # The host files git reads, in order (later values win).
 HOST_FILES = ((".config", "git", "config"), (".gitconfig",))
+# Bump when the generated overlay changes, so existing installs regenerate it.
+OVERLAY_REVISION = 2
+MANAGED_HEADER = "# fork-linux: added for Wine (comes last, so it wins over the values above)\n"
+# Top-level host directories whose Linux paths in remote URLs are rewritten to Z: paths.
+REWRITE_TOPS = ("home", "mnt", "media", "srv", "opt", "tmp", "var", "run")
+CREDENTIAL_STORE = "dpapi"
+# worktree.useRelativePaths sets extensions.relativeWorktrees, which git before 2.48 refuses.
+RELATIVE_WORKTREES_KEY = "worktree.useRelativePaths"
+RELATIVE_WORKTREES_MIN = (2, 48)
+GIT_VERSION_CACHE = "host-git-version.json"
+GIT_VERSION_TIMEOUT = 5.0
+_GIT_VERSION_RE = re.compile(r"git version ([0-9]+)\.([0-9]+)(?:\.([0-9]+))?")
 
 _HEADER_RE = re.compile(r'^(\s*)\[\s*([A-Za-z0-9.-]+)(?:\s+"((?:[^"\\\n]|\\.)*)")?\s*\]')
 _ENTRY_RE = re.compile(r"^(\s*)([A-Za-z][A-Za-z0-9-]*)\s*(=?)(.*)$", re.DOTALL)
@@ -452,12 +477,44 @@ def _replace(path: Path, text: str) -> bool:
     return True
 
 
-def sync(paths: Paths, user: str, host_home: Path, pathmap: PathMap) -> list[Path]:
+def rewrite_tops(host_root: Path = Path("/")) -> list[str]:
+    """The :data:`REWRITE_TOPS` that exist as directories under ``host_root``."""
+    return [top for top in REWRITE_TOPS if (Path(host_root) / top).is_dir()]
+
+
+def managed_text(pathmap: PathMap, tops: list[str]) -> str:
+    """The block fork-linux adds at the end of the overlay (remote rewrites, credential store).
+
+    ``[url "file:///Z:/home/"] insteadOf = file:///home/`` and
+    ``[url "Z:/home/"] insteadOf = /home/`` for each top-level directory in
+    ``tops`` that Wine can reach: msys git would otherwise look for
+    ``/home/…`` under its own installation directory.
+    """
+    lines = [MANAGED_HEADER.rstrip("\n")]
+    for top in tops:
+        try:
+            drive = _unix_to_slash("/" + top, pathmap).rstrip("/") + "/"
+        except UsageError:
+            continue
+        lines += [
+            f"[url {_quote_sub('file:///' + drive)}]",
+            f"\tinsteadOf = file:///{top}/",
+            f"[url {_quote_sub(drive)}]",
+            f"\tinsteadOf = /{top}/",
+        ]
+    lines += ["[credential]", f"\tcredentialStore = {CREDENTIAL_STORE}"]
+    return "\n".join(lines) + "\n"
+
+
+def sync(
+    paths: Paths, user: str, host_home: Path, pathmap: PathMap, *, host_root: Path = Path("/")
+) -> list[Path]:
     """Write the translated host configuration and the managed include; return the files changed.
 
-    Writes ``<wine user>/.config/fork-linux/gitconfig-host`` and makes sure
-    the managed ``[include]`` block is the first thing in
-    ``<wine user>/.gitconfig``, keeping the rest of that file as it is.
+    Writes ``<wine user>/.config/fork-linux/gitconfig-host`` (the translated
+    host files, then :func:`managed_text`) and makes sure the managed
+    ``[include]`` block is the first thing in ``<wine user>/.gitconfig``,
+    keeping the rest of that file as it is.
     """
     user_dir = _wine_user_dir(paths, user)
     home = Path(host_home)
@@ -468,7 +525,7 @@ def sync(paths: Paths, user: str, host_home: Path, pathmap: PathMap) -> list[Pat
         part, part_notes = translate(text, pathmap, home=home, base=home.joinpath(*rel).parent)
         parts.append(_from_header(rel, part))
         notes.extend(part_notes)
-    translated = "".join(parts)
+    translated = "".join(parts) + managed_text(pathmap, rewrite_tops(host_root))
     note_lines = "".join(f"# note: {note}\n" for note in notes)
     changed = []
     overlay = overlay_path(paths, user)
@@ -499,12 +556,63 @@ def remove(paths: Paths, user: str) -> list[Path]:
     return changed
 
 
-def env_overrides(config: Any) -> dict[str, str]:
+def _parse_git_version(text: str) -> tuple[int, int, int] | None:
+    """``(2, 53, 0)`` from ``git version 2.53.0``, or None."""
+    match = _GIT_VERSION_RE.search(text)
+    if match is None:
+        return None
+    return int(match.group(1)), int(match.group(2)), int(match.group(3) or 0)
+
+
+def _read_cache(path: Path) -> dict[str, Any]:
+    """The cached probe (``{}`` when missing or unusable)."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def host_git_version(runner: Runner, env: Mapping[str, str], cache_dir: Path) -> tuple[int, int, int] | None:
+    """The host's ``git --version`` (None without git), cached by the binary's path, size and mtime.
+
+    The cache file lives in ``cache_dir``; the probe runs again only when the
+    git found on ``PATH`` changed. A failing probe counts as "no git".
+    """
+    git = runner.which("git", env.get("PATH"))
+    if git is None:
+        return None
+    try:
+        info = os.stat(git)
+    except OSError:
+        return None
+    key = [os.path.realpath(git), info.st_size, info.st_mtime_ns]
+    cache = Path(cache_dir) / GIT_VERSION_CACHE
+    cached = _read_cache(cache)
+    version = cached.get("version")
+    if cached.get("key") == key and isinstance(version, list) and len(version) == 3:
+        return int(version[0]), int(version[1]), int(version[2])
+    try:
+        completed = runner.run([git, "--version"], env=dict(env), timeout=GIT_VERSION_TIMEOUT)
+    except ForkLinuxError:
+        return None
+    parsed = _parse_git_version(completed.stdout) if completed.ok else None
+    if parsed is not None:
+        try:
+            fsutil.atomic_write(cache, json.dumps({"key": key, "version": list(parsed)}) + "\n")
+        except OSError:
+            log.debug("cannot cache the git version in %s", cache, exc_info=True)
+    return parsed
+
+
+def env_overrides(config: Any, *, git_version: tuple[int, ...] | None = None) -> dict[str, str]:
     """``GIT_CONFIG_COUNT`` / ``GIT_CONFIG_KEY_n`` / ``GIT_CONFIG_VALUE_n`` for Fork's git.
 
     The pairs come from ``[git] env_overrides`` (``key=value, key=value``);
-    ``safe.directory=*`` is added when ``[git] safe_directory_all`` is true.
-    An empty result means no override at all.
+    ``safe.directory=*`` is added when ``[git] safe_directory_all`` is true,
+    and ``worktree.useRelativePaths=true`` when the host ``git_version`` is
+    at least 2.48 (so native git can use worktrees Fork creates) and the user
+    did not set that key. An empty result means no override at all.
     """
     pairs: list[tuple[str, str]] = []
     for item in config.getlist("git", "env_overrides"):
@@ -518,6 +626,13 @@ def env_overrides(config: Any) -> dict[str, str]:
         pairs.append((key, value.strip()))
     if config.getbool("git", "safe_directory_all"):
         pairs.append(("safe.directory", "*"))
+    named = {key.lower() for key, _value in pairs}
+    if (
+        git_version is not None
+        and tuple(git_version[:2]) >= RELATIVE_WORKTREES_MIN
+        and RELATIVE_WORKTREES_KEY.lower() not in named
+    ):
+        pairs.append((RELATIVE_WORKTREES_KEY, "true"))
     if not pairs:
         return {}
     env = {"GIT_CONFIG_COUNT": str(len(pairs))}

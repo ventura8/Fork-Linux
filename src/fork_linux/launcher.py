@@ -17,6 +17,7 @@ import dataclasses
 import json
 import logging
 import os
+import stat
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
@@ -26,8 +27,9 @@ from typing import Any
 from . import (
     bootstrap,
     bridge,
-    display,
+    fork_data,
     fork_settings,
+    fork_tools,
     fsutil,
     gitconfig,
     procs,
@@ -60,8 +62,8 @@ APPLIED_SSH = "applied.ssh_sync"
 APPLIED_GITCONFIG = "applied.gitconfig"
 SESSION_SCHEMA = 1
 SETUP_HINT = "run 'fork-linux setup' to finish setting up, then try again"
-LAUNCH_EXE = ("bin", "fl-launch.exe")
-LAUNCH_EXE_WIN = "C:\\fork-linux\\bin\\fl-launch.exe"
+FORK_LOG_PREFIX = "fork-"
+FORK_LOGS_KEEP = 10
 _LOG_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_CLOEXEC | os.O_NOFOLLOW
 
 
@@ -157,9 +159,10 @@ def _spec(
     debug: bool,
     wine_debug: str | None,
     driver: str | None,
+    git_version: tuple[int, int, int] | None = None,
 ) -> LaunchSpec:
     """The :class:`LaunchSpec` for the given pieces (shared by the normal and the fast path)."""
-    overrides = {**gitconfig.env_overrides(config), **extra}
+    overrides = {**gitconfig.env_overrides(config, git_version=git_version), **extra}
     dll_overrides = config.get("wine", "extra_dll_overrides").strip()
     wine_env = winecmd.build_env(
         paths,
@@ -214,6 +217,7 @@ def build_spec(
         debug=debug,
         wine_debug=wine_debug,
         driver=driver,
+        git_version=gitconfig.host_git_version(ctx.runner, ctx.env, ctx.paths.cache_dir),
     )
 
 
@@ -276,54 +280,85 @@ def _pin(ctx: bootstrap.Ctx, notes: list[str]) -> None:
         notes.append(message)
 
 
-def _shell_tool(paths: Paths) -> dict[str, Any] | None:
-    """Fork's terminal setting for our ``fl-launch.exe``, when the shims are installed."""
-    if not paths.fork_linux_win_dir.joinpath(*LAUNCH_EXE).is_file():
+def _pathmap(paths: Paths) -> PathMap | None:
+    """The prefix's drive mapping, or None when the prefix has none yet."""
+    try:
+        return PathMap.from_prefix(paths.prefix)
+    except ForkLinuxError:
         return None
-    return {"Type": "Custom", "ApplicationPath": LAUNCH_EXE_WIN, "Arguments": "terminal"}
+
+
+def home_win(paths: Paths, env: Mapping[str, str]) -> str | None:
+    """The Linux home as Fork sees it (``Z:\\home\\<u>``), or None when Wine cannot reach it."""
+    pathmap = _pathmap(paths)
+    if pathmap is None:
+        return None
+    try:
+        return pathmap.unix_to_win(_host_home(env))
+    except ForkLinuxError:
+        return None
 
 
 def desired_settings(
-    *, paths: Paths, config: Config, env: Mapping[str, str], runner: Runner, user: str, layout: ForkLayout
+    *,
+    paths: Paths,
+    config: Config,
+    env: Mapping[str, str],
+    runner: Runner,
+    user: str,
+    layout: ForkLayout,
+    bridge_active: bool = False,
 ) -> dict[str, object]:
     """The ``settings.json`` values fork-linux wants now (:func:`fork_settings.desired` with live probes).
 
-    The desktop theme and scale are probed only when ``[display]`` asks to
-    follow them; the terminal setting is offered only when our shims are
-    installed; the repository folder becomes the Linux home (``Z:\\...``).
+    The desktop theme is probed only when ``[display] theme`` follows it;
+    Fork's terminal / diff / merge settings come from :func:`fork_tools.wanted`
+    (``bridge_active``: the launcher provides the ``fl-launch.exe`` daemon);
+    the repository folder becomes the Linux home (``Z:\\...``).
     """
     home = _host_home(env)
     wanted_theme = theme.detect(env, runner, home) if config.get("display", "theme") == "follow" else None
-    scale = display.scale_percent(env, runner) if config.get("display", "dpi") == "auto" else None
-    try:
-        home_win: str | None = PathMap.from_prefix(paths.prefix).unix_to_win(home)
-    except ForkLinuxError:
-        home_win = None
+    tools = fork_tools.wanted(
+        bridge_active=bridge_active, fl_launch=fork_tools.fl_launch_installed(paths), pathmap=_pathmap(paths)
+    )
     return fork_settings.desired(
         config,
         user=user,
         theme=wanted_theme,
-        scale=scale,
-        shell_tool=_shell_tool(paths),
-        home_win=home_win,
+        tools=tools,
+        home_win=home_win(paths, env),
         current=fork_settings.load(layout.settings_file),
     )
 
 
 def _settings(ctx: bootstrap.Ctx, notes: list[str]) -> None:
-    """Keep Fork's ``settings.json`` at the values fork-linux wants (only while Fork is closed).
+    """Keep Fork's ``settings.json`` and default source folder as fork-linux wants (Fork closed only).
 
-    A missing file is seeded (see :func:`fork_settings.seed`).
+    A missing ``settings.json`` is seeded (see :func:`fork_settings.seed`);
+    ``ForkData\\repositories.toml`` gets the Linux home as its source folder
+    (:func:`fork_data.ensure_source_dirs`).
     """
     paths: Paths = ctx.paths
     if procs.fork_running(paths.prefix):
         return
     wanted = desired_settings(
-        paths=paths, config=ctx.config, env=ctx.env, runner=ctx.runner, user=ctx.user, layout=ctx.layout
+        paths=paths,
+        config=ctx.config,
+        env=ctx.env,
+        runner=ctx.runner,
+        user=ctx.user,
+        layout=ctx.layout,
+        bridge_active=bridge.host_actions_active(ctx),
     )
-    changed = fork_settings.seed(ctx.layout, wanted, backup_dir=fork_settings.default_backup_dir(paths))
+    backup_dir = fork_settings.default_backup_dir(paths)
+    changed = fork_settings.seed(ctx.layout, wanted, backup_dir=backup_dir)
     if changed:
         notes.append(f"Fork settings updated: {', '.join(changed)}")
+    home = home_win(paths, ctx.env)
+    if home is not None and fork_data.ensure_source_dirs(
+        ctx.layout.forkdata_dir, user=ctx.user, home_win=home, backup_dir=backup_dir
+    ):
+        notes.append(f"Fork's default source folder set to {home}")
 
 
 def _ssh(ctx: bootstrap.Ctx, notes: list[str]) -> None:
@@ -346,7 +381,11 @@ def _git(ctx: bootstrap.Ctx, notes: list[str]) -> None:
     if ctx.config.get("git", "config_overlay") != "translate":
         return
     home = _host_home(ctx.env)
-    signature = [_mtime(home.joinpath(*rel)) for rel in gitconfig.HOST_FILES]
+    signature = [
+        gitconfig.OVERLAY_REVISION,
+        *(_mtime(home.joinpath(*rel)) for rel in gitconfig.HOST_FILES),
+        *gitconfig.rewrite_tops(),
+    ]
     if ctx.state.get(APPLIED_GITCONFIG) == signature:
         return
     gitconfig.sync(ctx.paths, ctx.user, home, PathMap.from_prefix(ctx.paths.prefix))
@@ -381,6 +420,56 @@ def pre_launch(ctx: bootstrap.Ctx) -> list[str]:
             notes.append(message)
     ctx.state.save()
     return notes
+
+
+# -- Fork's own log ----------------------------------------------------------------------
+
+
+def keep_fork_log(paths: Paths, layout: ForkLayout) -> Path | None:
+    """Copy the previous session's ``fork.log`` to ``<logs>/fork-<UTC time>.log``; return the copy.
+
+    Fork overwrites ``logs\\fork.log`` at every start, so it is copied before
+    Fork starts again. The name comes from the log's own modification time,
+    so a log already kept is not copied twice; the newest
+    :data:`FORK_LOGS_KEEP` copies are kept. Fork's file is only read.
+    """
+    source = layout.fork_log
+    try:
+        fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError:
+        return None
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size == 0:
+            return None
+        with os.fdopen(fd, "rb", closefd=False) as handle:
+            data = handle.read()
+    finally:
+        os.close(fd)
+    stamp = datetime.fromtimestamp(info.st_mtime, timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    logs_dir = fsutil.ensure_dir(paths.logs_dir)
+    target = logs_dir / f"{FORK_LOG_PREFIX}{stamp}.log"
+    if os.path.lexists(target):
+        return None
+    fsutil.atomic_write(target, data)
+    kept = sorted(name for name in os.listdir(logs_dir) if _is_fork_copy(name))
+    for name in kept[: max(0, len(kept) - FORK_LOGS_KEEP)]:
+        (logs_dir / name).unlink()
+    return target
+
+
+def _is_fork_copy(name: str) -> bool:
+    """True for ``fork-<UTC time>.log`` (not ``fork-linux.log``)."""
+    return name.startswith(FORK_LOG_PREFIX) and name.endswith(".log") and name[len(FORK_LOG_PREFIX) : -4].endswith("Z")
+
+
+def fork_log_history(paths: Paths) -> list[Path]:
+    """The kept copies of earlier ``fork.log`` files, newest first."""
+    try:
+        names = os.listdir(paths.logs_dir)
+    except OSError:
+        return []
+    return [paths.logs_dir / name for name in sorted((n for n in names if _is_fork_copy(n)), reverse=True)]
 
 
 # -- session ---------------------------------------------------------------------------
@@ -528,6 +617,7 @@ def _fast_spec(
         debug=debug,
         wine_debug=wine_debug,
         driver=driver,
+        git_version=gitconfig.host_git_version(app_ctx.runner, app_ctx.env, paths.cache_dir),
     )
 
 
@@ -566,6 +656,11 @@ def run(
     except NotSetUpError as exc:
         hint = exc.hint if "fork-linux setup" in exc.hint else SETUP_HINT
         raise NotSetUpError(exc.message, hint=hint) from exc
+    if not running:
+        try:
+            keep_fork_log(ctx.paths, ctx.layout)
+        except (ForkLinuxError, OSError) as exc:
+            log.warning("could not keep the previous fork.log: %s", exc)
     if not no_hooks and not running:
         pre_launch(ctx)
     spec = build_spec(ctx, targets, debug=debug, wine_debug=wine_debug, driver=driver)

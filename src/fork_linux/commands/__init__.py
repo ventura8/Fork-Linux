@@ -17,6 +17,7 @@ COMMANDS: list[str] = [
     "desktop",
     "ssh",
     "gitbridge",
+    "repo",
     "logs",
     "doctor",
     "uninstall",

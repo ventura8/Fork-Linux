@@ -279,3 +279,13 @@ def test_round_trip(layout: tuple[Path, Path, PathMap]) -> None:
 
 def test_repr(simple: PathMap) -> None:
     assert repr(simple) == "PathMap({c: '/srv/prefix/drive_c', z: '/'})"
+
+
+def test_alias_drive_is_never_preferred_for_linux_paths(tmp_path: Path) -> None:
+    home = tmp_path / "home" / "ada"
+    home.mkdir(parents=True)
+    pathmap = PathMap.with_drives({"z": "/", "h": home})
+    assert pathmap.unix_to_win(home / "src") == "Z:" + str(home / "src").replace("/", "\\")
+    assert pathmap.win_to_unix("H:\\src") == home / "src"
+    only_alias = PathMap.with_drives({"h": home})
+    assert only_alias.unix_to_win(home / "src") == "H:\\src"

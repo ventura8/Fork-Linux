@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from . import fsutil
+from . import fork_tools, fsutil
 from .config import Config
 from .errors import ForkLinuxError, IntegrityFailed
 from .fork_layout import ForkLayout
@@ -32,20 +32,20 @@ from .paths import Paths
 
 log = logging.getLogger(__name__)
 
-# Keys verified in spike S8.
+# Keys verified in spike S8 and against a real Fork 2.23.2 settings.json (tests/test_settings_contract.py).
 GUID = "Guid"
 THEME = "Theme"  # 0 light, 1 dark
 FOLLOW_SYSTEM_THEME = "FollowSystemTheme"
 LAYOUT_SCALING = "LayoutScaling"  # percent
 UPDATE_SUBMODULES_ON_CHECKOUT = "UpdateSubmodulesOnCheckout"
 DISABLE_HARDWARE_ACCELERATION = "DisableHardwareAcceleration"
-SHELL_TOOL = "ShellTool"
-EXTERNAL_DIFF_TOOL = "ExternalDiffTool"
-EXTERNAL_MERGE_TOOL = "ExternalMergeTool"
+SHELL_TOOL = fork_tools.SHELL_TOOL
+EXTERNAL_DIFF_TOOL = fork_tools.EXTERNAL_DIFF_TOOL
+EXTERNAL_MERGE_TOOL = fork_tools.EXTERNAL_MERGE_TOOL  # Fork 2.23 stores "MergeTool"
 EXTERNAL_DIFF_TOOLS = "ExternalDiffTools"
 EXTERNAL_MERGE_TOOLS = "ExternalMergeTools"
 GIT_INSTANCE_PATH = "GitInstancePath"
-APPLICATION_UPDATE_TYPE = "ApplicationUpdateType"
+APPLICATION_UPDATE_TYPE = "ApplicationUpdateType"  # 0 Develop (Fork's default), 1 Stable, 2 Off
 REPOSITORY_MANAGER = "RepositoryManager"
 SOURCE_DIRECTORIES = "RepositoryManager.SourceDirectories"
 WORKSPACES = "Workspaces"
@@ -76,8 +76,6 @@ BACKUP_MODE = 0o600
 _RESTORE_HINT = "close Fork and run 'fork-linux settings restore' to go back to a backup"
 _BACKUP = re.compile(r"settings\.json\.([0-9]{8}T[0-9]{6}\.[0-9]{6}Z)(?:-([0-9]{1,6}))?")
 _DPI = re.compile(r"[0-9]{1,4}")
-# Our own shims live in C:\fork-linux\; a ShellTool pointing there is ours to update.
-_OUR_WIN_DIR = "c:\\fork-linux\\"
 
 
 def default_backup_dir(paths: Paths) -> Path:
@@ -260,27 +258,50 @@ def _theme_values(mode: str, theme: str | None) -> dict[str, object]:
     return {}
 
 
-def _scaling_value(dpi: str, scale: int | None) -> dict[str, object]:
-    """``LayoutScaling`` for ``[display] dpi`` (``auto`` uses the detected ``scale`` percent)."""
+def legacy_scaling(dpi: str, scale: int | None) -> int | None:
+    """The ``LayoutScaling`` fork-linux before 0.1.0 wrote for ``[display] dpi`` (None: none).
+
+    Scaling is now Wine's ``LogPixels`` alone (the ``display_dpi`` step):
+    Fork's ``LayoutScaling`` on top of it scaled the UI twice (QA 1.4). The
+    ``fork_settings`` step resets a ``LayoutScaling`` that still holds this
+    value back to 100.
+    """
     if dpi == "auto":
         if isinstance(scale, int) and not isinstance(scale, bool) and scale > 0:
-            return {LAYOUT_SCALING: _clamp_scaling(scale)}
-        return {}
+            return _clamp_scaling(scale)
+        return None
     if _DPI.fullmatch(dpi) and int(dpi) > 0:
-        return {LAYOUT_SCALING: _clamp_scaling(round(int(dpi) / BASE_DPI * 100))}
-    return {}
+        return _clamp_scaling(round(int(dpi) / BASE_DPI * 100))
+    return None
 
 
-def _shell_tool_replaceable(tool: Any) -> bool:
-    """True for Fork's default (null / CommandPrompt) or a ShellTool we set ourselves."""
-    if tool is None:
+def _tool_replaceable(key: str, tool: Any) -> bool:
+    """True for Fork's default (null, CommandPrompt, an empty Custom tool) or a tool we set ourselves."""
+    if tool is None or fork_tools.is_ours(tool):
         return True
     if not isinstance(tool, Mapping):
         return False
-    if tool.get("Type") == SHELL_TOOL_COMMAND_PROMPT:
-        return True
-    app = tool.get("ApplicationPath")
-    return isinstance(app, str) and app.lower().startswith(_OUR_WIN_DIR)
+    if key == SHELL_TOOL:
+        return tool.get("Type") == SHELL_TOOL_COMMAND_PROMPT
+    return _same(tool, fork_tools.DEFAULT_EXTERNAL_TOOL)
+
+
+def _tool_values(tools: Mapping[str, Any], current: Mapping[str, Any]) -> dict[str, object]:
+    """Fork's terminal / diff / merge settings: ours where Fork's default or ours is set.
+
+    A key we have no program for goes back to Fork's default when it still
+    names one of our programs (``fl-launch.exe`` without the bridge daemon
+    would make the button do nothing); a tool the user picked is never touched.
+    """
+    values: dict[str, object] = {}
+    for key in fork_tools.TOOL_KEYS:
+        present = get(current, key)
+        wanted = tools.get(key)
+        if wanted is not None and _tool_replaceable(key, present):
+            values[key] = wanted
+        elif wanted is None and fork_tools.is_ours(present):
+            values[key] = copy.deepcopy(fork_tools.DEFAULTS[key])
+    return values
 
 
 def _default_source_dirs(value: Any, user: str) -> bool:
@@ -295,21 +316,22 @@ def desired(
     *,
     user: str,
     theme: str | None,
-    scale: int | None,
-    shell_tool: dict[str, Any] | None,
+    tools: Mapping[str, Any],
     home_win: str | None,
     current: Mapping[str, Any],
+    reset_scaling: int | None = None,
 ) -> dict[str, object]:
     """The settings fork-linux wants (dotted key -> value), given the current ``settings.json``.
 
     * keys of ``[fork] enforce_settings`` that have a Wine-safe default;
     * ``[display] theme``: ``follow`` uses the desktop ``theme`` (``dark``/``light``),
       ``dark``/``light`` force it; Fork's own system-theme following is turned off;
-    * ``[display] dpi``: ``auto`` uses ``scale`` (percent), a number is converted
-      from DPI; both are clamped to ``LAYOUT_SCALING_MIN..MAX``;
-    * ``shell_tool`` replaces Fork's default terminal (null or CommandPrompt) or
-      one we set before, never a tool the user picked;
-    * ``home_win`` replaces the default repository source directory ``C:\\users\\<user>``.
+    * ``tools`` (:func:`fork_tools.wanted`) for ``ShellTool`` / ``ExternalDiffTool``
+      / ``MergeTool``: they replace Fork's defaults or tools we set before, never
+      a tool the user picked; our tools without a replacement go back to Fork's default;
+    * ``home_win`` replaces the default repository source directory ``C:\\users\\<user>``;
+    * ``reset_scaling``: a ``LayoutScaling`` holding this old value goes back to 100
+      (scaling is Wine's ``LogPixels`` alone now).
     """
     wanted: dict[str, object] = {}
     for key in config.getlist("fork", "enforce_settings"):
@@ -318,9 +340,11 @@ def desired(
         else:
             log.warning("[fork] enforce_settings: no Wine-safe default is known for %s; ignored", key)
     wanted.update(_theme_values(config.raw("display", "theme").strip().lower(), theme))
-    wanted.update(_scaling_value(config.raw("display", "dpi").strip().lower(), scale))
-    if shell_tool is not None and _shell_tool_replaceable(get(current, SHELL_TOOL)):
-        wanted[SHELL_TOOL] = shell_tool
+    if reset_scaling is not None and reset_scaling != LAYOUT_SCALING_MIN and _same(
+        get(current, LAYOUT_SCALING), reset_scaling
+    ):
+        wanted[LAYOUT_SCALING] = LAYOUT_SCALING_MIN
+    wanted.update(_tool_values(tools, current))
     if home_win is not None and _default_source_dirs(get(current, SOURCE_DIRECTORIES), user):
         wanted[SOURCE_DIRECTORIES] = [home_win]
     return wanted

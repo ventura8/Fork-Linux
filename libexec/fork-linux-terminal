@@ -1,0 +1,10 @@
+#!/bin/sh
+# fork-linux-terminal — Fork's "Open in Shell" / Console button (its ShellTool).
+#
+# Fork starts this script with the repository as the working directory (Wine
+# maps it to the Linux path). It opens the desktop's terminal there, outside
+# Wine's process tree (see fork-linux-handoff).
+set -u
+
+dir=${1:-$PWD}
+exec "$(dirname -- "$0")/fork-linux-handoff" terminal "$dir"

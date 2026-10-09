@@ -18,10 +18,13 @@ import logging
 from typing import Any
 
 from .. import (
+    bridge,
     display,
     feeds,
+    fork_data,
     fork_install,
     fork_settings,
+    fork_tools,
     fsutil,
     resources,
     theme,
@@ -31,6 +34,7 @@ from .. import (
 from ..bootstrap import Ctx, Step, now
 from ..errors import DownloadFailed, ForkLinuxError, IntegrityFailed
 from ..fork_install import InstallPlan
+from ..pathmap import PathMap
 
 log = logging.getLogger(__name__)
 
@@ -39,12 +43,6 @@ PLAN_KEY = "fork.plan"
 DEFAULT = "default"
 REQUESTED = "requested"
 LATEST = "latest"
-FL_LAUNCH = "fl-launch.exe"
-SHELL_TOOL = {
-    "Type": "Custom",
-    "ApplicationPath": "C:\\fork-linux\\bin\\fl-launch.exe",
-    "Arguments": "terminal",
-}
 _PLAN_CACHE = "fork_plan"
 _WANTED_CACHE = "fork_settings_wanted"
 _PLAN_FIELDS = ("version", "url", "sha256", "size", "tofu", "source")
@@ -230,12 +228,24 @@ def verify_install(ctx: Ctx) -> bool:
 # -- fork_settings -------------------------------------------------------------------------
 
 
-def shell_tool() -> dict[str, str] | None:
-    """Our terminal launcher for Fork's "Open in Terminal", when the shims were built."""
+def tools(ctx: Ctx) -> dict[str, Any]:
+    """Fork's terminal / diff / merge settings for this installation (:func:`fork_tools.wanted`).
+
+    Setup runs before the shims are copied, so ``fl-launch.exe`` counts as
+    installed when this installation ships it; the launcher re-checks the
+    prefix before every start.
+    """
     shims = resources.shims_dir()
-    if shims is not None and (shims / FL_LAUNCH).is_file():
-        return dict(SHELL_TOOL)
-    return None
+    shipped = shims is not None and (shims / fork_tools.FL_LAUNCH[-1]).is_file()
+    try:
+        pathmap: PathMap | None = ctx.pathmap
+    except ForkLinuxError:
+        pathmap = None
+    return fork_tools.wanted(
+        bridge_active=bridge.host_actions_active(ctx),
+        fl_launch=shipped or fork_tools.fl_launch_installed(ctx.paths),
+        pathmap=pathmap,
+    )
 
 
 def settings_inputs(ctx: Ctx) -> dict[str, Any]:
@@ -244,7 +254,8 @@ def settings_inputs(ctx: Ctx) -> dict[str, Any]:
         "theme": ctx.config.raw("display", "theme"),
         "dpi": ctx.config.raw("display", "dpi"),
         "enforce": ctx.config.getlist("fork", "enforce_settings"),
-        "shell_tool": shell_tool() is not None,
+        "tools": tools(ctx),
+        "home": _home_win(ctx),
     }
 
 
@@ -259,21 +270,30 @@ def run_settings(ctx: Ctx) -> None:
     """Merge the Wine-safe values into ``settings.json``, creating it before Fork's first start.
 
     Seeding is safe (E2E, Fork 2.23.2): Fork keeps the seeded keys, so even
-    the first session runs with the Wine-safe values, theme and scaling.
+    the first session runs with the Wine-safe values and theme. A
+    ``LayoutScaling`` an earlier fork-linux wrote goes back to 100 (Wine's
+    ``LogPixels`` does the scaling now), and ``ForkData\\repositories.toml``
+    gets the Linux home as the default source folder.
     """
     path = ctx.layout.settings_file
     current = fork_settings.load(path)
+    home = _home_win(ctx)
     wanted = fork_settings.desired(
         ctx.config,
         user=ctx.user,
         theme=theme.detect(ctx.env, ctx.runner, ctx.host_home),
-        scale=display.scale_percent(ctx.env, ctx.runner),
-        shell_tool=shell_tool(),
-        home_win=_home_win(ctx),
+        tools=tools(ctx),
+        home_win=home,
         current=current,
+        reset_scaling=fork_settings.legacy_scaling(
+            ctx.config.raw("display", "dpi").strip().lower(), display.scale_percent(ctx.env, ctx.runner)
+        ),
     )
-    fork_settings.seed(ctx.layout, wanted, backup_dir=fork_settings.default_backup_dir(ctx.paths))
+    backup_dir = fork_settings.default_backup_dir(ctx.paths)
+    fork_settings.seed(ctx.layout, wanted, backup_dir=backup_dir)
     ctx.cache[_WANTED_CACHE] = wanted
+    if home is not None:
+        fork_data.ensure_source_dirs(ctx.layout.forkdata_dir, user=ctx.user, home_win=home, backup_dir=backup_dir)
 
 
 def verify_settings(ctx: Ctx) -> bool:
@@ -314,7 +334,7 @@ FORK_INSTALL = Step(
 FORK_SETTINGS = Step(
     id="fork_settings",
     title="Adjusting Fork's settings for Wine",
-    rev=1,
+    rev=2,
     weight=1,
     run=run_settings,
     verify=verify_settings,

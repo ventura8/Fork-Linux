@@ -320,23 +320,34 @@ def test_settings_are_seeded_before_the_first_start(xdg: Path) -> None:
 
 
 def test_settings_are_merged(xdg: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    shims = tmp_path / "shims"
-    shims.mkdir()
-    (shims / "fl-launch.exe").write_bytes(b"MZ")
-    monkeypatch.setenv(resources.SHIMS_ENV, str(shims))
+    libexec = tmp_path / "libexec"
+    libexec.mkdir()
+    (libexec / "fork-linux-terminal").write_text("#!/bin/sh\n", encoding="utf-8")
+    (libexec / "fork-linux-terminal").chmod(0o755)
+    monkeypatch.setenv(resources.LIBEXEC_ENV, str(libexec))
+    monkeypatch.setenv(resources.SHIMS_ENV, str(tmp_path / "none"))
     ctx = make_ctx(RecordingRunner(), env={**os.environ, "GTK_THEME": "Adwaita:dark", "GDK_SCALE": "1.25"})
     _drives(ctx)
     install_fork(ctx.layout)
     write_settings(ctx.layout, {"Guid": "x", "UpdateSubmodulesOnCheckout": True, "ShellTool": None,
+                                "LayoutScaling": 125,
                                 "RepositoryManager": {"SourceDirectories": [f"C:\\users\\{ctx.user}"]},
                                 "Unknown": 1})
-    assert fork_steps.settings_inputs(ctx)["shell_tool"]
+    terminal = {"Type": "Custom", "ApplicationPath": "Z:" + str(libexec / "fork-linux-terminal").replace("/", "\\"),
+                "Arguments": ""}
+    assert fork_steps.settings_inputs(ctx)["tools"]["ShellTool"] == terminal
+    toml = ctx.layout.forkdata_dir / "repositories.toml"
+    toml.parent.mkdir(parents=True)
+    toml.write_text(f"source_dirs = ['C:\\users\\{ctx.user}\\']\nscan_depth = 5\n", encoding="utf-8")
     fork_steps.run_settings(ctx)
     data = json.loads(ctx.layout.settings_file.read_text())
     assert data["UpdateSubmodulesOnCheckout"] is False and data["DisableHardwareAcceleration"] is True
-    assert data["Theme"] == 1 and data["FollowSystemTheme"] is False and data["LayoutScaling"] == 125
-    assert data["ShellTool"] == fork_steps.SHELL_TOOL and data["Unknown"] == 1
-    assert data["RepositoryManager"]["SourceDirectories"] == ["Z:" + str(ctx.host_home).replace("/", "\\")]
+    # The old double scaling (LayoutScaling = the desktop's 125 %) is undone: LogPixels scales now.
+    assert data["Theme"] == 1 and data["FollowSystemTheme"] is False and data["LayoutScaling"] == 100
+    assert data["ShellTool"] == terminal and data["Unknown"] == 1
+    home = "Z:" + str(ctx.host_home).replace("/", "\\")
+    assert data["RepositoryManager"]["SourceDirectories"] == [home]
+    assert toml.read_text(encoding="utf-8") == f"source_dirs = ['{home}']\nscan_depth = 5\n"
     assert fork_steps.verify_settings(ctx)
     assert list(fork_settings_mod.default_backup_dir(ctx.paths).iterdir())
     data["DisableHardwareAcceleration"] = False
@@ -348,13 +359,15 @@ def test_settings_are_merged(xdg: Path, monkeypatch: pytest.MonkeyPatch, tmp_pat
 
 def test_settings_without_shims_or_drives(xdg: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv(resources.SHIMS_ENV, str(tmp_path / "none"))
+    monkeypatch.setenv(resources.LIBEXEC_ENV, str(tmp_path / "none"))
     ctx = make_ctx(RecordingRunner())
     install_fork(ctx.layout)
     write_settings(ctx.layout, {"ShellTool": None})
-    assert fork_steps.shell_tool() is None
+    assert fork_steps.tools(ctx)["ShellTool"] is None
     assert fork_steps._home_win(ctx) is None
     fork_steps.run_settings(ctx)
     assert json.loads(ctx.layout.settings_file.read_text())["ShellTool"] is None
+    assert not (ctx.layout.forkdata_dir / "repositories.toml").exists()
     # A later context has nothing cached: a loadable file verifies.
     later = make_ctx(RecordingRunner())
     assert fork_steps.verify_settings(later)
@@ -380,12 +393,18 @@ def test_bootstrap_resumes_install_from_the_recorded_plan(
     assert downloads[-1].sha256 == plan.sha256
 
 
-def test_shell_tool_needs_fl_launch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_tools_use_fl_launch_only_with_the_bridge_daemon(
+    xdg: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv(resources.SHIMS_ENV, str(tmp_path))
-    assert fork_steps.shell_tool() is None
+    monkeypatch.setenv(resources.LIBEXEC_ENV, str(tmp_path / "none"))
+    ctx = make_ctx(RecordingRunner())
     (tmp_path / "fl-launch.exe").write_bytes(b"MZ")
-    tool = fork_steps.shell_tool()
-    assert tool == fork_steps.SHELL_TOOL and tool is not fork_steps.SHELL_TOOL
+    assert fork_steps.tools(ctx)["ShellTool"] is None
+    monkeypatch.setattr(fork_steps.bridge, "host_actions_active", lambda _ctx: True)
+    assert fork_steps.tools(ctx)["ShellTool"]["ApplicationPath"] == "C:\\fork-linux\\bin\\fl-launch.exe"
+    (tmp_path / "fl-launch.exe").unlink()
+    assert fork_steps.tools(ctx)["ShellTool"] is None
 
 
 def test_errors_module_unchanged() -> None:

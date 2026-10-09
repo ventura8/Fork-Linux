@@ -308,42 +308,75 @@ def test_settings_hook_skipped_while_fork_runs(ctx: bootstrap.Ctx, not_running: 
 def test_settings_hook_seeds_a_missing_settings_file(ctx: bootstrap.Ctx) -> None:
     notes: list[str] = []
     launcher._settings(ctx, notes)
-    assert len(notes) == 1 and notes[0].startswith("Fork settings updated: Guid, ")
+    assert len(notes) == 2 and notes[0].startswith("Fork settings updated: Guid, ")
+    assert notes[1].startswith("Fork's default source folder set to Z:\\")
     data = json.loads(ctx.layout.settings_file.read_text(encoding="utf-8"))
     assert data["UpdateSubmodulesOnCheckout"] is False and "Guid" in data
+    toml = (ctx.layout.forkdata_dir / "repositories.toml").read_text(encoding="utf-8")
+    assert toml.startswith("source_dirs = ['Z:\\")
+    notes.clear()
+    launcher._settings(ctx, notes)
+    assert notes == []
 
 
-def test_desired_settings_probes_and_shell_tool(ctx: bootstrap.Ctx, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settings_hook_without_drive_links_skips_the_source_folder(ctx: bootstrap.Ctx) -> None:
+    for link in (ctx.paths.prefix / "dosdevices").iterdir():
+        link.unlink()
+    notes: list[str] = []
+    launcher._settings(ctx, notes)
+    assert not (ctx.layout.forkdata_dir / "repositories.toml").exists()
+    (ctx.paths.prefix / "dosdevices").rmdir()
+    assert launcher.home_win(ctx.paths, ctx.env) is None
+
+
+def _libexec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *names: str) -> Path:
+    libexec = tmp_path / "libexec"
+    libexec.mkdir(exist_ok=True)
+    for name in names:
+        (libexec / name).write_text("#!/bin/sh\n", encoding="utf-8")
+        (libexec / name).chmod(0o755)
+    monkeypatch.setenv("FORK_LINUX_LIBEXEC_DIR", str(libexec))
+    return libexec
+
+
+def test_desired_settings_probes_and_tools(
+    ctx: bootstrap.Ctx, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     calls: list[str] = []
     monkeypatch.setattr(launcher.theme, "detect", lambda env, runner, home: calls.append("theme") or "dark")
-    monkeypatch.setattr(launcher.display, "scale_percent", lambda env, runner: calls.append("scale") or 150)
-    write_settings(ctx.layout, {"ShellTool": None, "RepositoryManager": {"SourceDirectories": [f"C:\\users\\{USER}"]}})
+    libexec = _libexec(tmp_path, monkeypatch)
+    dead = {"Type": "Custom", "ApplicationPath": "C:\\fork-linux\\bin\\fl-launch.exe", "Arguments": "terminal"}
+    write_settings(
+        ctx.layout,
+        {"ShellTool": dead, "LayoutScaling": 150, "RepositoryManager": {"SourceDirectories": [f"C:\\users\\{USER}"]}},
+    )
 
-    def desired() -> dict[str, object]:
+    def desired(**kwargs: Any) -> dict[str, object]:
         return launcher.desired_settings(
-            paths=ctx.paths, config=ctx.config, env=ctx.env, runner=ctx.runner, user=ctx.user, layout=ctx.layout
+            paths=ctx.paths, config=ctx.config, env=ctx.env, runner=ctx.runner, user=ctx.user, layout=ctx.layout,
+            **kwargs,
         )
 
     wanted = desired()
-    assert calls == ["theme", "scale"]
-    assert wanted["Theme"] == 1 and wanted["LayoutScaling"] == 150
-    assert "ShellTool" not in wanted
+    assert calls == ["theme"]
+    assert wanted["Theme"] == 1 and "LayoutScaling" not in wanted
+    # fl-launch.exe without the bridge daemon: Fork's default comes back.
+    assert wanted["ShellTool"] is None
     home_win = "Z:\\" + str(ctx.host_home).strip("/").replace("/", "\\")
     assert wanted["RepositoryManager.SourceDirectories"] == [home_win]
+    _libexec(tmp_path, monkeypatch, "fork-linux-terminal")
+    terminal = "Z:\\" + str(libexec / "fork-linux-terminal").strip("/").replace("/", "\\")
+    assert desired()["ShellTool"] == {"Type": "Custom", "ApplicationPath": terminal, "Arguments": ""}
     launch = ctx.paths.fork_linux_win_dir / "bin" / "fl-launch.exe"
     launch.parent.mkdir(parents=True)
     launch.write_bytes(b"MZ")
     ctx.config.set("display", "theme", "light")
-    ctx.config.set("display", "dpi", "120")
     calls.clear()
-    wanted = desired()
+    wanted = desired(bridge_active=True)
     assert calls == []
-    assert wanted["ShellTool"] == {
-        "Type": "Custom",
-        "ApplicationPath": "C:\\fork-linux\\bin\\fl-launch.exe",
-        "Arguments": "terminal",
-    }
-    assert wanted["Theme"] == 0 and wanted["LayoutScaling"] == 125
+    assert wanted["ShellTool"] == dead and wanted["Theme"] == 0
+    merge = wanted["MergeTool"]
+    assert isinstance(merge, dict) and merge["Arguments"].startswith("merge ")
     # Without drive links the home directory cannot be mapped: left alone.
     for link in (ctx.paths.prefix / "dosdevices").iterdir():
         link.unlink()
@@ -706,3 +739,63 @@ def test_exec_failure_restores_output(
         launcher._exec(dataclasses.replace(spec, log_file=None), truncate=True, execvpe=missing)
     assert dup2 == []
 
+
+
+# -- fork.log retention ----------------------------------------------------------------------------
+
+
+def _fork_log(ctx: bootstrap.Ctx, text: str, mtime: int) -> Path:
+    log = ctx.layout.fork_log
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(text, encoding="utf-8")
+    os.utime(log, (mtime, mtime))
+    return log
+
+
+def test_keep_fork_log_copies_once_and_rotates(ctx: bootstrap.Ctx, monkeypatch: pytest.MonkeyPatch) -> None:
+    assert launcher.keep_fork_log(ctx.paths, ctx.layout) is None  # no log yet
+    _fork_log(ctx, "", 1_790_000_000)
+    assert launcher.keep_fork_log(ctx.paths, ctx.layout) is None  # empty
+    _fork_log(ctx, "session 1\n", 1_790_000_000)
+    kept = launcher.keep_fork_log(ctx.paths, ctx.layout)
+    assert kept is not None and kept.name == "fork-20260921T141320Z.log"
+    assert kept.read_text(encoding="utf-8") == "session 1\n"
+    assert launcher.keep_fork_log(ctx.paths, ctx.layout) is None  # already kept
+    (ctx.paths.logs_dir / "fork-linux.log").write_text("ours", encoding="utf-8")
+    monkeypatch.setattr(launcher, "FORK_LOGS_KEEP", 3)
+    for n in range(1, 5):
+        _fork_log(ctx, f"session {n + 1}\n", 1_790_000_000 + n * 60)
+        launcher.keep_fork_log(ctx.paths, ctx.layout)
+    history = launcher.fork_log_history(ctx.paths)
+    assert [path.read_text(encoding="utf-8") for path in history] == ["session 5\n", "session 4\n", "session 3\n"]
+    assert (ctx.paths.logs_dir / "fork-linux.log").exists()
+
+
+def test_keep_fork_log_refuses_links_and_fifos(ctx: bootstrap.Ctx, tmp_path: Path) -> None:
+    target = tmp_path / "secret"
+    target.write_text("x", encoding="utf-8")
+    ctx.layout.fork_log.parent.mkdir(parents=True, exist_ok=True)
+    ctx.layout.fork_log.symlink_to(target)
+    assert launcher.keep_fork_log(ctx.paths, ctx.layout) is None
+    ctx.layout.fork_log.unlink()
+    os.mkfifo(ctx.layout.fork_log)
+    assert launcher.keep_fork_log(ctx.paths, ctx.layout) is None
+
+
+def test_fork_log_history_without_logs(ctx: bootstrap.Ctx) -> None:
+    assert launcher.fork_log_history(ctx.paths) == []
+
+
+def test_run_keeps_the_previous_fork_log(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _fork_log(ctx, "previous session\n", 1_790_000_000)
+    launcher.run(flow["app"], [], no_hooks=True, execvpe=flow["exec"])
+    assert [p.read_text(encoding="utf-8") for p in launcher.fork_log_history(ctx.paths)] == ["previous session\n"]
+
+    def broken(paths: Any, layout: Any) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(launcher, "keep_fork_log", broken)
+    launcher.run(flow["app"], [], no_hooks=True, execvpe=flow["exec"])
+    assert "could not keep the previous fork.log" in caplog.text

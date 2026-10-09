@@ -34,10 +34,13 @@ from . import (
     desktop_integration,
     download,
     feeds,
+    fork_data,
+    fork_tools,
     fsutil,
     gitconfig,
     hostdeps,
     procs,
+    repos,
     resources,
     sandbox,
     snapshots,
@@ -188,6 +191,7 @@ class DoctorCtx:
     _wine_error: str | None = field(default=None, repr=False)
     _layout: ForkLayout | None = field(default=None, repr=False)
     _boot: bootstrap.Ctx | None = field(default=None, repr=False)
+    _repos: list[repos.RepoReport] | None = field(default=None, repr=False)
 
     @classmethod
     def from_app(cls, app_ctx: Any, **kwargs: Any) -> DoctorCtx:
@@ -279,6 +283,7 @@ class DoctorCtx:
         self._wine_error = None
         self._layout = None
         self._boot = None
+        self._repos = None
 
     @property
     def boot(self) -> bootstrap.Ctx:
@@ -424,13 +429,18 @@ def check_user(ctx: DoctorCtx) -> Result:
 
 
 def check_display(ctx: DoctorCtx) -> Result:
-    """A graphical session Wine's X11 driver can use (DISPLAY, or XWayland)."""
-    session = display_mod.session_type(ctx.env)
+    """A graphical session Wine's X11 driver can use (DISPLAY, or XWayland).
+
+    The sockets named by ``DISPLAY`` / ``WAYLAND_DISPLAY`` decide, not
+    ``XDG_SESSION_TYPE``: a shell started from a Wayland desktop keeps that
+    variable while talking to another X server (Xvfb, ssh -X).
+    """
     x_display = ctx.env.get("DISPLAY", "")
+    wayland = bool(ctx.env.get("WAYLAND_DISPLAY"))
     if x_display:
-        where = "XWayland" if session == "wayland" else "X11"
-        return Result("ok", f"{session} session, {where} display {x_display}")
-    if session == "wayland":
+        where = "wayland session, XWayland" if wayland else "X11"
+        return Result("ok", f"{where} display {x_display}")
+    if wayland:
         if ctx.config.get("wine", "driver") == "wayland":
             return Result("warn", "Wayland session without XWayland; using Wine's experimental Wayland driver")
         return Result(
@@ -438,9 +448,11 @@ def check_display(ctx: DoctorCtx) -> Result:
             "Wayland session without XWayland (DISPLAY is not set)",
             "enable XWayland in your desktop, or try 'fork-linux config set wine.driver wayland' (experimental)",
         )
+    session = display_mod.session_type(ctx.env)
+    declared = f" ({session} declared by XDG_SESSION_TYPE)" if session != "tty" else ""
     return Result(
         "warn",
-        "no graphical session (DISPLAY and WAYLAND_DISPLAY are not set)",
+        f"no graphical session (DISPLAY and WAYLAND_DISPLAY are not set){declared}",
         "Fork needs a desktop session; setup and doctor work without one",
     )
 
@@ -1019,6 +1031,227 @@ def check_log_signatures(ctx: DoctorCtx) -> Result:
     )
 
 
+def _settings_data(ctx: DoctorCtx) -> dict[str, Any] | None:
+    """Fork's ``settings.json`` (None when missing or unusable)."""
+    try:
+        data = settings_mod.load(ctx.layout.settings_file)
+    except ForkLinuxError:
+        return None
+    return data or None
+
+
+def _dead_tools(ctx: DoctorCtx, data: Mapping[str, Any]) -> list[str]:
+    """Fork tool settings that name ``fl-launch.exe`` while no bridge daemon will run."""
+    active = bridge.host_actions_active(ctx)
+    return [key for key in fork_tools.TOOL_KEYS if fork_tools.is_dead(data.get(key), bridge_active=active)]
+
+
+def check_fork_tools(ctx: DoctorCtx) -> Result:
+    """Fork's terminal, diff and merge settings do not name a program that cannot run."""
+    data = _settings_data(ctx)
+    if data is None:
+        return Result("info", "settings.json does not exist yet")
+    dead = _dead_tools(ctx, data)
+    if dead:
+        return Result(
+            "warn",
+            f"{', '.join(dead)} run(s) fl-launch.exe, but the native-git bridge daemon is not running: "
+            "the button does nothing",
+            "close Fork and run 'fork-linux doctor --fix' (Fork's defaults come back; the terminal "
+            "uses fork-linux-terminal)",
+        )
+    shell = data.get(fork_tools.SHELL_TOOL)
+    if isinstance(shell, dict) and shell.get("Type") == "GitBash":
+        return Result(
+            "warn",
+            "the terminal is Git Bash, which exits at once under Wine (msys mintty)",
+            "pick 'Custom' in Fork's Preferences > Integration, or 'fork-linux settings unset ShellTool' "
+            "with Fork closed so fork-linux sets its own terminal",
+        )
+    if fork_tools.is_ours(shell):
+        return Result("ok", f"terminal: {shell.get('ApplicationPath')}")
+    return Result("ok", "no unusable tool configured")
+
+
+def fix_fork_tools(ctx: DoctorCtx) -> str:
+    """Put the dead tool settings back to Fork's defaults (Fork must be closed)."""
+    procs.require_closed(ctx.paths.prefix, proc_root=ctx.proc_root)
+    data = _settings_data(ctx) or {}
+    wanted = {key: fork_tools.DEFAULTS[key] for key in _dead_tools(ctx, data)}
+    terminal = fork_tools.wanted(bridge_active=False, fl_launch=False, pathmap=ctx.pathmap)[fork_tools.SHELL_TOOL]
+    if fork_tools.SHELL_TOOL in wanted and terminal is not None:
+        wanted[fork_tools.SHELL_TOOL] = terminal
+    changed = settings_mod.apply(ctx.layout, wanted, backup_dir=settings_mod.default_backup_dir(ctx.paths))
+    return f"reset {', '.join(changed)}" if changed else "nothing to do"
+
+
+def _home_win(ctx: DoctorCtx) -> str:
+    return ctx.pathmap.unix_to_win(ctx.host_home)
+
+
+def check_source_dirs(ctx: DoctorCtx) -> Result:
+    """Fork's default folder for new clones is the Linux home, not a folder inside the prefix."""
+    file = fork_data.path(ctx.layout.forkdata_dir)
+    text = fork_data.read_text(file)
+    if text is None:
+        return Result("info", f"{file.name} does not exist yet (fork-linux creates it before Fork starts)")
+    dirs = fork_data.source_dirs(text)
+    if fork_data.is_default(dirs, ctx.user):
+        return Result(
+            "warn",
+            f"Fork's source folder is {dirs[0] if dirs else ''} (inside the Wine prefix: clones land there "
+            "and 'uninstall --purge' deletes them)",
+            "close Fork and run 'fork-linux doctor --fix' to use your Linux home",
+        )
+    return Result("ok", f"source folder: {', '.join(dirs or []) or '(not set)'}")
+
+
+def fix_source_dirs(ctx: DoctorCtx) -> str:
+    """Point Fork's source folder at the Linux home (Fork must be closed)."""
+    procs.require_closed(ctx.paths.prefix, proc_root=ctx.proc_root)
+    home = _home_win(ctx)
+    written = fork_data.ensure_source_dirs(
+        ctx.layout.forkdata_dir, user=ctx.user, home_win=home, backup_dir=settings_mod.default_backup_dir(ctx.paths)
+    )
+    return f"source folder set to {home}" if written else "nothing to do"
+
+
+def check_integration(ctx: DoctorCtx) -> Result:
+    """"Show in File Explorer" and "Open" are redirected to the Linux desktop; ``H:`` maps the home."""
+    if not _has_prefix(ctx):
+        return _skip(NO_PREFIX)
+    expected = integration_step.integration_expected(ctx.boot)
+    wrong = [key for key, name, value in expected if _reg(ctx, key, name) != value]
+    if wrong:
+        return Result(
+            "warn",
+            f"{len(wrong)} of {len(expected)} file-manager / open redirects are missing",
+            "run 'fork-linux doctor --fix'",
+        )
+    explorer = any("App Paths" in key for key, _name, _value in expected)
+    drive = integration_step.home_drive(ctx.boot)
+    parts = [f"{len(expected)} redirects in place"]
+    if not explorer:
+        parts.append("fork-linux-explorer is not installed: 'Show in File Explorer' opens Wine's explorer")
+    parts.append(f"H: -> {os.readlink(drive)}" if drive.is_symlink() else "no H: drive")
+    return Result("ok" if explorer else "info", "; ".join(parts))
+
+
+# -- repositories ----------------------------------------------------------------------------------
+
+BRIDGE_HINT = "the native-git bridge (experimental, 'fork-linux git-bridge enable') runs them with Linux git"
+
+
+def _repo_reports(ctx: DoctorCtx) -> list[repos.RepoReport] | Result:
+    """The scan of Fork's repositories (cached), or the Result explaining why there is none."""
+    if ctx._repos is not None:
+        return ctx._repos
+    git = repos.Git(ctx.runner, ctx.env)
+    if not git.available:
+        return Result("info", "skipped: git is not installed on this computer")
+    known = repos.known(ctx.layout, ctx.pathmap) if _has_prefix(ctx) else []
+    if not known:
+        return Result("info", "no repositories opened in Fork yet")
+    ctx._repos = repos.scan(git, known, repos.overlay_text(ctx.paths, ctx.user))
+    return ctx._repos
+
+
+def _repo_result(ctx: DoctorCtx, attr: str, problem: str, hint: str) -> Result:
+    reports = _repo_reports(ctx)
+    if isinstance(reports, Result):
+        return reports
+    found = repos.describe(reports, attr)
+    if found:
+        return Result("warn", f"{len(found)} of {len(reports)} repositories {problem}: {'; '.join(found)}", hint)
+    return Result("ok", f"{len(reports)} repositories checked")
+
+
+def check_repo_hooks(ctx: DoctorCtx) -> Result:
+    """Executable hooks: Fork's bundled git skips hooks that run programs, and reports success."""
+    return _repo_result(
+        ctx,
+        "hooks",
+        "have executable hooks that Fork's bundled git silently skips under Wine",
+        "commit and push from a Linux terminal in these repositories until hooks work; " + BRIDGE_HINT,
+    )
+
+
+def check_repo_symlinks(ctx: DoctorCtx) -> Result:
+    """Tracked symbolic links: Fork always shows them as modified (Wine hides Unix links)."""
+    return _repo_result(
+        ctx,
+        "symlinks",
+        "track symbolic links that Fork always lists as modified (they block rebase)",
+        "'fork-linux repo fix PATH' marks them skip-worktree after asking ('fork-linux repo undo PATH' "
+        "reverts); with --fix, doctor asks too",
+    )
+
+
+def check_repo_submodules(ctx: DoctorCtx) -> Result:
+    """Submodules: Fork's "update submodules" does nothing with its bundled git under Wine."""
+    return _repo_result(
+        ctx,
+        "submodules",
+        "use submodules, which Fork's bundled git cannot update under Wine",
+        "run 'git submodule update --init --recursive' in a Linux terminal; " + BRIDGE_HINT,
+    )
+
+
+def check_repo_remotes(ctx: DoctorCtx) -> Result:
+    """Remotes given as Linux paths that the git overlay does not rewrite for Fork's git."""
+    return _repo_result(
+        ctx,
+        "linux_remotes",
+        "have remotes as Linux paths Fork's git cannot open",
+        "run 'fork-linux doctor --fix' (the git overlay rewrites /home, /mnt, /media, /srv, /opt, /tmp, /var "
+        "and /run); for other folders use a file:///Z:/... URL",
+    )
+
+
+def check_repo_filemode(ctx: DoctorCtx) -> Result:
+    """``core.filemode = true``: Fork then lists every executable file as modified."""
+    return _repo_result(
+        ctx,
+        "filemode",
+        "have core.filemode = true, so Fork shows executable files as modified",
+        "'git config core.filemode false' in each (or 'fork-linux repo fix PATH', undo with "
+        "'fork-linux repo undo PATH'); with --fix, doctor asks first",
+    )
+
+
+def _fix_repos(ctx: DoctorCtx, *, filemode: bool, symlinks: bool, what: str) -> str:
+    """Apply :func:`repos.fix` to the scanned repositories after the user confirmed."""
+    reports = _repo_reports(ctx)
+    if isinstance(reports, Result):
+        return "nothing to do"
+    targets = [r for r in reports if (filemode and r.filemode) or (symlinks and r.symlinks)]
+    if not targets:
+        return "nothing to do"
+    listed = "\n".join(f"  {report.path}" for report in targets)
+    if not ctx.ui.confirm(
+        "Change your repositories?",
+        f"{what} in:\n{listed}\nUndo with 'fork-linux repo undo PATH'.",
+        default=False,
+    ):
+        return "skipped (not confirmed)"
+    git = repos.Git(ctx.runner, ctx.env)
+    done: list[str] = []
+    for report in targets:
+        done += repos.fix(git, report, filemode=filemode, symlinks=symlinks)
+    ctx._repos = None
+    return "; ".join(done)
+
+
+def fix_repo_filemode(ctx: DoctorCtx) -> str:
+    """``core.filemode = false`` in the repositories that have it on (asks first)."""
+    return _fix_repos(ctx, filemode=True, symlinks=False, what="Set core.filemode = false")
+
+
+def fix_repo_symlinks(ctx: DoctorCtx) -> str:
+    """``skip-worktree`` for tracked links (asks first)."""
+    return _fix_repos(ctx, filemode=False, symlinks=True, what="Mark tracked symbolic links skip-worktree")
+
+
 # -- ssh / git / bridge ----------------------------------------------------------------------------
 
 
@@ -1080,7 +1313,9 @@ def check_ssh_config(ctx: DoctorCtx) -> Result:
 def check_git_overlay(ctx: DoctorCtx) -> Result:
     """Fork's git sees a translated ``~/.gitconfig``; the env overrides are valid."""
     try:
-        overrides = gitconfig.env_overrides(ctx.config)
+        overrides = gitconfig.env_overrides(
+            ctx.config, git_version=gitconfig.host_git_version(ctx.runner, ctx.env, ctx.paths.cache_dir)
+        )
     except ForkLinuxError as exc:
         return Result("fail", exc.message, exc.hint)
     count = overrides.get("GIT_CONFIG_COUNT", "0")
@@ -1097,6 +1332,12 @@ def check_git_overlay(ctx: DoctorCtx) -> Result:
     text = _read_text(gitconfig_file, HIVE_HEAD_BYTES) or ""
     if not overlay.is_file() or gitconfig.MARK_BEGIN not in text:
         return Result("warn", "the translated git config is not in place" + env_note, "run 'fork-linux doctor --fix'")
+    if gitconfig.MANAGED_HEADER.strip() not in repos.overlay_text(ctx.paths, ctx.user):
+        return Result(
+            "warn",
+            "the git overlay predates the remote-path and credential fixes" + env_note,
+            "run 'fork-linux doctor --fix'",
+        )
     return Result("ok", f"{overlay}{env_note}")
 
 
@@ -1307,6 +1548,10 @@ CHECKS: list[Check] = [
     Check("prefix.menubuilder", "Wine menu entries", "prefix", check_menubuilder, fixer=fix_menubuilder),
     Check("prefix.dpi", "DPI", "prefix", check_dpi, fix_steps=("display_dpi",)),
     Check(
+        "prefix.integration", "File manager and open redirects", "prefix", check_integration,
+        fix_steps=("host_integration",),
+    ),
+    Check(
         "fork.installed", "Fork installed", "fork", check_fork_installed, fix_steps=("fork_download", "fork_install")
     ),
     Check("fork.version", "Fork version", "fork", check_fork_version),
@@ -1315,6 +1560,13 @@ CHECKS: list[Check] = [
     Check("fork.settings", "Fork settings", "fork", check_fork_settings, fix_steps=("fork_settings",)),
     Check("fork.pending_update", "Pending Fork update", "fork", check_pending_update),
     Check("fork.log_signatures", "Fork log", "fork", check_log_signatures),
+    Check("fork.tools", "Fork terminal / diff / merge", "fork", check_fork_tools, fixer=fix_fork_tools),
+    Check("fork.source_dirs", "Fork source folder", "fork", check_source_dirs, fixer=fix_source_dirs),
+    Check("repo.hooks", "Repository hooks", "repo", check_repo_hooks),
+    Check("repo.symlinks", "Repository symlinks", "repo", check_repo_symlinks, fixer=fix_repo_symlinks),
+    Check("repo.submodules", "Repository submodules", "repo", check_repo_submodules),
+    Check("repo.remotes", "Repository remotes", "repo", check_repo_remotes, fix_steps=("git_overlay",)),
+    Check("repo.filemode", "Repository core.filemode", "repo", check_repo_filemode, fixer=fix_repo_filemode),
     Check("ssh.dir", "ssh keys", "ssh", check_ssh_dir, fix_steps=("ssh_sync",)),
     Check("ssh.config", "ssh config", "ssh", check_ssh_config, fix_steps=("ssh_sync",)),
     Check("git.overlay", "git config overlay", "git", check_git_overlay, fix_steps=("git_overlay",)),

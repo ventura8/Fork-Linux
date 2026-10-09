@@ -119,12 +119,11 @@ def test_apply_defaults(capsys: pytest.CaptureFixture[str], settings: Path) -> N
         "DisableHardwareAcceleration",
         "Theme",
         "FollowSystemTheme",
-        "LayoutScaling",
         "RepositoryManager.SourceDirectories",
     }
     assert result["backup"] is not None
     data = _read(settings)
-    assert data["Theme"] == 1 and data["LayoutScaling"] == 100
+    assert data["Theme"] == 1 and "LayoutScaling" not in data
     assert data["RepositoryManager"]["Other"] == 1
     code, out, _err = run_cli(capsys, "settings", "apply-defaults")
     assert (code, out) == (0, "nothing to change\n")
