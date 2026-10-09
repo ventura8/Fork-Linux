@@ -28,7 +28,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCANNER_IMAGE="${FL_SONAR_IMAGE:-sonarsource/sonar-scanner-cli:12.2.0.4256_8.1.0}"
 COVERAGE_XML="${ROOT}/artifacts/coverage/coverage.xml"
-COMPILE_DB="${ROOT}/build-sonar/compile_commands.json"
+C_COVERAGE_XML="${ROOT}/artifacts/coverage/c-coverage.xml"
 SONAR_HOST="https://sonarcloud.io"
 PROJECT_KEY="ventura8_Fork-Linux"
 
@@ -84,31 +84,22 @@ ensure_coverage() {
 	fi
 }
 
-# Sonar's C analyser needs a compile database; a native meson build gives one for
-# bridge/common, bridge/unix and the native unit tests (no MinGW needed).
-ensure_compile_db() {
-	if [[ -f "${COMPILE_DB}" ]]; then
-		return 0
-	fi
-	if command -v meson >/dev/null 2>&1 && [[ -f "${ROOT}/meson.build" ]]; then
-		echo "==> generating build-sonar/compile_commands.json (meson, native only)"
-		meson setup "${ROOT}/build-sonar" -Dbridge=disabled >/dev/null ||
-			echo "warning: meson setup failed; C sources will be skipped by the scanner." >&2
-	else
-		echo "==> note: no meson; C sources will be skipped by the scanner."
-	fi
-}
-
 run_scanner() {
-	local version
+	local version opts
 	version="$(python3 "${ROOT}/scripts/read-version.py")"
+	opts="-Dsonar.projectVersion=${version} -Dsonar.projectBaseDir=${ROOT}"
+	# The generic C coverage report is optional: without it Sonar would abort the scan.
+	if [[ ! -f "${C_COVERAGE_XML}" ]]; then
+		echo "==> note: ${C_COVERAGE_XML#"${ROOT}"/} is missing — analysing without C coverage."
+		opts="${opts} -Dsonar.coverageReportPaths="
+	fi
 	echo "==> sonar-scanner ${SCANNER_IMAGE} (project version ${version})"
-	# Mounted at the SAME absolute path as on the host: the meson compile database and
+	# Mounted at the SAME absolute path as on the host: the coverage reports and
 	# coverage.xml carry absolute paths, and Sonar matches them literally.
 	docker run --rm \
 		--user "$(id -u):$(id -g)" \
 		--env SONAR_TOKEN \
-		--env "SONAR_SCANNER_OPTS=-Dsonar.projectVersion=${version} -Dsonar.projectBaseDir=${ROOT}" \
+		--env "SONAR_SCANNER_OPTS=${opts}" \
 		--volume "${ROOT}:${ROOT}" \
 		--workdir "${ROOT}" \
 		"${SCANNER_IMAGE}"
@@ -120,6 +111,5 @@ if [[ "${1:-}" == "--check-token" ]]; then
 	exit 0
 fi
 ensure_coverage
-ensure_compile_db
 run_scanner
 echo "==> analysis submitted; results: ${SONAR_HOST}/project/overview?id=${PROJECT_KEY}"
