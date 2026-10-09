@@ -34,8 +34,7 @@ DEFAULT_MODE = 0o600
 _SECTCRE = configparser.RawConfigParser.SECTCRE
 _OPTCRE = configparser.RawConfigParser.OPTCRE
 _COMMENT_PREFIXES = ("#", ";")
-_LINE_RE = re.compile(r"[^\n]*\n|[^\n]+\Z")
-_KEY_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]*$")
+_KEY_NAME_RE = re.compile(r"^\w[\w.\-]*$", re.ASCII)
 
 
 @dataclass
@@ -90,7 +89,11 @@ def _validate(section: str, key: str, value: str | None = None) -> None:
 
 def split_lines(text: str) -> list[str]:
     """Split ``text`` into lines that keep their ``\\n`` (only ``\\n`` separates lines)."""
-    return _LINE_RE.findall(text)
+    pieces = text.split("\n")
+    lines = [piece + "\n" for piece in pieces[:-1]]
+    if pieces[-1]:
+        lines.append(pieces[-1])
+    return lines
 
 
 def _parse(lines: list[str]) -> list[_Section]:
@@ -115,11 +118,19 @@ def _parse(lines: list[str]) -> list[_Section]:
             section = _Section(header.group("header"), index + 1, len(lines))
             sections.append(section)
             continue
-        match = _OPTCRE.match(line.strip()) if section is not None else None
-        if match is not None and match.group("option").strip():
-            option = _Option(match.group("option").rstrip().lower(), index, index + 1)
-            section.options.append(option)
+        if section is not None:
+            option = _new_option(section, line, index)
     return sections
+
+
+def _new_option(section: _Section, line: str, index: int) -> _Option | None:
+    """The option that ``line`` (at ``index``) starts, added to ``section``; None if it starts none."""
+    match = _OPTCRE.match(line.strip())
+    if match is None or not match.group("option").strip():
+        return None
+    option = _Option(match.group("option").rstrip().lower(), index, index + 1)
+    section.options.append(option)
+    return option
 
 
 def _find_section(sections: list[_Section], name: str) -> _Section | None:

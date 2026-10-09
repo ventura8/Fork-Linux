@@ -34,7 +34,8 @@ VERSION_TIMEOUT = 30.0
 WINESERVER_FLAGS = ("-w", "-k")
 REG_TMP_DIR = "tmp"
 
-_VERSION_RE = re.compile(r"\bwine-([0-9]+(?:\.[0-9]+)*[^\s()]*)")
+# (?a:...) keeps the digits ASCII-only while \b and \s keep their Unicode meaning.
+_VERSION_RE = re.compile(r"\bwine-((?a:\d+(?:\.\d+)*)[^\s()]*)")
 _STAGING_RE = re.compile(r"staging", re.IGNORECASE)
 _FORBIDDEN_USER_CHARS = frozenset('/\\<>:"|?*')
 _REG_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")

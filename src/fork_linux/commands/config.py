@@ -17,6 +17,7 @@ from ..config import Config
 from ..errors import ForkLinuxError, UsageError
 
 FALLBACK_EDITORS = ("sensible-editor", "editor", "nano", "vi")
+_KEY_METAVAR = "SECTION.KEY"
 
 
 def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -31,16 +32,16 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     actions = parser.add_subparsers(dest="config_action", metavar="ACTION", title="actions", required=True)
 
     get = actions.add_parser("get", help="print the value of a setting")
-    get.add_argument("key", metavar="SECTION.KEY")
+    get.add_argument("key", metavar=_KEY_METAVAR)
     get.set_defaults(func=run_get)
 
     set_ = actions.add_parser("set", help="change a setting (comments in config.ini are kept)")
-    set_.add_argument("key", metavar="SECTION.KEY")
+    set_.add_argument("key", metavar=_KEY_METAVAR)
     set_.add_argument("value", metavar="VALUE", nargs=argparse.REMAINDER, help="the new value (may start with -)")
     set_.set_defaults(func=run_set)
 
     unset = actions.add_parser("unset", help="remove a setting from config.ini (back to its default)")
-    unset.add_argument("key", metavar="SECTION.KEY")
+    unset.add_argument("key", metavar=_KEY_METAVAR)
     unset.set_defaults(func=run_unset)
 
     list_ = actions.add_parser("list", help="show every setting, its value and where it comes from")
@@ -120,13 +121,18 @@ def run_list(args: argparse.Namespace, ctx: AppContext) -> int:
         _warn(problem)
     if ctx.json:
         ctx.print_json([_entry(config, section, key) for section, key, _value, _source in config.items()])
-        return 0
+    else:
+        _print_table(config)
+    return 0
+
+
+def _print_table(config: Config) -> None:
+    """Print every setting as an aligned ``NAME = value  (source)`` table."""
     rows = [(f"{section}.{key}", value, source) for section, key, value, source in config.items()]
     width = max(len(name) for name, _value, _source in rows)
     for name, value, source in rows:
         note = "" if source == config_mod.SOURCE_DEFAULT else f"  ({source})"
         print(f"{name:<{width}} = {value}{note}".rstrip())
-    return 0
 
 
 def run_path(args: argparse.Namespace, ctx: AppContext) -> int:

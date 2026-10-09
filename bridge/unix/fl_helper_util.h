@@ -58,8 +58,9 @@ void fl_hello_build(uint8_t out[FL_HELLO_LEN], const uint8_t client_nonce[FL_NON
 /* Validate a HELLO payload (length, magic "FLB1", version 1); copies the client nonce. */
 int fl_hello_parse(const uint8_t *p, size_t n, uint8_t client_nonce[FL_NONCE_LEN]);
 /*
- * HMAC-SHA256(key, "fl-bridge-v1|daemon|" || cn || sn) when daemon_side != 0, else
- * HMAC-SHA256(key, "fl-bridge-v1|client|" || cn || sn).
+ * The handshake MAC: HMAC-SHA256 keyed with key over the label "fl-bridge-v1|daemon|"
+ * (daemon_side non-zero) or "fl-bridge-v1|client|", followed by the client nonce cn and
+ * the server nonce sn.
  */
 void fl_auth_mac(const uint8_t key[FL_KEY_LEN], int daemon_side, const uint8_t cn[FL_NONCE_LEN],
                  const uint8_t sn[FL_NONCE_LEN], uint8_t out[FL_MAC_LEN]);

@@ -326,7 +326,8 @@ def test_menu_entry_validates(paths: Paths, env: dict[str, str], runner: Recordi
         pytest.skip("desktop-file-validate is not installed")
     _install(paths, env, runner, exec_cmd=["/opt/My Apps/fork-linux"], file_managers="none")
     result = subprocess.run([validator, str(_dirs(env).menu_file)], capture_output=True, text=True, check=False)
-    assert result.returncode == 0 and result.stdout == "", result.stdout + result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == "", result.stdout + result.stderr
 
 
 def test_menu_entry_without_absolute_command(paths: Paths, env: dict[str, str], runner: RecordingRunner) -> None:
@@ -411,10 +412,12 @@ def test_file_manager_templates(paths: Paths, env: dict[str, str], runner: Recor
     assert "Name=Open in Fork" in nemo
     assert 'Exec="/opt/fl dir/fork-linux" open --from-file-manager %F' in nemo
     fma = dirs.kind_path(di.FMA).read_text(encoding="utf-8")
-    assert "Type=Action" in fma and "Name=Open in Fork" in fma
+    assert "Type=Action" in fma
+    assert "Name=Open in Fork" in fma
     assert 'Exec="/opt/fl dir/fork-linux" open --from-file-manager %f' in fma
     dolphin = dirs.kind_path(di.DOLPHIN).read_text(encoding="utf-8")
-    assert "X-KDE-ServiceTypes=KonqPopupMenu/Plugin" in dolphin and "ServiceTypes=KonqPopupMenu/Plugin" in dolphin
+    assert "X-KDE-ServiceTypes=KonqPopupMenu/Plugin" in dolphin
+    assert "ServiceTypes=KonqPopupMenu/Plugin" in dolphin
     assert "MimeType=inode/directory;all/allfiles;" in dolphin
     script = dirs.kind_path(di.NAUTILUS_SCRIPT).read_text(encoding="utf-8")
     assert script.startswith("#!/bin/sh\n")
@@ -580,7 +583,8 @@ def test_thunar_created_file_is_removed_with_its_backup(
     assert backup.exists()
     assert _registry(paths)[str(dirs.thunar_uca)]["created"] is True
     assert di.remove(paths, env, runner=runner) == [dirs.thunar_uca]
-    assert not dirs.thunar_uca.exists() and not backup.exists()
+    assert not dirs.thunar_uca.exists()
+    assert not backup.exists()
 
 
 def test_remove_thunar_edge_cases(tmp_path: Path) -> None:
@@ -824,13 +828,16 @@ def test_remove_never_leaves_the_user_dirs(
 
 def test_status(paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path) -> None:
     empty = di.status(paths, env)
-    assert empty["installed"] is False and empty["entries"] == [] and empty["ok"] is True
+    assert empty["installed"] is False
+    assert empty["entries"] == []
+    assert empty["ok"] is True
     assert empty["system_desktop"] is None
     target = _launcher(tmp_path)
     dirs = _dirs(env)
     _install(paths, env, runner, file_managers="nemo,thunar", cli_alias=True, exec_cmd=[str(target)])
     result = di.status(paths, env)
-    assert result["installed"] and result["ok"]
+    assert result["installed"]
+    assert result["ok"]
     assert result["launcher"] == di.launcher_command(env)
     assert {e["kind"]: e["state"] for e in result["entries"]} == {
         di.MENU: "ok", di.NEMO: "ok", di.THUNAR: "ok", di.CLI_ALIAS: "ok",

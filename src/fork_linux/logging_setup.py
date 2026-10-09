@@ -40,7 +40,7 @@ _RULES: tuple[tuple[re.Pattern[str], str | Callable[[re.Match[str]], str]], ...]
         "[redacted private key]",
     ),
     (re.compile(r"\b(gh[pousr]_)[A-Za-z0-9]{16,}"), r"\1" + MASK),
-    (re.compile(r"\b(github_pat_)[A-Za-z0-9_]{16,}"), r"\1" + MASK),
+    (re.compile(r"\b(github_pat_)(?a:\w{16,})"), r"\1" + MASK),
     (re.compile(r"\b(glpat-)[A-Za-z0-9_\-]{16,}"), r"\1" + MASK),
     (
         re.compile(r"(?i)\b(authorization\s*:\s*)(?:(basic|bearer|token|digest|negotiate)\s+)?[^\s'\",;]+"),
@@ -137,10 +137,10 @@ def _console_level(verbose: int) -> int:
 def reset() -> None:
     """Remove and close every handler :func:`configure` installed."""
     logger = logging.getLogger(LOGGER_NAME)
-    for handler in list(logger.handlers):
-        if getattr(handler, _OWNED, False):
-            logger.removeHandler(handler)
-            handler.close()
+    owned = [handler for handler in logger.handlers if getattr(handler, _OWNED, False)]
+    for handler in owned:
+        logger.removeHandler(handler)
+        handler.close()
 
 
 def configure(paths: Paths, verbose: int = 0) -> logging.Logger:

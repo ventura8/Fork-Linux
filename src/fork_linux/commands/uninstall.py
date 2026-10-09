@@ -114,6 +114,31 @@ def _remove(path: Path, removed: list[str], *, marker: Path | None = None) -> No
     removed.append(str(path))
 
 
+def _purge_prefix(paths: Paths, home: Path, removed: list[str], kept: list[str]) -> None:
+    """Delete the Wine prefix when it is ours; note it as kept when it is not."""
+    if not os.path.lexists(paths.prefix):
+        return
+    if _never_deleted(paths.prefix, home):
+        kept.append(str(paths.prefix))
+    elif os.path.lexists(paths.created_by_marker):
+        _remove(paths.prefix, removed, marker=paths.created_by_marker)
+    elif not _inside(paths.prefix, paths.data_dir):
+        kept.append(str(paths.prefix))
+
+
+def _purge_cache_keeping_downloads(paths: Paths, removed: list[str], kept: list[str]) -> None:
+    """Empty the cache directory except for the downloads directory."""
+    try:
+        names = sorted(os.listdir(paths.cache_dir))
+    except OSError:
+        names = []
+    for name in names:
+        if paths.cache_dir / name != paths.downloads_dir:
+            _remove(paths.cache_dir / name, removed)
+    if os.path.lexists(paths.downloads_dir):
+        kept.append(str(paths.downloads_dir))
+
+
 def _purge(ctx: AppContext, args: argparse.Namespace) -> dict[str, Any]:
     """Delete everything we created (Fork must be closed); return what was removed and kept."""
     paths = ctx.paths
@@ -123,23 +148,9 @@ def _purge(ctx: AppContext, args: argparse.Namespace) -> dict[str, Any]:
     kept: list[str] = []
     with FileLock(paths.lock_file, "uninstall"):
         stopped = _stop_wine(ctx)
-        if os.path.lexists(paths.prefix):
-            if _never_deleted(paths.prefix, home):
-                kept.append(str(paths.prefix))
-            elif os.path.lexists(paths.created_by_marker):
-                _remove(paths.prefix, removed, marker=paths.created_by_marker)
-            elif not _inside(paths.prefix, paths.data_dir):
-                kept.append(str(paths.prefix))
+        _purge_prefix(paths, home, removed, kept)
         if args.keep_downloads:
-            try:
-                names = sorted(os.listdir(paths.cache_dir))
-            except OSError:
-                names = []
-            for name in names:
-                if paths.cache_dir / name != paths.downloads_dir:
-                    _remove(paths.cache_dir / name, removed)
-            if os.path.lexists(paths.downloads_dir):
-                kept.append(str(paths.downloads_dir))
+            _purge_cache_keeping_downloads(paths, removed, kept)
         else:
             _remove(paths.cache_dir, removed)
         for directory in (paths.data_dir, paths.state_dir, paths.config_dir):
@@ -161,14 +172,19 @@ def run(args: argparse.Namespace, ctx: AppContext) -> int:
         result.update(_purge(ctx, args))
     if ctx.json:
         ctx.print_json(result)
-        return 0
-    print(f"removed {len(integration)} desktop integration file(s)")
-    if not args.purge:
+    else:
+        _print_result(result, len(integration))
+    return 0
+
+
+def _print_result(result: dict[str, Any], integration_count: int) -> None:
+    """Describe what the uninstall removed and kept."""
+    print(f"removed {integration_count} desktop integration file(s)")
+    if not result["purged"]:
         print("Fork, its Wine prefix and your settings were kept; 'fork-linux uninstall --purge' deletes them")
-        return 0
+        return
     for path in result["removed"]:
         print(f"deleted {path}")
     for path in result["kept"]:
         print(f"kept {path}")
     print("~/.wine was never touched; remove the fork-linux package with your package manager")
-    return 0

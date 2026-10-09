@@ -88,13 +88,12 @@ def run_list(args: argparse.Namespace, ctx: AppContext) -> int:
     snaps = snapshots.list_snapshots(ctx.paths)
     if ctx.json:
         ctx.print_json([_as_dict(snap) for snap in snaps])
-        return 0
-    if not snaps:
+    elif not snaps:
         print("no snapshots")
-        return 0
-    print(f"{'ID':<34} {'VERSION':<10} {'METHOD':<9} CREATED")
-    for snap in snaps:
-        print(f"{snap.id:<34} {snap.fork_version:<10} {snap.method:<9} {snap.created}")
+    else:
+        print(f"{'ID':<34} {'VERSION':<10} {'METHOD':<9} CREATED")
+        for snap in snaps:
+            print(f"{snap.id:<34} {snap.fork_version:<10} {snap.method:<9} {snap.created}")
     return 0
 
 
@@ -184,15 +183,20 @@ def run_rollback(args: argparse.Namespace, ctx: AppContext) -> int:
     }
     if ctx.json:
         ctx.print_json(result)
-        return 0
+    else:
+        _print_rollback(snap, saved, pinned=not args.no_pin)
+    return 0
+
+
+def _print_rollback(snap: snapshots.Snapshot, saved: snapshots.Snapshot | None, *, pinned: bool) -> None:
+    """Describe a finished rollback as text."""
     print(f"restored Fork {snap.fork_version} from snapshot {snap.id}")
     if saved is not None:
         print(f"Fork {saved.fork_version} was saved first as snapshot {saved.id}")
-    if args.no_pin:
-        print("Fork may update itself again; 'fork-linux config set fork.update_policy pinned' stops that")
-    else:
+    if pinned:
         print(
             f"Fork is pinned to {snap.fork_version}; 'fork-linux config set fork.update_policy auto' "
             "allows updates again"
         )
-    return 0
+    else:
+        print("Fork may update itself again; 'fork-linux config set fork.update_policy pinned' stops that")

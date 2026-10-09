@@ -32,7 +32,7 @@ MAX_INSTALLER_SIZE = 300 * MiB
 MIN_TOFU_SIZE = 20 * MiB
 INSTALL_TIMEOUT = 900
 SOURCES = ("default", "requested", "latest")
-_PLAIN_VERSION = re.compile(r"[0-9]{1,6}(?:\.[0-9]{1,6}){0,3}")
+_PLAIN_VERSION = re.compile(r"\d{1,6}(?:\.\d{1,6}){0,3}", re.ASCII)
 
 
 @dataclass(frozen=True)

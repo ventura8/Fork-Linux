@@ -119,6 +119,7 @@ int main(int argc, char **argv)
     test_shquote();
     test_proto();
     test_translate();
+    test_translate_cov();
     printf("1..%u\n", g_count);
     if (g_failed > 0) {
         tap_diag("%u of %u checks failed", g_failed, g_count);

@@ -45,8 +45,8 @@ MAX_BACKOFF = 8.0
 
 _SHA256 = re.compile(r"[0-9a-fA-F]{64}")
 _UA_VERSION = re.compile(r"[0-9A-Za-z.+_-]{1,64}")
-_DIGITS = re.compile(r"[0-9]{1,18}")
-_CONTENT_RANGE = re.compile(r"bytes ([0-9]{1,18})-[0-9]{1,18}/([0-9]{1,18}|\*)")
+_DIGITS = re.compile(r"\d{1,18}", re.ASCII)
+_CONTENT_RANGE = re.compile(r"bytes (\d{1,18})-\d{1,18}/(\d{1,18}|\*)", re.ASCII)
 _NETWORK_HINT = "check your network connection and proxy settings; the partial download is kept and resumes next time"
 _CLIENT_HINTS = {
     401: "the server asked for credentials; downloads never need any, so check proxy settings",
@@ -220,6 +220,72 @@ def _cache_hit(dest: Path, sha256: str | None, size: int | None) -> bool:
     return size is not None and dest.stat().st_size == size
 
 
+def _exceeds(count: int, size: int | None, max_size: int | None) -> bool:
+    """True when ``count`` bytes is more than the expected ``size`` or the ``max_size`` cap."""
+    return (size is not None and count > size) or (max_size is not None and count > max_size)
+
+
+def _open_response(opener: urllib.request.OpenerDirector, url: str, part: Path, offset: int, timeout: float) -> Any:
+    """Request ``url`` from ``offset`` on; a rejected resume range drops ``part`` and asks for a restart."""
+    headers = {"Range": f"bytes={offset}-"} if offset else {}
+    try:
+        return opener.open(make_request(url, headers=headers), timeout=timeout)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 416 and offset:
+            exc.close()
+            _discard(part)
+            raise http.client.HTTPException("the server rejected the resume range; restarting") from None
+        raise
+
+
+def _body_start(response: Any, part: Path, offset: int) -> tuple[int, int | None, Any]:
+    """Where the body starts (0 unless the server resumed), its announced total size and the running hash."""
+    if offset and response.status == 206:
+        match = _CONTENT_RANGE.fullmatch(response.headers.get("Content-Range", "").strip())
+        if match is None or int(match.group(1)) != offset:
+            _discard(part)
+            raise http.client.HTTPException("the server answered with an unexpected Content-Range; restarting")
+        total = None if match.group(2) == "*" else int(match.group(2))
+        return offset, total, _hash_file(part)
+    return 0, parse_length(response.headers.get("Content-Length")), hashlib.sha256()
+
+
+def _check_announced(url: str, part: Path, total: int | None, size: int | None, max_size: int | None) -> None:
+    """Refuse a body whose announced ``total`` is not the expected ``size`` or is over ``max_size``."""
+    if total is None:
+        return
+    if (size is not None and total != size) or (max_size is not None and total > max_size):
+        _discard(part)
+        raise IntegrityFailed(
+            f"{url} has the wrong size: the server announced {total} bytes, expected "
+            f"{size if size is not None else f'at most {max_size}'}",
+            hint="the upstream file changed or the download was tampered with; nothing was installed",
+        )
+
+
+def _stream(
+    response: Any,
+    out: Any,
+    hasher: Any,
+    written: int,
+    expected: int | None,
+    limits: tuple[int | None, int | None],
+    progress: Callable[[int, int | None], None] | None,
+) -> tuple[int, bool]:
+    """Copy the body into ``out``; return the byte count and whether it went over ``limits`` (size, max)."""
+    if progress is not None:
+        progress(written, expected)
+    for chunk in iter(lambda: response.read(CHUNK_SIZE), b""):
+        written += len(chunk)
+        if _exceeds(written, *limits):
+            return written, True
+        hasher.update(chunk)
+        out.write(chunk)
+        if progress is not None:
+            progress(written, expected)
+    return written, False
+
+
 def _transfer(
     opener: urllib.request.OpenerDirector,
     url: str,
@@ -238,50 +304,13 @@ def _transfer(
     if size is not None and offset == size and offset:
         return _Transfer(_hash_file(part).hexdigest(), True)
 
-    headers = {"Range": f"bytes={offset}-"} if offset else {}
-    try:
-        response = opener.open(make_request(url, headers=headers), timeout=timeout)
-    except urllib.error.HTTPError as exc:
-        if exc.code == 416 and offset:
-            exc.close()
-            _discard(part)
-            raise http.client.HTTPException("the server rejected the resume range; restarting") from None
-        raise
-
+    response = _open_response(opener, url, part, offset, timeout)
     with response:
-        if offset and response.status == 206:
-            match = _CONTENT_RANGE.fullmatch(response.headers.get("Content-Range", "").strip())
-            if match is None or int(match.group(1)) != offset:
-                _discard(part)
-                raise http.client.HTTPException("the server answered with an unexpected Content-Range; restarting")
-            total = None if match.group(2) == "*" else int(match.group(2))
-            hasher = _hash_file(part)
-        else:
-            offset = 0
-            total = parse_length(response.headers.get("Content-Length"))
-            hasher = hashlib.sha256()
-        if total is not None and ((size is not None and total != size) or (max_size is not None and total > max_size)):
-            _discard(part)
-            raise IntegrityFailed(
-                f"{url} has the wrong size: the server announced {total} bytes, expected "
-                f"{size if size is not None else f'at most {max_size}'}",
-                hint="the upstream file changed or the download was tampered with; nothing was installed",
-            )
+        offset, total, hasher = _body_start(response, part, offset)
+        _check_announced(url, part, total, size, max_size)
         expected = total if total is not None else size
-        written = offset
-        overflow = False
         with _open_part(part, append=offset > 0) as out:
-            if progress is not None:
-                progress(written, expected)
-            for chunk in iter(lambda: response.read(CHUNK_SIZE), b""):
-                written += len(chunk)
-                if (size is not None and written > size) or (max_size is not None and written > max_size):
-                    overflow = True
-                    break
-                hasher.update(chunk)
-                out.write(chunk)
-                if progress is not None:
-                    progress(written, expected)
+            written, overflow = _stream(response, out, hasher, offset, expected, (size, max_size), progress)
             out.flush()
             os.fsync(out.fileno())
     if overflow:
@@ -317,6 +346,17 @@ def _retryable(exc: OSError | http.client.HTTPException, url: str, cache: Path) 
     raise DownloadFailed(
         f"downloading {url} failed: {exc}", hint=f"check free disk space and permissions of {cache}"
     ) from None
+
+
+def _wait_or_give_up(
+    error: BaseException, url: str, attempt: int, retries: int, pause: Callable[[float], None]
+) -> None:
+    """Back off before the next attempt; raise :class:`DownloadFailed` once ``retries`` are used up."""
+    if attempt >= retries:
+        raise DownloadFailed(
+            f"downloading {url} failed after {attempt + 1} attempt(s): {_describe(error)}", hint=_NETWORK_HINT
+        ) from None
+    pause(min(2.0**attempt, MAX_BACKOFF))
 
 
 def fetch(
@@ -362,12 +402,7 @@ def fetch(
             cache.mkdir(parents=True, exist_ok=True)
             result = _transfer(opener, url, part, size=size, max_size=max_size, timeout=timeout, progress=progress)
         except (OSError, http.client.HTTPException) as exc:
-            error = _retryable(exc, url, cache)
-            if attempt >= retries:
-                raise DownloadFailed(
-                    f"downloading {url} failed after {attempt + 1} attempt(s): {_describe(error)}", hint=_NETWORK_HINT
-                ) from None
-            pause(min(2.0**attempt, MAX_BACKOFF))
+            _wait_or_give_up(_retryable(exc, url, cache), url, attempt, retries, pause)
             attempt += 1
             continue
         if expected_sha is None or result.digest == expected_sha:

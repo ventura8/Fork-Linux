@@ -33,10 +33,10 @@ FEED_FILE = "feed.json"
 META_FILE = "feed.meta.json"
 TYPES = ("Full", "Delta")
 
-_FILENAME = re.compile(r"Fork-([0-9]{1,6}(?:\.[0-9]{1,6}){0,3})-(full|delta)\.nupkg")
+_FILENAME = re.compile(r"Fork-(\d{1,6}(?:\.\d{1,6}){0,3})-(full|delta)\.nupkg", re.ASCII)
 _SHA1 = re.compile(r"[0-9a-fA-F]{40}")
 _SHA256 = re.compile(r"[0-9a-fA-F]{64}")
-_SIZE = re.compile(r"[0-9]{1,15}")
+_SIZE = re.compile(r"\d{1,15}", re.ASCII)
 _HINT = "Fork's update feed looks malformed; try again later or report it to ventura8/Fork-Linux"
 _BOM = "\ufeff"
 
@@ -71,6 +71,16 @@ def _reject_constant(name: str) -> Any:
     raise ValueError(f"{name} is not allowed")
 
 
+def _check_digests(where: str, sha256: Any, sha1: Any, size: Any) -> None:
+    """Validate an asset's ``SHA256``, optional ``SHA1`` and ``Size``."""
+    if not isinstance(sha256, str) or _SHA256.fullmatch(sha256) is None:
+        raise _bad(f"{where}: invalid SHA256")
+    if sha1 is not None and (not isinstance(sha1, str) or _SHA1.fullmatch(sha1) is None):
+        raise _bad(f"{where}: invalid SHA1")
+    if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
+        raise _bad(f"{where}: invalid Size {size!r}")
+
+
 def _json_asset(index: int, raw: Any) -> FeedAsset:
     where = f"Assets[{index}]"
     if not isinstance(raw, dict):
@@ -90,12 +100,7 @@ def _json_asset(index: int, raw: Any) -> FeedAsset:
     match = _FILENAME.fullmatch(filename) if isinstance(filename, str) else None
     if match is None or match.group(1) != version or match.group(2) != kind.lower():
         raise _bad(f"{where}: FileName {filename!r} does not match Version {version} / Type {kind}")
-    if not isinstance(sha256, str) or _SHA256.fullmatch(sha256) is None:
-        raise _bad(f"{where}: invalid SHA256")
-    if sha1 is not None and (not isinstance(sha1, str) or _SHA1.fullmatch(sha1) is None):
-        raise _bad(f"{where}: invalid SHA1")
-    if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
-        raise _bad(f"{where}: invalid Size {size!r}")
+    _check_digests(where, sha256, sha1, size)
     return FeedAsset(
         version=version,
         type=kind,
@@ -208,6 +213,18 @@ def _read_capped(response: Any, url: str) -> bytes:
     return body
 
 
+def _conditional_headers(cached: str | None, meta: dict[str, Any]) -> dict[str, str]:
+    """``If-None-Match`` / ``If-Modified-Since`` for revalidating a cached copy."""
+    headers: dict[str, str] = {}
+    if cached is None:
+        return headers
+    if isinstance(meta.get("etag"), str):
+        headers["If-None-Match"] = meta["etag"]
+    if isinstance(meta.get("last_modified"), str):
+        headers["If-Modified-Since"] = meta["last_modified"]
+    return headers
+
+
 def fetch_feed(
     url: str,
     cache_dir: Path,
@@ -239,12 +256,7 @@ def fetch_feed(
     if cached is not None and 0 <= time.time() - meta["fetched_at"] < max_age:
         return cached
 
-    headers: dict[str, str] = {}
-    if cached is not None and isinstance(meta.get("etag"), str):
-        headers["If-None-Match"] = meta["etag"]
-    if cached is not None and isinstance(meta.get("last_modified"), str):
-        headers["If-Modified-Since"] = meta["last_modified"]
-    request = download.make_request(url, headers=headers)
+    request = download.make_request(url, headers=_conditional_headers(cached, meta))
     active = download.build_opener(chosen, host) if opener is None else opener
     try:
         with active.open(request, timeout=timeout) as response:

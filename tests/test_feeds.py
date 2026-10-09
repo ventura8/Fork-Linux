@@ -85,8 +85,9 @@ def test_exact_duplicates_are_dropped_and_conflicts_rejected() -> None:
     doc["Assets"].append(copy.deepcopy(doc["Assets"][0]))
     assert len(feeds.parse_releases_json(json.dumps(doc))) == 4
     doc["Assets"][-1]["SHA256"] = "0" * 64
+    text = json.dumps(doc)
     with pytest.raises(IntegrityFailed, match="conflicting entries for Fork-2.23.2-full.nupkg"):
-        feeds.parse_releases_json(json.dumps(doc))
+        feeds.parse_releases_json(text)
 
 
 @pytest.mark.parametrize(
@@ -143,8 +144,9 @@ def test_garbage_documents(text: str) -> None:
     ids=lambda c: repr(c)[:50],
 )
 def test_invalid_assets(changes: dict[str, Any]) -> None:
+    text = one_asset(**changes)
     with pytest.raises(IntegrityFailed, match=r"Assets\[0\]"):
-        feeds.parse_releases_json(one_asset(**changes))
+        feeds.parse_releases_json(text)
 
 
 # -- legacy RELEASES -------------------------------------------------------------------------
@@ -365,8 +367,9 @@ def test_304_without_a_cache_is_an_error(tmp_path: Path) -> None:
         def open(self, request: Any, timeout: float = 0) -> Any:
             raise urllib.error.HTTPError(request.full_url, 304, "Not Modified", {}, None)
 
+    opener = NotModified()
     with pytest.raises(DownloadFailed, match="HTTP 304"):
-        feeds.fetch_feed("https://git-fork.com/update/win/releases.win.json", tmp_path, opener=NotModified())
+        feeds.fetch_feed("https://git-fork.com/update/win/releases.win.json", tmp_path, opener=opener)
 
 
 def test_network_errors(tmp_path: Path) -> None:
@@ -374,8 +377,9 @@ def test_network_errors(tmp_path: Path) -> None:
         def open(self, request: Any, timeout: float = 0) -> Any:
             raise urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))
 
+    opener = Refused()
     with pytest.raises(DownloadFailed, match="Connection refused") as info:
-        feeds.fetch_feed("https://git-fork.com/update/win/releases.win.json", tmp_path, opener=Refused())
+        feeds.fetch_feed("https://git-fork.com/update/win/releases.win.json", tmp_path, opener=opener)
     assert "network" in info.value.hint
 
 
@@ -482,8 +486,9 @@ def test_default_cap_is_five_megabytes() -> None:
 
 def test_non_utf8_feed(http_server: FakeHTTPServer, tmp_path: Path) -> None:
     http_server.add("/feed", b"\xff\xfe\x00garbage")
+    url = http_server.url("/feed")
     with pytest.raises(IntegrityFailed, match="not UTF-8"):
-        feeds.fetch_feed(http_server.url("/feed"), tmp_path, policy=LOOP)
+        feeds.fetch_feed(url, tmp_path, policy=LOOP)
 
 
 def test_validate_runs_before_caching(http_server: FakeHTTPServer, tmp_path: Path) -> None:

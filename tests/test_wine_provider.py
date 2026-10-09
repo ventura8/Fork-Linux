@@ -236,8 +236,9 @@ def test_install_managed_cleans_up_after_a_corrupt_archive(
     corrupt.write_bytes(b"not an archive at all")
     monkeypatch.setattr(download, "fetch", FakeFetch(corrupt))
     build = _build(corrupt)
+    runner = _wine_runner()
     with pytest.raises(IntegrityFailed, match="cannot read archive"):
-        wine_provider.install_managed(build, paths, _wine_runner())
+        wine_provider.install_managed(build, paths, runner)
     store = paths.runtimes_dir / "wine"
     assert list(store.iterdir()) == []
 
@@ -248,22 +249,25 @@ def test_install_managed_requires_wine_and_wineserver(
 ) -> None:
     broken = _tar(tmp_path / "broken.tar.xz", _wine_tree(**{missing: "DELETE"}))
     monkeypatch.setattr(download, "fetch", FakeFetch(broken))
+    build, runner = _build(broken), _wine_runner()
     with pytest.raises(IntegrityFailed, match="has no bin/wine and bin/wineserver") as info:
-        wine_provider.install_managed(_build(broken), paths, _wine_runner())
+        wine_provider.install_managed(build, paths, runner)
     assert "strip_components" in info.value.hint
     assert list((paths.runtimes_dir / "wine").iterdir()) == []
 
 
 def test_install_managed_rejects_a_version_mismatch(paths: Paths, archive: Path, fetch: FakeFetch) -> None:
+    build, runner = _build(archive), _wine_runner("wine-10.0\n")
     with pytest.raises(IntegrityFailed, match="reports version 10.0, but the manifest pins 11.0"):
-        wine_provider.install_managed(_build(archive), paths, _wine_runner("wine-10.0\n"))
+        wine_provider.install_managed(build, paths, runner)
     assert list((paths.runtimes_dir / "wine").iterdir()) == []
 
 
 def test_install_managed_when_wine_does_not_run(paths: Paths, archive: Path, fetch: FakeFetch) -> None:
     runner = RecordingRunner({"wine": Completed([], 127, "", "libfoo.so: cannot open\n")})
+    build = _build(archive)
     with pytest.raises(WineUnavailable, match="libfoo"):
-        wine_provider.install_managed(_build(archive), paths, runner)
+        wine_provider.install_managed(build, paths, runner)
     assert not wine_provider.managed_root(paths, BUILD_ID).exists()
 
 
@@ -403,7 +407,8 @@ def test_system_wine_wow64_through_symlink(tmp_path: Path) -> None:
     runner = WhichRunner({"wine": "wine-11.0 (Staging)\n"}, {"wine": str(usr / "bin" / "wine"), "wineserver": None})
     info = wine_provider.system_wine(runner, {}, "9.0")
     assert info is not None
-    assert info.root == usr and info.wine == usr / "bin" / "wine"
+    assert info.root == usr
+    assert info.wine == usr / "bin" / "wine"
     assert info.wow64 is True
 
 
@@ -423,7 +428,8 @@ def test_system_wine_wineserver_fallbacks(tmp_path: Path, monkeypatch: pytest.Mo
     monkeypatch.setattr(wine_provider, "SYSTEM_WINESERVER_FALLBACKS", (first, second))
     runner = WhichRunner({"wine": "wine-9.0\n"}, {"wine": str(usr / "bin" / "wine"), "wineserver": None})
     info = wine_provider.system_wine(runner, {}, "9.0")
-    assert info is not None and info.wineserver == second
+    assert info is not None
+    assert info.wineserver == second
 
 
 def test_system_wine_without_wineserver(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -507,8 +513,9 @@ def test_custom_wine(tmp_path: Path, use_binary: bool) -> None:
     ],
 )
 def test_custom_wine_unusable(tmp_path: Path, make: Callable[[Path], Path]) -> None:
+    runner, wine = RecordingRunner(), make(tmp_path)
     with pytest.raises(WineUnavailable, match="no usable Wine at"):
-        wine_provider.custom_wine(RecordingRunner(), {}, make(tmp_path))
+        wine_provider.custom_wine(runner, {}, wine)
 
 
 # --------------------------------------------------------------------------- resolve
@@ -533,13 +540,16 @@ def test_resolve_managed_installed(paths: Paths) -> None:
     info = wine_provider.resolve(_config(paths), pinned, paths, runner, {})
     assert info == wine_provider.managed_info(pinned.wine_default, root)
     assert info.wine == root / "bin" / "wine"
-    assert info.staging is True and info.wow64 is True and info.version == "11.0"
+    assert info.staging is True
+    assert info.wow64 is True
+    assert info.version == "11.0"
     assert runner.calls == []
 
 
 def test_resolve_managed_not_installed(paths: Paths) -> None:
+    config, pins, runner = _config(paths), _manifest(), RecordingRunner()
     with pytest.raises(WineUnavailable, match="is not installed") as info:
-        wine_provider.resolve(_config(paths), _manifest(), paths, RecordingRunner(), {})
+        wine_provider.resolve(config, pins, paths, runner, {})
     assert info.value.hint == "run 'fork-linux setup'"
 
 
@@ -569,15 +579,17 @@ def test_resolve_managed_configured_build(paths: Paths) -> None:
 
 
 def test_resolve_managed_unknown_build(paths: Paths) -> None:
+    config, pins, runner = _config(paths, {("wine", "build"): "nope"}), _manifest(), RecordingRunner()
     with pytest.raises(NotFound):
-        wine_provider.resolve(_config(paths, {("wine", "build"): "nope"}), _manifest(), paths, RecordingRunner(), {})
+        wine_provider.resolve(config, pins, paths, runner, {})
 
 
 def test_resolve_managed_known_bad_build(paths: Paths) -> None:
     bad = dict(manifest.load().as_dict()["wine"]["builds"][BUILD_ID], status="known-bad")
     config = _config(paths, {("wine", "build"): "bad-1"})
+    pins, runner = _manifest({"bad-1": bad}), RecordingRunner()
     with pytest.raises(WineUnavailable, match="known-bad") as info:
-        wine_provider.resolve(config, _manifest({"bad-1": bad}), paths, RecordingRunner(), {})
+        wine_provider.resolve(config, pins, paths, runner, {})
     assert "config unset wine.build" in info.value.hint
 
 
@@ -605,8 +617,9 @@ def test_resolve_system_staging_from_config(paths: Paths, tmp_path: Path, caplog
 
 def test_resolve_system_missing(paths: Paths) -> None:
     runner = RecordingRunner({}, {"wine": None})
+    config, pins = _config(paths), _manifest()
     with pytest.raises(WineUnavailable, match="no usable system Wine: need 'wine' 9.0 or newer"):
-        wine_provider.resolve(_config(paths), _manifest(), paths, runner, {}, choice="system")
+        wine_provider.resolve(config, pins, paths, runner, {}, choice="system")
 
 
 def test_resolve_flatpak_choice(paths: Paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -620,8 +633,9 @@ def test_resolve_flatpak_choice(paths: Paths, tmp_path: Path, monkeypatch: pytes
 
 
 def test_resolve_flatpak_choice_outside_flatpak(paths: Paths) -> None:
+    config, pins, runner = _config(paths), _manifest(), RecordingRunner()
     with pytest.raises(WineUnavailable, match="only works inside"):
-        wine_provider.resolve(_config(paths), _manifest(), paths, RecordingRunner(), {}, choice="flatpak")
+        wine_provider.resolve(config, pins, paths, runner, {}, choice="flatpak")
 
 
 def test_resolve_prefers_flatpak_wine_by_default(paths: Paths, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -674,8 +688,9 @@ def test_resolve_custom_path(paths: Paths, tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("choice", ["wine-9", "relative/path", "Managed"])
 def test_resolve_unknown_choice(paths: Paths, choice: str) -> None:
+    config, pins, runner = _config(paths), _manifest(), RecordingRunner()
     with pytest.raises(UsageError, match="unknown Wine provider"):
-        wine_provider.resolve(_config(paths), _manifest(), paths, RecordingRunner(), {}, choice=choice)
+        wine_provider.resolve(config, pins, paths, runner, {}, choice=choice)
 
 
 def test_resolve_empty_choice_means_config(paths: Paths) -> None:

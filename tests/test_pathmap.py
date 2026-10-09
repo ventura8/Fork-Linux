@@ -144,8 +144,9 @@ def test_unix_to_win_unmapped_path() -> None:
 
 
 def test_unix_to_win_empty_path() -> None:
+    pmap = PathMap.with_drives({"z": "/"})
     with pytest.raises(UsageError):
-        PathMap.with_drives({"z": "/"}).unix_to_win("")
+        pmap.unix_to_win("")
 
 
 @pytest.mark.parametrize(
@@ -168,11 +169,13 @@ def test_unix_to_win_rejects_undecodable_names() -> None:
 
 
 def test_unix_to_win_errors_do_not_echo_control_sequences() -> None:
+    root_map = PathMap.with_drives({"z": "/"})
     with pytest.raises(UsageError) as info:
-        PathMap.with_drives({"z": "/"}).unix_to_win("/tmp/\x1b[31mred")
+        root_map.unix_to_win("/tmp/\x1b[31mred")
     assert "\x1b" not in str(info.value)
+    c_map = PathMap.with_drives({"c": "/srv/c"})
     with pytest.raises(UsageError) as info:
-        PathMap.with_drives({"c": "/srv/c"}).unix_to_win("/tmp/\x1b[31mred")
+        c_map.unix_to_win("/tmp/\x1b[31mred")
     assert "\x1b" not in str(info.value)
 
 

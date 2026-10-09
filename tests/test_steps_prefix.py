@@ -68,8 +68,10 @@ def test_run_wine_installs_and_records(xdg: Path, monkeypatch: pytest.MonkeyPatc
     runtime.run_wine(ctx)
     assert calls[0] == {"choice": "system", "install": True, "offline": True}
     assert ctx.wine() is info
-    assert ctx.state.get("wine.provider") == "system" and ctx.state.get("wine.build") is None
-    assert ctx.state.get("wine.version") == "9.0" and ctx.state.get("wine.staging") is False
+    assert ctx.state.get("wine.provider") == "system"
+    assert ctx.state.get("wine.build") is None
+    assert ctx.state.get("wine.version") == "9.0"
+    assert ctx.state.get("wine.staging") is False
     assert ctx.state.get("wine.root") == "/usr"
     assert runtime.verify_wine(ctx)
     assert calls[-1]["install"] is False
@@ -102,7 +104,8 @@ def test_winetricks_step(xdg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(runtime.winetricks, "ensure", ensure)
     assert not runtime.verify_winetricks(ctx)
     runtime.run_winetricks(ctx)
-    assert runtime.winetricks_path(ctx) == script and len(calls) == 1
+    assert runtime.winetricks_path(ctx) == script
+    assert len(calls) == 1
     assert calls[0] == {"mode": "managed", "offline": False}
     assert runtime.verify_winetricks(ctx)
     script.chmod(0o644)
@@ -243,7 +246,8 @@ def test_winver(xdg: Path) -> None:
     fake = _fake(ctx)
     assert prefix.verify_winver(ctx)
     prefix.run_winver(ctx)
-    assert fake.verbs == ["win10"] and prefix.verify_winver(ctx)
+    assert fake.verbs == ["win10"]
+    assert prefix.verify_winver(ctx)
     add_values(ctx.paths.prefix, "user.reg", "Software\\Wine", ['"Version"="win7"'])
     assert not prefix.verify_winver(ctx)
     winetricks_call = ctx.runner.calls[-1]
@@ -275,8 +279,10 @@ def test_dotnet_installs_the_first_verb(xdg: Path) -> None:
     fake = _fake(ctx)
     assert not dotnet.verify(ctx)
     dotnet.run(ctx)
-    assert fake.verbs == ["dotnet48"] and dotnet.verify(ctx)
-    assert dotnet.release(ctx) == 528049 and ctx.state.get(dotnet.VERB_KEY) == "dotnet48"
+    assert fake.verbs == ["dotnet48"]
+    assert dotnet.verify(ctx)
+    assert dotnet.release(ctx) == 528049
+    assert ctx.state.get(dotnet.VERB_KEY) == "dotnet48"
     dotnet.run(ctx)
     assert fake.verbs == ["dotnet48"]
 
@@ -285,7 +291,8 @@ def test_dotnet_release_must_be_a_number(xdg: Path) -> None:
     ctx = make_ctx()
     add_values(ctx.paths.prefix, "system.reg", "Software\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full",
                ['"Release"="528049"'])
-    assert dotnet.release(ctx) is None and not dotnet.verify(ctx)
+    assert dotnet.release(ctx) is None
+    assert not dotnet.verify(ctx)
 
 
 def test_dotnet_rebuilds_the_prefix_and_tries_the_next_verb(xdg: Path) -> None:
@@ -302,7 +309,8 @@ def test_dotnet_rebuilds_the_prefix_and_tries_the_next_verb(xdg: Path) -> None:
     assert ctx.state.get(dotnet.VERB_KEY) == "dotnet472"
     assert not (ctx.paths.prefix / "leftover").exists()
     assert ctx.paths.created_by_marker.is_file()
-    assert ctx.state.step_marker("fonts") is None and ctx.state.step_marker("consent") is not None
+    assert ctx.state.step_marker("fonts") is None
+    assert ctx.state.step_marker("consent") is not None
     assert all(bootstrap.is_done(step, ctx) for step in prefix.BOOT_STEPS)
     assert ["-k"] in [call["argv"][1:] for call in ctx.runner.calls]
     assert ctx.state.get("consent.fork_eula") == "yes"
@@ -335,7 +343,8 @@ def test_dotnet_never_rebuilds_once_fork_is_installed(xdg: Path) -> None:
     with pytest.raises(SetupFailed, match="exited with code 1") as caught:
         dotnet.run(ctx)
     assert "--reset" in caught.value.hint
-    assert fake.verbs == ["dotnet48"] and ctx.layout.is_installed()
+    assert fake.verbs == ["dotnet48"]
+    assert ctx.layout.is_installed()
 
 
 def test_dotnet_gives_up_after_every_verb(xdg: Path) -> None:
@@ -343,7 +352,8 @@ def test_dotnet_gives_up_after_every_verb(xdg: Path) -> None:
     fake = _fake(ctx, fail=("dotnet48", "dotnet472"))
     with pytest.raises(SetupFailed, match="no .NET Framework could be installed") as caught:
         dotnet.run(ctx)
-    assert "dotnet48: " in caught.value.message and "dotnet472: " in caught.value.message
+    assert "dotnet48: " in caught.value.message
+    assert "dotnet472: " in caught.value.message
     assert fake.verbs == ["dotnet48", "dotnet472"]
 
 

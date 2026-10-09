@@ -226,7 +226,8 @@ def test_03_first_launch_opens_the_repository(e2e: Any) -> None:
     assert _fork_pids(e2e.prefix)
     # settings.json was seeded before the first start and Fork kept the Wine-safe values.
     settings = _settings(e2e, e2e.prefix)
-    assert settings["UpdateSubmodulesOnCheckout"] is False and settings["DisableHardwareAcceleration"] is True
+    assert settings["UpdateSubmodulesOnCheckout"] is False
+    assert settings["DisableHardwareAcceleration"] is True
     assert window["width"] >= MAIN_MIN_WIDTH
 
 
@@ -250,8 +251,10 @@ def test_05_relaunch_applies_dark_theme(e2e: Any) -> None:
     _launch(e2e, e2e.repos / "demo", extra={"FORK_LINUX_DISPLAY_THEME": "dark"})
     window = _wait_main_window(e2e)
     settings = _settings(e2e, e2e.prefix)
-    assert settings["Theme"] == 1 and settings["FollowSystemTheme"] is False
-    assert settings["UpdateSubmodulesOnCheckout"] is False and settings["DisableHardwareAcceleration"] is True
+    assert settings["Theme"] == 1
+    assert settings["FollowSystemTheme"] is False
+    assert settings["UpdateSubmodulesOnCheckout"] is False
+    assert settings["DisableHardwareAcceleration"] is True
     assert isinstance(settings["LayoutScaling"], int)
     time.sleep(5)
     shot = _screenshot(e2e, "05-dark", window)
@@ -294,7 +297,8 @@ def test_10_logs_bundle_and_purge_second_prefix(e2e: Any) -> None:
         text = b"".join(
             archive.extractfile(member).read() for member in archive.getmembers() if member.isfile()
         )
-    assert b"supersecretpw" not in text and b"ghp_abcdefghijklmnopqrstuvwxyz" not in text
+    assert b"supersecretpw" not in text
+    assert b"ghp_abcdefghijklmnopqrstuvwxyz" not in text
 
     e2e.cli("uninstall", extra=extra)
     assert not (e2e.home / ".local" / "share" / "applications" / "io.github.ventura8.ForkLinux.desktop").exists()

@@ -291,7 +291,7 @@ def _as_completed(response: Any, args: list[str]) -> Completed:
     if response is None:
         return Completed(list(args), 0, "", "")
     if isinstance(response, Completed):
-        return replace(response, argv=list(args))
+        return Completed(list(args), response.returncode, response.stdout, response.stderr)
     if isinstance(response, int):
         return Completed(list(args), response, "", "")
     if isinstance(response, str):

@@ -24,6 +24,7 @@ RESERVED_STORES = ("runtimes", "snapshots")
 
 _PRIVATE = 0o700
 _SHARED = 0o755
+_LOCAL = ".local"
 
 
 @dataclass(frozen=True)
@@ -125,9 +126,9 @@ class Paths:
         environ: Mapping[str, str] = os.environ if env is None else env
         home = _home(environ)
         config_dir = _xdg(environ, "XDG_CONFIG_HOME", home / ".config") / APP_DIR
-        data_dir = _xdg(environ, "XDG_DATA_HOME", home / ".local" / "share") / APP_DIR
+        data_dir = _xdg(environ, "XDG_DATA_HOME", home / _LOCAL / "share") / APP_DIR
         cache_dir = _xdg(environ, "XDG_CACHE_HOME", home / ".cache") / APP_DIR
-        state_dir = _xdg(environ, "XDG_STATE_HOME", home / ".local" / "state") / APP_DIR
+        state_dir = _xdg(environ, "XDG_STATE_HOME", home / _LOCAL / "state") / APP_DIR
         runtime_base = environ.get("XDG_RUNTIME_DIR", "")
         if runtime_base and os.path.isabs(runtime_base):
             runtime_dir = Path(runtime_base) / APP_DIR
@@ -174,7 +175,7 @@ def is_forbidden_prefix(path: Path, home: Path, *, data_dir: Path | None = None)
     does not carry our created-by marker.
     """
     if data_dir is None:
-        data_dir = _xdg(os.environ, "XDG_DATA_HOME", home / ".local" / "share") / APP_DIR
+        data_dir = _xdg(os.environ, "XDG_DATA_HOME", home / _LOCAL / "share") / APP_DIR
     if _always_refused(path, home, data_dir):
         return True
     target = path.resolve()

@@ -70,12 +70,14 @@ def test_check_offline_without_a_cache(capsys: pytest.CaptureFixture[str]) -> No
     install_fork(layout(), "2.23.2")
     code, out, _err = run_cli(capsys, "--offline", "update")
     assert code == 0
-    assert "Installed: 2.23.2" in out and "Tested:    2.23.2" in out
+    assert "Installed: 2.23.2" in out
+    assert "Tested:    2.23.2" in out
     assert "Newest:    unknown (no cached copy" in out
     assert "Updates:   automatic" in out
     info = run_json(capsys, "--offline", "update", "--check")
     assert info["feed_error"].startswith("no cached copy")
-    assert info["latest"] is None and info["update_policy"] == "auto"
+    assert info["latest"] is None
+    assert info["update_policy"] == "auto"
 
 
 def test_check_with_a_feed(
@@ -85,11 +87,13 @@ def test_check_with_a_feed(
     layout().packages_dir.joinpath("Fork-2.24.0-full.nupkg").write_bytes(b"PK")
     monkeypatch.setenv("FORK_LINUX_FORK_UPDATE_POLICY", "pinned")
     code, out, _err = run_cli(capsys, "update", "--check")
-    assert "Newest:    2.24.0" in out and "Staged:    2.24.0" in out
+    assert "Newest:    2.24.0" in out
+    assert "Staged:    2.24.0" in out
     assert "pinned" in out
     assert "'fork-linux update --fork --latest' installs it" in out
     info = run_json(capsys, "--offline", "update")
-    assert info["latest"] == "2.24.0" and info["feed_error"] is None
+    assert info["latest"] == "2.24.0"
+    assert info["feed_error"] is None
     assert feed[1] == [False, True]
 
 
@@ -106,7 +110,8 @@ def test_check_warns_about_known_bad(capsys: pytest.CaptureFixture[str], monkeyp
     monkeypatch.setattr(updates, "check", lambda manifest, layout, assets: dict(info))
     monkeypatch.setattr(update_cmd, "_feed_assets", lambda *a, **kw: [])
     out = run_cli(capsys, "update")[1]
-    assert "Installed: not installed" in out and "Newest:    unknown\n" in out
+    assert "Installed: not installed" in out
+    assert "Newest:    unknown\n" in out
     assert "known not to work well: breaks rendering" in out
     assert "is available" not in out
 
@@ -167,7 +172,8 @@ def _prefix(boot: bootstrap.Ctx) -> None:
 
 def test_fork_needs_an_installed_fork(capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx) -> None:
     code, _out, err = run_cli(capsys, "update", "--fork")
-    assert code == 10 and "not installed" in err
+    assert code == 10
+    assert "not installed" in err
 
 
 def test_fork_already_on_the_default(
@@ -176,7 +182,8 @@ def test_fork_already_on_the_default(
     install_fork(boot.layout, "2.23.2")
     code, out, _err = run_cli(capsys, "update", "--fork")
     assert (code, out) == (0, "Fork 2.23.2 is already installed\n")
-    assert installer == [] and boot.cache["steps"] == []
+    assert installer == []
+    assert boot.cache["steps"] == []
     assert snapshots.list_snapshots(boot.paths) == []
 
 
@@ -211,11 +218,13 @@ def test_fork_requested_untested_version_is_verified_against_the_feed(
     monkeypatch.setenv("FORK_LINUX_FORK_UPDATE_POLICY", "pinned")
     boot.config = type(boot.config).load(boot.paths, dict(os.environ))
     code, _out, err = run_cli(capsys, "update", "--fork", "--fork-version", "2.24.0")
-    assert code == 2 and "--allow-untested" in err
+    assert code == 2
+    assert "--allow-untested" in err
     # The fake installer writes this nupkg; the feed must describe it.
     feed[0] = _feed(("2.24.0", hashlib.sha256(b"PK placeholder 2.24.0").hexdigest()))
     result = run_json(capsys, "update", "--fork", "--fork-version", "2.24.0", "--allow-untested")
-    assert result["installed"] == "2.24.0" and result["changed"] is True
+    assert result["installed"] == "2.24.0"
+    assert result["changed"] is True
     assert result["steps"] == list(update_cmd.FORK_STEPS)
     assert boot.state.get("fork.request") == {"source": "requested", "version": "2.24.0"}
     assert boot.state.get(update_cmd.PINNED_VERSION) == "2.24.0"
@@ -228,7 +237,8 @@ def test_fork_tofu_mismatch_is_an_integrity_failure(
     install_fork(boot.layout, "2.23.2")
     code, _out, err = run_cli(capsys, "update", "--fork", "--latest")
     assert code == 13
-    assert "does not match Fork's update feed" in err and "rollback --to-version 2.23.2" in err
+    assert "does not match Fork's update feed" in err
+    assert "rollback --to-version 2.23.2" in err
     assert boot.state.get(FORK_VERSION) is None
 
 
@@ -316,7 +326,8 @@ def test_wine_switch(capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, ma
     assert argvs[2] == [str(new_root / "bin" / "wineserver"), "-w"]
     assert boot.runner.calls[1]["env"]["WINEPREFIX"] == str(boot.paths.prefix)
     assert boot.config.raw("wine", "build") == ""
-    assert boot.state.get(WINE_BUILD) == default and boot.state.get("wine.provider") == "managed"
+    assert boot.state.get(WINE_BUILD) == default
+    assert boot.state.get("wine.provider") == "managed"
     assert boot.cache["steps"] == [None]
 
 
@@ -358,7 +369,8 @@ def test_wine_without_a_previous_wine(
 def test_wine_wineboot_failure(capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, managed: list[Path]) -> None:
     boot.runner = RecordingRunner({"wine": Completed([], 3, "", "boom")})
     code, _out, err = run_cli(capsys, "update", "--wine")
-    assert code == 1 and "wineboot -u failed with exit code 3" in err
+    assert code == 1
+    assert "wineboot -u failed with exit code 3" in err
     assert "previous Wine build is kept" in err
     assert boot.cache["steps"] == []
 
@@ -378,7 +390,8 @@ def test_wine_other_providers_are_not_updated(
 ) -> None:
     boot.config.set("wine", "provider", "system")
     code, _out, err = run_cli(capsys, "update", "--wine")
-    assert code == 2 and "'system'" in err
+    assert code == 2
+    assert "'system'" in err
 
 
 def test_wine_needs_fork_closed(

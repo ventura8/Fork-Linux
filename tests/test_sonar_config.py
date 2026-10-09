@@ -55,8 +55,10 @@ def test_no_unscoped_issue_ignores() -> None:
 def test_scanner_image_is_pinned_and_token_never_in_argv() -> None:
     text = SCRIPT.read_text(encoding="utf-8")
     image = re.search(r"sonarsource/sonar-scanner-cli:([^}\"\s]+)", text)
-    assert image is not None and image.group(1) not in ("latest", "")
+    assert image is not None
+    assert image.group(1) not in ("latest", "")
     assert re.fullmatch(r"[0-9][0-9._]+", image.group(1))
     assert "-K -" in text  # token passed to curl on stdin
-    assert "--env SONAR_TOKEN" in text and "SONAR_TOKEN=$" not in text
+    assert "--env SONAR_TOKEN" in text
+    assert "SONAR_TOKEN=$" not in text
     assert SCRIPT.stat().st_mode & 0o111

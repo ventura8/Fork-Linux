@@ -74,8 +74,8 @@ FILE_MODE = 0o644
 BACKUP_MODE = 0o600
 
 _RESTORE_HINT = "close Fork and run 'fork-linux settings restore' to go back to a backup"
-_BACKUP = re.compile(r"settings\.json\.([0-9]{8}T[0-9]{6}\.[0-9]{6}Z)(?:-([0-9]{1,6}))?")
-_DPI = re.compile(r"[0-9]{1,4}")
+_BACKUP = re.compile(r"settings\.json\.(\d{8}T\d{6}\.\d{6}Z)(?:-(\d{1,6}))?", re.ASCII)
+_DPI = re.compile(r"\d{1,4}", re.ASCII)
 
 
 def default_backup_dir(paths: Paths) -> Path:
@@ -136,7 +136,7 @@ def load(path: Path) -> dict[str, Any]:
         raise _corrupt(path, f"it is larger than {MAX_BYTES} bytes")
     try:
         data = json.loads(raw.decode("utf-8-sig"))
-    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
+    except (ValueError, RecursionError) as exc:
         raise _corrupt(path, f"not valid JSON ({exc})") from None
     if not isinstance(data, dict):
         raise _corrupt(path, "the top level is not a JSON object")

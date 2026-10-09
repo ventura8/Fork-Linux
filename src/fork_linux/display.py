@@ -16,6 +16,7 @@ source it is 100. Every probe is a short command run through the runner
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Callable, Mapping, Sequence
 
@@ -30,8 +31,9 @@ MAX_SCALE = 300
 SCALE_STEP = 25
 GNOME_INTERFACE = "org.gnome.desktop.interface"
 
-_NUMBER = re.compile(r"[-+]?[0-9]+(?:\.[0-9]+)?")
-_XFT_DPI = re.compile(r"^\s*Xft\.dpi\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*$", re.MULTILINE)
+_NUMBER = re.compile(r"[-+]?\d+(?:\.\d+)?", re.ASCII)
+# (?a:...) keeps the digits ASCII-only while \s keeps its Unicode meaning.
+_XFT_DPI = re.compile(r"^\s*Xft\.dpi\s*:\s*((?a:\d+(?:\.\d+)?))\s*$", re.MULTILINE)
 
 
 def probe(runner: Runner, env: Mapping[str, str], argv: Sequence[str], timeout: float = PROBE_TIMEOUT) -> str:
@@ -84,7 +86,7 @@ def _from_gnome(env: Mapping[str, str], runner: Runner) -> float | None:
     scaling = _positive(probe(runner, env, ["gsettings", "get", GNOME_INTERFACE, "scaling-factor"]))
     text = _positive(probe(runner, env, ["gsettings", "get", GNOME_INTERFACE, "text-scaling-factor"]))
     factor = (scaling or 1.0) * (text or 1.0)
-    return None if factor == 1.0 else factor * 100
+    return None if math.isclose(factor, 1.0) else factor * 100
 
 
 def _from_xrdb(env: Mapping[str, str], runner: Runner) -> float | None:

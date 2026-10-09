@@ -66,10 +66,11 @@ def test_run_accepts_path_arguments(tmp_path: Path) -> None:
 
 
 def test_run_rejects_string_and_empty_argv() -> None:
+    runner = Runner()
     with pytest.raises(TypeError):
-        Runner().run("echo hi")
+        runner.run("echo hi")
     with pytest.raises(ValueError):
-        Runner().run([])
+        runner.run([])
 
 
 def test_run_stdin_is_devnull_unless_input_given() -> None:
@@ -93,8 +94,9 @@ def test_run_check_raises_with_command_and_stderr_tail() -> None:
         f"print('token {TOKEN}', file=sys.stderr)\n"
         "sys.exit(5)\n"
     )
+    runner, argv = Runner(), _py(code)
     with pytest.raises(CommandError) as info:
-        Runner().run(_py(code), check=True)
+        runner.run(argv, check=True)
     err = info.value
     assert err.exit_code == ExitCode.ERROR
     assert isinstance(err, ForkLinuxError)
@@ -108,8 +110,9 @@ def test_run_check_raises_with_command_and_stderr_tail() -> None:
 
 
 def test_run_check_without_stderr() -> None:
+    runner, argv = Runner(), _py("raise SystemExit(2)")
     with pytest.raises(CommandError) as info:
-        Runner().run(_py("raise SystemExit(2)"), check=True)
+        runner.run(argv, check=True)
     assert info.value.message.endswith("-c 'raise SystemExit(2)'")
 
 
@@ -118,8 +121,9 @@ def test_run_check_success_returns_result() -> None:
 
 
 def test_run_timeout_raises() -> None:
+    runner, argv = Runner(), _py("import time; time.sleep(30)")
     with pytest.raises(ForkLinuxError, match="timed out after 0.2s") as info:
-        Runner().run(_py("import time; time.sleep(30)"), timeout=0.2)
+        runner.run(argv, timeout=0.2)
     assert not isinstance(info.value, CommandError)
 
 
@@ -128,8 +132,9 @@ def test_run_missing_executable_is_127(tmp_path: Path) -> None:
     done = Runner().run([missing, "--version"])
     assert done.returncode == 127
     assert "cannot execute" in done.stderr
+    runner = Runner()
     with pytest.raises(CommandError, match="exit code 127"):
-        Runner().run([missing], check=True)
+        runner.run([missing], check=True)
 
 
 def test_run_non_executable_is_126(tmp_path: Path) -> None:
@@ -148,16 +153,18 @@ def test_run_log_file_appends_combined_output(tmp_path: Path) -> None:
     runner.run(_py("print('second')"), log_file=log_file)
     text = log_file.read_text(encoding="utf-8")
     assert text.count("--- ") == 2
-    assert "to-out" in text and "to-err" in text and "second" in text
+    assert "to-out" in text
+    assert "to-err" in text
+    assert "second" in text
     assert text.index("to-out") < text.index("second")
 
 
 def test_run_log_file_check_uses_logged_tail(tmp_path: Path) -> None:
     log_file = tmp_path / "w.log"
     log_file.write_text("old noise that must not appear\n", encoding="utf-8")
+    runner, argv = Runner(), _py("import sys; print('fatal' + ': broken', file=sys.stderr); sys.exit(9)")
     with pytest.raises(CommandError) as info:
-        Runner().run(_py("import sys; print('fatal' + ': broken', file=sys.stderr); sys.exit(9)"), log_file=log_file,
-                     check=True)
+        runner.run(argv, log_file=log_file, check=True)
     assert "fatal: broken" in info.value.message
     assert "old noise" not in info.value.message
 
@@ -171,8 +178,9 @@ def test_run_log_file_is_private_and_only_the_tail_is_read_back(
         "import sys; print('HEAD' + '-MARKER'); print('x' * 5000, flush=True); "
         "print('fatal' + ': tail', file=sys.stderr); sys.exit(3)"
     )
+    runner, argv = Runner(), _py(code)
     with pytest.raises(CommandError) as info:
-        Runner().run(_py(code), log_file=log_file, check=True)
+        runner.run(argv, log_file=log_file, check=True)
     assert "fatal: tail" in info.value.message
     assert "HEAD-MARKER" not in info.value.message
     assert len(info.value.message) < 1000
@@ -185,8 +193,9 @@ def test_run_log_file_symlink_or_unwritable_is_a_fork_linux_error(tmp_path: Path
     target.write_text("keep\n", encoding="utf-8")
     link = tmp_path / "wine.log"
     link.symlink_to(target)
+    runner, argv = Runner(), _py("print('x')")
     with pytest.raises(ForkLinuxError, match="cannot open the log file") as info:
-        Runner().run(_py("print('x')"), log_file=link)
+        runner.run(argv, log_file=link)
     assert "symbolic link" in info.value.hint
     assert target.read_text(encoding="utf-8") == "keep\n"
 
@@ -197,8 +206,9 @@ def test_run_log_file_missing_executable(tmp_path: Path) -> None:
     assert done.returncode == 127
     assert "cannot execute" in done.stderr
     assert "cannot execute" in log_file.read_text(encoding="utf-8"), "exec failures are logged too"
+    runner, argv = Runner(), [str(tmp_path / "nope")]
     with pytest.raises(CommandError) as info:
-        Runner().run([str(tmp_path / "nope")], log_file=log_file, check=True)
+        runner.run(argv, log_file=log_file, check=True)
     assert info.value.message.count("cannot execute") == 1
 
 

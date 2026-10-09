@@ -11,8 +11,6 @@
 #include <ws2tcpip.h>
 
 #include <limits.h>
-#include <stdarg.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -45,8 +43,8 @@ static void write_stderr(const char *p, size_t n)
     }
     while (n > 0) {
         DWORD w = 0;
-        DWORD chunk = n > 0x40000000u ? 0x40000000u : (DWORD)n;
-        if (!WriteFile(h, p, chunk, &w, NULL) || w == 0) {
+        /* n <= FLW_MSG_MAX (emit_msg): no chunking needed */
+        if (!WriteFile(h, p, (DWORD)n, &w, NULL) || w == 0) {
             return;
         }
         p += w;
@@ -54,34 +52,51 @@ static void write_stderr(const char *p, size_t n)
     }
 }
 
-static void vmsg(const char *fmt, va_list ap)
+/* "<prog>: " + the first tn bytes of text (at most FLW_MSG_MAX - 4 - strlen(prog)) + "\n". */
+static void emit_msg(const char *text, size_t tn)
 {
     char buf[FLW_MSG_MAX];
-    size_t pn = strlen(g_prog);
+    size_t pn = strlen(g_prog); /* < sizeof(g_prog), far below FLW_MSG_MAX */
+    size_t room = sizeof(buf) - pn - 4;
     size_t used;
-    int n;
+    if (tn > room) {
+        tn = room;
+    }
     memcpy(buf, g_prog, pn);
     buf[pn] = ':';
     buf[pn + 1] = ' ';
     used = pn + 2;
-    n = vsnprintf(buf + used, sizeof(buf) - used - 1, fmt, ap);
-    if (n < 0) {
-        n = 0;
+    if (tn > 0) {
+        memcpy(buf + used, text, tn);
     }
-    if ((size_t)n >= sizeof(buf) - used - 1) {
-        n = (int)(sizeof(buf) - used - 2);
-    }
-    used += (size_t)n;
-    buf[used++] = '\n';
+    used += tn;
+    buf[used] = '\n';
+    used++;
     write_stderr(buf, used);
 }
 
-void flw_msg(const char *fmt, ...)
+void flw_msg(const char *text)
 {
-    va_list ap;
-    va_start(ap, fmt);
-    vmsg(fmt, ap);
-    va_end(ap);
+    emit_msg(text, strlen(text));
+}
+
+void flw_msg_buf(struct flw_buf *m)
+{
+    if (m->p != NULL) {
+        emit_msg(m->p, m->n);
+    } else {
+        emit_msg("", 0);
+    }
+    flw_buf_free(m);
+}
+
+void flw_msg_s(const char *pre, const char *s, const char *post)
+{
+    struct flw_buf m = { 0 };
+    flw_buf_puts(&m, pre);
+    flw_buf_puts(&m, s);
+    flw_buf_puts(&m, post);
+    flw_msg_buf(&m);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -91,32 +106,25 @@ void flw_msg(const char *fmt, ...)
 char *flw_utf8n(const wchar_t *w, size_t n)
 {
     char *s;
-    int need;
+    int got = 0;
     if (n > (size_t)(INT_MAX / 4)) {
         return NULL;
     }
-    if (n == 0) {
-        s = malloc(1);
-        if (s != NULL) {
-            s[0] = '\0';
-        }
-        return s;
-    }
-    /* WC_ERR_INVALID_CHARS: a lone surrogate fails the conversion instead of silently
-     * becoming U+FFFD, which would name a different file on the Unix side. */
-    need = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, w, (int)n, NULL, 0, NULL, NULL);
-    if (need <= 0) {
-        return NULL;
-    }
-    s = malloc((size_t)need + 1);
+    /* At most 3 UTF-8 bytes per UTF-16 unit (a surrogate pair: 4 bytes for 2 units). */
+    s = malloc(n * 3 + 1);
     if (s == NULL) {
         return NULL;
     }
-    if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, w, (int)n, s, need, NULL, NULL) != need) {
+    if (n > 0) {
+        /* WC_ERR_INVALID_CHARS: a lone surrogate fails the conversion instead of silently
+         * becoming U+FFFD, which would name a different file on the Unix side. */
+        got = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, w, (int)n, s, (int)(n * 3), NULL, NULL);
+    }
+    if (got <= 0 && n > 0) {
         free(s);
         return NULL;
     }
-    s[need] = '\0';
+    s[got] = '\0';
     return s;
 }
 
@@ -125,35 +133,32 @@ char *flw_utf8(const wchar_t *w)
     return flw_utf8n(w, wcslen(w));
 }
 
-wchar_t *flw_utf16(const char *s)
+wchar_t *flw_utf16n(const char *s, size_t n)
 {
-    size_t n = strlen(s);
     wchar_t *w;
-    int need;
+    int got = 0;
     if (n > (size_t)(INT_MAX / 2)) {
         return NULL;
     }
-    if (n == 0) {
-        w = malloc(sizeof(wchar_t));
-        if (w != NULL) {
-            w[0] = L'\0';
-        }
-        return w;
-    }
-    need = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s, (int)n, NULL, 0);
-    if (need <= 0) {
-        return NULL;
-    }
-    w = malloc(((size_t)need + 1) * sizeof(wchar_t));
+    /* At most one UTF-16 unit per UTF-8 byte. */
+    w = malloc((n + 1) * sizeof(wchar_t));
     if (w == NULL) {
         return NULL;
     }
-    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s, (int)n, w, need) != need) {
+    if (n > 0) {
+        got = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s, (int)n, w, (int)n);
+    }
+    if (got <= 0 && n > 0) {
         free(w);
         return NULL;
     }
-    w[need] = L'\0';
+    w[got] = L'\0';
     return w;
+}
+
+wchar_t *flw_utf16(const char *s)
+{
+    return flw_utf16n(s, strlen(s));
 }
 
 char *flw_strdup(const char *s)
@@ -271,7 +276,7 @@ void flw_buf_putu(struct flw_buf *b, unsigned long long v)
     do {
         d[--i] = (char)('0' + (int)(v % 10u));
         v /= 10u;
-    } while (v != 0 && i > 0);
+    } while (v != 0); /* 20 digits at most: d has room */
     flw_buf_put(b, d + i, sizeof(d) - i);
 }
 
@@ -279,93 +284,87 @@ void flw_buf_puti(struct flw_buf *b, long long v)
 {
     if (v < 0) {
         flw_buf_put(b, "-", 1);
-        flw_buf_putu(b, 0ull - (unsigned long long)v);
+        flw_buf_putu(b, 0ULL - (unsigned long long)v);
     } else {
         flw_buf_putu(b, (unsigned long long)v);
     }
 }
 
-/* Length of the valid UTF-8 sequence at s (n bytes left), 0 when invalid. */
-static size_t utf8_seq(const unsigned char *s, size_t n)
+/*
+ * Length of the valid UTF-8 sequence starting with the lead byte s[0] (>= 0x80) of a
+ * NUL-terminated string, 0 when invalid. Each continuation byte s[i] is read only
+ * after s[i - 1] was checked to be a non-NUL byte, so no read passes the terminator.
+ */
+static size_t utf8_seq(const unsigned char *s)
 {
     unsigned char c = s[0];
     size_t len;
     unsigned char lo = 0x80;
     unsigned char hi = 0xBF;
-    if (c < 0x80) {
-        return 1;
-    }
     if (c >= 0xC2 && c <= 0xDF) {
         len = 2;
     } else if (c >= 0xE0 && c <= 0xEF) {
         len = 3;
-        if (c == 0xE0) {
-            lo = 0xA0;
-        } else if (c == 0xED) {
-            hi = 0x9F;
-        }
+        lo = c == 0xE0 ? 0xA0 : 0x80;
+        hi = c == 0xED ? 0x9F : 0xBF;
     } else if (c >= 0xF0 && c <= 0xF4) {
         len = 4;
-        if (c == 0xF0) {
-            lo = 0x90;
-        } else if (c == 0xF4) {
-            hi = 0x8F;
-        }
+        lo = c == 0xF0 ? 0x90 : 0x80;
+        hi = c == 0xF4 ? 0x8F : 0xBF;
     } else {
         return 0;
     }
-    if (n < len || s[1] < lo || s[1] > hi) {
-        return 0;
-    }
-    for (size_t i = 2; i < len; i++) {
-        if (s[i] < 0x80 || s[i] > 0xBF) {
-            return 0;
+    for (size_t i = 1; i < len; i++) {
+        unsigned char k = s[i]; /* s[i - 1] != '\0': s[i] is inside the string */
+        if (k < lo || k > hi) {
+            return 0; /* also stops at the terminator: '\0' < lo */
         }
+        lo = 0x80;
+        hi = 0xBF;
     }
     return len;
 }
 
-void flw_buf_json(struct flw_buf *b, const char *s)
+/* Append the JSON escape of the ASCII byte c (a quote, backslash or control). */
+static void json_escape_ascii(struct flw_buf *b, unsigned char c)
 {
     static const char hex[] = "0123456789abcdef";
+    char e[6] = { '\\', 'u', '0', '0', hex[c >> 4], hex[c & 0xF] };
+    if (c == '"' || c == '\\') {
+        e[1] = (char)c;
+        flw_buf_put(b, e, 2);
+    } else if (c == '\n') {
+        flw_buf_put(b, "\\n", 2);
+    } else if (c == '\t') {
+        flw_buf_put(b, "\\t", 2);
+    } else if (c == '\r') {
+        flw_buf_put(b, "\\r", 2);
+    } else {
+        flw_buf_put(b, e, 6);
+    }
+}
+
+void flw_buf_json(struct flw_buf *b, const char *s)
+{
     const unsigned char *p = (const unsigned char *)s;
-    size_t n = strlen(s);
     flw_buf_put(b, "\"", 1);
-    while (n > 0) {
-        unsigned char c = *p;
-        size_t len;
-        if (c == '"' || c == '\\') {
-            char e[2] = { '\\', (char)c };
-            flw_buf_put(b, e, 2);
-            p++;
-            n--;
-            continue;
-        }
-        if (c < 0x20 || c == 0x7F) {
-            char e[6] = { '\\', 'u', '0', '0', hex[c >> 4], hex[c & 0xF] };
-            if (c == '\n') {
-                flw_buf_put(b, "\\n", 2);
-            } else if (c == '\t') {
-                flw_buf_put(b, "\\t", 2);
-            } else if (c == '\r') {
-                flw_buf_put(b, "\\r", 2);
+    while (p[0] != '\0') {
+        unsigned char c = p[0];
+        size_t len = 1;
+        if (c == '"' || c == '\\' || c < 0x20 || c == 0x7F) {
+            json_escape_ascii(b, c);
+        } else if (c < 0x80) {
+            flw_buf_put(b, (const char *)p, 1);
+        } else {
+            len = utf8_seq(p);
+            if (len == 0) {
+                flw_buf_put(b, "\\ufffd", 6);
+                len = 1;
             } else {
-                flw_buf_put(b, e, 6);
+                flw_buf_put(b, (const char *)p, len);
             }
-            p++;
-            n--;
-            continue;
         }
-        len = utf8_seq(p, n);
-        if (len == 0) {
-            flw_buf_put(b, "\\ufffd", 6);
-            p++;
-            n--;
-            continue;
-        }
-        flw_buf_put(b, (const char *)p, len);
-        p += len;
-        n -= len;
+        p += len; /* the len bytes just consumed are all non-NUL */
     }
     flw_buf_put(b, "\"", 1);
 }
@@ -509,7 +508,7 @@ static int try_prefix(wchar_t *full, size_t cut, char *out, size_t outsz, int *r
         memcpy(out, u, ul);
         out[ul] = '/';
         if (ul == 1 && u[0] == '/') {
-            ul = 0; /* root: avoid "//" */
+            ul = 0; /* root: avoid a doubled slash */
         }
         *rc = copy_slashed(out, outsz, ul + 1, tail8);
     }
@@ -518,7 +517,7 @@ static int try_prefix(wchar_t *full, size_t cut, char *out, size_t outsz, int *r
     return 1;
 }
 
-/* Collapse runs of '/' in place (Wine 11 maps "Z:\\missing" to "//missing"). */
+/* Collapse runs of '/' in place (Wine 11 maps "Z:\\missing" to a doubled leading slash). */
 static void collapse_slashes(char *s)
 {
     char *w = s;
@@ -529,6 +528,27 @@ static void collapse_slashes(char *s)
         *w++ = *r;
     }
     *w = '\0';
+}
+
+/* Length of the parent of full[0..cut) (a drive root keeps its "X:\"); 0 when none. */
+static size_t parent_cut(const wchar_t *full, size_t cut)
+{
+    size_t p = cut;
+    size_t np;
+    while (p > 0 && !is_sep_w(full[p - 1])) {
+        p--;
+    }
+    if (p == 0) {
+        return 0;
+    }
+    np = p - 1;
+    while (np > 0 && is_sep_w(full[np - 1])) {
+        np--;
+    }
+    if (np == 2 && full[1] == L':') {
+        np = 3; /* keep the drive root "X:\" */
+    }
+    return np < cut ? np : 0;
 }
 
 int flw_to_unix_cb(void *ud, const char *in, char *out, size_t outsz)
@@ -557,31 +577,12 @@ int flw_to_unix_cb(void *ud, const char *in, char *out, size_t outsz)
         return -1;
     }
     cut = wcslen(full);
-    for (;;) {
-        size_t p;
-        size_t np;
-        if (try_prefix(full, cut, out, outsz, &rc)) {
+    /* Longest existing ancestor: drop the last component and retry. */
+    while (!try_prefix(full, cut, out, outsz, &rc)) {
+        cut = parent_cut(full, cut);
+        if (cut == 0) {
             break;
         }
-        /* Longest existing ancestor: drop the last component and retry. */
-        p = cut;
-        while (p > 0 && !is_sep_w(full[p - 1])) {
-            p--;
-        }
-        if (p == 0) {
-            break;
-        }
-        np = p - 1;
-        while (np > 0 && is_sep_w(full[np - 1])) {
-            np--;
-        }
-        if (np == 2 && full[1] == L':') {
-            np = 3; /* keep the drive root "X:\" */
-        }
-        if (np == 0 || np >= cut) {
-            break;
-        }
-        cut = np;
     }
     free(full);
     if (rc == 0) {
@@ -818,7 +819,7 @@ int flw_load_cfg(struct flw_cfg *c, int need_winexec)
     }
     bad = parse_port(port, &c->port);
     if (bad) {
-        flw_msg("FL_BRIDGE_PORT is not a TCP port number: '%s'", port);
+        flw_msg_s("FL_BRIDGE_PORT is not a TCP port number: '", port, "'");
     }
     free(port);
     if (bad) {
@@ -835,7 +836,11 @@ int flw_load_cfg(struct flw_cfg *c, int need_winexec)
     free(tok);
     if (bad) {
         SecureZeroMemory(c->key, sizeof(c->key));
-        flw_msg("FL_BRIDGE_TOKEN must be %u hex characters", 2u * FLW_KEY_LEN);
+        struct flw_buf m = { 0 };
+        flw_buf_puts(&m, "FL_BRIDGE_TOKEN must be ");
+        flw_buf_putu(&m, 2u * FLW_KEY_LEN);
+        flw_buf_puts(&m, " hex characters");
+        flw_msg_buf(&m);
         return -1;
     }
     c->winexec = flw_getenv(L"FL_BRIDGE_WINEXEC");
@@ -883,23 +888,24 @@ void flw_xlate_init(struct fl_xlate *x, const struct flw_cfg *c)
     x->ssh_askpass = c->ssh_askpass;
 }
 
-void flw_free_strv(char **v)
+void flw_free_strv(char **v, size_t n)
 {
     if (v == NULL) {
         return;
     }
-    for (size_t i = 0; v[i] != NULL; i++) {
+    for (size_t i = 0; i < n; i++) {
         free(v[i]);
     }
     free(v);
 }
 
-char **flw_environ(void)
+char **flw_environ(size_t *n)
 {
     wchar_t *blk = GetEnvironmentStringsW();
     size_t count = 0;
     size_t i = 0;
     char **v;
+    *n = 0;
     if (blk == NULL) {
         return NULL;
     }
@@ -913,7 +919,7 @@ char **flw_environ(void)
     }
     for (const wchar_t *p = blk; *p != L'\0'; p += wcslen(p) + 1) {
         char *s;
-        if (p[0] == L'=' || _wcsnicmp(p, L"FL_BRIDGE_", 10) == 0 || wcschr(p, L'=') == NULL) {
+        if (i >= count || p[0] == L'=' || _wcsnicmp(p, L"FL_BRIDGE_", 10) == 0 || wcschr(p, L'=') == NULL) {
             continue; /* "=C:=C:\x" drive cwds; bridge configuration (token) */
         }
         s = flw_utf8(p);
@@ -925,6 +931,7 @@ char **flw_environ(void)
         v[i++] = s;
     }
     FreeEnvironmentStringsW(blk);
+    *n = i;
     return v;
 }
 
@@ -1008,38 +1015,47 @@ static void json_redacted(struct flw_buf *b, const char *s)
     free(r);
 }
 
+/* The value of "-c key=value" (eq points at the '='): append "key=<redacted>" and
+ * return 1 when key or value looks secret (or out of memory), else 0 (nothing added). */
+static int json_secret_config(struct flw_buf *b, const char *a, const char *eq)
+{
+    size_t kl = (size_t)(eq - a);
+    char *key = malloc(kl + 1);
+    struct flw_buf t = { 0 };
+    if (key == NULL) {
+        flw_buf_json(b, "<redacted>");
+        return 1;
+    }
+    memcpy(key, a, kl);
+    key[kl] = '\0';
+    if (!flw_is_secret_name(key) && !flw_is_secret_name(eq + 1)) {
+        free(key);
+        return 0;
+    }
+    flw_buf_puts(&t, key);
+    flw_buf_puts(&t, "=<redacted>");
+    flw_buf_json(b, t.oom || t.p == NULL ? "<redacted>" : t.p);
+    flw_buf_free(&t);
+    free(key);
+    return 1;
+}
+
 void flw_buf_json_args(struct flw_buf *b, size_t argc, char *const *argv)
 {
     flw_buf_put(b, "[", 1);
     for (size_t i = 0; i < argc; i++) {
         const char *a = argv[i];
         const char *eq = strchr(a, '=');
+        int done = 0;
         if (i > 0) {
             flw_buf_put(b, ",", 1);
-        }
-        if (i > 0 && strcmp(argv[i - 1], "-c") == 0 && eq != NULL) {
-            char *key = malloc((size_t)(eq - a) + 1);
-            int secret = 1;
-            if (key != NULL) {
-                memcpy(key, a, (size_t)(eq - a));
-                key[eq - a] = '\0';
-                secret = flw_is_secret_name(key) || flw_is_secret_name(eq + 1);
-                if (secret) {
-                    struct flw_buf t = { 0 };
-                    flw_buf_puts(&t, key);
-                    flw_buf_puts(&t, "=<redacted>");
-                    flw_buf_json(b, t.oom || t.p == NULL ? "<redacted>" : t.p);
-                    flw_buf_free(&t);
-                }
-                free(key);
-            } else {
-                flw_buf_json(b, "<redacted>");
-            }
-            if (secret) {
-                continue;
+            if (strcmp(argv[i - 1], "-c") == 0 && eq != NULL) {
+                done = json_secret_config(b, a, eq);
             }
         }
-        json_redacted(b, a);
+        if (!done) {
+            json_redacted(b, a);
+        }
     }
     flw_buf_put(b, "]", 1);
 }
@@ -1084,6 +1100,29 @@ void flw_buf_json_stdio(struct flw_buf *b)
     flw_buf_put(b, "}", 1);
 }
 
+/* malloc'd wine_get_dos_file_name(unix_path); NULL when unavailable or unmappable. */
+static wchar_t *dos_path_w(const char *unix_path)
+{
+    WCHAR *d;
+    wchar_t *w;
+    size_t n;
+    wine_init();
+    if (g_dos_fn == NULL) {
+        return NULL;
+    }
+    d = g_dos_fn(unix_path);
+    if (d == NULL) {
+        return NULL;
+    }
+    n = wcslen(d) + 1;
+    w = malloc(n * sizeof(wchar_t));
+    if (w != NULL) {
+        memcpy(w, d, n * sizeof(wchar_t));
+    }
+    HeapFree(GetProcessHeap(), 0, d);
+    return w;
+}
+
 void flw_log_append(const char *path, struct flw_buf *b)
 {
     wchar_t *wpath = NULL;
@@ -1098,22 +1137,7 @@ void flw_log_append(const char *path, struct flw_buf *b)
     if (b->oom || b->n > 0x7FFFFFFFu) {
         return;
     }
-    if (path[0] == '/') {
-        wine_init();
-        if (g_dos_fn != NULL) {
-            WCHAR *d = g_dos_fn(path);
-            if (d != NULL) {
-                size_t n = wcslen(d) + 1;
-                wpath = malloc(n * sizeof(wchar_t));
-                if (wpath != NULL) {
-                    memcpy(wpath, d, n * sizeof(wchar_t));
-                }
-                HeapFree(GetProcessHeap(), 0, d);
-            }
-        }
-    } else {
-        wpath = flw_utf16(path);
-    }
+    wpath = path[0] == '/' ? dos_path_w(path) : flw_utf16(path);
     if (wpath == NULL) {
         return;
     }
@@ -1342,8 +1366,12 @@ int flw_send_req(const struct fl_req *r)
     size_t len = 0;
     int rc;
     if (fl_req_encode(r, &buf, &len) != 0 || len > FL_MAX_REQ) {
+        struct flw_buf m = { 0 };
         free(buf);
-        flw_msg("cannot encode the request (invalid entry, or larger than %u bytes)", (unsigned)FL_MAX_REQ);
+        flw_buf_puts(&m, "cannot encode the request (invalid entry, or larger than ");
+        flw_buf_putu(&m, FL_MAX_REQ);
+        flw_buf_puts(&m, " bytes)");
+        flw_msg_buf(&m);
         return -1;
     }
     rc = flw_send_frame(FL_F_REQ, buf, (uint32_t)len);
@@ -1359,67 +1387,96 @@ static uint32_t get_u32(const uint8_t *p)
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
+/* SPAWN_ERR: print the daemon's errno and message, exit 127. */
+static _Noreturn void spawn_failed(const char *what, const uint8_t *p, uint32_t len)
+{
+    int32_t err = len >= 4 ? (int32_t)get_u32(p) : 0;
+    struct flw_buf m = { 0 };
+    size_t ml = len > 4 ? len - 4 : 0;
+    if (ml > 511) {
+        ml = 511;
+    }
+    flw_buf_puts(&m, "cannot run '");
+    flw_buf_puts(&m, what);
+    flw_buf_puts(&m, "': ");
+    if (ml == 0) {
+        flw_buf_puts(&m, "spawn failed");
+    }
+    for (size_t i = 0; i < ml; i++) {
+        char c = (char)p[4 + i];
+        /* No control characters (terminal escapes) from the daemon reach our stderr. */
+        flw_buf_put(&m, ((unsigned char)c < 0x20 || c == 0x7F) ? " " : &c, 1);
+    }
+    flw_buf_puts(&m, " (errno ");
+    flw_buf_puti(&m, err);
+    flw_buf_puts(&m, ")");
+    flw_msg_buf(&m);
+    flw_exit(FLW_EXIT_SPAWN);
+}
+
+/* malloc'd copy of the n bytes at p, NUL-terminated; exits 125 when out of memory. */
+static char *dup_bytes(const uint8_t *p, size_t n)
+{
+    char *s = malloc(n + 1);
+    if (s == NULL) {
+        flw_fail("out of memory");
+    }
+    memcpy(s, p, n);
+    s[n] = '\0';
+    return s;
+}
+
+/* Split the NUL-separated realpaths of SPAWN_OK (p[4..len)) into *real / *nreal. */
+static void split_reals(const uint8_t *p, uint32_t len, char ***real, size_t *nreal)
+{
+    size_t count = 0;
+    size_t k = 0;
+    uint32_t start = 4;
+    char **v;
+    for (uint32_t i = 4; i < len; i++) {
+        if (p[i] == 0 || i + 1 == len) {
+            count++;
+        }
+    }
+    if (count == 0) {
+        return;
+    }
+    v = calloc(count, sizeof(char *));
+    if (v == NULL) {
+        flw_fail("out of memory");
+    }
+    for (uint32_t i = 4; i < len; i++) {
+        uint32_t end = p[i] == 0 ? i : i + 1;
+        if ((p[i] == 0 || i + 1 == len) && k < count) {
+            v[k] = dup_bytes(p + start, (size_t)(end - start));
+            k++;
+            start = i + 1;
+        }
+    }
+    *real = v;
+    *nreal = k;
+}
+
 uint32_t flw_wait_spawn(const char *what, char ***real, size_t *nreal)
 {
     const uint8_t *p;
     uint8_t type;
     uint32_t len;
     uint32_t pid;
-    size_t count = 0;
     *real = NULL;
     *nreal = 0;
     if (flw_recv_frame(&type, &p, &len) != 0) {
-        flw_fail("the bridge daemon closed the connection before starting '%s'", what);
+        flw_fail_s("the bridge daemon closed the connection before starting '", what, "'");
     }
     if (type == FL_F_SPAWN_ERR) {
-        int32_t err = len >= 4 ? (int32_t)get_u32(p) : 0;
-        char msg[512];
-        size_t ml = len > 4 ? len - 4 : 0;
-        if (ml >= sizeof(msg)) {
-            ml = sizeof(msg) - 1;
-        }
-        for (size_t i = 0; i < ml; i++) {
-            char c = (char)p[4 + i];
-            /* No control characters (terminal escapes) from the daemon reach our stderr. */
-            msg[i] = ((unsigned char)c < 0x20 || c == 0x7F) ? ' ' : c;
-        }
-        msg[ml] = '\0';
-        flw_msg("cannot run '%s': %s (errno %d)", what, ml > 0 ? msg : "spawn failed", (int)err);
-        flw_exit(FLW_EXIT_SPAWN);
+        spawn_failed(what, p, len);
     }
     if (type != FL_F_SPAWN_OK || len < 4) {
-        flw_fail("protocol error: expected SPAWN_OK from the bridge daemon, got frame type %u", (unsigned)type);
+        flw_fail_n("protocol error: expected SPAWN_OK from the bridge daemon, got frame type ", type, "");
     }
     pid = get_u32(p);
     /* NUL-separated realpaths of the REQ anchors, in order ("" = unresolved). */
-    for (uint32_t i = 4; i < len; i++) {
-        if (p[i] == 0 || i + 1 == len) {
-            count++;
-        }
-    }
-    if (count > 0) {
-        char **v = calloc(count, sizeof(char *));
-        uint32_t start = 4;
-        size_t k = 0;
-        if (v == NULL) {
-            flw_fail("out of memory");
-        }
-        for (uint32_t i = 4; i < len && k < count; i++) {
-            if (p[i] == 0 || i + 1 == len) {
-                uint32_t end = p[i] == 0 ? i : i + 1;
-                char *s = malloc((size_t)(end - start) + 1);
-                if (s == NULL) {
-                    flw_fail("out of memory");
-                }
-                memcpy(s, p + start, (size_t)(end - start));
-                s[end - start] = '\0';
-                v[k++] = s;
-                start = i + 1;
-            }
-        }
-        *real = v;
-        *nreal = k;
-    }
+    split_reals(p, len, real, nreal);
     set_rcv_timeout(0); /* the relay may legitimately idle for a long time */
     return pid;
 }
@@ -1481,39 +1538,40 @@ static int quitting(void)
     return WaitForSingleObject(g_quit, 0) == WAIT_OBJECT_0;
 }
 
+/* One read + STDIN frame. 1: go on; 0: EOF (send STDIN_EOF); -1: stop without it. */
+static int pump_step(HANDLE h)
+{
+    DWORD n = 0;
+    BOOL got;
+    if (quitting()) {
+        return -1;
+    }
+    InterlockedExchange(&g_pump_phase, PUMP_READING);
+    got = ReadFile(h, g_inbuf, (DWORD)sizeof(g_inbuf), &n, NULL);
+    InterlockedExchange(&g_pump_phase, PUMP_BUSY);
+    if (!got || n == 0) {
+        return 0;
+    }
+    if (quitting()) {
+        return -1;
+    }
+    InterlockedExchange(&g_pump_phase, PUMP_SENDING);
+    got = flw_send_frame(FL_F_STDIN, g_inbuf, n) == 0;
+    InterlockedExchange(&g_pump_phase, PUMP_BUSY);
+    return got ? 1 : -1;
+}
+
 static DWORD WINAPI stdin_pump(LPVOID arg)
 {
     HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
-    int ok = 1;
+    int step = 0;
     (void)arg;
     if (h != NULL && h != INVALID_HANDLE_VALUE) {
-        for (;;) {
-            DWORD n = 0;
-            BOOL got;
-            if (quitting()) {
-                ok = 0;
-                break;
-            }
-            InterlockedExchange(&g_pump_phase, PUMP_READING);
-            got = ReadFile(h, g_inbuf, (DWORD)sizeof(g_inbuf), &n, NULL);
-            InterlockedExchange(&g_pump_phase, PUMP_BUSY);
-            if (!got || n == 0) {
-                break;
-            }
-            if (quitting()) {
-                ok = 0;
-                break;
-            }
-            InterlockedExchange(&g_pump_phase, PUMP_SENDING);
-            got = flw_send_frame(FL_F_STDIN, g_inbuf, n) == 0;
-            InterlockedExchange(&g_pump_phase, PUMP_BUSY);
-            if (!got) {
-                ok = 0;
-                break;
-            }
-        }
+        do {
+            step = pump_step(h);
+        } while (step > 0);
     }
-    if (ok && !quitting()) {
+    if (step == 0 && !quitting()) {
         InterlockedExchange(&g_pump_phase, PUMP_SENDING);
         flw_send_frame(FL_F_STDIN_EOF, NULL, 0);
         InterlockedExchange(&g_pump_phase, PUMP_BUSY);
@@ -1539,27 +1597,32 @@ static DWORD WINAPI stdin_pump(LPVOID arg)
  * send) and ExitProcess reaps it. A pump inside send() gets up to FLW_JOIN_MS, so the
  * socket is not torn down under a send in progress.
  */
-static void pump_finish(void)
+/* Cancel and wait for the pump within the B2 caps; 1 when it returned. */
+static int pump_join(void)
 {
     ULONGLONG start = GetTickCount64();
     DWORD step = 1;
-    int joined = 0;
-    SetEvent(g_quit);
     for (;;) {
         ULONGLONG el;
         CancelSynchronousIo(g_pump);
         if (WaitForSingleObject(g_pump, step) == WAIT_OBJECT_0) {
-            joined = 1;
-            break;
+            return 1;
         }
         el = GetTickCount64() - start;
         if (el >= FLW_JOIN_MS || (el >= FLW_READ_JOIN_MS && g_pump_phase == PUMP_READING)) {
-            break;
+            return 0;
         }
         if (step < 16) {
             step *= 2;
         }
     }
+}
+
+static void pump_finish(void)
+{
+    int joined;
+    SetEvent(g_quit);
+    joined = pump_join();
     if (!joined) {
         EnterCriticalSection(&g_join_lock);
         if (g_pump_returning) {
@@ -1596,13 +1659,13 @@ _Noreturn void flw_relay(struct flw_sink *out, struct flw_sink *err, int pump_st
 {
     g_quit = CreateEventW(NULL, TRUE, FALSE, NULL);
     if (g_quit == NULL) {
-        flw_fail("CreateEvent failed (win32 error %lu)", GetLastError());
+        flw_fail_n("CreateEvent failed (win32 error ", (long long)GetLastError(), ")");
     }
     if (pump_stdin) {
         InitializeCriticalSection(&g_join_lock);
         g_pump = CreateThread(NULL, 0, stdin_pump, NULL, 0, NULL);
         if (g_pump == NULL) {
-            flw_fail("CreateThread failed (win32 error %lu)", GetLastError());
+            flw_fail_n("CreateThread failed (win32 error ", (long long)GetLastError(), ")");
         }
     } else if (flw_send_frame(FL_F_STDIN_EOF, NULL, 0) != 0) {
         flw_fail("connection to the bridge daemon lost");
@@ -1634,15 +1697,10 @@ _Noreturn void flw_relay(struct flw_sink *out, struct flw_sink *err, int pump_st
             }
             sink_flush(out);
             sink_flush(err);
-            if (kind == 0 && code >= 0 && code <= 255) {
-                flw_exit((UINT)code);
-            }
-            if (kind == 1 && code > 0 && code < 128) {
-                flw_exit((UINT)(128 + code));
-            }
-            flw_fail("protocol error: EXIT kind %d code %ld", kind, (long)code);
+            /* fl_exit_decode guarantees kind 0 with code 0..255, or kind 1 with signal 1..127 */
+            flw_exit(kind == 0 ? (UINT)code : (UINT)(128 + code));
         default:
-            flw_fail("protocol error: unexpected frame type %u from the bridge daemon", (unsigned)type);
+            flw_fail_n("protocol error: unexpected frame type ", type, " from the bridge daemon");
         }
     }
 }
@@ -1668,11 +1726,129 @@ _Noreturn void flw_exit(UINT code)
     ExitProcess(code);
 }
 
-_Noreturn void flw_fail(const char *fmt, ...)
+_Noreturn void flw_fail(const char *text)
 {
-    va_list ap;
-    va_start(ap, fmt);
-    vmsg(fmt, ap);
-    va_end(ap);
+    flw_msg(text);
     flw_exit(FLW_EXIT_BRIDGE);
+}
+
+_Noreturn void flw_fail_s(const char *pre, const char *s, const char *post)
+{
+    flw_msg_s(pre, s, post);
+    flw_exit(FLW_EXIT_BRIDGE);
+}
+
+_Noreturn void flw_fail_n(const char *pre, long long n, const char *post)
+{
+    struct flw_buf m = { 0 };
+    flw_buf_puts(&m, pre);
+    flw_buf_puti(&m, n);
+    flw_buf_puts(&m, post);
+    flw_fail_buf(&m);
+}
+
+_Noreturn void flw_fail_buf(struct flw_buf *m)
+{
+    flw_msg_buf(m);
+    flw_exit(FLW_EXIT_BRIDGE);
+}
+
+/* ------------------------------------------------------------------------ */
+/* shared by the entry points                                                */
+/* ------------------------------------------------------------------------ */
+
+void *flw_xmalloc(size_t n)
+{
+    void *p = malloc(n);
+    if (p == NULL) {
+        flw_fail("out of memory");
+    }
+    return p;
+}
+
+void *flw_xcalloc(size_t n, size_t size)
+{
+    void *p = calloc(n, size);
+    if (p == NULL) {
+        flw_fail("out of memory");
+    }
+    return p;
+}
+
+char *flw_xstrdup(const char *s)
+{
+    char *d = flw_strdup(s);
+    if (d == NULL) {
+        flw_fail("out of memory");
+    }
+    return d;
+}
+
+char **flw_args_utf8(int argc, wchar_t **wargv)
+{
+    char **v = flw_xcalloc((size_t)argc + 1, sizeof(char *));
+    for (int i = 0; i < argc; i++) {
+        v[i] = flw_utf8(wargv[i]);
+        if (v[i] == NULL) {
+            flw_fail_n("argument ", i, " is not valid UTF-16");
+        }
+    }
+    return v;
+}
+
+int flw_xlate_args(const struct fl_xlate *x, int argc, char *const *argv, struct fl_strvec *out)
+{
+    char *buf = malloc(FLW_XLATE_BUF);
+    out->n = 0;
+    out->cap = (size_t)argc + 1;
+    out->v = calloc(out->cap, sizeof(char *));
+    if (buf == NULL || out->v == NULL) {
+        free(buf);
+        return -1;
+    }
+    for (int i = 0; i < argc; i++) {
+        const char *src = argv[i];
+        if (fl_is_win_abs(src) && fl_win_to_unix(x, src, buf, FLW_XLATE_BUF) == 0) {
+            src = buf;
+        }
+        out->v[out->n] = flw_strdup(src);
+        if (out->v[out->n] == NULL) {
+            free(buf);
+            return -1;
+        }
+        out->n++;
+    }
+    free(buf);
+    return 0;
+}
+
+void flw_translate_environ(const struct fl_xlate *x, struct fl_envops *ops)
+{
+    size_t n = 0;
+    char **envp = flw_environ(&n);
+    if (envp == NULL || fl_translate_env(x, envp, ops) != 0) {
+        flw_fail("cannot translate the environment");
+    }
+    flw_free_strv(envp, n);
+}
+
+void flw_start_call(struct flw_cfg *cfg, const struct fl_req *req)
+{
+    if (flw_connect(cfg->port) != 0) {
+        struct flw_buf m = { 0 };
+        flw_buf_puts(&m, "cannot connect to the bridge daemon on 127.0.0.1:");
+        flw_buf_putu(&m, cfg->port);
+        flw_buf_puts(&m, " (WSA error ");
+        flw_buf_puti(&m, WSAGetLastError());
+        flw_buf_puts(&m, "): is fork-linux still running?");
+        flw_fail_buf(&m);
+    }
+    if (flw_handshake(cfg->key) != 0) {
+        flw_cfg_clear(cfg);
+        flw_exit(FLW_EXIT_BRIDGE);
+    }
+    SecureZeroMemory(cfg->key, sizeof(cfg->key));
+    if (flw_send_req(req) != 0) {
+        flw_exit(FLW_EXIT_BRIDGE);
+    }
 }

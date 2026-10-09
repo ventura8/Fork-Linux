@@ -377,7 +377,9 @@ def test_sync_link_mode(paths: Paths, host: Path) -> None:
     assert manifest == {"schema": 1, "files": sorted([*names, "config"])}
     # A second run changes nothing but still reports the same state.
     again = ssh_sync.sync(paths, USER, host)
-    assert again.linked == report.linked and again.removed == [] and again.skipped == []
+    assert again.linked == report.linked
+    assert again.removed == []
+    assert again.skipped == []
 
 
 def test_sync_copy_mode_then_link_mode(paths: Paths, host: Path) -> None:
@@ -400,7 +402,8 @@ def test_sync_replaces_a_symlinked_ssh_dir(paths: Paths, host: Path) -> None:
     wine = _wine_ssh(paths)
     wine.symlink_to(host / ".ssh")
     ssh_sync.sync(paths, USER, host)
-    assert wine.is_dir() and not wine.is_symlink()
+    assert wine.is_dir()
+    assert not wine.is_symlink()
     assert sorted(p.name for p in (host / ".ssh").iterdir()) == [
         "id_dir", "id_dir.pub", "id_ed25519", "id_ed25519-cert.pub", "id_ed25519.pub", "id_lonely",
         "id_rsa", "id_rsa.pub", "known_hosts",
@@ -444,7 +447,8 @@ def test_sync_removes_what_the_host_no_longer_has(paths: Paths, host: Path) -> N
     assert (wine / "id_rsa").exists()
     report = ssh_sync.sync(paths, USER, host)
     assert report.removed == [wine / "config", wine / "id_rsa", wine / "id_rsa.pub"]
-    assert not (wine / "id_rsa").exists() and not (wine / "config").exists()
+    assert not (wine / "id_rsa").exists()
+    assert not (wine / "config").exists()
     assert (wine / "keys").is_dir()
 
 
@@ -537,7 +541,8 @@ def test_sync_dry_run_writes_nothing(paths: Paths, host: Path) -> None:
     wine = _wine_ssh(paths)
     assert not wine.exists()
     assert report.config_path == wine / "config"
-    assert len(report.copied) == 5 and report.linked == [wine / "known_hosts"]
+    assert len(report.copied) == 5
+    assert report.linked == [wine / "known_hosts"]
     assert report.dropped_directives == [("UseKeychain yes", "macOS only")]
 
 
@@ -572,7 +577,9 @@ def test_status_before_sync(paths: Paths, host: Path) -> None:
 def test_status_symlinked_dir(paths: Paths, host: Path) -> None:
     _wine_ssh(paths).symlink_to(host / ".ssh")
     result = ssh_sync.status(paths, USER, host)
-    assert result["exists"] and result["is_symlink"] and not result["dir_ok"]
+    assert result["exists"]
+    assert result["is_symlink"]
+    assert not result["dir_ok"]
 
 
 def test_status_after_sync(paths: Paths, host: Path) -> None:
@@ -580,8 +587,11 @@ def test_status_after_sync(paths: Paths, host: Path) -> None:
     ssh_sync.sync(paths, USER, host, mode="copy")
     wine = _wine_ssh(paths)
     result = ssh_sync.status(paths, USER, host)
-    assert result["dir_ok"] and result["perms_ok"] and result["mode"] == "0700"
-    assert result["config"] == "current" and not result["stale_config"]
+    assert result["dir_ok"]
+    assert result["perms_ok"]
+    assert result["mode"] == "0700"
+    assert result["config"] == "current"
+    assert not result["stale_config"]
     assert "id_rsa" in result["managed"]
     # Problems: a readable private copy, a broken link, a stale config.
     os.chmod(wine / "id_rsa", 0o644)
@@ -590,9 +600,12 @@ def test_status_after_sync(paths: Paths, host: Path) -> None:
     (wine / "sub" / "dangling-dir").symlink_to(host / "nodir")
     host_config.write_text("Host y\n", encoding="utf-8")
     result = ssh_sync.status(paths, USER, host)
-    assert result["insecure_files"] == ["id_rsa"] and not result["perms_ok"] and result["dir_ok"]
+    assert result["insecure_files"] == ["id_rsa"]
+    assert not result["perms_ok"]
+    assert result["dir_ok"]
     assert result["broken_links"] == ["dangling", "sub/dangling-dir"]
-    assert result["config"] == "stale" and result["stale_config"]
+    assert result["config"] == "stale"
+    assert result["stale_config"]
     host_config.unlink()
     assert ssh_sync.status(paths, USER, host)["config"] == "stale"
     (wine / "config").write_text("Host mine\n", encoding="utf-8")

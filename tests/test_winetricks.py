@@ -128,8 +128,9 @@ def test_ensure_managed_detects_a_swapped_download(
     paths: Paths, pinned: Manifest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(download, "fetch", FakeFetch(b"#!/bin/sh\necho evil\n"))
+    runner = RecordingRunner()
     with pytest.raises(IntegrityFailed, match="changed after it was verified"):
-        winetricks.ensure(pinned, paths, RecordingRunner())
+        winetricks.ensure(pinned, paths, runner)
     assert not winetricks.managed_path(pinned, paths).exists()
 
 
@@ -145,8 +146,9 @@ def test_ensure_system_missing(paths: Paths, pinned: Manifest) -> None:
 
 
 def test_ensure_unknown_mode(paths: Paths, pinned: Manifest) -> None:
+    runner = RecordingRunner()
     with pytest.raises(UsageError, match="unknown winetricks mode"):
-        winetricks.ensure(pinned, paths, RecordingRunner(), mode="latest")
+        winetricks.ensure(pinned, paths, runner, mode="latest")
 
 
 # --------------------------------------------------------------------------- run_verbs
@@ -182,14 +184,16 @@ def test_run_verbs_single_string_and_no_loader(tmp_path: Path) -> None:
 
 
 def test_run_verbs_requires_verbs(tmp_path: Path) -> None:
+    runner = RecordingRunner()
     with pytest.raises(ValueError, match="no winetricks verbs"):
-        winetricks.run_verbs(RecordingRunner(), tmp_path / "winetricks", {}, [])
+        winetricks.run_verbs(runner, tmp_path / "winetricks", {}, [])
 
 
 @pytest.mark.parametrize("verb", ["", "-q", "--force", "a b", "$(id)", "dotnet48;rm", "x" * 65])
 def test_run_verbs_rejects_suspicious_verbs(tmp_path: Path, verb: str) -> None:
+    runner = RecordingRunner()
     with pytest.raises(ValueError, match="not a winetricks verb"):
-        winetricks.run_verbs(RecordingRunner(), tmp_path / "winetricks", {}, ["corefonts", verb])
+        winetricks.run_verbs(runner, tmp_path / "winetricks", {}, ["corefonts", verb])
 
 
 # --------------------------------------------------------------------------- installed_verbs

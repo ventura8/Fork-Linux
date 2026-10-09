@@ -200,13 +200,17 @@ def test_zenity_progress_with_the_fake(fake_bin: Path, monkeypatch: pytest.Monke
     assert calls[-1]["stdin"] == ["# Downloading &lt;Wine&gt;", "25", "# verified", "50", "100"]
 
 
+def _report_progress(dialog: ui.ZenityUI, title: str, fractions: tuple[float, ...]) -> None:
+    with dialog.progress(title) as progress:
+        for fraction in fractions:
+            progress.update(fraction)
+
+
 def test_zenity_progress_cancel_with_the_fake(fake_bin: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FL_FAKE_ZENITY_CANCEL_AT", "40")
     dialog = ui.ZenityUI(env=dict(os.environ))
-    with pytest.raises(Declined, match="Setting up: cancelled"), dialog.progress("Setting up") as progress:
-        progress.update(0.25)
-        progress.update(0.5)
-        progress.update(0.75)
+    with pytest.raises(Declined, match="Setting up: cancelled"):
+        _report_progress(dialog, "Setting up", (0.25, 0.5, 0.75))
     assert _calls(fake_bin)[-1]["cancelled"] is True
 
 

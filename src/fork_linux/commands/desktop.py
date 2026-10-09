@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any
 
 from .. import desktop_integration, winecmd
 from ..cli import AppContext
@@ -75,7 +76,13 @@ def run_status(args: argparse.Namespace, ctx: AppContext) -> int:
     info = desktop_integration.status(ctx.paths, ctx.env)
     if ctx.json:
         ctx.print_json(info)
-        return 0
+    else:
+        _print_status(info)
+    return 0
+
+
+def _print_status(info: dict[str, Any]) -> None:
+    """Print the integration status as text."""
     print(f"launcher: {' '.join(info['launcher'])}")
     if info["system_desktop"]:
         print(f"menu entry installed by a package: {info['system_desktop']}")
@@ -83,4 +90,3 @@ def run_status(args: argparse.Namespace, ctx: AppContext) -> int:
         print("not installed - run 'fork-linux desktop install'")
     for entry in info["entries"]:
         print(f"{entry['state']:<9} {entry['kind']:<16} {entry['path']}")
-    return 0

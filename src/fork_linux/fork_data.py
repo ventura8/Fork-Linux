@@ -43,7 +43,7 @@ FILE_MODE = 0o644
 BACKUP_MODE = 0o600
 SOURCE_DIRS = "source_dirs"
 
-_KEY_LINE = re.compile(r"^(\s*)([A-Za-z0-9_-]+)\s*=\s*(.*?)\s*$")
+_KEY_NAME = re.compile(r"[A-Za-z0-9_-]+")
 _TABLE = re.compile(r"^\s*\[")
 _LITERAL = re.compile(r"'([^'\n]*)'")
 _BASIC = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
@@ -144,12 +144,24 @@ def _top_level_lines(text: str) -> list[tuple[int, str]]:
     return found
 
 
+def _key_line(line: str) -> tuple[str, str, str] | None:
+    """``(indent, key, value)`` of a ``key = value`` line without line breaks, else None."""
+    body = line.lstrip()
+    key = _KEY_NAME.match(body)
+    if key is None:
+        return None
+    rest = body[key.end():].lstrip()
+    if not rest.startswith("="):
+        return None
+    return line[: len(line) - len(body)], key.group(), rest[1:].strip()
+
+
 def source_dirs(text: str) -> list[str] | None:
     """The top-level ``source_dirs`` (None when absent or not a one-line array of strings)."""
     for _index, line in _top_level_lines(text):
-        match = _KEY_LINE.match(line.rstrip("\r\n"))
-        if match is not None and match.group(2) == SOURCE_DIRS:
-            return parse_strings(match.group(3))
+        match = _key_line(line.rstrip("\r\n"))
+        if match is not None and match[1] == SOURCE_DIRS:
+            return parse_strings(match[2])
     return None
 
 
@@ -161,9 +173,9 @@ def repositories(text: str) -> list[str]:
         if _TABLE.match(line):
             in_repository = line.strip() == "[[repository]]"
             continue
-        match = _KEY_LINE.match(line)
-        if in_repository and match is not None and match.group(2) == "path":
-            parsed = parse_strings(f"[{match.group(3)}]")
+        match = _key_line(line)
+        if in_repository and match is not None and match[1] == "path":
+            parsed = parse_strings(f"[{match[2]}]")
             if parsed is not None and len(parsed) == 1:
                 paths.append(parsed[0])
     return paths
@@ -184,12 +196,12 @@ def with_source_dirs(text: str, dirs: list[str]) -> str:
     lines = text.splitlines(keepends=True)
     for index, line in _top_level_lines(text):
         body = line.rstrip("\r\n")
-        match = _KEY_LINE.match(body)
-        if match is not None and match.group(2) == SOURCE_DIRS:
-            if parse_strings(match.group(3)) is None:
+        match = _key_line(body)
+        if match is not None and match[1] == SOURCE_DIRS:
+            if parse_strings(match[2]) is None:
                 break
             ending = line[len(body):]
-            lines[index] = f"{match.group(1)}{SOURCE_DIRS} = [{', '.join(quote(item) for item in dirs)}]{ending}"
+            lines[index] = f"{match[0]}{SOURCE_DIRS} = [{', '.join(quote(item) for item in dirs)}]{ending}"
             return "".join(lines)
     raise ValueError("no one-line source_dirs array to replace")
 
@@ -203,8 +215,8 @@ def list_backups(backup_dir: Path) -> list[Path]:
     return sorted((Path(backup_dir) / name for name in names if name.startswith(BACKUP_PREFIX)), reverse=True)
 
 
-def backup(file: Path, text: str, *, backup_dir: Path, keep: int = DEFAULT_KEEP) -> Path:
-    """Save ``text`` (the current content of ``file``) as ``repositories.toml.<UTC time>``; keep ``keep``."""
+def backup(text: str, *, backup_dir: Path, keep: int = DEFAULT_KEEP) -> Path:
+    """Save ``text`` (the current content of ``repositories.toml``) as ``repositories.toml.<UTC time>``; keep ``keep``."""
     fsutil.ensure_dir(backup_dir, 0o700)
     stamp = _utcnow().strftime("%Y%m%dT%H%M%S.%fZ")
     target = Path(backup_dir) / f"{BACKUP_PREFIX}{stamp}"
@@ -230,6 +242,6 @@ def ensure_source_dirs(forkdata_dir: Path, *, user: str, home_win: str, backup_d
     if not is_default(source_dirs(text), user):
         return False
     new = with_source_dirs(text, [home_win])
-    backup(file, text, backup_dir=backup_dir)
+    backup(text, backup_dir=backup_dir)
     fsutil.atomic_write(file, new.encode("utf-8", errors="surrogateescape"), mode=FILE_MODE)
     return True

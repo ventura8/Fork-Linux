@@ -129,7 +129,8 @@ def test_root_is_refused(capsys: pytest.CaptureFixture[str], monkeypatch: pytest
     assert code == errors.ExitCode.UNSUPPORTED_ENV == 19
     assert out == ""
     assert "fork-linux: error: refusing to run as root" in err
-    assert "hint: " in err and "--allow-root" in err
+    assert "hint: " in err
+    assert "--allow-root" in err
     assert not (xdg / ".local/state/fork-linux").exists(), "nothing may be written before the root check"
 
 
@@ -219,7 +220,8 @@ def test_unexpected_exception_is_logged_with_traceback(
     assert f"the details are in {log_file}" in err
     assert credits.LINKS["project_issues"] in err
     text = log_file.read_text(encoding="utf-8")
-    assert "Traceback" in text and "kaboom" in text
+    assert "Traceback" in text
+    assert "kaboom" in text
     assert not [h for h in logging.getLogger("fork_linux").handlers if getattr(h, "_fork_linux_handler", False)]
 
 
@@ -454,7 +456,8 @@ def test_config_get_set_unset_cycle(capsys: pytest.CaptureFixture[str]) -> None:
     code, out, _err = run_cli(capsys, "config", "unset", "wine.provider")
     assert (code, out) == (0, "wine.provider is back to its default: 'managed'\n")
     code, out, _err = run_cli(capsys, "config", "unset", "wine.provider")
-    assert code == 0 and "was not set" in out
+    assert code == 0
+    assert "was not set" in out
 
 
 def test_config_set_value_starting_with_dash_and_spaces(capsys: pytest.CaptureFixture[str]) -> None:
@@ -471,7 +474,8 @@ def test_config_json_outputs(capsys: pytest.CaptureFixture[str]) -> None:
     assert json.loads(out)["source"] == "file"
     code, out, _err = run_cli(capsys, "--json", "config", "unset", "display.dpi")
     data = json.loads(out)
-    assert data["removed"] is True and data["value"] == "auto"
+    assert data["removed"] is True
+    assert data["value"] == "auto"
     code, out, _err = run_cli(capsys, "--json", "config", "list")
     rows = json.loads(out)
     assert len(rows) == sum(len(keys) for keys in config_mod.SCHEMA.values())
@@ -481,13 +485,17 @@ def test_config_json_outputs(capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_config_set_errors(capsys: pytest.CaptureFixture[str]) -> None:
     code, _out, err = run_cli(capsys, "config", "set", "wine.provider")
-    assert code == 2 and "missing VALUE" in err
+    assert code == 2
+    assert "missing VALUE" in err
     code, _out, err = run_cli(capsys, "config", "set", "wine.renderer", "directx")
-    assert code == 2 and "expected gdi, gl, vulkan" in err
+    assert code == 2
+    assert "expected gdi, gl, vulkan" in err
     code, _out, err = run_cli(capsys, "config", "get", "wine.colour")
-    assert code == 2 and "unknown setting" in err
+    assert code == 2
+    assert "unknown setting" in err
     code, _out, err = run_cli(capsys, "config", "get", "provider")
-    assert code == 2 and "SECTION.KEY" in err
+    assert code == 2
+    assert "SECTION.KEY" in err
 
 
 def test_config_set_warns_about_env_override(
@@ -510,7 +518,8 @@ def test_config_get_warns_about_invalid_values(capsys: pytest.CaptureFixture[str
     assert "invalid value" in err
     code, out, err = run_cli(capsys, "config", "list")
     assert code == 0
-    assert "wine.renderer" in out and "directx  (file)" in out
+    assert "wine.renderer" in out
+    assert "directx  (file)" in out
     assert err.count("unknown setting wine.mystery") == 1
 
 
@@ -584,7 +593,8 @@ def test_config_edit_failures(
     monkeypatch.setenv("EDITOR", "vi")
     monkeypatch.setattr(config_cmd, "run_interactive", lambda argv, env: 3)
     code, _out, err = run_cli(capsys, "config", "edit")
-    assert code == 1 and "exited with status 3" in err
+    assert code == 1
+    assert "exited with status 3" in err
 
     def broken_editor(argv: list[str], env: dict[str, str]) -> int:
         Path(argv[-1]).write_text("not an ini file\n", encoding="utf-8")
@@ -592,18 +602,21 @@ def test_config_edit_failures(
 
     monkeypatch.setattr(config_cmd, "run_interactive", broken_editor)
     code, _out, err = run_cli(capsys, "config", "edit")
-    assert code == 2 and "cannot parse" in err
+    assert code == 2
+    assert "cannot parse" in err
 
     monkeypatch.setenv("EDITOR", "vi 'unterminated")
     code, _out, err = run_cli(capsys, "config", "edit")
-    assert code == 2 and "cannot parse $EDITOR" in err
+    assert code == 2
+    assert "cannot parse $EDITOR" in err
 
     monkeypatch.delenv("EDITOR")
     empty = tmp_path / "empty-bin"
     empty.mkdir()
     monkeypatch.setenv("PATH", str(empty))
     code, _out, err = run_cli(capsys, "config", "edit")
-    assert code == 2 and "no text editor found" in err
+    assert code == 2
+    assert "no text editor found" in err
 
 
 def test_editor_argv_fallbacks() -> None:

@@ -204,34 +204,39 @@ def test_normalize_key_rejects(key: str) -> None:
 
 
 def test_batch_rejects_bad_key() -> None:
+    batch = RegBatch()
     with pytest.raises(ValueError):
-        RegBatch().set_sz("Software\\Wine", "a", "b")
+        batch.set_sz("Software\\Wine", "a", "b")
     with pytest.raises(ValueError):
-        RegBatch().delete_key("HKLM")
+        batch.delete_key("HKLM")
 
 
 @pytest.mark.parametrize("name", ["bad\nname", "tab\tname", "\udc00"])
 def test_value_name_rejected(name: str) -> None:
+    batch = RegBatch()
     with pytest.raises(ValueError):
-        RegBatch().set_sz("HKCU\\Software", name, "v")
+        batch.set_sz("HKCU\\Software", name, "v")
 
 
 @pytest.mark.parametrize("value", ["nul\x00inside", "\ud800"])
 def test_set_sz_rejects(value: str) -> None:
+    batch = RegBatch()
     with pytest.raises(ValueError):
-        RegBatch().set_sz("HKCU\\Software", "n", value)
+        batch.set_sz("HKCU\\Software", "n", value)
 
 
 @pytest.mark.parametrize("value", ["nul\x00inside", "\ud800"])
 def test_set_expand_sz_rejects(value: str) -> None:
+    batch = RegBatch()
     with pytest.raises(ValueError):
-        RegBatch().set_expand_sz("HKCU\\Software", "n", value)
+        batch.set_expand_sz("HKCU\\Software", "n", value)
 
 
 @pytest.mark.parametrize("value", [-1, 2**32, "1", 1.0, None])
 def test_set_dword_rejects(value: object) -> None:
+    batch = RegBatch()
     with pytest.raises(ValueError):
-        RegBatch().set_dword("HKCU\\Software", "n", value)  # deliberately wrong types
+        batch.set_dword("HKCU\\Software", "n", value)  # deliberately wrong types
 
 
 def test_set_dword_accepts_bounds_and_bool() -> None:
@@ -242,8 +247,9 @@ def test_set_dword_accepts_bounds_and_bool() -> None:
 
 @pytest.mark.parametrize("values", ["abc", ["ok", ""], ["nul\x00"], ["\ud800"]])
 def test_set_multi_sz_rejects(values: object) -> None:
+    batch = RegBatch()
     with pytest.raises(ValueError):
-        RegBatch().set_multi_sz("HKCU\\Software", "n", values)
+        batch.set_multi_sz("HKCU\\Software", "n", values)
 
 
 def test_set_multi_sz_accepts_any_iterable() -> None:
@@ -337,8 +343,9 @@ def test_write_overwrites_existing_file(tmp_path: Path) -> None:
 def test_write_failure_leaves_no_temp_file(tmp_path: Path) -> None:
     target = tmp_path / "out" / "batch.reg"
     (target / "occupied").mkdir(parents=True)
+    batch = RegBatch().set_sz("HKCU\\Software\\FLTest", "a", "b")
     with pytest.raises(OSError):
-        RegBatch().set_sz("HKCU\\Software\\FLTest", "a", "b").write(target)
+        batch.write(target)
     assert sorted(p.name for p in target.parent.iterdir()) == ["batch.reg"]
     assert target.is_dir()
 

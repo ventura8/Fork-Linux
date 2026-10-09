@@ -271,9 +271,9 @@ def init_prefix_meta(ctx: Ctx) -> None:
 def clear_markers(ctx: Ctx, keep: Iterable[str] = ()) -> None:
     """Forget every step marker except those in ``keep`` (the prefix was rebuilt)."""
     kept = set(keep)
-    for step_id in list(ctx.state.data.get("steps", {})):
-        if step_id not in kept:
-            ctx.state.clear_step_marker(step_id)
+    stale = [step_id for step_id in ctx.state.data.get("steps", {}) if step_id not in kept]
+    for step_id in stale:
+        ctx.state.clear_step_marker(step_id)
 
 
 def mark_done(step: Step, ctx: Ctx, digest: str | None = None) -> None:

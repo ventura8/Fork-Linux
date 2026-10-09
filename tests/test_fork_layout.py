@@ -58,8 +58,9 @@ def test_repr_names_prefix_and_user(layout: ForkLayout) -> None:
 def test_check_user_rejects_unusable_names(tmp_path: Path, user: str) -> None:
     with pytest.raises(UsageError, match="Wine user name"):
         check_user(user)
+    paths = make_paths(tmp_path)
     with pytest.raises(UsageError):
-        ForkLayout(make_paths(tmp_path), user)
+        ForkLayout(paths, user)
 
 
 def test_check_user_rejects_non_strings() -> None:

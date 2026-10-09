@@ -43,9 +43,8 @@ def run(args: argparse.Namespace, ctx: AppContext) -> int:
                 "disclaimer": credits.disclaimer(),
             }
         )
-        return 0
-    text = credits.render_text()
-    if ctx.gui and _show_dialog(ctx, text):
-        return 0
-    print(text, end="")
+    else:
+        text = credits.render_text()
+        if not (ctx.gui and _show_dialog(ctx, text)):
+            print(text, end="")
     return 0

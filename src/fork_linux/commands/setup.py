@@ -120,10 +120,10 @@ def list_steps(ctx: AppContext, boot: Any, bctx: Any) -> int:
     ]
     if ctx.json:
         ctx.print_json({"schema": SCHEMA, "complete": bctx.state.get("setup.complete") is True, "steps": rows})
-        return 0
-    width = max(len(row["id"]) for row in rows)
-    for row in rows:
-        print(f"{row['status']:<8} {row['id']:<{width}}  {row['title']}")
+    else:
+        width = max(len(row["id"]) for row in rows)
+        for row in rows:
+            print(f"{row['status']:<8} {row['id']:<{width}}  {row['title']}")
     return 0
 
 

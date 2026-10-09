@@ -30,8 +30,6 @@
 /* MinGW-w64 CRT: never glob the command line. */
 int _dowildcard = 0;
 
-#define XBUF (64u * 1024u)
-
 struct verb {
     const char *name;
     uint32_t flags;
@@ -98,19 +96,60 @@ static void usage(void)
 
 int wmain(int argc, wchar_t **wargv); /* -municode entry point */
 
+/* The verb named argv[1]; prints the usage and exits 2 when there is none. */
+static const struct verb *find_verb(const struct call *c)
+{
+    if (c->argc < 2) {
+        usage();
+        flw_exit(FLW_EXIT_USAGE);
+    }
+    for (size_t i = 0; i < sizeof(verbs) / sizeof(verbs[0]); i++) {
+        if (strcmp(c->argv[1], verbs[i].name) == 0) {
+            return &verbs[i];
+        }
+    }
+    flw_msg_s("unknown verb '", c->argv[1], "'");
+    usage();
+    flw_exit(FLW_EXIT_USAGE);
+}
+
+/* The cwd for the host tool: it does not depend on it, so an unmappable one becomes "/". */
+static char *launch_cwd(const char *cwd)
+{
+    char *u = cwd != NULL ? flw_path_to_unix(cwd) : NULL;
+    if (u == NULL) {
+        u = flw_xstrdup("/");
+    }
+    return u;
+}
+
+/* argv for the daemon: the verb, then the arguments with Windows-absolute paths translated. */
+static void launch_args(struct call *c, const struct fl_xlate *x)
+{
+    struct fl_strvec t = { 0, 0, NULL };
+    if (flw_xlate_args(x, c->argc - 2, c->argv + 2, &t) != 0) {
+        flw_fail("out of memory");
+    }
+    c->xargc = t.n + 1;
+    c->xargv = flw_xcalloc(c->xargc + 1, sizeof(char *));
+    c->xargv[0] = flw_xstrdup(c->argv[1]);
+    for (size_t i = 0; i < t.n; i++) {
+        c->xargv[i + 1] = t.v[i];
+    }
+    free(t.v);
+}
+
 int wmain(int argc, wchar_t **wargv)
 {
     struct call *c = &g_call;
-    const struct verb *v = NULL;
+    const struct verb *v;
     struct flw_cfg cfg;
     struct fl_xlate x;
     struct fl_envops ops;
     struct fl_req req;
     struct flw_sink s_out;
     struct flw_sink s_err;
-    char **envp;
     char **real = NULL;
-    char *buf;
     size_t nreal = 0;
 
     memset(c, 0, sizeof(*c));
@@ -119,36 +158,13 @@ int wmain(int argc, wchar_t **wargv)
     c->t0 = GetTickCount64();
     flw_set_prog("fl-launch");
     c->argc = argc;
-    c->argv = calloc((size_t)argc + 1, sizeof(char *));
-    if (c->argv == NULL) {
-        flw_fail("out of memory");
-    }
-    for (int i = 0; i < argc; i++) {
-        c->argv[i] = flw_utf8(wargv[i]);
-        if (c->argv[i] == NULL) {
-            flw_fail("argument %d is not valid UTF-16", i);
-        }
-    }
+    c->argv = flw_args_utf8(argc, wargv);
     c->cwd = flw_cwd();
     c->log = flw_getenv(L"FL_BRIDGE_LOG");
     if (c->log != NULL && c->log[0] != '\0') {
         flw_set_exit_hook(log_hook, c);
     }
-    if (argc < 2) {
-        usage();
-        flw_exit(FLW_EXIT_USAGE);
-    }
-    for (size_t i = 0; i < sizeof(verbs) / sizeof(verbs[0]); i++) {
-        if (strcmp(c->argv[1], verbs[i].name) == 0) {
-            v = &verbs[i];
-            break;
-        }
-    }
-    if (v == NULL) {
-        flw_msg("unknown verb '%s'", c->argv[1]);
-        usage();
-        flw_exit(FLW_EXIT_USAGE);
-    }
+    v = find_verb(c);
     if (flw_load_cfg(&cfg, 0) != 0) {
         flw_exit(FLW_EXIT_BRIDGE);
     }
@@ -156,41 +172,9 @@ int wmain(int argc, wchar_t **wargv)
         flw_fail("wine_get_unix_file_name is unavailable: fl-launch only works under Wine");
     }
     flw_xlate_init(&x, &cfg);
-
-    /* cwd: the host tool does not depend on it, so an unmappable one becomes "/". */
-    c->unix_cwd = c->cwd != NULL ? flw_path_to_unix(c->cwd) : NULL;
-    if (c->unix_cwd == NULL) {
-        c->unix_cwd = flw_strdup("/");
-        if (c->unix_cwd == NULL) {
-            flw_fail("out of memory");
-        }
-    }
-
-    /* argv: verb + translated args */
-    c->xargv = calloc((size_t)argc, sizeof(char *));
-    buf = malloc(XBUF);
-    if (c->xargv == NULL || buf == NULL) {
-        flw_fail("out of memory");
-    }
-    c->xargc = (size_t)argc - 1;
-    for (int i = 1; i < argc; i++) {
-        const char *src = c->argv[i];
-        if (i > 1 && fl_is_win_abs(src) && fl_win_to_unix(&x, src, buf, XBUF) == 0) {
-            src = buf;
-        }
-        c->xargv[i - 1] = flw_strdup(src);
-        if (c->xargv[i - 1] == NULL) {
-            flw_fail("out of memory");
-        }
-    }
-    free(buf);
-
-    /* environment */
-    envp = flw_environ();
-    if (envp == NULL || fl_translate_env(&x, envp, &ops) != 0) {
-        flw_fail("cannot translate the environment");
-    }
-    flw_free_strv(envp);
+    c->unix_cwd = launch_cwd(c->cwd);
+    launch_args(c, &x);
+    flw_translate_environ(&x, &ops);
 
     req.cwd = c->unix_cwd;
     req.argc = c->xargc;
@@ -201,18 +185,7 @@ int wmain(int argc, wchar_t **wargv)
     req.unset = ops.unset.v;
     req.flags = v->flags;
 
-    if (flw_connect(cfg.port) != 0) {
-        flw_fail("cannot connect to the bridge daemon on 127.0.0.1:%u (WSA error %d): is fork-linux still running?",
-                 (unsigned)cfg.port, WSAGetLastError());
-    }
-    if (flw_handshake(cfg.key) != 0) {
-        flw_cfg_clear(&cfg);
-        flw_exit(FLW_EXIT_BRIDGE);
-    }
-    SecureZeroMemory(cfg.key, sizeof(cfg.key));
-    if (flw_send_req(&req) != 0) {
-        flw_exit(FLW_EXIT_BRIDGE);
-    }
+    flw_start_call(&cfg, &req);
     (void)flw_wait_spawn(v->name, &real, &nreal);
     flw_sink_init(&s_out, STD_OUTPUT_HANDLE, NULL);
     flw_sink_init(&s_err, STD_ERROR_HANDLE, NULL);

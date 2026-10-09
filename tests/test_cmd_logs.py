@@ -52,9 +52,11 @@ def some_logs() -> dict[str, Path]:
 
 
 def test_no_logs_yet(capsys: pytest.CaptureFixture[str]) -> None:
-    assert logs_cmd.wine_logs(paths()) == [] and logs_cmd.own_logs(paths()) == []
+    assert logs_cmd.wine_logs(paths()) == []
+    assert logs_cmd.own_logs(paths()) == []
     code, _out, err = run_cli(capsys, "logs")
-    assert code == 20 and "no wine log yet" in err
+    assert code == 20
+    assert "no wine log yet" in err
     located = run_json(capsys, "logs", "--path", "--all")
     assert (located["wine"], located["fork"], located["velopack"]) == ([], [], [])
     # The CLI itself logs to fork-linux.log.
@@ -66,8 +68,10 @@ def test_no_logs_yet(capsys: pytest.CaptureFixture[str]) -> None:
 def test_default_tail_of_the_newest_wine_log(capsys: pytest.CaptureFixture[str], some_logs: dict[str, Path]) -> None:
     code, out, _err = run_cli(capsys, "logs")
     lines = out.splitlines()
-    assert code == 0 and len(lines) == logs_cmd.TAIL_LINES
-    assert lines[-1] == "line 299" and lines[0] == "line 100"
+    assert code == 0
+    assert len(lines) == logs_cmd.TAIL_LINES
+    assert lines[-1] == "line 299"
+    assert lines[0] == "line 100"
 
 
 def test_sources_and_paths(capsys: pytest.CaptureFixture[str], some_logs: dict[str, Path]) -> None:
@@ -81,21 +85,26 @@ def test_sources_and_paths(capsys: pytest.CaptureFixture[str], some_logs: dict[s
     assert out.splitlines() == [str(some_logs[key]) for key in ("wine-last", "fork", "velopack", "own")]
     out = run_cli(capsys, "logs", "--all")[1]
     assert f"==> fork: {some_logs['fork']} <==" in out
-    assert "==> velopack:" in out and "==> setup:" in out and "==> wine:" in out
+    assert "==> velopack:" in out
+    assert "==> setup:" in out
+    assert "==> wine:" in out
 
 
 def test_all_with_some_missing(capsys: pytest.CaptureFixture[str]) -> None:
     _write(layout().fork_log, "only fork\n")
     out = run_cli(capsys, "logs", "--all")[1]
-    assert "==> wine:" not in out and "==> velopack:" not in out
-    assert "only fork\n" in out and "==> setup:" in out
+    assert "==> wine:" not in out
+    assert "==> velopack:" not in out
+    assert "only fork\n" in out
+    assert "==> setup:" in out
 
 
 def test_follow(
     capsys: pytest.CaptureFixture[str], some_logs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     code, _out, err = run_cli(capsys, "logs", "--all", "--follow")
-    assert code == 2 and "one log" in err
+    assert code == 2
+    assert "one log" in err
     target = some_logs["fork"]
     steps = iter(["append", "truncate", "append2", "stop"])
 
@@ -166,7 +175,8 @@ def test_bundle(
     assert all(SECRET not in text for text in contents.values())
     # A second bundle in the same second would overwrite: refused.
     code, _out, err = run_cli(capsys, "logs", "--bundle")
-    assert code == 2 and "already exists" in err
+    assert code == 2
+    assert "already exists" in err
     monkeypatch.setattr(logs_cmd, "_utc_stamp", lambda: "20260101T000001Z")
     result = run_json(capsys, "logs", "--bundle")
     assert result["bundle"].endswith("20260101T000001Z.tar.gz")
@@ -197,7 +207,8 @@ def test_bundle_with_almost_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(logs_cmd, "OS_RELEASE", tmp_path / "no-os-release")
     target, included = logs_cmd.bundle(paths(), layout(), tmp_path)
     assert included == ["system/uname"]
-    assert target.name.startswith("fork-linux-logs-") and len(logs_cmd._utc_stamp()) == 16
+    assert target.name.startswith("fork-linux-logs-")
+    assert len(logs_cmd._utc_stamp()) == 16
 
 
 def test_bundle_never_follows_links_inside_the_prefix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -210,11 +221,13 @@ def test_bundle_never_follows_links_inside_the_prefix(tmp_path: Path, monkeypatc
     out = tmp_path / "out"
     out.mkdir()
     target, included = logs_cmd.bundle(paths(), fork_layout, out)
-    assert "fork/fork.log" not in included and "fork/velopack.log" not in included
+    assert "fork/fork.log" not in included
+    assert "fork/velopack.log" not in included
     with tarfile.open(target) as tar:
         for member in tar.getmembers():
             handle = tar.extractfile(member)
-            assert handle is not None and b"PRIVATE KEY" not in handle.read()
+            assert handle is not None
+            assert b"PRIVATE KEY" not in handle.read()
     # Outside the prefix links are fine (/etc/os-release usually is one).
     assert logs_cmd._read_tail(fork_layout.fork_log, 5) == "PRIVATE KEY MATERIAL\n"
     with pytest.raises(OSError):

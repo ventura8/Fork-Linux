@@ -23,8 +23,8 @@ from .paths import Paths
 # sq.version is a tiny nuspec; anything bigger is not Fork's and is never read whole.
 SQ_VERSION_MAX_BYTES = 1024 * 1024
 # A Velopack package version: dotted numbers with an optional semver suffix.
-_VERSION = re.compile(r"[0-9]{1,6}(?:\.[0-9]{1,6}){0,3}(?:[-+][0-9A-Za-z.-]{1,64})?")
-_PACKAGE = re.compile(r"Fork-([0-9]{1,6}(?:\.[0-9]{1,6}){0,3})-(?:full|delta)\.nupkg")
+_VERSION = re.compile(r"\d{1,6}(?:\.\d{1,6}){0,3}(?:[-+][0-9A-Za-z.-]{1,64})?", re.ASCII)
+_PACKAGE = re.compile(r"Fork-(\d{1,6}(?:\.\d{1,6}){0,3})-(?:full|delta)\.nupkg", re.ASCII)
 # Characters that cannot appear in a Windows path component (plus our own separators).
 _BAD_USER_CHARS = frozenset('/\\:*?"<>|\x00')
 _NUSPEC_PATH = ["package", "metadata", "version"]

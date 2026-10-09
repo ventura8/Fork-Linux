@@ -20,6 +20,7 @@ import tarfile
 import tempfile
 import zlib
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .errors import ForkLinuxError, IntegrityFailed, UsageError
@@ -260,6 +261,54 @@ def _unsafe(member: tarfile.TarInfo, reason: str) -> IntegrityFailed:
     )
 
 
+@dataclass
+class _Plan:
+    """What the members validated so far created, by stripped name."""
+
+    symlinks: set[str] = field(default_factory=set)
+    files: set[str] = field(default_factory=set)
+    leaves: set[str] = field(default_factory=set)
+    directories: set[str] = field(default_factory=set)
+
+
+def _check_kind(member: tarfile.TarInfo) -> None:
+    """Only regular files, directories and links, with no NUL byte in their names."""
+    if not (member.isreg() or member.isdir() or member.issym() or member.islnk()):
+        raise _unsafe(member, "devices, FIFOs and other special files are not allowed")
+    if "\x00" in member.name or "\x00" in member.linkname:
+        raise _unsafe(member, "NUL byte in its name or link target")
+
+
+def _check_placement(member: tarfile.TarInfo, name: str, parts: list[str], plan: _Plan) -> None:
+    """Refuse a member that would go through a symlink or change the type of an earlier one."""
+    if _crosses_symlink(name, plan.symlinks, include_self=not member.issym()):
+        raise _unsafe(member, "it would be written through a symbolic link")
+    if not member.isdir() and name in plan.directories:
+        raise _unsafe(member, "it would replace a directory")
+    if member.isdir() and name in plan.leaves:
+        raise _unsafe(member, "it would replace a file with a directory")
+    if any("/".join(parts[:index]) in plan.leaves for index in range(1, len(parts))):
+        raise _unsafe(member, "its parent directory is a file in the archive")
+
+
+def _record(member: tarfile.TarInfo, clean: tarfile.TarInfo, name: str, strip: int, plan: _Plan) -> None:
+    """Note what ``member`` (extracted as ``name``) creates; set the link target of ``clean``."""
+    plan.files.discard(name)
+    plan.leaves.discard(name)
+    if member.issym():
+        clean.linkname = _check_symlink_target(member, name)
+        plan.symlinks.add(name)
+    elif member.islnk():
+        link = "/".join(_relative_parts(member.linkname, member, "link target")[strip:])
+        if link not in plan.files:
+            raise _unsafe(member, "a hard link must point to a regular file extracted before it")
+        clean.linkname = link
+        plan.leaves.add(name)
+    elif member.isreg():
+        plan.files.add(name)
+        plan.leaves.add(name)
+
+
 def _plan_members(members: list[tarfile.TarInfo], strip: int) -> list[tarfile.TarInfo]:
     """Validate all members and return sanitised copies with stripped names.
 
@@ -267,48 +316,22 @@ def _plan_members(members: list[tarfile.TarInfo], strip: int) -> list[tarfile.Ta
     replace a directory, become a directory over a file, or live below a file.
     """
     planned: list[tarfile.TarInfo] = []
-    symlinks: set[str] = set()
-    files: set[str] = set()
-    leaves: set[str] = set()
-    directories: set[str] = set()
+    plan = _Plan()
     for member in members:
-        if not (member.isreg() or member.isdir() or member.issym() or member.islnk()):
-            raise _unsafe(member, "devices, FIFOs and other special files are not allowed")
-        if "\x00" in member.name or "\x00" in member.linkname:
-            raise _unsafe(member, "NUL byte in its name or link target")
+        _check_kind(member)
         parts = _relative_parts(member.name, member, "name")[strip:]
         name = "/".join(parts)
         if not name:
             continue
-        if _crosses_symlink(name, symlinks, include_self=not member.issym()):
-            raise _unsafe(member, "it would be written through a symbolic link")
-        if not member.isdir() and name in directories:
-            raise _unsafe(member, "it would replace a directory")
-        if member.isdir() and name in leaves:
-            raise _unsafe(member, "it would replace a file with a directory")
-        if any("/".join(parts[:index]) in leaves for index in range(1, len(parts))):
-            raise _unsafe(member, "its parent directory is a file in the archive")
-        directories.update("/".join(parts[:index]) for index in range(1, len(parts)))
+        _check_placement(member, name, parts, plan)
+        plan.directories.update("/".join(parts[:index]) for index in range(1, len(parts)))
         if member.isdir():
-            directories.add(name)
+            plan.directories.add(name)
         clean = copy.copy(member)
         clean.name = name
         clean.mode = _safe_mode(member)
         clean.uid, clean.gid, clean.uname, clean.gname = os.getuid(), os.getgid(), "", ""
-        files.discard(name)
-        leaves.discard(name)
-        if member.issym():
-            clean.linkname = _check_symlink_target(member, name)
-            symlinks.add(name)
-        elif member.islnk():
-            link = "/".join(_relative_parts(member.linkname, member, "link target")[strip:])
-            if link not in files:
-                raise _unsafe(member, "a hard link must point to a regular file extracted before it")
-            clean.linkname = link
-            leaves.add(name)
-        elif member.isreg():
-            files.add(name)
-            leaves.add(name)
+        _record(member, clean, name, strip, plan)
         planned.append(clean)
     return planned
 

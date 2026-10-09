@@ -12,6 +12,7 @@ Invoked as ``fork`` (the symlink), :func:`main` hands over to :mod:`fork_cli`.
 from __future__ import annotations
 
 import argparse
+import contextvars
 import importlib
 import json
 import logging
@@ -19,7 +20,7 @@ import os
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from . import APP_NAME, commands, credits, logging_setup
 from .config import Config
@@ -136,7 +137,30 @@ def _add_global_options(parser: argparse.ArgumentParser, *, suppress: bool) -> N
     )
 
 
-class _CommandParser(argparse.ArgumentParser):
+class _ParserExit(Exception):
+    """argparse finished early: ``--help``, ``--version`` or a usage error (``status`` is the exit status)."""
+
+    def __init__(self, status: int) -> None:
+        super().__init__(status)
+        self.status = status
+
+
+# True while :func:`_dispatch` parses: early exits then raise :class:`_ParserExit` instead of SystemExit.
+_TRAP_EXITS: contextvars.ContextVar[bool] = contextvars.ContextVar("fork_linux_trap_parser_exits", default=False)
+
+
+class _Parser(argparse.ArgumentParser):
+    """An argument parser whose early exits can be trapped (see :data:`_TRAP_EXITS`)."""
+
+    def exit(self, status: int = 0, message: str | None = None) -> NoReturn:
+        if message:
+            self._print_message(message, sys.stderr)
+        if _TRAP_EXITS.get():
+            raise _ParserExit(status)
+        sys.exit(status)
+
+
+class _CommandParser(_Parser):
     """A subcommand parser that also accepts the global options."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -156,7 +180,7 @@ def _epilog() -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     """The top-level parser with every command of ``commands.COMMANDS`` registered."""
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog=PROG,
         description=f"{APP_NAME}: run the official Fork for Windows git client under Wine.",
         epilog=_epilog(),
@@ -209,13 +233,22 @@ def _exit_status(code: object) -> int:
     return code if isinstance(code, int) else int(ExitCode.ERROR)
 
 
+def _parse(parser: argparse.ArgumentParser, argv: list[str]) -> argparse.Namespace:
+    """``parser.parse_args(argv)`` with early exits raised as :class:`_ParserExit`."""
+    token = _TRAP_EXITS.set(True)
+    try:
+        return parser.parse_args(argv)
+    finally:
+        _TRAP_EXITS.reset(token)
+
+
 def _dispatch(argv: list[str]) -> int:
     """Parse ``argv`` and run the selected command, mapping failures to exit codes."""
     parser = build_parser()
     try:
-        args = parser.parse_args(argv)
-    except SystemExit as exc:
-        return _exit_status(exc.code)
+        args = _parse(parser, argv)
+    except _ParserExit as exc:
+        return _exit_status(exc.status)
     handler = getattr(args, "func", None)
     if handler is None:
         parser.print_help(sys.stderr)

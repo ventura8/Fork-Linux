@@ -183,7 +183,8 @@ class Result:
         """The shim's exit status: code, 128 + signal, or 127 for a spawn failure."""
         if self.spawn_errno is not None:
             return 127
-        assert self.exit_kind is not None and self.exit_code is not None
+        assert self.exit_kind is not None
+        assert self.exit_code is not None
         return 128 + self.exit_code if self.exit_kind == 1 else self.exit_code
 
 
@@ -435,7 +436,8 @@ def start_daemon(
 
 def assert_clean_stderr(err: str) -> None:
     """No sanitizer report and no crash output from the daemon."""
-    assert "Sanitizer" not in err and "runtime error" not in err, err
+    assert "Sanitizer" not in err, err
+    assert "runtime error" not in err, err
 
 
 @pytest.fixture(scope="module")
@@ -535,8 +537,9 @@ def test_mutual_auth_succeeds(daemon: Daemon) -> None:
 
 def test_client_with_wrong_token_is_rejected(daemon: Daemon) -> None:
     """AUTH under another key gets no AUTH_OK: the daemon closes the connection."""
+    wrong_token = secrets.token_hex(32)
     with pytest.raises((EOFError, ConnectionError)):
-        connect(daemon.port, secrets.token_hex(32), verify_daemon=False)
+        connect(daemon.port, wrong_token, verify_daemon=False)
     deadline = time.monotonic() + 5
     while "auth-failed:bad-mac" not in daemon.log.read_text():
         assert time.monotonic() < deadline
@@ -615,8 +618,9 @@ def test_client_rejects_daemon_that_cannot_prove_token(tmp_path: Path) -> None:
 
     t = threading.Thread(target=impostor, daemon=True)
     t.start()
+    impostor_port = lst.getsockname()[1]
     with pytest.raises(BridgeError, match="could not prove"):
-        connect(lst.getsockname()[1], real_token)
+        connect(impostor_port, real_token)
     t.join(10)
     lst.close()
     assert got_after_challenge == [b""], (
@@ -638,7 +642,8 @@ def test_git_version(daemon: Daemon) -> None:
     res = daemon.run(["git", "--version"])
     assert (res.exit_kind, res.exit_code) == (0, 0)
     assert res.stdout == want
-    assert res.frames[0] == SPAWN_OK and res.frames[-1] == EXIT
+    assert res.frames[0] == SPAWN_OK
+    assert res.frames[-1] == EXIT
 
 
 def test_exit_code_42(daemon: Daemon) -> None:
@@ -807,7 +812,8 @@ def test_socket_close_kills_child(daemon: Daemon) -> None:
     """Dropping the connection SIGTERMs the child's group: gone well within 3 s."""
     s = daemon.session()
     res = s.request(daemon.root, ["sleep", "30"])
-    assert res.pid and pid_alive(res.pid)
+    assert res.pid
+    assert pid_alive(res.pid)
     s.close()
     assert wait_gone(res.pid, 3.0) < 3.0
 
@@ -843,7 +849,8 @@ def test_signal_frame_disallowed_signal_is_ignored(daemon: Daemon) -> None:
     s.signal(signal.SIGSTOP)
     s.signal(signal.SIGUSR1)
     time.sleep(0.3)
-    assert res.pid and pid_alive(res.pid)
+    assert res.pid
+    assert pid_alive(res.pid)
     s.signal(signal.SIGTERM)
     res = s.collect()
     assert (res.exit_kind, res.exit_code) == (1, signal.SIGTERM)
@@ -1087,8 +1094,9 @@ def test_log_has_one_line_per_session_and_no_secrets(
     try:
         d.run(["sh", "-c", "exit 7", "secret-argument"])
         d.run(["fl-no-such-program-xyz"])
+        wrong_token = secrets.token_hex(32)
         with pytest.raises((EOFError, ConnectionError)):
-            connect(d.port, secrets.token_hex(32), verify_daemon=False)
+            connect(d.port, wrong_token, verify_daemon=False)
         deadline = time.monotonic() + 5
         while d.log.read_text().count(" session ") < 3:
             assert time.monotonic() < deadline
@@ -1098,11 +1106,14 @@ def test_log_has_one_line_per_session_and_no_secrets(
     text = d.log.read_text()
     lines = [ln for ln in text.splitlines() if " session " in ln]
     assert len(lines) == 3, text
-    assert "result=exit:7" in lines[0] and "argv0=sh" in lines[0]
+    assert "result=exit:7" in lines[0]
+    assert "argv0=sh" in lines[0]
     assert f"result=spawn-error:{errno.ENOENT}" in lines[1]
     assert "result=auth-failed:bad-mac" in lines[2]
-    assert "daemon start" in text and "daemon exit reason=signal" in text
-    assert d.token not in text and "secret-argument" not in text
+    assert "daemon start" in text
+    assert "daemon exit reason=signal" in text
+    assert d.token not in text
+    assert "secret-argument" not in text
     assert stat.S_IMODE(d.log.stat().st_mode) == 0o600
 
 
@@ -1219,7 +1230,8 @@ def test_daemon_exits_with_its_parent(helper_bin: Path, tmp_path: Path) -> None:
         stdout=subprocess.PIPE,
         env=base_env(tmp_path),
     )
-    assert launcher.stdout is not None and launcher.stdin is not None
+    assert launcher.stdout is not None
+    assert launcher.stdin is not None
     pid_s, port_line = launcher.stdout.readline().decode().split()
     assert port_line.startswith("FL_BRIDGE_PORT=")
     pid = int(pid_s)

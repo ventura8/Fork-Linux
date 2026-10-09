@@ -63,8 +63,9 @@ def test_png_encode_writes_ihdr_rgba_8bit() -> None:
     [(0, 1, 0), (1, 0, 0), (-1, 1, 4), (2, 2, 15), (2, 2, 17)],
 )
 def test_png_encode_rejects_mismatched_buffers(width: int, height: int, length: int) -> None:
+    data = bytes(length)
     with pytest.raises(ValueError, match="does not match"):
-        imaging.png_encode(width, height, bytes(length))
+        imaging.png_encode(width, height, data)
 
 
 # --- png_size / png_validate ---------------------------------------------------------
@@ -93,8 +94,9 @@ def test_png_size_reads_ihdr() -> None:
 
 @pytest.mark.parametrize(("width", "height"), [(0, 4), (4, 0), (1025, 4), (4, 1025)])
 def test_png_validate_rejects_out_of_range_sizes(width: int, height: int) -> None:
+    png = _png_with_size(width, height)
     with pytest.raises(IntegrityFailed, match="outside 1..1024"):
-        imaging.png_validate(_png_with_size(width, height))
+        imaging.png_validate(png)
 
 
 def test_png_validate_accepts_maximum_size_and_trailing_bytes() -> None:
@@ -104,8 +106,9 @@ def test_png_validate_accepts_maximum_size_and_trailing_bytes() -> None:
 def test_png_validate_rejects_bad_crc() -> None:
     png = bytearray(pb.make_png(4, 4))
     png[40] ^= 0xFF  # inside the IDAT payload
+    data = bytes(png)
     with pytest.raises(IntegrityFailed, match="truncated or corrupt"):
-        imaging.png_validate(bytes(png))
+        imaging.png_validate(data)
 
 
 def test_png_validate_rejects_chunk_running_past_end() -> None:
@@ -115,8 +118,9 @@ def test_png_validate_rejects_chunk_running_past_end() -> None:
 
 
 def test_png_validate_requires_image_data() -> None:
+    png = _png_with_size(4, 4, idat=False)
     with pytest.raises(IntegrityFailed, match="no IDAT chunk"):
-        imaging.png_validate(_png_with_size(4, 4, idat=False))
+        imaging.png_validate(png)
     # An ancillary chunk is not image data either.
     no_data = _png_with_size(4, 4, idat=False)
     with_text = no_data[:33] + _chunk(b"tEXt", b"k\x00v") + no_data[33:]

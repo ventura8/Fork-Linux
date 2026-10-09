@@ -129,7 +129,8 @@ def test_spawn(tmp_path: Path) -> None:
     assert call["argv"] == ["xdg-open", "/x"]
     assert call["cwd"] == str(tmp_path)
     assert call["start_new_session"] is True
-    assert call["stdin"] == subprocess.DEVNULL and call["stdout"] == subprocess.DEVNULL
+    assert call["stdin"] == subprocess.DEVNULL
+    assert call["stdout"] == subprocess.DEVNULL
     assert call["env"] is host.tool_env
 
 
@@ -183,8 +184,9 @@ def test_path_without_a_usable_prefix(tmp_path: Path) -> None:
 def test_existing(tmp_path: Path) -> None:
     host, _runner, _popen = _host()
     assert host.existing(str(tmp_path)) == str(tmp_path)
+    missing = str(tmp_path / "missing")
     with pytest.raises(UsageError, match="no such file or directory"):
-        host.existing(str(tmp_path / "missing"))
+        host.existing(missing)
 
 
 # --- terminal ---------------------------------------------------------------------------------------
@@ -204,7 +206,8 @@ def test_terminal_without_a_directory_uses_the_working_directory(
     monkeypatch.chdir(tmp_path)
     host, _runner, popen = _host({hh.TERMINAL_ENV: "my-term --cd={dir}"})
     assert hh.main(["terminal"], host=host) == 0
-    assert popen.calls[0]["argv"] == ["my-term", f"--cd={tmp_path}"] and popen.calls[0]["cwd"] == str(tmp_path)
+    assert popen.calls[0]["argv"] == ["my-term", f"--cd={tmp_path}"]
+    assert popen.calls[0]["cwd"] == str(tmp_path)
     assert hh.main(["terminal", "a", "b"], host=host) == hh.EXIT_USAGE
 
 
@@ -346,8 +349,9 @@ def test_edit(tmp_path: Path) -> None:
     assert host.edit(str(target)) == 4
     assert host.edit(str(target), "12") == 4
     assert runner.argvs == [["xdg-open", str(target)]] * 2
+    path = str(target)
     with pytest.raises(UsageError, match="not a line number"):
-        host.edit(str(target), "twelve")
+        host.edit(path, "twelve")
 
 
 # --- diff and merge -------------------------------------------------------------------------------------
@@ -397,8 +401,9 @@ def test_kompare_only_diffs(tmp_path: Path) -> None:
     host, runner, _popen = _host(installed=("kompare",))
     assert host.diff(left, right) == 0
     assert runner.argvs == [["kompare", left, right]]
+    out = str(tmp_path / "out")
     with pytest.raises(hh.ToolNotFound, match="no merge tool found"):
-        host.merge(base, left, right, str(tmp_path / "out"))
+        host.merge(base, left, right, out)
 
 
 def test_diff_prefers_the_first_installed_tool(tmp_path: Path) -> None:
@@ -436,7 +441,8 @@ def test_main_maps_errors(tmp_path: Path, capsys: pytest.CaptureFixture[str]) ->
     host, _runner, _popen = _host()
     assert hh.main(["terminal", str(tmp_path)], host=host) == hh.EXIT_NOT_FOUND
     err = capsys.readouterr().err
-    assert "fork-linux-host: error: no terminal emulator found" in err and "hint: install one" in err
+    assert "fork-linux-host: error: no terminal emulator found" in err
+    assert "hint: install one" in err
     assert hh.main(["reveal", str(tmp_path / "missing")], host=host) == hh.EXIT_USAGE
 
     class Failing(hh.Host):
@@ -491,7 +497,8 @@ def test_fake_tools_end_to_end(xdg: Path, fake_bin: Path, tmp_path: Path, monkey
     call = _wait_for_calls(fake_bin, 1)[0]
     assert call["argv"] == ["xdg-terminal-exec", f"--dir={repo}"]
     assert call["cwd"] == str(repo)
-    assert "WINEPREFIX" not in call["env"] and "WINEDEBUG" not in call["env"]
+    assert "WINEPREFIX" not in call["env"]
+    assert "WINEDEBUG" not in call["env"]
     # reveal: the fake gdbus answers.
     assert hh.main(["reveal", win_repo + "\\base"]) == 0
     assert _wait_for_calls(fake_bin, 2)[1]["argv"][-2] == f"['{hh.file_uri(repo / 'base')}']"

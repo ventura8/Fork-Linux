@@ -73,8 +73,14 @@ def run_sync(args: argparse.Namespace, ctx: AppContext) -> int:
     data = _report_dict(report)
     if ctx.json:
         ctx.print_json({"dry_run": args.dry_run, **data})
-        return 0
-    labels = _DRY_LABELS if args.dry_run else _LABELS
+    else:
+        _print_sync(data, dry_run=args.dry_run)
+    return 0
+
+
+def _print_sync(data: dict[str, Any], *, dry_run: bool) -> None:
+    """Describe a sync report as text."""
+    labels = _DRY_LABELS if dry_run else _LABELS
     for key in ("linked", "copied", "removed", "skipped"):
         for path in data[key]:
             print(f"{labels[key]}: {path}")
@@ -83,8 +89,7 @@ def run_sync(args: argparse.Namespace, ctx: AppContext) -> int:
     for item in data["dropped_directives"]:
         print(f"commented out: {item['directive']} ({item['reason']})")
     if not any(data[key] for key in ("linked", "copied", "removed", "skipped", "config_path")):
-        print("nothing to share" if not args.dry_run else "nothing would change")
-    return 0
+        print("nothing to share" if not dry_run else "nothing would change")
 
 
 def run_status(args: argparse.Namespace, ctx: AppContext) -> int:
@@ -92,11 +97,17 @@ def run_status(args: argparse.Namespace, ctx: AppContext) -> int:
     info = ssh_sync.status(ctx.paths, winecmd.windows_user(ctx.env), _home(ctx))
     if ctx.json:
         ctx.print_json(info)
-        return 0
+    else:
+        _print_status(info)
+    return 0
+
+
+def _print_status(info: dict[str, Any]) -> None:
+    """Describe the shared setup as text."""
     print(f"host ~/.ssh: {info['host_dir']}" + ("" if info["host_present"] else " (missing)"))
     if not info["exists"]:
         print(f"Wine .ssh:   {info['wine_dir']} (not shared yet - run 'fork-linux ssh sync')")
-        return 0
+        return
     print(f"Wine .ssh:   {info['wine_dir']} (mode {info['mode']}, {'ok' if info['perms_ok'] else 'NOT private'})")
     print(f"managed:     {len(info['managed'])} file(s)")
     print(f"config:      {info['config']}")
@@ -104,4 +115,3 @@ def run_status(args: argparse.Namespace, ctx: AppContext) -> int:
         print(f"insecure:    {name}")
     for name in info["broken_links"]:
         print(f"broken link: {name}")
-    return 0

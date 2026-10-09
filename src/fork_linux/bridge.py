@@ -58,15 +58,17 @@ SHIM = "fl-shim.exe"
 LAUNCH = "fl-launch.exe"
 SHIM_EXES = (SHIM, LAUNCH)
 HELPER = resources.BRIDGE_HELPER
+_GIT_EXE = "git.exe"
+_PROC = Path("/proc")
 PERSONAS = ("fl-winexec", "fl-askpass", "fl-ssh-askpass")
 HOST_WRAPPER = resources.HOST_HELPER
 EXPERIMENTAL = "the native-git bridge is experimental"
 GIT_INSTANCE_WIN = "C:\\fork-linux\\gitInstance"
 # Where the host_shims step puts each shim, relative to C:\fork-linux (bridge/README.md).
 SHIM_LAYOUT: tuple[tuple[tuple[str, ...], str], ...] = (
-    (("gitInstance", "cmd", "git.exe"), SHIM),
-    (("gitInstance", "bin", "git.exe"), SHIM),
-    (("gitInstance", "mingw64", "bin", "git.exe"), SHIM),
+    (("gitInstance", "cmd", _GIT_EXE), SHIM),
+    (("gitInstance", "bin", _GIT_EXE), SHIM),
+    (("gitInstance", "mingw64", "bin", _GIT_EXE), SHIM),
     (("gitInstance", "bin", "bash.exe"), SHIM),
     (("gitInstance", "bin", "sh.exe"), SHIM),
     (("gitInstance", "usr", "bin", "bash.exe"), SHIM),
@@ -94,9 +96,9 @@ STOP_TIMEOUT = 3.0
 LOG_PREFIX = "bridge-"
 LOGS_KEEP = 10
 CACHE_KEY = "bridge.daemon"
-_PORT_RE = re.compile(rb"^FL_BRIDGE_PORT=([0-9]{1,5})\n$")
+_PORT_RE = re.compile(rb"^FL_BRIDGE_PORT=(\d{1,5})\n$")
 _TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
-_VERSION_DIR_RE = re.compile(r"^[0-9]+(?:\.[0-9]+){1,3}$")
+_VERSION_DIR_RE = re.compile(r"^\d+(?:\.\d+){1,3}$", re.ASCII)
 # Repository-location variables of the launcher's own environment must not reach native git.
 _DAEMON_DROP = frozenset(
     {
@@ -412,7 +414,7 @@ def bundled_git_win(paths: Paths, user: str) -> str | None:
     except OSError:
         return None
     for name in sorted(names, key=lambda text: tuple(int(part) for part in text.split(".")), reverse=True):
-        if (root / name / "cmd" / "git.exe").is_file():
+        if (root / name / "cmd" / _GIT_EXE).is_file():
             return f"C:\\users\\{user}\\AppData\\Local\\Fork\\gitInstance\\{name}\\cmd\\git.exe"
     return None
 
@@ -539,7 +541,7 @@ def session_record(daemon: Daemon | None) -> dict[str, Any] | None:
     return {"pid": daemon.pid, "port": daemon.port, "env": dict(daemon.env)}
 
 
-def daemon_alive(pid: Any, proc_root: Path = Path("/proc")) -> bool:
+def daemon_alive(pid: Any, proc_root: Path = _PROC) -> bool:
     """True when ``pid`` is a running ``fl-bridge-helper`` of ours."""
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
         return False
@@ -550,7 +552,7 @@ def daemon_alive(pid: Any, proc_root: Path = Path("/proc")) -> bool:
     return HELPER.encode() in cmdline and b"--daemon" in cmdline
 
 
-def session_env(ctx: Any, session: Mapping[str, Any] | None, proc_root: Path = Path("/proc")) -> dict[str, str]:
+def session_env(ctx: Any, session: Mapping[str, Any] | None, proc_root: Path = _PROC) -> dict[str, str]:
     """The running daemon's variables from ``session``, when the bridge is on and that daemon still runs."""
     enabled, _problem = _enabled(ctx)
     record = session.get("bridge") if session is not None else None
@@ -564,7 +566,7 @@ def session_env(ctx: Any, session: Mapping[str, Any] | None, proc_root: Path = P
     return {str(key): value for key, value in env.items()}
 
 
-def running_daemon(paths: Paths, session: Mapping[str, Any] | None, proc_root: Path = Path("/proc")) -> dict[str, Any]:
+def running_daemon(paths: Paths, session: Mapping[str, Any] | None, proc_root: Path = _PROC) -> dict[str, Any]:
     """``{pid, port}`` of the daemon recorded in ``session`` while it runs (empty otherwise)."""
     record = session.get("bridge") if session is not None else None
     if not isinstance(record, dict) or session.get("prefix") != str(paths.prefix):

@@ -44,6 +44,7 @@ from . import (
     theme,
     updates,
     versions,
+    wine_provider,
     winecmd,
 )
 from .cli import AppContext
@@ -522,30 +523,83 @@ def read_session(paths: Paths) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def _recorded(value: Any, default: Path) -> Path:
+@dataclasses.dataclass(frozen=True)
+class WineCandidate:
+    """A Wine the running session may use: found from our own data or configuration, never from the session."""
+
+    root: Path
+    wine: Path
+    wineservers: tuple[Path, ...]
+
+
+def _candidate(root: Path, wine: Path, *servers: Path) -> WineCandidate:
+    """A candidate whose wineserver sits next to ``wine``, in ``root/bin`` or at one of ``servers``."""
+    return WineCandidate(root, wine, (wine.parent / "wineserver", root / "bin" / "wineserver", *servers))
+
+
+def trusted_wines(app_ctx: AppContext) -> list[WineCandidate]:
+    """Every Wine a session of ours can have recorded.
+
+    The managed builds installed in our data directory, the Flatpak runtime, the ``wine`` on
+    ``PATH`` (system provider) and an absolute ``[wine] provider`` (custom).
+    """
+    paths: Paths = app_ctx.paths
+    candidates = [
+        _candidate(root, root / "bin" / "wine")
+        for root in (wine_provider.managed_root(paths, build) for build in wine_provider.installed_builds(paths))
+    ]
+    flatpak = wine_provider.FLATPAK_ROOT
+    candidates.append(_candidate(flatpak, flatpak / "bin" / "wine"))
+    search = app_ctx.env.get("PATH")
+    found = app_ctx.runner.which("wine", path=search)
+    if found is not None:
+        server = app_ctx.runner.which("wineserver", path=search)
+        extra = wine_provider.SYSTEM_WINESERVER_FALLBACKS + ((Path(server),) if server is not None else ())
+        candidates.append(_candidate(Path(found).parent.parent, Path(found), *extra))
+    provider = app_ctx.config.get("wine", "provider")
+    if os.path.isabs(provider):
+        location = Path(provider)
+        if location.is_dir():
+            candidates.append(_candidate(location, location / "bin" / "wine"))
+        else:
+            candidates.append(_candidate(location.parent.parent, location))
+    return candidates
+
+
+def _recorded(value: Any, default: str) -> str:
     """An absolute path recorded in the session, else ``default``."""
-    return Path(value) if isinstance(value, str) and os.path.isabs(value) else default
+    return value if isinstance(value, str) and os.path.isabs(value) else default
 
 
-def _session_wine(paths: Paths) -> winecmd.WineInfo | None:
-    """The Wine recorded for the running session of this prefix, or None if unusable."""
+def _select(recorded: str, choices: Sequence[Path]) -> Path | None:
+    """The trusted path among ``choices`` spelled exactly like the ``recorded`` one, else None."""
+    return next((choice for choice in choices if str(choice) == recorded), None)
+
+
+def _session_wine(paths: Paths, candidates: Sequence[WineCandidate] = ()) -> winecmd.WineInfo | None:
+    """The Wine recorded for the running session of this prefix, or None if unusable.
+
+    The session only selects among ``candidates`` (see :func:`trusted_wines`): the recorded
+    paths are compared with them and never used themselves.
+    """
     data = read_session(paths)
     if data is None or data.get("prefix") != str(paths.prefix):
         return None
     root = data.get("wine_root")
     if not isinstance(root, str) or not os.path.isabs(root):
         return None
-    wine_path = _recorded(data.get("wine"), Path(root, "bin", "wine"))
-    server_path = _recorded(data.get("wineserver"), Path(root, "bin", "wineserver"))
-    if not wine_path.is_file():
+    wine = _recorded(data.get("wine"), os.path.join(root, "bin", "wine"))
+    server = _recorded(data.get("wineserver"), os.path.join(root, "bin", "wineserver"))
+    chosen = next((c for c in candidates if str(c.root) == root and str(c.wine) == wine), None)
+    if chosen is None or not chosen.wine.is_file():
         return None
     provider = data.get("provider")
     return winecmd.WineInfo(
         provider=provider if isinstance(provider, str) else "session",
         build_id=None,
-        root=Path(root),
-        wine=wine_path,
-        wineserver=server_path,
+        root=chosen.root,
+        wine=chosen.wine,
+        wineserver=_select(server, chosen.wineservers) or chosen.root / "bin" / "wineserver",
         version="",
         staging=False,
         wow64=False,
@@ -624,7 +678,7 @@ def _fast_spec(
     None when the session is unknown.
     """
     paths: Paths = app_ctx.paths
-    info = _session_wine(paths)
+    info = _session_wine(paths, trusted_wines(app_ctx))
     if info is None:
         return None
     user = winecmd.windows_user(app_ctx.env)
@@ -642,6 +696,27 @@ def _fast_spec(
         driver=driver,
         git_version=gitconfig.host_git_version(app_ctx.runner, app_ctx.env, paths.cache_dir),
     )
+
+
+def _maybe_to_terminal(spec: LaunchSpec, terminal: bool) -> LaunchSpec:
+    """``spec`` without its log file when Wine's output stays on the terminal."""
+    return dataclasses.replace(spec, log_file=None) if terminal else spec
+
+
+def _ready_ctx(app_ctx: AppContext, *, no_setup: bool, running: bool) -> bootstrap.Ctx:
+    """The setup context once setup is complete; keeps the previous fork.log when Fork is not running."""
+    ctx = bootstrap.Ctx.from_app(app_ctx)
+    try:
+        bootstrap.ensure_ready(ctx, allow=not no_setup)
+    except NotSetUpError as exc:
+        hint = exc.hint if "fork-linux setup" in exc.hint else SETUP_HINT
+        raise NotSetUpError(exc.message, hint=hint) from exc
+    if not running:
+        try:
+            keep_fork_log(ctx.paths, ctx.layout)
+        except (ForkLinuxError, OSError) as exc:
+            log.warning("could not keep the previous fork.log: %s", exc)
+    return ctx
 
 
 def run(
@@ -669,23 +744,10 @@ def run(
     targets = resolve_targets(raw_targets, Path(os.getcwd()), from_file_manager=from_file_manager)
     terminal = _to_terminal(app_ctx, debug)
     running = procs.fork_running(app_ctx.paths.prefix)
-    if running:
-        spec = _fast_spec(app_ctx, targets, debug=debug, wine_debug=wine_debug, driver=driver)
-        if spec is not None:
-            if terminal:
-                spec = dataclasses.replace(spec, log_file=None)
-            return _exec(spec, truncate=False, execvpe=execvpe)
-    ctx = bootstrap.Ctx.from_app(app_ctx)
-    try:
-        bootstrap.ensure_ready(ctx, allow=not no_setup)
-    except NotSetUpError as exc:
-        hint = exc.hint if "fork-linux setup" in exc.hint else SETUP_HINT
-        raise NotSetUpError(exc.message, hint=hint) from exc
-    if not running:
-        try:
-            keep_fork_log(ctx.paths, ctx.layout)
-        except (ForkLinuxError, OSError) as exc:
-            log.warning("could not keep the previous fork.log: %s", exc)
+    fast = _fast_spec(app_ctx, targets, debug=debug, wine_debug=wine_debug, driver=driver) if running else None
+    if fast is not None:
+        return _exec(_maybe_to_terminal(fast, terminal), truncate=False, execvpe=execvpe)
+    ctx = _ready_ctx(app_ctx, no_setup=no_setup, running=running)
     daemon = None if running else bridge.start_daemon(ctx, debug=debug)
     try:
         if not no_hooks and not running:
@@ -693,8 +755,7 @@ def run(
         spec = build_spec(
             ctx, targets, debug=debug, wine_debug=wine_debug, driver=driver, bridge_env=bridge.launch_env(ctx, daemon)
         )
-        if terminal:
-            spec = dataclasses.replace(spec, log_file=None)
+        spec = _maybe_to_terminal(spec, terminal)
         write_session(ctx.paths, ctx.wine(), os.getpid(), bridge.session_record(daemon))
         return _exec(spec, truncate=not running and not debug, execvpe=execvpe)
     except BaseException:

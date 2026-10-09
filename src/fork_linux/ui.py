@@ -46,6 +46,7 @@ class Progress:
     def __init__(self, title: str) -> None:
         self.title = title
         self.percent = 0
+        self.step = ""
 
     def __enter__(self) -> Progress:
         self.start()
@@ -68,6 +69,7 @@ class Progress:
     def update(self, fraction: float, text: str = "") -> None:
         """Move to ``fraction`` (0.0-1.0), optionally describing the current step."""
         self.percent = _percent(fraction)
+        self.step = text
 
     def log(self, text: str) -> None:
         """Add a detail line without changing the percentage."""
@@ -451,6 +453,9 @@ def _has_display(env: Mapping[str, str]) -> bool:
     return bool(env.get("DISPLAY") or env.get("WAYLAND_DISPLAY"))
 
 
+_DIALOGS: dict[str, type[_DialogUI]] = {"zenity": ZenityUI, "kdialog": KDialogUI}
+
+
 def choose(
     env: Mapping[str, str] | None = None,
     *,
@@ -477,16 +482,22 @@ def choose(
         return NullUI()
     if mode == "terminal":
         return TerminalUI(interactive=tty)
-    dialogs = {"zenity": ZenityUI, "kdialog": KDialogUI}
-    order = [mode] if mode in dialogs else list(dialogs)
-    want_dialog = gui is not False and (gui is True or not tty or mode in dialogs)
-    if want_dialog and _has_display(environ):
-        path = sandbox.clean_env(environ).get("PATH")
-        for name in order:
-            if run.which(name, path) is not None:
-                return dialogs[name](runner=run, env=environ)
-        if mode in dialogs:
-            log.warning("%s is not installed; falling back to %s", mode, "the terminal" if tty else "the log")
+    want_dialog = gui is not False and (gui is True or not tty or mode in _DIALOGS)
+    dialog = _dialog_ui(environ, run, mode, tty) if want_dialog and _has_display(environ) else None
+    if dialog is not None:
+        return dialog
     if tty:
         return TerminalUI(interactive=True)
     return NullUI()
+
+
+def _dialog_ui(environ: Mapping[str, str], run: Runner, mode: str, tty: bool) -> UI | None:
+    """The dialog UI for ``mode`` (``auto``: zenity, else kdialog) when installed, else None."""
+    order = [mode] if mode in _DIALOGS else list(_DIALOGS)
+    path = sandbox.clean_env(environ).get("PATH")
+    for name in order:
+        if run.which(name, path) is not None:
+            return _DIALOGS[name](runner=run, env=environ)
+    if mode in _DIALOGS:
+        log.warning("%s is not installed; falling back to %s", mode, "the terminal" if tty else "the log")
+    return None

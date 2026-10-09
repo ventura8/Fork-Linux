@@ -101,10 +101,10 @@ def run_enable(args: argparse.Namespace, ctx: AppContext) -> int:
         print(f"warning: {warning}", file=sys.stderr)
     if ctx.json:
         _show(ctx)
-        return 0
-    print(f"git bridge enabled (experimental); {RESTART_HINT}")
-    if procs.fork_running(ctx.paths.prefix):
-        print("Fork is running now and keeps its bundled git until it is restarted")
+    else:
+        print(f"git bridge enabled (experimental); {RESTART_HINT}")
+        if procs.fork_running(ctx.paths.prefix):
+            print("Fork is running now and keeps its bundled git until it is restarted")
     return 0
 
 
@@ -113,8 +113,8 @@ def run_disable(args: argparse.Namespace, ctx: AppContext) -> int:
     bridge.disable(ctx)
     if ctx.json:
         _show(ctx)
-        return 0
-    print(f"git bridge disabled; Fork uses its bundled git again: {RESTART_HINT}")
+    else:
+        print(f"git bridge disabled; Fork uses its bundled git again: {RESTART_HINT}")
     return 0
 
 
@@ -123,8 +123,7 @@ def run_record(args: argparse.Namespace, ctx: AppContext) -> int:
     bridge.set_mode(ctx, args.state == "on")
     if ctx.json:
         _show(ctx)
-        return 0
-    if args.state == "on":
+    elif args.state == "on":
         print(
             "record mode on: the bridge's git.exe forwards every call unchanged to Fork's bundled git "
             f"(FL_BRIDGE_MODE=record); {RESTART_HINT}"

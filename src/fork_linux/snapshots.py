@@ -41,6 +41,7 @@ log = logging.getLogger(__name__)
 
 SCHEMA = 1
 SNAPSHOT_META = "meta.json"
+_LIST_HINT = "list them with 'fork-linux snapshot list'"
 CURRENT = "current"
 DATA = "data"
 FORKDATA = "ForkData"
@@ -301,7 +302,7 @@ def find(paths: Paths, ref: str) -> Snapshot:
         for snap in snaps:
             if versions.Version(snap.fork_version) == wanted:
                 return snap
-    raise NotFound(f"no snapshot matches {ref!r}", hint="list them with 'fork-linux snapshot list'")
+    raise NotFound(f"no snapshot matches {ref!r}", hint=_LIST_HINT)
 
 
 # -- deleting ---------------------------------------------------------------------
@@ -310,10 +311,10 @@ def find(paths: Paths, ref: str) -> Snapshot:
 def delete(paths: Paths, snap_id: str) -> None:
     """Delete snapshot ``snap_id``; :class:`NotFound` if there is no such snapshot directory."""
     if not isinstance(snap_id, str) or _SAFE_ID.fullmatch(snap_id) is None:
-        raise UsageError(f"not a snapshot id: {snap_id!r}", hint="list them with 'fork-linux snapshot list'")
+        raise UsageError(f"not a snapshot id: {snap_id!r}", hint=_LIST_HINT)
     directory = paths.snapshots_dir / snap_id
     if not _real_dir(directory):
-        raise NotFound(f"no snapshot {snap_id!r}", hint="list them with 'fork-linux snapshot list'")
+        raise NotFound(f"no snapshot {snap_id!r}", hint=_LIST_HINT)
     fsutil.safe_rmtree(
         directory,
         marker=directory / SNAPSHOT_META,

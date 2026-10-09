@@ -35,7 +35,6 @@
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <signal.h>
-#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -112,50 +111,85 @@ static int write_all(int fd, const void *buf, size_t len)
     return 0;
 }
 
-/* "<prog>: <message>\n" on stderr. */
-static void msg(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
-static void msg(const char *fmt, ...)
-{
+/* One stderr line under construction: at most sizeof(buf) - 2 bytes of text, then '\n'. */
+struct line {
     char buf[1024];
-    va_list ap;
-    int n = snprintf(buf, sizeof(buf), "%s: ", g_prog);
-    if (n < 0) {
+    size_t n;
+};
+
+/* Append s to the line (truncating at its limit); NULL is skipped. */
+static void put_text(struct line *ln, const char *s)
+{
+    const size_t lim = sizeof(ln->buf) - 2u;
+    size_t l;
+    if (s == NULL || ln->n >= lim) {
         return;
     }
-    va_start(ap, fmt);
-    vsnprintf(buf + n, sizeof(buf) - (size_t)n - 1, fmt, ap);
-    va_end(ap);
-    n = (int)strlen(buf);
-    buf[n++] = '\n';
-    (void)write_all(2, buf, (size_t)n);
+    l = strnlen(s, lim - ln->n);
+    memcpy(ln->buf + ln->n, s, l);
+    ln->n += l;
 }
 
-/* One line in the --log file: "<UTC ISO-8601> fl-bridge-helper[pid] <message>". No secrets. */
-static void log_line(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
-static void log_line(const char *fmt, ...)
+/* "<prog>: <a><b><c><d>\n" on stderr (NULL parts are skipped); at most 1 KiB per line. */
+static void msg4(const char *a, const char *b, const char *c, const char *d)
 {
-    char buf[1024];
+    struct line ln;
+    ln.n = 0;
+    put_text(&ln, g_prog);
+    put_text(&ln, ": ");
+    put_text(&ln, a);
+    put_text(&ln, b);
+    put_text(&ln, c);
+    put_text(&ln, d);
+    ln.buf[ln.n] = '\n';
+    ln.n++;
+    (void)write_all(2, ln.buf, ln.n);
+}
+
+static void msg(const char *text)
+{
+    msg4(text, NULL, NULL, NULL);
+}
+
+static void msg2(const char *a, const char *b)
+{
+    msg4(a, b, NULL, NULL);
+}
+
+/* One line in the --log file: "<UTC ISO-8601> fl-bridge-helper[pid] <text>". No secrets. */
+static void log_text(const char *text)
+{
+    struct line ln;
     struct timespec ts;
     struct tm tm;
-    size_t n;
-    va_list ap;
+    int k;
     if (g_log_fd < 0) {
         return;
     }
     clock_gettime(CLOCK_REALTIME, &ts);
     gmtime_r(&ts.tv_sec, &tm);
-    n = strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &tm);
-    n += (size_t)snprintf(buf + n, sizeof(buf) - n, ".%03ldZ %s[%ld] ", ts.tv_nsec / 1000000L, g_prog,
-                          (long)getpid());
-    if (n >= sizeof(buf) - 2) {
+    ln.n = strftime(ln.buf, sizeof(ln.buf), "%Y-%m-%dT%H:%M:%S", &tm);
+    k = snprintf(ln.buf + ln.n, sizeof(ln.buf) - ln.n, ".%03ldZ %s[%ld] ", ts.tv_nsec / 1000000L, g_prog,
+        (long)getpid());
+    if (k < 0) {
         return;
     }
-    va_start(ap, fmt);
-    vsnprintf(buf + n, sizeof(buf) - n - 1, fmt, ap);
-    va_end(ap);
-    n = strlen(buf);
-    buf[n++] = '\n';
-    (void)write_all(g_log_fd, buf, n);
+    ln.n += (size_t)k;
+    if (ln.n >= sizeof(ln.buf) - 2) {
+        return;
+    }
+    put_text(&ln, text);
+    ln.buf[ln.n] = '\n';
+    ln.n++;
+    (void)write_all(g_log_fd, ln.buf, ln.n);
+}
+
+/* log_text() of "<prefix><number>". */
+static void log_num(const char *prefix, long v)
+{
+    char line[256];
+    snprintf(line, sizeof(line), "%s%ld", prefix, v);
+    log_text(line);
 }
 
 static void on_signal(int sig)
@@ -237,7 +271,7 @@ static void ensure_std_fds(void)
 static void close_inherited_fds(void)
 {
     DIR *d = opendir("/proc/self/fd");
-    struct dirent *e;
+    const struct dirent *e;
     int self;
     if (d == NULL) {
         for (int fd = 3; fd < 4096; fd++) {
@@ -246,12 +280,14 @@ static void close_inherited_fds(void)
         return;
     }
     self = dirfd(d);
-    while ((e = readdir(d)) != NULL) {
+    e = readdir(d);
+    while (e != NULL) {
         char *end;
         long n = strtol(e->d_name, &end, 10);
         if (e->d_name[0] != '.' && *end == '\0' && n > 2 && n != self && n <= INT_MAX) {
             close((int)n);
         }
+        e = readdir(d);
     }
     closedir(d);
 }
@@ -353,35 +389,40 @@ static int recv_frame(int sock, uint8_t *type, uint8_t *buf, size_t cap, uint32_
  * unread data (a STDIN_EOF still in flight) makes Linux send RST, and Wine then
  * fails the shim's pending recv before it has read EXIT.
  */
+/* One wait-and-drain round of the lingering close; 1 to keep draining, 0 when done. */
+static int linger_step(int sock, int64_t deadline, unsigned char *sink, size_t sinksz)
+{
+    struct pollfd pf = { .fd = sock, .events = POLLIN, .revents = 0 };
+    int64_t left = deadline - now_ms();
+    ssize_t n;
+    int r;
+    if (left <= 0) {
+        return 0;
+    }
+    r = poll(&pf, 1, (int)left);
+    if (r < 0 && errno == EINTR) {
+        return 1;
+    }
+    if (r <= 0) {
+        return 0;
+    }
+    n = recv(sock, sink, sinksz, 0);
+    if (n < 0 && errno == EINTR) {
+        return 1;
+    }
+    return n > 0;
+}
+
 static void finish(int sock, uint8_t type, const void *payload, uint32_t len)
 {
     unsigned char sink[4096];
     int64_t deadline = now_ms() + LINGER_MS;
+    int more;
     (void)send_frame(sock, type, payload, len);
     shutdown(sock, SHUT_WR);
-    for (;;) {
-        struct pollfd pf = { .fd = sock, .events = POLLIN, .revents = 0 };
-        int64_t left = deadline - now_ms();
-        ssize_t n;
-        int r;
-        if (left <= 0) {
-            break;
-        }
-        r = poll(&pf, 1, (int)left);
-        if (r < 0 && errno == EINTR) {
-            continue;
-        }
-        if (r <= 0) {
-            break;
-        }
-        n = recv(sock, sink, sizeof(sink), 0);
-        if (n < 0 && errno == EINTR) {
-            continue;
-        }
-        if (n <= 0) {
-            break;
-        }
-    }
+    do {
+        more = linger_step(sock, deadline, sink, sizeof(sink));
+    } while (more);
     close(sock);
 }
 
@@ -497,6 +538,16 @@ static void read_records(int fd, int32_t *err_kind, int32_t *err_no, pid_t *pid)
     close(fd);
 }
 
+/* waitpid() for pid, retried on EINTR. */
+static pid_t wait_blocking(pid_t pid, int *status)
+{
+    pid_t w;
+    do {
+        w = waitpid(pid, status, 0);
+    } while (w < 0 && errno == EINTR);
+    return w;
+}
+
 static void close_pair(int p[2])
 {
     if (p[0] >= 0) {
@@ -505,8 +556,19 @@ static void close_pair(int p[2])
     if (p[1] >= 0) {
         close(p[1]);
     }
-    p[0] = p[1] = -1;
+    p[0] = -1;
+    p[1] = -1;
 }
+
+/* What the session's log line reports (names and numbers only). */
+struct sess_info {
+    char peer[64];
+    char argv0[64];
+    size_t argc;
+    size_t env_ignored;
+    uint32_t flags;
+    int64_t start_ms;
+};
 
 struct sess {
     int sock;
@@ -524,12 +586,7 @@ struct sess {
     size_t inoff;
     size_t inlen;
     uint8_t *obuf;
-    char peer[64];
-    char argv0[64];
-    size_t argc;
-    size_t env_ignored;
-    uint32_t flags;
-    int64_t start_ms;
+    struct sess_info info;
 };
 
 /*
@@ -540,7 +597,10 @@ struct sess {
 static int spawn_attached(struct sess *s, const char *cwd, char **argv, char **envp, int32_t *err_kind,
                           int32_t *err_no)
 {
-    int in[2] = { -1, -1 }, out[2] = { -1, -1 }, er[2] = { -1, -1 }, rep[2] = { -1, -1 };
+    int in[2] = { -1, -1 };
+    int out[2] = { -1, -1 };
+    int er[2] = { -1, -1 };
+    int rep[2] = { -1, -1 };
     pid_t self = getpid();
     pid_t pid;
     pid_t unused = -1;
@@ -588,8 +648,7 @@ static int spawn_attached(struct sess *s, const char *cwd, char **argv, char **e
         close(in[1]);
         close(out[0]);
         close(er[0]);
-        while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {
-        }
+        (void)wait_blocking(pid, NULL);
         return -1;
     }
     s->child = pid;
@@ -655,8 +714,7 @@ static int spawn_detached(const char *cwd, char **argv, char **envp, pid_t *pid,
     *err_kind = 0;
     *err_no = 0;
     read_records(rep[0], err_kind, err_no, pid);
-    while (waitpid(mid, NULL, 0) < 0 && errno == EINTR) {
-    }
+    (void)wait_blocking(mid, NULL);
     if (*err_kind == 0 && *pid <= 0) {
         *err_kind = REC_SETUP;
         *err_no = ECHILD;
@@ -721,8 +779,7 @@ static void kill_group(struct sess *s)
     kill(-s->child, SIGKILL);
     if (!s->exited) {
         int st = 0;
-        while (waitpid(s->child, &st, 0) < 0 && errno == EINTR) {
-        }
+        (void)wait_blocking(s->child, &st);
         s->exited = 1;
         s->wstatus = st;
     }
@@ -731,9 +788,11 @@ static void kill_group(struct sess *s)
 /* The one log line of a session (names and numbers only, never values or data). */
 static void session_log(const struct sess *s, const char *result)
 {
-    log_line("session peer=%s argv0=%s argc=%zu flags=0x%x env-ignored=%zu result=%s ms=%lld", s->peer,
-             s->argv0[0] ? s->argv0 : "-", s->argc, (unsigned)s->flags, s->env_ignored, result,
-             (long long)(now_ms() - s->start_ms));
+    char line[1024];
+    snprintf(line, sizeof(line), "session peer=%s argv0=%s argc=%zu flags=0x%x env-ignored=%zu result=%s ms=%lld",
+             s->info.peer, s->info.argv0[0] ? s->info.argv0 : "-", s->info.argc, (unsigned)s->info.flags,
+             s->info.env_ignored, result, (long long)(now_ms() - s->info.start_ms));
+    log_text(line);
 }
 
 /* SIGNAL frame: deliver an allowed signal to the child's process group. */
@@ -753,47 +812,77 @@ static void on_signal_frame(struct sess *s, int signo)
     }
 }
 
+/* Queue a STDIN payload for the child; 0 consumed (or dropped), 1 no room yet (backpressure). */
+static int queue_stdin(struct sess *s, const uint8_t *d, uint32_t len)
+{
+    if (s->in_fd < 0 || s->stdin_eof || len == 0) {
+        return 0;
+    }
+    if (STDIN_CAP - s->inlen < len) {
+        return 1; /* backpressure: wait until the child drains its stdin */
+    }
+    if (STDIN_CAP - s->inoff - s->inlen < len) {
+        memmove(s->inb, s->inb + s->inoff, s->inlen);
+        s->inoff = 0;
+    }
+    memcpy(s->inb + s->inoff + s->inlen, d, len);
+    s->inlen += len;
+    return 0;
+}
+
+/* One complete client frame; 0 consumed, 1 wait, -1 protocol violation. */
+static int handle_frame(struct sess *s, uint8_t type, const uint8_t *payload, uint32_t len)
+{
+    if (type == FL_F_STDIN) {
+        return queue_stdin(s, payload, len);
+    }
+    if (type == FL_F_STDIN_EOF) {
+        if (len != 0) {
+            return -1;
+        }
+        s->stdin_eof = 1;
+        return 0;
+    }
+    if (len != 1) {
+        return -1;
+    }
+    on_signal_frame(s, payload[0]);
+    return 0;
+}
+
+/* The frame header at rx[off]: 0 a complete frame, 1 incomplete, -1 protocol violation. */
+static int next_frame(const struct sess *s, size_t off, uint8_t *type, uint32_t *len)
+{
+    if (s->rxlen - off < HDR_LEN) {
+        return 1;
+    }
+    if (fl_hdr_decode(s->rx + off, type, len) != 0 || *len > FL_MAX_CHUNK) {
+        return -1;
+    }
+    if (*type != FL_F_STDIN && *type != FL_F_STDIN_EOF && *type != FL_F_SIGNAL) {
+        return -1;
+    }
+    return s->rxlen - off - HDR_LEN < *len ? 1 : 0;
+}
+
 /* Consume complete frames from rx; -1 on a protocol violation. */
 static int parse_frames(struct sess *s)
 {
     size_t off = 0;
-    while (s->rxlen - off >= HDR_LEN) {
-        const uint8_t *h = s->rx + off;
-        uint8_t type;
-        uint32_t len;
-        if (fl_hdr_decode(h, &type, &len) != 0 || len > FL_MAX_CHUNK) {
-            return -1;
+    int r = 0;
+    while (r == 0) {
+        uint8_t type = 0;
+        uint32_t len = 0;
+        r = next_frame(s, off, &type, &len);
+        if (r == 0) {
+            r = handle_frame(s, type, s->rx + off + HDR_LEN, len);
         }
-        if (type != FL_F_STDIN && type != FL_F_STDIN_EOF && type != FL_F_SIGNAL) {
-            return -1;
+        if (r == 0) {
+            off += HDR_LEN + len;
         }
-        if (s->rxlen - off - HDR_LEN < len) {
-            break;
-        }
-        if (type == FL_F_STDIN) {
-            if (s->in_fd >= 0 && !s->stdin_eof && len > 0) {
-                if (STDIN_CAP - s->inlen < len) {
-                    break; /* backpressure: wait until the child drains its stdin */
-                }
-                if (STDIN_CAP - s->inoff - s->inlen < len) {
-                    memmove(s->inb, s->inb + s->inoff, s->inlen);
-                    s->inoff = 0;
-                }
-                memcpy(s->inb + s->inoff + s->inlen, h + HDR_LEN, len);
-                s->inlen += len;
-            }
-        } else if (type == FL_F_STDIN_EOF) {
-            if (len != 0) {
-                return -1;
-            }
-            s->stdin_eof = 1;
-        } else {
-            if (len != 1) {
-                return -1;
-            }
-            on_signal_frame(s, h[HDR_LEN]);
-        }
-        off += HDR_LEN + len;
+    }
+    if (r < 0) {
+        return -1;
     }
     if (off > 0) {
         memmove(s->rx, s->rx + off, s->rxlen - off);
@@ -856,6 +945,144 @@ static void close_outputs(struct sess *s)
     }
 }
 
+/* The poll() set of one relay round, with the slot of each optional fd (-1: not polled). */
+struct relay_set {
+    struct pollfd p[5];
+    nfds_t n;
+    int ii;
+    int io;
+    int ie;
+};
+
+static int relay_add(struct relay_set *rs, int fd, short events)
+{
+    int idx = (int)rs->n;
+    rs->p[rs->n] = (struct pollfd){ .fd = fd, .events = events, .revents = 0 };
+    rs->n++;
+    return idx;
+}
+
+static void relay_fill(const struct sess *s, struct relay_set *rs)
+{
+    rs->n = 0;
+    rs->ii = -1;
+    rs->io = -1;
+    rs->ie = -1;
+    (void)relay_add(rs, g_sigpipe[0], POLLIN);
+    (void)relay_add(rs, s->sock, (short)(POLLRDHUP | (s->rxlen < RX_CAP ? POLLIN : 0)));
+    if (s->in_fd >= 0 && s->inlen > 0) {
+        rs->ii = relay_add(rs, s->in_fd, POLLOUT);
+    }
+    if (s->out_fd >= 0) {
+        rs->io = relay_add(rs, s->out_fd, POLLIN);
+    }
+    if (s->err_fd >= 0) {
+        rs->ie = relay_add(rs, s->err_fd, POLLIN);
+    }
+}
+
+/* poll() timeout: none while the child runs, the rest of the drain grace once it exited. */
+static int relay_timeout(const struct sess *s)
+{
+    int64_t left;
+    if (!s->exited) {
+        return -1;
+    }
+    left = s->exit_ms + DRAIN_GRACE_MS - now_ms();
+    return left > 0 ? (int)left : 0;
+}
+
+/* The socket's events: read into rx and parse. NULL ok, else why the session ends. */
+static const char *relay_socket(struct sess *s, short revents)
+{
+    if (revents & (POLLERR | POLLHUP | POLLRDHUP)) {
+        return "peer-closed";
+    }
+    if (revents & POLLIN) {
+        ssize_t n = recv(s->sock, s->rx + s->rxlen, RX_CAP - s->rxlen, 0);
+        if (n == 0 || (n < 0 && errno != EINTR && errno != EAGAIN)) {
+            return "peer-closed";
+        }
+        if (n > 0) {
+            s->rxlen += (size_t)n;
+        }
+    }
+    return parse_frames(s) != 0 ? "protocol-error" : NULL;
+}
+
+/* Feed the child's stdin (then re-parse frames held back by backpressure); close it at EOF. */
+static const char *relay_stdin(struct sess *s, const struct relay_set *rs)
+{
+    if (rs->ii >= 0 && s->in_fd >= 0 && (rs->p[rs->ii].revents & (POLLOUT | POLLERR | POLLHUP))) {
+        write_stdin(s);
+        if (parse_frames(s) != 0) {
+            return "protocol-error";
+        }
+    }
+    if (s->in_fd >= 0 && s->stdin_eof && s->inlen == 0) {
+        close_stdin(s);
+    }
+    return NULL;
+}
+
+static int output_ready(const struct relay_set *rs, int idx, int fd)
+{
+    return idx >= 0 && fd >= 0 && (rs->p[idx].revents & (POLLIN | POLLHUP | POLLERR)) != 0;
+}
+
+static const char *relay_outputs(struct sess *s, const struct relay_set *rs)
+{
+    if (output_ready(rs, rs->io, s->out_fd) && forward(s, &s->out_fd, FL_F_STDOUT) != 0) {
+        return "peer-closed";
+    }
+    if (output_ready(rs, rs->ie, s->err_fd) && forward(s, &s->err_fd, FL_F_STDERR) != 0) {
+        return "peer-closed";
+    }
+    return NULL;
+}
+
+static const char *relay_events(struct sess *s, const struct relay_set *rs)
+{
+    const char *fail;
+    if (rs->p[0].revents != 0) {
+        (void)drain_sigpipe();
+        reap_child(s);
+    }
+    fail = relay_socket(s, rs->p[1].revents);
+    if (fail == NULL) {
+        fail = relay_stdin(s, rs);
+    }
+    if (fail == NULL) {
+        fail = relay_outputs(s, rs);
+    }
+    return fail;
+}
+
+/* One poll round: 1 keep going, 0 the child finished, -1 the session ended (*why). */
+static int relay_step(struct sess *s, const char **why)
+{
+    struct relay_set rs;
+    const char *fail;
+    int r;
+    relay_fill(s, &rs);
+    r = poll(rs.p, rs.n, relay_timeout(s));
+    if (r < 0 && errno == EINTR) {
+        return 1;
+    }
+    fail = r < 0 ? "poll-error" : relay_events(s, &rs);
+    if (fail != NULL) {
+        *why = fail;
+        kill_group(s);
+        return -1;
+    }
+    if (s->exited && ((s->out_fd < 0 && s->err_fd < 0) || now_ms() >= s->exit_ms + DRAIN_GRACE_MS)) {
+        close_outputs(s);
+        close_stdin(s);
+        return 0;
+    }
+    return 1;
+}
+
 /*
  * The relay: socket -> child stdin (non-blocking, 1 MiB buffer, backpressure),
  * child stdout/stderr -> frames, SIGNAL frames -> killpg, SIGCHLD self-pipe ->
@@ -865,95 +1092,11 @@ static void close_outputs(struct sess *s)
  */
 static int relay(struct sess *s, const char **why)
 {
-    for (;;) {
-        struct pollfd p[5];
-        nfds_t np = 0;
-        int ii = -1, io = -1, ie = -1;
-        int timeout = -1;
-        int r;
-        p[np++] = (struct pollfd){ .fd = g_sigpipe[0], .events = POLLIN, .revents = 0 };
-        p[np++] = (struct pollfd){ .fd = s->sock,
-                                   .events = (short)(POLLRDHUP | (s->rxlen < RX_CAP ? POLLIN : 0)),
-                                   .revents = 0 };
-        if (s->in_fd >= 0 && s->inlen > 0) {
-            ii = (int)np;
-            p[np++] = (struct pollfd){ .fd = s->in_fd, .events = POLLOUT, .revents = 0 };
-        }
-        if (s->out_fd >= 0) {
-            io = (int)np;
-            p[np++] = (struct pollfd){ .fd = s->out_fd, .events = POLLIN, .revents = 0 };
-        }
-        if (s->err_fd >= 0) {
-            ie = (int)np;
-            p[np++] = (struct pollfd){ .fd = s->err_fd, .events = POLLIN, .revents = 0 };
-        }
-        if (s->exited) {
-            int64_t left = s->exit_ms + DRAIN_GRACE_MS - now_ms();
-            timeout = left > 0 ? (int)left : 0;
-        }
-        r = poll(p, np, timeout);
-        if (r < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            *why = "poll-error";
-            kill_group(s);
-            return -1;
-        }
-        if (p[0].revents != 0) {
-            (void)drain_sigpipe();
-            reap_child(s);
-        }
-        if (p[1].revents & (POLLERR | POLLHUP | POLLRDHUP)) {
-            *why = "peer-closed";
-            kill_group(s);
-            return -1;
-        }
-        if (p[1].revents & POLLIN) {
-            ssize_t n = recv(s->sock, s->rx + s->rxlen, RX_CAP - s->rxlen, 0);
-            if (n == 0 || (n < 0 && errno != EINTR && errno != EAGAIN)) {
-                *why = "peer-closed";
-                kill_group(s);
-                return -1;
-            }
-            if (n > 0) {
-                s->rxlen += (size_t)n;
-            }
-        }
-        if (parse_frames(s) != 0) {
-            *why = "protocol-error";
-            kill_group(s);
-            return -1;
-        }
-        if (ii >= 0 && s->in_fd >= 0 && (p[ii].revents & (POLLOUT | POLLERR | POLLHUP))) {
-            write_stdin(s);
-            if (parse_frames(s) != 0) {
-                *why = "protocol-error";
-                kill_group(s);
-                return -1;
-            }
-        }
-        if (s->in_fd >= 0 && s->stdin_eof && s->inlen == 0) {
-            close_stdin(s);
-        }
-        if (io >= 0 && s->out_fd >= 0 && (p[io].revents & (POLLIN | POLLHUP | POLLERR)) &&
-            forward(s, &s->out_fd, FL_F_STDOUT) != 0) {
-            *why = "peer-closed";
-            kill_group(s);
-            return -1;
-        }
-        if (ie >= 0 && s->err_fd >= 0 && (p[ie].revents & (POLLIN | POLLHUP | POLLERR)) &&
-            forward(s, &s->err_fd, FL_F_STDERR) != 0) {
-            *why = "peer-closed";
-            kill_group(s);
-            return -1;
-        }
-        if (s->exited && ((s->out_fd < 0 && s->err_fd < 0) || now_ms() >= s->exit_ms + DRAIN_GRACE_MS)) {
-            close_outputs(s);
-            close_stdin(s);
-            return 0;
-        }
-    }
+    int r;
+    do {
+        r = relay_step(s, why);
+    } while (r > 0);
+    return r;
 }
 
 /* Mutual authentication; 0 on success, else *why names the failure. */
@@ -961,7 +1104,9 @@ static int handshake(int sock, const char **why)
 {
     int64_t deadline = now_ms() + AUTH_TIMEOUT_MS;
     uint8_t buf[64];
-    uint8_t cn[FL_NONCE_LEN], sn[FL_NONCE_LEN], mac[FL_MAC_LEN];
+    uint8_t cn[FL_NONCE_LEN];
+    uint8_t sn[FL_NONCE_LEN];
+    uint8_t mac[FL_MAC_LEN];
     uint8_t chal[FL_CHALLENGE_LEN];
     uint8_t type;
     uint32_t len;
@@ -1021,7 +1166,7 @@ static int read_req(int sock, struct fl_req *req)
     return rc;
 }
 
-static void send_spawn_err(struct sess *s, int32_t kind, int32_t err, const char *cwd)
+static void send_spawn_err(const struct sess *s, int32_t kind, int32_t err, const char *cwd)
 {
     uint8_t payload[4 + MSG_MAX];
     uint32_t u = (uint32_t)err;
@@ -1034,9 +1179,9 @@ static void send_spawn_err(struct sess *s, int32_t kind, int32_t err, const char
     if (kind == REC_CHDIR) {
         n = snprintf((char *)payload + 4, MSG_MAX, "cannot change to directory '%s': %s", cwd, strerror(err));
     } else if (kind == REC_EXEC) {
-        n = snprintf((char *)payload + 4, MSG_MAX, "cannot run '%s': %s", s->argv0, strerror(err));
+        n = snprintf((char *)payload + 4, MSG_MAX, "cannot run '%s': %s", s->info.argv0, strerror(err));
     } else {
-        n = snprintf((char *)payload + 4, MSG_MAX, "cannot start '%s': %s", s->argv0, strerror(err));
+        n = snprintf((char *)payload + 4, MSG_MAX, "cannot start '%s': %s", s->info.argv0, strerror(err));
     }
     if (n < 0) {
         n = 0;
@@ -1080,7 +1225,7 @@ static void free_anchors(char **real, size_t n)
     free(real);
 }
 
-static int send_spawn_ok(struct sess *s, pid_t pid, char **real, size_t n)
+static int send_spawn_ok(const struct sess *s, pid_t pid, char **real, size_t n)
 {
     uint8_t *payload = NULL;
     size_t plen = 0;
@@ -1096,7 +1241,7 @@ static int send_spawn_ok(struct sess *s, pid_t pid, char **real, size_t n)
     return rc;
 }
 
-static void send_exit(struct sess *s, int kind, int32_t code)
+static void send_exit(const struct sess *s, int kind, int32_t code)
 {
     uint8_t payload[5];
     char result[48];
@@ -1110,21 +1255,68 @@ static void send_exit(struct sess *s, int kind, int32_t code)
     session_log(s, result);
 }
 
-/* Run one REQ after authentication. */
-static void serve(struct sess *s, struct fl_req *req)
+/* FL_REQ_DETACH: spawn, report SPAWN_OK, then EXIT 0 at once (the child keeps running). */
+static void serve_detached(const struct sess *s, const struct fl_req *req, char **argv, char **envp, char **real)
 {
-    char **argv = NULL;
+    pid_t pid;
+    int32_t err_kind = 0;
+    int32_t err_no = 0;
+    char result[48];
+    uint8_t payload[5];
+    if (spawn_detached(req->cwd, argv, envp, &pid, &err_kind, &err_no) != 0) {
+        send_spawn_err(s, err_kind, err_no, req->cwd);
+        return;
+    }
+    if (send_spawn_ok(s, pid, real, req->nanchors) != 0) {
+        close(s->sock);
+        session_log(s, "peer-closed");
+        return;
+    }
+    snprintf(result, sizeof(result), "detached:%ld", (long)pid);
+    if (fl_exit_encode(payload, 0, 0) == 0) {
+        finish(s->sock, FL_F_EXIT, payload, sizeof(payload));
+    } else {
+        close(s->sock);
+    }
+    session_log(s, result);
+}
+
+/* Attached: spawn, report SPAWN_OK, relay until the child exits, then EXIT. */
+static void serve_attached(struct sess *s, const struct fl_req *req, char **argv, char **envp, char **real)
+{
+    int32_t err_kind = 0;
+    int32_t err_no = 0;
+    const char *why = "";
+    int kind;
+    int32_t code;
+    if (spawn_attached(s, req->cwd, argv, envp, &err_kind, &err_no) != 0) {
+        send_spawn_err(s, err_kind, err_no, req->cwd);
+    } else if (send_spawn_ok(s, s->child, real, req->nanchors) != 0) {
+        kill_group(s);
+        close(s->sock);
+        session_log(s, "peer-closed");
+    } else if (relay(s, &why) != 0) {
+        close(s->sock);
+        session_log(s, why);
+    } else {
+        fl_wait_to_exit(s->wstatus, &kind, &code);
+        send_exit(s, kind, code);
+    }
+}
+
+/* Run one REQ after authentication. */
+static void serve(struct sess *s, const struct fl_req *req)
+{
+    char **argv;
     char **envp = NULL;
     char **real = NULL;
     size_t ignored = 0;
-    int32_t err_kind = 0, err_no = 0;
-    const char *why = "";
     size_t extra = (req->flags & FL_REQ_HOST_HELPER) ? 1 : 0;
 
-    s->argc = req->argc;
-    s->flags = req->flags;
-    snprintf(s->argv0, sizeof(s->argv0), "%s", req->argc ? fl_basename_any(req->argv[0]) : "");
-    fl_log_sanitize(s->argv0);
+    s->info.argc = req->argc;
+    s->info.flags = req->flags;
+    snprintf(s->info.argv0, sizeof(s->info.argv0), "%s", req->argc ? fl_basename_any(req->argv[0]) : "");
+    fl_log_sanitize(s->info.argv0);
     if (req->cwd == NULL || req->argc == 0) {
         send_spawn_err(s, REC_SETUP, EINVAL, "");
         return;
@@ -1134,8 +1326,10 @@ static void serve(struct sess *s, struct fl_req *req)
         return;
     }
     argv = calloc(req->argc + extra + 1, sizeof(char *));
-    if (argv == NULL || fl_env_build(environ, req->set, req->nset, req->unset, req->nunset, &envp, &ignored) != 0 ||
-        (real = resolve_anchors(req)) == NULL) {
+    if (argv != NULL && fl_env_build(environ, req->set, req->nset, req->unset, req->nunset, &envp, &ignored) == 0) {
+        real = resolve_anchors(req);
+    }
+    if (real == NULL) {
         free(argv);
         fl_env_free(envp);
         send_spawn_err(s, REC_SETUP, ENOMEM, req->cwd);
@@ -1147,40 +1341,11 @@ static void serve(struct sess *s, struct fl_req *req)
     for (size_t i = 0; i < req->argc; i++) {
         argv[i + extra] = req->argv[i];
     }
-    s->env_ignored = ignored;
-
+    s->info.env_ignored = ignored;
     if (req->flags & FL_REQ_DETACH) {
-        pid_t pid;
-        if (spawn_detached(req->cwd, argv, envp, &pid, &err_kind, &err_no) != 0) {
-            send_spawn_err(s, err_kind, err_no, req->cwd);
-        } else if (send_spawn_ok(s, pid, real, req->nanchors) != 0) {
-            close(s->sock);
-            session_log(s, "peer-closed");
-        } else {
-            char result[48];
-            uint8_t payload[5];
-            snprintf(result, sizeof(result), "detached:%ld", (long)pid);
-            if (fl_exit_encode(payload, 0, 0) == 0) {
-                finish(s->sock, FL_F_EXIT, payload, sizeof(payload));
-            } else {
-                close(s->sock);
-            }
-            session_log(s, result);
-        }
-    } else if (spawn_attached(s, req->cwd, argv, envp, &err_kind, &err_no) != 0) {
-        send_spawn_err(s, err_kind, err_no, req->cwd);
-    } else if (send_spawn_ok(s, s->child, real, req->nanchors) != 0) {
-        kill_group(s);
-        close(s->sock);
-        session_log(s, "peer-closed");
-    } else if (relay(s, &why) != 0) {
-        close(s->sock);
-        session_log(s, why);
+        serve_detached(s, req, argv, envp, real);
     } else {
-        int kind;
-        int32_t code;
-        fl_wait_to_exit(s->wstatus, &kind, &code);
-        send_exit(s, kind, code);
+        serve_attached(s, req, argv, envp, real);
     }
     free_anchors(real, req->nanchors);
     fl_env_free(envp);
@@ -1200,10 +1365,12 @@ static _Noreturn void session_main(int sock, const struct sockaddr_in *peer)
     memset(&s, 0, sizeof(s));
     s.sock = sock;
     s.child = -1;
-    s.in_fd = s.out_fd = s.err_fd = -1;
-    s.start_ms = now_ms();
+    s.in_fd = -1;
+    s.out_fd = -1;
+    s.err_fd = -1;
+    s.info.start_ms = now_ms();
     inet_ntop(AF_INET, &peer->sin_addr, addr, sizeof(addr));
-    snprintf(s.peer, sizeof(s.peer), "%s:%u", addr, (unsigned)ntohs(peer->sin_port));
+    snprintf(s.info.peer, sizeof(s.info.peer), "%s:%u", addr, (unsigned)ntohs(peer->sin_port));
 
     /* Signals were blocked by the daemon around fork(): install the session's own
      * self-pipe, restore default termination, then unblock. */
@@ -1237,7 +1404,7 @@ static _Noreturn void session_main(int sock, const struct sockaddr_in *peer)
     s.inb = malloc(STDIN_CAP);
     s.obuf = malloc(HDR_LEN + FL_MAX_CHUNK);
     if (s.rx == NULL || s.inb == NULL || s.obuf == NULL) {
-        s.argc = req.argc;
+        s.info.argc = req.argc;
         send_spawn_err(&s, REC_SETUP, ENOMEM, req.cwd ? req.cwd : "");
     } else {
         serve(&s, &req);
@@ -1271,16 +1438,16 @@ static int load_token_file(const char *path)
     int rc;
     int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NOCTTY);
     if (fd < 0) {
-        msg("cannot open token file %s: %s", path, strerror(errno));
+        msg4("cannot open token file ", path, ": ", strerror(errno));
         return -1;
     }
     if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_uid != geteuid()) {
-        msg("token file %s must be a regular file owned by the current user", path);
+        msg4("token file ", path, " must be a regular file owned by the current user", NULL);
         close(fd);
         return -1;
     }
     if ((st.st_mode & 077) != 0) {
-        msg("token file %s must not be accessible by group or others (chmod 600)", path);
+        msg4("token file ", path, " must not be accessible by group or others (chmod 600)", NULL);
         close(fd);
         unlink(path);
         return -1;
@@ -1293,7 +1460,7 @@ static int load_token_file(const char *path)
     rc = n > 0 && fl_token_parse(buf, (size_t)n, g_key) == 0 ? 0 : -1;
     wipe(buf, sizeof(buf));
     if (rc != 0) {
-        msg("token file %s does not hold a 64-character hex token", path);
+        msg4("token file ", path, " does not hold a 64-character hex token", NULL);
     }
     return rc;
 }
@@ -1352,58 +1519,108 @@ static int opt_value(const char *name, int argc, char **argv, int *i, const char
         *val = NULL;
         return 1;
     }
-    *val = argv[++*i];
+    *i += 1;
+    *val = argv[*i];
     return 1;
+}
+
+static int set_token_file(struct opts *o, const char *v)
+{
+    if (v == NULL || v[0] == '\0') {
+        return -1;
+    }
+    o->token_file = v;
+    return 0;
+}
+
+static int set_port(struct opts *o, const char *v)
+{
+    return v == NULL || fl_parse_port(v, &o->port) != 0 ? -1 : 0;
+}
+
+static int set_host_helper(struct opts *o, const char *v)
+{
+    if (v == NULL || v[0] != '/') {
+        return -1;
+    }
+    o->host_helper = v;
+    return 0;
+}
+
+static int set_parent_pid(struct opts *o, const char *v)
+{
+    return v == NULL || fl_parse_pid(v, &o->parent_pid) != 0 ? -1 : 0;
+}
+
+static int set_log(struct opts *o, const char *v)
+{
+    if (v == NULL || v[0] == '\0') {
+        return -1;
+    }
+    o->log = v;
+    return 0;
+}
+
+/* The daemon's options that take a value, with the message for a bad one. */
+struct opt_def {
+    const char *name;
+    int (*set)(struct opts *o, const char *v);
+    const char *bad;
+};
+
+static const struct opt_def k_opt_defs[] = {
+    { "--token-file", set_token_file, "--token-file needs a path" },
+    { "--port", set_port, "--port needs a number 0..65535" },
+    { "--host-helper", set_host_helper, "--host-helper needs an absolute path" },
+    { "--parent-pid", set_parent_pid, "--parent-pid needs a positive pid" },
+    { "--log", set_log, "--log needs a path" },
+};
+
+/* One option at argv[*i] (*i is left on its last word). -1 go on, 1 exit 0, 2 usage error. */
+static int parse_one_opt(int argc, char **argv, int *i, struct opts *o)
+{
+    static const char version[] =
+        "fl-bridge-helper " FL_VERSION " (Fork for Linux (unofficial) git bridge, protocol FLB1 v1)\n";
+    const char *a = argv[*i];
+    if (strcmp(a, "--daemon") == 0) {
+        o->daemon = 1;
+        return -1;
+    }
+    if (strcmp(a, "--help") == 0 || strcmp(a, "-h") == 0) {
+        usage(1);
+        return 1;
+    }
+    if (strcmp(a, "--version") == 0) {
+        (void)write_all(1, version, sizeof(version) - 1);
+        return 1;
+    }
+    for (size_t k = 0; k < sizeof(k_opt_defs) / sizeof(k_opt_defs[0]); k++) {
+        const char *v = NULL;
+        if (opt_value(k_opt_defs[k].name, argc, argv, i, &v)) {
+            if (k_opt_defs[k].set(o, v) != 0) {
+                msg(k_opt_defs[k].bad);
+                return 2;
+            }
+            return -1;
+        }
+    }
+    msg2("unknown argument: ", a);
+    usage(2);
+    return 2;
 }
 
 /* 0 ok, 1 exit 0 (help/version printed), 2 usage error. */
 static int parse_opts(int argc, char **argv, struct opts *o)
 {
+    int i = 1;
+    int rc = -1;
     memset(o, 0, sizeof(*o));
-    for (int i = 1; i < argc; i++) {
-        const char *v = NULL;
-        if (strcmp(argv[i], "--daemon") == 0) {
-            o->daemon = 1;
-        } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
-            usage(1);
-            return 1;
-        } else if (strcmp(argv[i], "--version") == 0) {
-            static const char v1[] = "fl-bridge-helper " FL_VERSION " (Fork for Linux (unofficial) git bridge, protocol FLB1 v1)\n";
-            (void)write_all(1, v1, sizeof(v1) - 1);
-            return 1;
-        } else if (opt_value("--token-file", argc, argv, &i, &v)) {
-            if (v == NULL || v[0] == '\0') {
-                msg("--token-file needs a path");
-                return 2;
-            }
-            o->token_file = v;
-        } else if (opt_value("--port", argc, argv, &i, &v)) {
-            if (v == NULL || fl_parse_port(v, &o->port) != 0) {
-                msg("--port needs a number 0..65535");
-                return 2;
-            }
-        } else if (opt_value("--host-helper", argc, argv, &i, &v)) {
-            if (v == NULL || v[0] != '/') {
-                msg("--host-helper needs an absolute path");
-                return 2;
-            }
-            o->host_helper = v;
-        } else if (opt_value("--parent-pid", argc, argv, &i, &v)) {
-            if (v == NULL || fl_parse_pid(v, &o->parent_pid) != 0) {
-                msg("--parent-pid needs a positive pid");
-                return 2;
-            }
-        } else if (opt_value("--log", argc, argv, &i, &v)) {
-            if (v == NULL || v[0] == '\0') {
-                msg("--log needs a path");
-                return 2;
-            }
-            o->log = v;
-        } else {
-            msg("unknown argument: %s", argv[i]);
-            usage(2);
-            return 2;
-        }
+    while (rc < 0 && i < argc) {
+        rc = parse_one_opt(argc, argv, &i, o);
+        i++;
+    }
+    if (rc >= 0) {
+        return rc;
     }
     if (!o->daemon) {
         usage(2);
@@ -1417,73 +1634,77 @@ static int parent_gone(int32_t pid)
     return pid > 0 && kill((pid_t)pid, 0) < 0 && errno == ESRCH;
 }
 
-static int run_daemon(const struct opts *o)
+/* Tokens, host helper, log, parent check and cwd: everything before the socket. 0 ok. */
+static int daemon_prepare(const struct opts *o)
 {
-    struct sockaddr_in a;
-    socklen_t alen = sizeof(a);
-    pid_t orig_ppid = getppid();
-    int lst;
-    int one = 1;
-    int nul;
-    int nsessions = 0;
-    int64_t next_parent_check;
-    char line[32];
-    int n;
-
-    ensure_std_fds();
-    close_inherited_fds();
     if (load_token_env(o->token_file == NULL) != 0) {
-        return 1;
+        return -1;
     }
     if (o->token_file != NULL && load_token_file(o->token_file) != 0) {
-        return 1;
+        return -1;
     }
     if (o->host_helper != NULL) {
         if (realpath(o->host_helper, g_host_helper) == NULL || access(g_host_helper, X_OK) != 0) {
-            msg("host helper %s is not an executable file: %s", o->host_helper, strerror(errno));
-            return 1;
+            msg4("host helper ", o->host_helper, " is not an executable file: ", strerror(errno));
+            return -1;
         }
         g_have_host_helper = 1;
     }
     if (o->log != NULL) {
         g_log_fd = open(o->log, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW | O_NOCTTY, 0600);
         if (g_log_fd < 0) {
-            msg("cannot open log %s: %s", o->log, strerror(errno));
-            return 1;
+            msg4("cannot open log ", o->log, ": ", strerror(errno));
+            return -1;
         }
     }
     if (parent_gone(o->parent_pid)) {
-        msg("parent pid %ld does not exist", (long)o->parent_pid);
-        return 1;
+        char pid[32];
+        snprintf(pid, sizeof(pid), "%ld", (long)o->parent_pid);
+        msg4("parent pid ", pid, " does not exist", NULL);
+        return -1;
     }
     /* Every relative path is resolved by now: never keep the launcher's cwd busy. */
     if (chdir("/") != 0) {
-        msg("chdir /: %s", strerror(errno));
-        return 1;
+        msg2("chdir /: ", strerror(errno));
+        return -1;
     }
+    return 0;
+}
 
-    lst = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
-    memset(&a, 0, sizeof(a));
-    a.sin_family = AF_INET;
-    a.sin_port = htons(o->port);
-    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+/* Listen on 127.0.0.1:port; the bound address in *a. The socket, or -1. */
+static int open_listener(uint16_t port, struct sockaddr_in *a)
+{
+    socklen_t alen = sizeof(*a);
+    int one = 1;
+    int lst = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+    memset(a, 0, sizeof(*a));
+    a->sin_family = AF_INET;
+    a->sin_port = htons(port);
+    a->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     if (lst < 0) {
-        msg("socket: %s", strerror(errno));
-        return 1;
+        msg2("socket: ", strerror(errno));
+        return -1;
     }
-    if (o->port != 0) {
+    if (port != 0) {
         setsockopt(lst, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
     }
-    if (bind(lst, (struct sockaddr *)&a, sizeof(a)) != 0 || listen(lst, 128) != 0 ||
-        getsockname(lst, (struct sockaddr *)&a, &alen) != 0) {
-        msg("cannot listen on 127.0.0.1:%u: %s", (unsigned)o->port, strerror(errno));
+    if (bind(lst, (struct sockaddr *)a, sizeof(*a)) != 0 || listen(lst, 128) != 0 ||
+        getsockname(lst, (struct sockaddr *)a, &alen) != 0) {
+        char where[32];
+        snprintf(where, sizeof(where), "%u", (unsigned)port);
+        msg4("cannot listen on 127.0.0.1:", where, ": ", strerror(errno));
         close(lst);
-        return 1;
+        return -1;
     }
+    return lst;
+}
+
+/* Self-pipe, handlers, own session, PDEATHSIG; 0 ok (the caller closes lst on error). */
+static int daemon_signals(pid_t orig_ppid)
+{
     if (new_sigpipe() != 0) {
-        msg("pipe: %s", strerror(errno));
-        close(lst);
-        return 1;
+        msg2("pipe: ", strerror(errno));
+        return -1;
     }
     signal(SIGPIPE, SIG_IGN);
     set_handler(SIGTERM, on_signal);
@@ -1491,21 +1712,25 @@ static int run_daemon(const struct opts *o)
     set_handler(SIGHUP, on_signal);
     set_handler(SIGCHLD, on_signal);
     if (setsid() < 0 && errno != EPERM) {
-        msg("setsid: %s", strerror(errno));
+        msg2("setsid: ", strerror(errno));
     }
     prctl(PR_SET_PDEATHSIG, SIGTERM);
     if (getppid() != orig_ppid) {
         msg("parent exited during start-up");
-        close(lst);
-        return 1;
+        return -1;
     }
+    return 0;
+}
 
-    /* Publish the port, then stdin/stdout become /dev/null so the reader sees EOF. */
-    n = snprintf(line, sizeof(line), "FL_BRIDGE_PORT=%u\n", (unsigned)ntohs(a.sin_port));
+/* Publish the port, then stdin/stdout become /dev/null so the reader sees EOF. 0 ok. */
+static int publish_port(unsigned port)
+{
+    char line[32];
+    int nul;
+    int n = snprintf(line, sizeof(line), "FL_BRIDGE_PORT=%u\n", port);
     if (n < 0 || write_all(1, line, (size_t)n) != 0) {
         msg("cannot write the port to stdout");
-        close(lst);
-        return 1;
+        return -1;
     }
     nul = open("/dev/null", O_RDWR | O_CLOEXEC);
     if (nul >= 0) {
@@ -1513,83 +1738,156 @@ static int run_daemon(const struct opts *o)
         dup2(nul, 1);
         close(nul);
     }
-    log_line("daemon start port=%u pid=%ld parent=%ld host-helper=%s", (unsigned)ntohs(a.sin_port),
-             (long)getpid(), (long)(o->parent_pid ? o->parent_pid : orig_ppid),
-             g_have_host_helper ? "yes" : "no");
+    return 0;
+}
 
-    next_parent_check = now_ms() + PARENT_POLL_MS;
-    for (;;) {
-        struct pollfd p[2] = { { .fd = lst, .events = POLLIN, .revents = 0 },
-                               { .fd = g_sigpipe[0], .events = POLLIN, .revents = 0 } };
-        int timeout = -1;
-        int r;
-        if (o->parent_pid > 0) {
-            int64_t left = next_parent_check - now_ms();
-            timeout = left > 0 ? (int)left : 0;
-        }
-        r = poll(p, 2, timeout);
-        if (r < 0 && errno != EINTR) {
-            log_line("daemon exit reason=poll-error errno=%d", errno);
-            break;
-        }
-        if (o->parent_pid > 0 && now_ms() >= next_parent_check) {
-            if (parent_gone(o->parent_pid)) {
-                log_line("daemon exit reason=parent-gone");
-                break;
-            }
-            next_parent_check = now_ms() + PARENT_POLL_MS;
-        }
-        if (r > 0 && p[1].revents != 0) {
-            int st;
-            int term = drain_sigpipe();
-            while (waitpid(-1, &st, WNOHANG) > 0) {
-                nsessions--;
-            }
-            if (term) {
-                log_line("daemon exit reason=signal");
-                break;
-            }
-        }
-        if (r > 0 && (p[0].revents & POLLIN)) {
-            struct sockaddr_in peer;
-            socklen_t plen = sizeof(peer);
-            sigset_t block, old;
-            pid_t pid;
-            int c = accept4(lst, (struct sockaddr *)&peer, &plen, SOCK_CLOEXEC);
-            if (c < 0) {
-                if (errno == EMFILE || errno == ENFILE || errno == ENOBUFS || errno == ENOMEM) {
-                    log_line("daemon accept failed errno=%d", errno);
-                    poll(NULL, 0, 100);
-                }
-                continue;
-            }
-            if (nsessions >= MAX_SESSIONS) {
-                log_line("session refused: %d sessions running", nsessions);
-                close(c);
-                continue;
-            }
-            sigemptyset(&block);
-            sigaddset(&block, SIGCHLD);
-            sigaddset(&block, SIGTERM);
-            sigaddset(&block, SIGINT);
-            sigaddset(&block, SIGHUP);
-            sigprocmask(SIG_BLOCK, &block, &old);
-            pid = fork();
-            if (pid == 0) {
-                close(lst);
-                prctl(PR_SET_PDEATHSIG, 0);
-                session_main(c, &peer);
-            }
-            sigprocmask(SIG_SETMASK, &old, NULL);
-            if (pid < 0) {
-                log_line("daemon fork failed errno=%d", errno);
-            } else {
-                nsessions++;
-            }
-            close(c);
-        }
+/* The accept loop's state. */
+struct daemon_state {
+    int lst;
+    int nsessions;
+    int32_t parent_pid;
+    int64_t next_parent_check;
+};
+
+/* 1 when the --parent-pid check is due and the parent is gone. */
+static int parent_check(struct daemon_state *d)
+{
+    if (d->parent_pid <= 0 || now_ms() < d->next_parent_check) {
+        return 0;
     }
-    close(lst);
+    if (parent_gone(d->parent_pid)) {
+        return 1;
+    }
+    d->next_parent_check = now_ms() + PARENT_POLL_MS;
+    return 0;
+}
+
+/* The self-pipe fired: reap finished sessions; 1 when a termination signal arrived. */
+static int daemon_reap(struct daemon_state *d)
+{
+    int st;
+    int term = drain_sigpipe();
+    while (waitpid(-1, &st, WNOHANG) > 0) {
+        d->nsessions--;
+    }
+    return term;
+}
+
+/* Fork the session process for the accepted connection c. */
+static void fork_session(struct daemon_state *d, int c, const struct sockaddr_in *peer)
+{
+    sigset_t block;
+    sigset_t old;
+    pid_t pid;
+    sigemptyset(&block);
+    sigaddset(&block, SIGCHLD);
+    sigaddset(&block, SIGTERM);
+    sigaddset(&block, SIGINT);
+    sigaddset(&block, SIGHUP);
+    sigprocmask(SIG_BLOCK, &block, &old);
+    pid = fork();
+    if (pid == 0) {
+        close(d->lst);
+        prctl(PR_SET_PDEATHSIG, 0);
+        session_main(c, peer);
+    }
+    sigprocmask(SIG_SETMASK, &old, NULL);
+    if (pid < 0) {
+        log_num("daemon fork failed errno=", (long)errno);
+    } else {
+        d->nsessions++;
+    }
+    close(c);
+}
+
+static void daemon_accept(struct daemon_state *d)
+{
+    struct sockaddr_in peer;
+    socklen_t plen = sizeof(peer);
+    int c;
+    memset(&peer, 0, sizeof(peer));
+    c = accept4(d->lst, (struct sockaddr *)&peer, &plen, SOCK_CLOEXEC);
+    if (c < 0) {
+        int e = errno;
+        if (e == EMFILE || e == ENFILE || e == ENOBUFS || e == ENOMEM) {
+            log_num("daemon accept failed errno=", (long)e);
+            poll(NULL, 0, 100);
+        }
+        return;
+    }
+    if (d->nsessions >= MAX_SESSIONS) {
+        char line[64];
+        snprintf(line, sizeof(line), "session refused: %d sessions running", d->nsessions);
+        log_text(line);
+        close(c);
+        return;
+    }
+    fork_session(d, c, &peer);
+}
+
+/* One round of the accept loop; 0 when the daemon must exit. */
+static int daemon_step(struct daemon_state *d)
+{
+    struct pollfd p[2] = { { .fd = d->lst, .events = POLLIN, .revents = 0 },
+                           { .fd = g_sigpipe[0], .events = POLLIN, .revents = 0 } };
+    int timeout = -1;
+    int r;
+    if (d->parent_pid > 0) {
+        int64_t left = d->next_parent_check - now_ms();
+        timeout = left > 0 ? (int)left : 0;
+    }
+    r = poll(p, 2, timeout);
+    if (r < 0 && errno != EINTR) {
+        log_num("daemon exit reason=poll-error errno=", (long)errno);
+        return 0;
+    }
+    if (parent_check(d)) {
+        log_text("daemon exit reason=parent-gone");
+        return 0;
+    }
+    if (r > 0 && p[1].revents != 0 && daemon_reap(d)) {
+        log_text("daemon exit reason=signal");
+        return 0;
+    }
+    if (r > 0 && (p[0].revents & POLLIN)) {
+        daemon_accept(d);
+    }
+    return 1;
+}
+
+static int run_daemon(const struct opts *o)
+{
+    struct sockaddr_in a;
+    struct daemon_state d;
+    pid_t orig_ppid = getppid();
+    char line[160];
+    int running;
+
+    ensure_std_fds();
+    close_inherited_fds();
+    if (daemon_prepare(o) != 0) {
+        return 1;
+    }
+    memset(&d, 0, sizeof(d));
+    d.parent_pid = o->parent_pid;
+    d.lst = open_listener(o->port, &a);
+    if (d.lst < 0) {
+        return 1;
+    }
+    if (daemon_signals(orig_ppid) != 0 || publish_port((unsigned)ntohs(a.sin_port)) != 0) {
+        close(d.lst);
+        return 1;
+    }
+    snprintf(line, sizeof(line), "daemon start port=%u pid=%ld parent=%ld host-helper=%s",
+             (unsigned)ntohs(a.sin_port), (long)getpid(), (long)(o->parent_pid ? o->parent_pid : orig_ppid),
+             g_have_host_helper ? "yes" : "no");
+    log_text(line);
+
+    d.next_parent_check = now_ms() + PARENT_POLL_MS;
+    do {
+        running = daemon_step(&d);
+    } while (running);
+    close(d.lst);
     wipe(g_key, sizeof(g_key));
     return 0;
 }
@@ -1649,40 +1947,88 @@ static void free_argv(char **v, int n)
     free(v);
 }
 
-static int persona_main(enum fl_persona p, int argc, char **argv)
+static const char *persona_name(enum fl_persona p)
 {
-    static char wine_argv0[] = "wine";
-    const char *target;
-    const char *prefix = getenv("WINEPREFIX");
-    const char *wine = getenv("FL_WINE");
-    const char *anchors = getenv("FL_BRIDGE_ANCHORS");
-    const char *xprefix;
-    char *real_prefix;
-    char dll[4096];
-    char **nargv;
-    int first;
-    int nargs;
-    int ok = 1;
+    if (p == FL_PERSONA_WINEXEC) {
+        return "fl-winexec";
+    }
+    return p == FL_PERSONA_ASKPASS ? "fl-askpass" : "fl-ssh-askpass";
+}
 
-    g_prog = p == FL_PERSONA_WINEXEC ? "fl-winexec" : p == FL_PERSONA_ASKPASS ? "fl-askpass" : "fl-ssh-askpass";
+/* The Windows program to run and the index of its first argument; 0, or the exit code. */
+static int persona_target(enum fl_persona p, int argc, char **argv, const char **target, int *first)
+{
+    const char *var;
     if (p == FL_PERSONA_WINEXEC) {
         if (argc < 2 || argv[1][0] == '\0') {
             msg("usage: fl-winexec <WinExe> [args...]");
             return 2;
         }
-        target = argv[1];
-        first = 2;
-    } else {
-        const char *var = p == FL_PERSONA_ASKPASS ? "FL_ASKPASS_TARGET" : "FL_SSH_ASKPASS_TARGET";
-        target = getenv(var);
-        if (target == NULL || target[0] == '\0') {
-            msg("%s is not set", var);
-            return 127;
+        *target = argv[1];
+        *first = 2;
+        return 0;
+    }
+    var = p == FL_PERSONA_ASKPASS ? "FL_ASKPASS_TARGET" : "FL_SSH_ASKPASS_TARGET";
+    *target = getenv(var);
+    if (*target == NULL || (*target)[0] == '\0') {
+        msg2(var, " is not set");
+        return 127;
+    }
+    *first = 1;
+    return 0;
+}
+
+/* nargv[1..nargs+1]: the target and the arguments (fl-winexec translates paths). 0, or -1 (oom). */
+static int fill_wine_argv(char **nargv, enum fl_persona p, const char *target, int nargs, char **args,
+                          const char *anchors, const char *xprefix)
+{
+    nargv[1] = target[0] == '/' ? winexec_arg(target, anchors, xprefix) : strdup(target);
+    if (nargv[1] == NULL) {
+        return -1;
+    }
+    for (int i = 0; i < nargs; i++) {
+        const char *a = args[i];
+        nargv[i + 2] = p == FL_PERSONA_WINEXEC ? winexec_arg(a, anchors, xprefix) : strdup(a);
+        if (nargv[i + 2] == NULL) {
+            return -1;
         }
-        first = 1;
+    }
+    return 0;
+}
+
+/* exec $FL_WINE (or wine from PATH); only returns on failure, after the message. */
+static void exec_wine(char **nargv)
+{
+    const char *wine = getenv("FL_WINE");
+    if (wine != NULL && wine[0] != '\0') {
+        execv(wine, nargv);
+        msg4("cannot run ", wine, " (FL_WINE): ", strerror(errno));
+        return;
+    }
+    execvp("wine", nargv);
+    msg2("cannot run wine (FL_WINE is not set and wine is not on PATH): ", strerror(errno));
+}
+
+static int persona_main(enum fl_persona p, int argc, char **argv)
+{
+    static char wine_argv0[] = "wine";
+    const char *target = NULL;
+    const char *prefix = getenv("WINEPREFIX");
+    const char *anchors = getenv("FL_BRIDGE_ANCHORS");
+    char *real_prefix;
+    char dll[4096];
+    char **nargv;
+    int first = 1;
+    int nargs;
+    int rc;
+
+    g_prog = persona_name(p);
+    rc = persona_target(p, argc, argv, &target, &first);
+    if (rc != 0) {
+        return rc;
     }
     if (prefix == NULL || prefix[0] != '/') {
-        msg("WINEPREFIX is not set to an absolute path; cannot run %s", target);
+        msg2("WINEPREFIX is not set to an absolute path; cannot run ", target);
         return 127;
     }
     if (fl_dlloverrides(getenv("WINEDLLOVERRIDES"), dll, sizeof(dll)) != 0 ||
@@ -1697,24 +2043,13 @@ static int persona_main(enum fl_persona p, int argc, char **argv)
         return 127;
     }
     real_prefix = realpath(prefix, NULL);
-    xprefix = real_prefix ? real_prefix : prefix;
     nargv[0] = wine_argv0;
-    nargv[1] = target[0] == '/' ? winexec_arg(target, anchors, xprefix) : strdup(target);
-    ok = nargv[1] != NULL;
-    for (int i = 0; ok && i < nargs; i++) {
-        const char *a = argv[first + i];
-        nargv[i + 2] = p == FL_PERSONA_WINEXEC ? winexec_arg(a, anchors, xprefix) : strdup(a);
-        ok = nargv[i + 2] != NULL;
-    }
+    rc = fill_wine_argv(nargv, p, target, nargs, argv + first, anchors, real_prefix ? real_prefix : prefix);
     free(real_prefix);
-    if (!ok) {
+    if (rc != 0) {
         msg("out of memory");
-    } else if (wine != NULL && wine[0] != '\0') {
-        execv(wine, nargv);
-        msg("cannot run %s (FL_WINE): %s", wine, strerror(errno));
     } else {
-        execvp("wine", nargv);
-        msg("cannot run wine (FL_WINE is not set and wine is not on PATH): %s", strerror(errno));
+        exec_wine(nargv);
     }
     free_argv(nargv, nargs + 2);
     return 127;

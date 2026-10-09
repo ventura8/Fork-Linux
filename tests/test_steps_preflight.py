@@ -37,17 +37,20 @@ def test_seams_report_the_real_host() -> None:
 def test_preflight_passes_and_creates_directories(xdg: Path, host: None) -> None:
     ctx = _ctx()
     preflight.run(ctx)
-    assert ctx.paths.logs_dir.is_dir() and ctx.paths.runtime_dir.is_dir()
+    assert ctx.paths.logs_dir.is_dir()
+    assert ctx.paths.runtime_dir.is_dir()
     assert preflight.verify(ctx)
-    assert preflight.PREFLIGHT.always and not preflight.PREFLIGHT.requires_fork_closed
+    assert preflight.PREFLIGHT.always
+    assert not preflight.PREFLIGHT.requires_fork_closed
 
 
 @pytest.mark.parametrize("machine", ["aarch64", ""])
 def test_preflight_refuses_other_architectures(xdg: Path, host: None, monkeypatch: pytest.MonkeyPatch,
                                               machine: str) -> None:
     monkeypatch.setattr(preflight, "_machine", lambda: machine)
+    ctx = _ctx()
     with pytest.raises(UnsupportedEnvironment, match="x86_64 only"):
-        preflight.run(_ctx())
+        preflight.run(ctx)
 
 
 def test_preflight_accepts_amd64(xdg: Path, host: None, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -57,14 +60,16 @@ def test_preflight_accepts_amd64(xdg: Path, host: None, monkeypatch: pytest.Monk
 
 def test_preflight_refuses_old_python(xdg: Path, host: None, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(preflight, "_python", lambda: (3, 9))
+    ctx = _ctx()
     with pytest.raises(UnsupportedEnvironment, match="Python 3.9"):
-        preflight.run(_ctx())
+        preflight.run(ctx)
 
 
 def test_preflight_refuses_root_unless_allowed(xdg: Path, host: None, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(preflight, "_euid", lambda: 0)
+    ctx = _ctx()
     with pytest.raises(UnsupportedEnvironment, match="root"):
-        preflight.run(_ctx())
+        preflight.run(ctx)
     preflight.run(_ctx(allow_root=True))
 
 
@@ -79,7 +84,8 @@ def test_preflight_needs_disk_space(xdg: Path, host: None, monkeypatch: pytest.M
     ctx = _ctx()
     with pytest.raises(ForkLinuxError, match="not enough free disk space") as caught:
         preflight.run(ctx)
-    assert "3.0 GiB needed" in caught.value.message and "--prefix" in caught.value.hint
+    assert "3.0 GiB needed" in caught.value.message
+    assert "--prefix" in caught.value.hint
     assert seen == [ctx.paths.prefix.parent]
     # An existing prefix only needs room to grow.
     ctx.paths.prefix.mkdir(parents=True)
@@ -89,8 +95,9 @@ def test_preflight_needs_disk_space(xdg: Path, host: None, monkeypatch: pytest.M
 
 def test_preflight_names_missing_tools_with_a_hint(xdg: Path, host: None, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(preflight.hostdeps, "distro", lambda: preflight.hostdeps.DistroInfo("ubuntu", (), "debian", "Ubuntu"))
+    ctx = _ctx({"cabextract": None, "unzip": "/usr/bin/unzip"})
     with pytest.raises(ForkLinuxError, match="cabextract") as caught:
-        preflight.run(_ctx({"cabextract": None, "unzip": "/usr/bin/unzip"}))
+        preflight.run(ctx)
     assert caught.value.hint.startswith("sudo apt install cabextract")
 
 
@@ -111,7 +118,8 @@ def test_consent_text_for_other_providers_and_latest(xdg: Path) -> None:
     ctx = make_ctx(wine_choice="system", latest=True)
     lines = consent.downloads(ctx)
     assert lines[0] == "Wine: your system Wine is used, nothing to download"
-    assert "newest release" in lines[-1] and "size not pinned" in lines[-1]
+    assert "newest release" in lines[-1]
+    assert "size not pinned" in lines[-1]
 
 
 def test_consent_flag_skips_the_question(xdg: Path) -> None:
@@ -119,7 +127,8 @@ def test_consent_flag_skips_the_question(xdg: Path) -> None:
     ctx = make_ctx(ui=ui, accept_eula=True)
     assert not consent.verify(ctx)
     consent.run(ctx)
-    assert consent.verify(ctx) and ctx.state.get(consent.METHOD_KEY) == "flag"
+    assert consent.verify(ctx)
+    assert ctx.state.get(consent.METHOD_KEY) == "flag"
     assert ui.kinds("confirm") == []
 
 
@@ -129,7 +138,8 @@ def test_consent_prompt_accepted(xdg: Path) -> None:
     consent.run(ctx)
     assert ctx.state.get(consent.METHOD_KEY) == "prompt"
     title, text = ui.kinds("confirm")[0]
-    assert title == consent.TITLE and credits.LINKS["license"] in text
+    assert title == consent.TITLE
+    assert credits.LINKS["license"] in text
     # Accepted once: never asked again.
     consent.run(ctx)
     assert len(ui.kinds("confirm")) == 1
@@ -146,7 +156,8 @@ def test_consent_without_anyone_to_ask(xdg: Path) -> None:
     ctx = make_ctx(ui=FakeUI(answer=False, interactive=False))
     with pytest.raises(Declined) as caught:
         consent.run(ctx)
-    assert "--accept-fork-eula" in caught.value.hint and credits.LINKS["license"] in caught.value.hint
+    assert "--accept-fork-eula" in caught.value.hint
+    assert credits.LINKS["license"] in caught.value.hint
 
 
 # -- finalize ----------------------------------------------------------------------------------

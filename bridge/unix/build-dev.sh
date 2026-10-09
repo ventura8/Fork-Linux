@@ -64,13 +64,14 @@ SRC=("${HERE}/fl_bridge_helper.c" "${HERE}/fl_helper_util.c" "${COMMON}/fl_proto
 
 # elf_type <file>: prints ET_EXEC / ET_DYN from the ELF header (e_type at offset 16).
 elf_type() {
+  local file="$1"
   python3 -I -c '
 import struct, sys
 with open(sys.argv[1], "rb") as fh:
     head = fh.read(18)
 assert head[:4] == b"\x7fELF", "not an ELF file"
 print({2: "ET_EXEC", 3: "ET_DYN"}.get(struct.unpack("<H", head[16:18])[0], "other"))
-' "$1"
+' "${file}"
 }
 
 mkdir -p "${OUT}"

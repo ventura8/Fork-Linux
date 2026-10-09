@@ -47,12 +47,14 @@ def test_create_list_delete(capsys: pytest.CaptureFixture[str]) -> None:
     assert (code, out) == (0, "no snapshots\n")
     install_fork(layout(), "2.23.2")
     code, out, _err = run_cli(capsys, "snapshot", "create")
-    assert code == 0 and out.startswith("created snapshot 2.23.2-")
+    assert code == 0
+    assert out.startswith("created snapshot 2.23.2-")
     made = run_json(capsys, "snapshot", "create", "--reason", "x")
     assert made["fork_version"] == "2.23.2"
     assert set(made) == {"id", "fork_version", "created", "method", "path", "with_settings"}
     listed = run_json(capsys, "snapshot", "list")
-    assert [item["id"] for item in listed][0] == made["id"] and len(listed) == 2
+    assert [item["id"] for item in listed][0] == made["id"]
+    assert len(listed) == 2
     code, out, _err = run_cli(capsys, "snapshot", "list")
     assert out.splitlines()[0].startswith("ID")
     assert made["id"] in out
@@ -75,7 +77,8 @@ def test_prune(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPat
         _snapshot(version)
     monkeypatch.setenv("FORK_LINUX_SNAPSHOTS_KEEP", "1")
     code, out, _err = run_cli(capsys, "snapshot", "prune")
-    assert code == 0 and out.startswith("deleted 2 snapshot(s): ")
+    assert code == 0
+    assert out.startswith("deleted 2 snapshot(s): ")
     assert run_json(capsys, "snapshot", "prune") == {"deleted": []}
     code, out, _err = run_cli(capsys, "snapshot", "prune")
     assert out == "deleted 0 snapshot(s)\n"
@@ -108,13 +111,16 @@ def test_rollback_by_id_version_and_options(capsys: pytest.CaptureFixture[str]) 
     result = run_json(capsys, "rollback", first.id, "--no-pin", "--with-settings")
     assert result["restored"]["id"] == first.id
     assert result["previous_version"] == "2.23.2"
-    assert result["pinned"] is False and result["with_settings"] is True
+    assert result["pinned"] is False
+    assert result["with_settings"] is True
     assert Config.load(paths(), {}).get("fork", "update_policy") == "auto"
     code, out, _err = run_cli(capsys, "rollback", "--to-version", "2.23.2", "--no-pin")
-    assert code == 0 and "may update itself again" in out
+    assert code == 0
+    assert "may update itself again" in out
     assert layout().installed_version() == "2.23.2"
     code, _out, err = run_cli(capsys, "rollback", "--to-version", "x.y")
-    assert code == 2 and "not a Fork version" in err
+    assert code == 2
+    assert "not a Fork version" in err
     code, _out, _err = run_cli(capsys, "rollback", "--to-version", "1.0")
     assert code == 20
     code, _out, err = run_cli(capsys, "rollback", first.id, "--to-version", "2.23.1")
@@ -124,7 +130,8 @@ def test_rollback_by_id_version_and_options(capsys: pytest.CaptureFixture[str]) 
 def test_rollback_without_another_version(capsys: pytest.CaptureFixture[str]) -> None:
     _snapshot("2.23.2")
     code, _out, err = run_cli(capsys, "rollback")
-    assert code == 20 and "no snapshot of another Fork version" in err
+    assert code == 20
+    assert "no snapshot of another Fork version" in err
 
 
 def test_rollback_when_nothing_is_installed_takes_the_newest(capsys: pytest.CaptureFixture[str]) -> None:
@@ -148,7 +155,8 @@ def test_rollback_saves_an_unsnapshotted_installed_version(capsys: pytest.Captur
     # Fork updated itself and no launch has snapshotted the new version yet.
     install_fork(layout(), "2.23.2")
     code, out, _err = run_cli(capsys, "rollback", "--no-pin")
-    assert code == 0 and f"restored Fork 2.23.1 from snapshot {old.id}" in out
+    assert code == 0
+    assert f"restored Fork 2.23.1 from snapshot {old.id}" in out
     assert "Fork 2.23.2 was saved first as snapshot 2.23.2-" in out
     assert layout().installed_version() == "2.23.1"
     # ... so the newer version can be restored again.

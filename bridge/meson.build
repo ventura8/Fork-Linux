@@ -73,12 +73,23 @@ fl_prefix_map = '-ffile-prefix-map=@0@=.'.format(fl_src_root)
 fl_helper_cargs = fl_warn + [fl_prefix_map, '-DFL_VERSION="@0@"'.format(fl_version)]
 fl_helper_sources = files('unix/fl_bridge_helper.c') + fl_helper_util_src + fl_proto_src + fl_sha256_src
 
+# Coverage builds (-Db_coverage=true; scripts/ci-c-coverage.sh): every session and
+# every spawn of the daemon ends in a forked child's _exit(), which skips libgcov's
+# atexit writer. The test-only bridge/tests/coverage/fl_gcov_unix_exit.c wraps _exit
+# (ld --wrap) to write the counters first. Never part of a release build.
+fl_helper_cov_sources = []
+fl_helper_cov_ldflags = []
+if get_option('b_coverage')
+  fl_helper_cov_sources = files('tests/coverage/fl_gcov_unix_exit.c')
+  fl_helper_cov_ldflags = ['-Wl,--wrap=_exit']
+endif
+
 fl_bridge_helper = executable(
   'fl-bridge-helper',
-  fl_helper_sources,
+  fl_helper_sources + fl_helper_cov_sources,
   include_directories: fl_unix_inc,
   c_args: fl_helper_cargs,
-  link_args: fl_cc.get_supported_link_arguments('-Wl,-z,relro', '-Wl,-z,now'),
+  link_args: fl_cc.get_supported_link_arguments('-Wl,-z,relro', '-Wl,-z,now') + fl_helper_cov_ldflags,
   pie: true,
   install: true,
   install_dir: fl_bridge_libdir,
@@ -135,6 +146,18 @@ fl_pe_ldflags = [
 fl_pe_libs = ['-lws2_32', '-lbcrypt']
 fl_pe_common_sources = [fl_proto_src, fl_sha256_src, fl_shquote_src, fl_translate_src]
 
+# Coverage builds (-Db_coverage=true; scripts/ci-c-coverage.sh): b_coverage only reaches
+# the native targets, so the PEs get --coverage at -O0 here, plus the test-only
+# bridge/tests/coverage/fl_gcov_exit.c. libgcov writes its counters from an atexit
+# handler, which ExitProcess (flw_exit) never runs; that file routes the PE's
+# ExitProcess import through __gcov_dump first. Never part of a release build.
+fl_pe_cov_cflags = []
+fl_pe_cov_sources = []
+if get_option('b_coverage')
+  fl_pe_cov_cflags = ['-O0', '--coverage']
+  fl_pe_cov_sources = files('tests/coverage/fl_gcov_exit.c')
+endif
+
 if fl_have_mingw
   fl_version_conf = configuration_data()
   fl_version_conf.set('FL_VERSION_MAJOR', fl_version_parts[0].to_int())
@@ -159,11 +182,12 @@ if fl_have_mingw
     fl_pe_targets += {
       fl_pe: custom_target(
         fl_pe.replace('_', '-') + '.exe',
-        input: [files('win/' + fl_pe + '.c', 'win/fl_win.c')] + fl_pe_common_sources + [fl_res],
+        input: [files('win/' + fl_pe + '.c', 'win/fl_win.c')] + fl_pe_common_sources
+          + fl_pe_cov_sources + [fl_res],
         output: fl_pe.replace('_', '-') + '.exe',
         depend_files: fl_common_hdrs + files('win/fl_win.h'),
         command: [
-          fl_mingw, fl_pe_cflags, '-mwindows',
+          fl_mingw, fl_pe_cflags, fl_pe_cov_cflags, '-mwindows',
           '-I' + fl_common_dir, '-I' + fl_win_dir,
           '-o', '@OUTPUT@', '@INPUT@',
           '-municode', '-mwindows', fl_pe_ldflags, fl_pe_libs,

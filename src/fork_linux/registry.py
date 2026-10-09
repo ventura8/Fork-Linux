@@ -45,11 +45,11 @@ _INT_LAYOUTS = {REG_DWORD: (4, "little"), REG_DWORD_BIG_ENDIAN: (4, "big"), REG_
 _SIMPLE_ESCAPES = {"a": "\a", "b": "\b", "e": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v"}
 _HEXDIGITS = frozenset("0123456789abcdefABCDEF")
 _OCTDIGITS = frozenset("01234567")
-_HEADER_RE = re.compile(r"^WINE REGISTRY Version ([0-9]+)")
+_HEADER_RE = re.compile(r"^WINE REGISTRY Version (\d+)", re.ASCII)
 _HEX_RE = re.compile(r"^hex(?:\(([0-9a-fA-F]+)\))?:")
 _SURROGATE_RE = re.compile("[\ud800-\udfff]")
 _DWORD_RE = re.compile(r"^dword:([0-9a-fA-F]{1,8})")
-_TIMESTAMP_RE = re.compile(r"[0-9]+")
+_TIMESTAMP_RE = re.compile(r"\d+", re.ASCII)
 _ROOT_MARKER = ";; All keys relative to "
 # A dotnet48 prefix's system.reg is tens of MiB; anything far beyond is not a hive.
 _MAX_HIVE_BYTES = 256 * 1024 * 1024
@@ -411,6 +411,49 @@ def _parse_key_line(line: str) -> tuple[str, int | None] | None:
     return path, int(stamp) if _TIMESTAMP_RE.fullmatch(stamp) else None
 
 
+def _check_header(first_line: str) -> None:
+    """Raise :class:`RegistryFormatError` unless ``first_line`` is Wine's version 2 header."""
+    header = first_line.lstrip("\ufeff").rstrip("\r")
+    match = _HEADER_RE.match(header)
+    if match is None or match.group(1) != "2":
+        raise RegistryFormatError(
+            f"not a Wine registry file (expected {WINE_HEADER!r}, got {header[:40]!r})",
+            hint="the Wine prefix may be damaged; run 'fork-linux doctor'",
+        )
+
+
+def _open_key(hive: RegHive, line: str, wanted: set[str] | None) -> RegKey | None:
+    """The key a ``[path] stamp`` line starts (created on first sight); None if malformed or not wanted."""
+    parsed_key = _parse_key_line(line)
+    if parsed_key is None or (wanted is not None and _key_id(parsed_key[0]) not in wanted):
+        return None
+    current = hive.get(parsed_key[0])
+    if current is None:
+        current = RegKey(parsed_key[0], timestamp=parsed_key[1])
+        hive[parsed_key[0]] = current
+    return current
+
+
+def _join_continued(lines: list[str], index: int, line: str) -> tuple[str, int]:
+    """``line`` joined with its backslash-continued lines from ``lines[index]`` on; the next index."""
+    # Collect continuation lines in a list: repeated str concatenation
+    # is quadratic on large binary values.
+    pieces = [line]
+    while pieces[-1].endswith("\\") and index < len(lines):
+        pieces[-1] = pieces[-1][:-1]
+        pieces.append(lines[index].strip())
+        index += 1
+    return "".join(pieces), index
+
+
+def _note_meta(hive: RegHive, line: str) -> None:
+    """Record the ``;; All keys relative to`` root or the ``#arch=`` of the hive."""
+    if line.startswith(_ROOT_MARKER):
+        hive.root = line[len(_ROOT_MARKER):].strip().replace("\\\\", "\\")
+    elif line.startswith("#arch="):
+        hive.arch = line[len("#arch="):].strip()
+
+
 def parse_wine_reg(text: str, *, keys: Iterable[str] | None = None) -> RegHive:
     """Parse Wine's on-disk registry format.
 
@@ -419,13 +462,7 @@ def parse_wine_reg(text: str, *, keys: Iterable[str] | None = None) -> RegHive:
     header raises :class:`RegistryFormatError`.
     """
     lines = text.split("\n")
-    header = lines[0].lstrip("\ufeff").rstrip("\r")
-    match = _HEADER_RE.match(header)
-    if match is None or match.group(1) != "2":
-        raise RegistryFormatError(
-            f"not a Wine registry file (expected {WINE_HEADER!r}, got {header[:40]!r})",
-            hint="the Wine prefix may be damaged; run 'fork-linux doctor'",
-        )
+    _check_header(lines[0])
     wanted = None if keys is None else {_key_id(k) for k in keys}
     hive = RegHive()
     current: RegKey | None = None
@@ -434,29 +471,14 @@ def parse_wine_reg(text: str, *, keys: Iterable[str] | None = None) -> RegHive:
         line = lines[index].rstrip("\r").lstrip()
         index += 1
         if line.startswith("["):
-            current = None
-            parsed_key = _parse_key_line(line)
-            if parsed_key is not None and (wanted is None or _key_id(parsed_key[0]) in wanted):
-                current = hive.get(parsed_key[0])
-                if current is None:
-                    current = RegKey(parsed_key[0], timestamp=parsed_key[1])
-                    hive[parsed_key[0]] = current
+            current = _open_key(hive, line, wanted)
         elif line.startswith(("@", '"')):
-            # Collect continuation lines in a list: repeated str concatenation
-            # is quadratic on large binary values.
-            pieces = [line]
-            while pieces[-1].endswith("\\") and index < len(lines):
-                pieces[-1] = pieces[-1][:-1]
-                pieces.append(lines[index].strip())
-                index += 1
-            if current is not None:
-                value = _parse_value("".join(pieces))
-                if value is not None:
-                    current.values[value.name.lower()] = value
-        elif line.startswith(_ROOT_MARKER):
-            hive.root = line[len(_ROOT_MARKER):].strip().replace("\\\\", "\\")
-        elif line.startswith("#arch="):
-            hive.arch = line[len("#arch="):].strip()
+            joined, index = _join_continued(lines, index, line)
+            value = None if current is None else _parse_value(joined)
+            if current is not None and value is not None:
+                current.values[value.name.lower()] = value
+        else:
+            _note_meta(hive, line)
     return hive
 
 

@@ -148,13 +148,16 @@ def test_launcher_started_daemon_serves_the_shim_and_follows_wine(tmp_path: Path
         lines = out.decode().split()
         native = subprocess.run(["git", "--version"], capture_output=True, text=True, check=True).stdout.strip()
         text = out.decode()
-        assert "Linux" in lines and native in text and str(repo) in text
+        assert "Linux" in lines
+        assert native in text
+        assert str(repo) in text
         deadline = time.monotonic() + 5
         while _alive(daemon) and time.monotonic() < deadline:
             time.sleep(0.05)
         assert not _alive(daemon), "the daemon must stop with the Wine process"
         assert not list((home / "run/fork-linux").glob("bridge-token-*"))
         log = next((home / ".local/state/fork-linux/logs").glob("bridge-*.log")).read_text(encoding="utf-8")
-        assert "argv0=sh" in log and "daemon exit" in log
+        assert "argv0=sh" in log
+        assert "daemon exit" in log
     finally:
         subprocess.run([str(server), "-k"], env=boot_env, timeout=60, check=False)

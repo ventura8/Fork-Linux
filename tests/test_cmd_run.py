@@ -51,7 +51,10 @@ def test_run_every_option(capsys: pytest.CaptureFixture[str], launched: list[dic
     assert run_cli(capsys, *argv, "--from-file-manager", "a", "b")[0] == 0
     call = launched[0]
     assert call["targets"] == ["a", "b"]
-    assert call["debug"] and call["no_setup"] and call["no_hooks"] and call["from_file_manager"]
+    assert call["debug"]
+    assert call["no_setup"]
+    assert call["no_hooks"]
+    assert call["from_file_manager"]
     assert (call["wine_debug"], call["driver"]) == ("+relay", "wayland")
     assert run_cli(capsys, "run", "--x11")[0] == 0
     assert launched[1]["driver"] == "x11"
@@ -67,7 +70,8 @@ def test_x11_and_wayland_exclude_each_other(capsys: pytest.CaptureFixture[str], 
 def test_open_needs_a_path(capsys: pytest.CaptureFixture[str], launched: list[dict[str, Any]]) -> None:
     assert run_cli(capsys, "open")[0] == 2
     assert run_cli(capsys, "open", "repo", "--from-file-manager")[0] == 0
-    assert launched[0]["targets"] == ["repo"] and launched[0]["from_file_manager"] is True
+    assert launched[0]["targets"] == ["repo"]
+    assert launched[0]["from_file_manager"] is True
 
 
 def test_fork_shortcut_reaches_run(

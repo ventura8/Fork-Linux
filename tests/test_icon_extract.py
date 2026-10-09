@@ -148,8 +148,9 @@ def test_256_entry_smaller_than_256_is_skipped(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("name", ["", ".", "..", "a/b", "../app", "a\x00b"])
 def test_rejects_unsafe_names(tmp_path: Path, name: str) -> None:
+    exe = _write_exe(tmp_path)
     with pytest.raises(ValueError, match="invalid icon name"):
-        icon_extract.extract_icons(_write_exe(tmp_path), tmp_path / "out", name)
+        icon_extract.extract_icons(exe, tmp_path / "out", name)
     assert not (tmp_path / "out").exists()
 
 
@@ -187,8 +188,9 @@ def test_atomic_write_cleans_up_on_failure(tmp_path: Path, monkeypatch: pytest.M
 
     monkeypatch.setattr(fsutil.os, "replace", broken_replace)
     out = tmp_path / "out"
+    exe = _write_exe(tmp_path)
     with pytest.raises(OSError, match="disk on fire"):
-        icon_extract.extract_icons(_write_exe(tmp_path), out, "app")
+        icon_extract.extract_icons(exe, out, "app")
     assert _tree_files(out) == []
 
 

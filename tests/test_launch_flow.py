@@ -65,6 +65,8 @@ def ctx(xdg: Path, not_running: list[bool]) -> bootstrap.Ctx:
     made = make_ctx(env=env)
     _make_prefix(made)
     _fake_wine(made)
+    # The fake Wine is a custom one: name it in the config, as a real custom provider would be.
+    made.config.set("wine", "provider", str(made.wine().root))
     install_fork(made.layout, "2.23.2")
     return made
 
@@ -202,11 +204,14 @@ def test_build_spec_includes_bridge_env_and_drops_the_bundled_git_overlay(ctx: b
         return [env[f"GIT_CONFIG_KEY_{n}"] for n in range(int(env.get("GIT_CONFIG_COUNT", "0")))]
 
     plain = launcher.build_spec(ctx, []).env
-    assert keys(plain)[:2] == ["core.filemode", "core.autocrlf"] and "FORKGITINSTANCE" not in plain
+    assert keys(plain)[:2] == ["core.filemode", "core.autocrlf"]
+    assert "FORKGITINSTANCE" not in plain
     bridged = {"FORKGITINSTANCE": "C:\\fork-linux\\gitInstance", "FL_BRIDGE_PORT": "4242"}
     env = launcher.build_spec(ctx, [], bridge_env=bridged).env
-    assert env["FORKGITINSTANCE"] == "C:\\fork-linux\\gitInstance" and env["FL_BRIDGE_PORT"] == "4242"
-    assert "core.filemode" not in keys(env) and "core.autocrlf" not in keys(env)
+    assert env["FORKGITINSTANCE"] == "C:\\fork-linux\\gitInstance"
+    assert env["FL_BRIDGE_PORT"] == "4242"
+    assert "core.filemode" not in keys(env)
+    assert "core.autocrlf" not in keys(env)
     # Record mode forwards to bundled git: the overlay stays.
     env = launcher.build_spec(ctx, [], bridge_env={**bridged, "FL_BRIDGE_MODE": "record"}).env
     assert keys(env)[:2] == ["core.filemode", "core.autocrlf"]
@@ -283,7 +288,8 @@ def test_pin_hook(ctx: bootstrap.Ctx) -> None:
     newer = _stage(ctx.layout, "2.24.0")
     notes: list[str] = []
     launcher._pin(ctx, notes)
-    assert newer.exists() and notes == []
+    assert newer.exists()
+    assert notes == []
     ctx.config.set("fork", "update_policy", "pinned")
     ctx.state.set(launcher.PINNED_VERSION, "2.23.2")
     launcher._pin(ctx, notes)
@@ -324,10 +330,12 @@ def test_settings_hook_skipped_while_fork_runs(ctx: bootstrap.Ctx, not_running: 
 def test_settings_hook_seeds_a_missing_settings_file(ctx: bootstrap.Ctx) -> None:
     notes: list[str] = []
     launcher._settings(ctx, notes)
-    assert len(notes) == 2 and notes[0].startswith("Fork settings updated: Guid, ")
+    assert len(notes) == 2
+    assert notes[0].startswith("Fork settings updated: Guid, ")
     assert notes[1].startswith("Fork's default source folder set to Z:\\")
     data = json.loads(ctx.layout.settings_file.read_text(encoding="utf-8"))
-    assert data["UpdateSubmodulesOnCheckout"] is False and "Guid" in data
+    assert data["UpdateSubmodulesOnCheckout"] is False
+    assert "Guid" in data
     toml = (ctx.layout.forkdata_dir / "repositories.toml").read_text(encoding="utf-8")
     assert toml.startswith("source_dirs = ['Z:\\")
     notes.clear()
@@ -375,7 +383,8 @@ def test_desired_settings_probes_and_tools(
 
     wanted = desired()
     assert calls == ["theme"]
-    assert wanted["Theme"] == 1 and "LayoutScaling" not in wanted
+    assert wanted["Theme"] == 1
+    assert "LayoutScaling" not in wanted
     # fl-launch.exe without the bridge daemon: Fork's default comes back.
     assert wanted["ShellTool"] is None
     home_win = "Z:\\" + str(ctx.host_home).strip("/").replace("/", "\\")
@@ -390,9 +399,11 @@ def test_desired_settings_probes_and_tools(
     calls.clear()
     wanted = desired(bridge_active=True)
     assert calls == []
-    assert wanted["ShellTool"] == dead and wanted["Theme"] == 0
+    assert wanted["ShellTool"] == dead
+    assert wanted["Theme"] == 0
     merge = wanted["MergeTool"]
-    assert isinstance(merge, dict) and merge["Arguments"].startswith("merge ")
+    assert isinstance(merge, dict)
+    assert merge["Arguments"].startswith("merge ")
     # Without drive links the home directory cannot be mapped: left alone.
     for link in (ctx.paths.prefix / "dosdevices").iterdir():
         link.unlink()
@@ -492,22 +503,26 @@ def test_session_wine(ctx: bootstrap.Ctx) -> None:
     paths = ctx.paths
     info = ctx.wine()
     root = str(info.root)
-    assert launcher._session_wine(paths) is None
+    trusted = launcher.trusted_wines(_app(dict(ctx.env)))
+    assert launcher._session_wine(paths, trusted) is None
     _write_raw_session(ctx, prefix="/elsewhere", wine_root=root)
-    assert launcher._session_wine(paths) is None
+    assert launcher._session_wine(paths, trusted) is None
     _write_raw_session(ctx, prefix=str(paths.prefix), wine_root="relative/root")
-    assert launcher._session_wine(paths) is None
+    assert launcher._session_wine(paths, trusted) is None
     _write_raw_session(ctx, prefix=str(paths.prefix), wine_root=7)
-    assert launcher._session_wine(paths) is None
+    assert launcher._session_wine(paths, trusted) is None
     _write_raw_session(ctx, prefix=str(paths.prefix), wine_root="/nonexistent-wine-root")
-    assert launcher._session_wine(paths) is None
+    assert launcher._session_wine(paths, trusted) is None
     _write_raw_session(ctx, prefix=str(paths.prefix), wine_root=root, provider=5, wine="rel", wineserver=None)
-    found = launcher._session_wine(paths)
+    assert launcher._session_wine(paths) is None, "nothing is trusted without candidates"
+    found = launcher._session_wine(paths, trusted)
     assert found is not None
     assert (found.provider, found.wine, found.wineserver) == ("session", info.wine, info.wineserver)
     launcher.write_session(paths, info, 1)
-    found = launcher._session_wine(paths)
-    assert found is not None and found.provider == info.provider and found.root == info.root
+    found = launcher._session_wine(paths, trusted)
+    assert found is not None
+    assert found.provider == info.provider
+    assert found.root == info.root
 
 
 # -- exec ----------------------------------------------------------------------------------
@@ -634,7 +649,8 @@ def test_run_normal_path(ctx: bootstrap.Ctx, flow: dict[str, Any], dup2: list[tu
     assert cwd == str(ctx.layout.current_dir)
     assert env["WINEPREFIX"] == str(ctx.paths.prefix)
     session = launcher.read_session(ctx.paths)
-    assert session is not None and session["pid"] == os.getpid()
+    assert session is not None
+    assert session["pid"] == os.getpid()
     assert len(dup2) == 2
 
 
@@ -677,7 +693,8 @@ def test_run_fast_path_when_fork_runs(
     launcher.write_session(ctx.paths, ctx.wine(), 99)
     not_running[0] = True
     launcher.run(flow["app"], ["repo"], execvpe=flow["exec"])
-    assert flow["ensure"] == [] and flow["hooks"] == 0
+    assert flow["ensure"] == []
+    assert flow["hooks"] == 0
     file, argv, env, _cwd = flow["exec"].calls[0]
     assert file == str(ctx.wine().wine)
     assert argv[1] == ctx.layout.win_exe
@@ -685,7 +702,8 @@ def test_run_fast_path_when_fork_runs(
     # Appended to the running session's log, never truncated.
     assert len(dup2) == 2
     session = launcher.read_session(ctx.paths)
-    assert session is not None and session["pid"] == 99
+    assert session is not None
+    assert session["pid"] == 99
     # -v --debug: Wine's output stays on the terminal.
     dup2.clear()
     launcher.run(_app(dict(ctx.env), verbose=1), [], debug=True, execvpe=flow["exec"])
@@ -717,7 +735,8 @@ def test_exec_missing_install_dir_is_not_set_up(tmp_path: Path, dup2: list[tuple
     fake = Exec()
     with pytest.raises(NotSetUpError, match="install directory"):
         launcher._exec(spec, truncate=True, execvpe=fake)
-    assert fake.calls == [] and dup2 == []
+    assert fake.calls == []
+    assert dup2 == []
 
 
 def test_exec_unwritable_log_is_reported(
@@ -728,9 +747,11 @@ def test_exec_unwritable_log_is_reported(
     log_file = tmp_path / "wine.log"
     log_file.symlink_to(tmp_path / "target")
     fake = Exec()
+    spec = launcher.LaunchSpec(["/bin/wine"], {}, tmp_path, log_file)
     with pytest.raises(ForkLinuxError, match="cannot write Wine's log"):
-        launcher._exec(launcher.LaunchSpec(["/bin/wine"], {}, tmp_path, log_file), truncate=True, execvpe=fake)
-    assert fake.calls == [] and dup2 == []
+        launcher._exec(spec, truncate=True, execvpe=fake)
+    assert fake.calls == []
+    assert dup2 == []
 
 
 def test_exec_failure_restores_output(
@@ -751,8 +772,9 @@ def test_exec_failure_restores_output(
         with pytest.raises(OSError):
             os.fstat(fd)
     dup2.clear()
+    no_log = dataclasses.replace(spec, log_file=None)
     with pytest.raises(WineUnavailable):
-        launcher._exec(dataclasses.replace(spec, log_file=None), truncate=True, execvpe=missing)
+        launcher._exec(no_log, truncate=True, execvpe=missing)
     assert dup2 == []
 
 
@@ -774,7 +796,8 @@ def test_keep_fork_log_copies_once_and_rotates(ctx: bootstrap.Ctx, monkeypatch: 
     assert launcher.keep_fork_log(ctx.paths, ctx.layout) is None  # empty
     _fork_log(ctx, "session 1\n", 1_790_000_000)
     kept = launcher.keep_fork_log(ctx.paths, ctx.layout)
-    assert kept is not None and kept.name == "fork-20260921T141320Z.log"
+    assert kept is not None
+    assert kept.name == "fork-20260921T141320Z.log"
     assert kept.read_text(encoding="utf-8") == "session 1\n"
     assert launcher.keep_fork_log(ctx.paths, ctx.layout) is None  # already kept
     (ctx.paths.logs_dir / "fork-linux.log").write_text("ours", encoding="utf-8")
@@ -845,11 +868,14 @@ def test_run_starts_the_bridge_before_the_hooks_and_records_it(
     (start,) = bridged.starts()
     _file, _argv, env, _cwd = flow["exec"].calls[0]
     assert env["FORKGITINSTANCE"] == "C:\\fork-linux\\gitInstance"
-    assert env["FL_BRIDGE_PORT"] == "4242" and env["FL_BRIDGE_TOKEN"] == start["token"]
-    assert env["FL_BRIDGE_WINEXEC"].endswith("/fl-winexec") and env["FL_WINE"] == str(ctx.wine().wine)
+    assert env["FL_BRIDGE_PORT"] == "4242"
+    assert env["FL_BRIDGE_TOKEN"] == start["token"]
+    assert env["FL_BRIDGE_WINEXEC"].endswith("/fl-winexec")
+    assert env["FL_WINE"] == str(ctx.wine().wine)
     assert "core.filemode" not in env.values()
     session = launcher.read_session(ctx.paths)
-    assert session is not None and session["bridge"]["pid"] == start["pid"]
+    assert session is not None
+    assert session["bridge"]["pid"] == start["pid"]
     assert session["bridge"]["env"]["FL_BRIDGE_TOKEN"] == start["token"]
     assert ctx.paths.session_file.stat().st_mode & 0o777 == 0o600
     assert ctx.paths.runtime_dir.stat().st_mode & 0o777 == 0o700
@@ -864,10 +890,12 @@ def test_run_without_a_working_daemon_uses_bundled_git(
     launcher.run(flow["app"], [], execvpe=flow["exec"])
     assert seen == [False]
     env = flow["exec"].calls[0][2]
-    assert "FORKGITINSTANCE" not in env and "FL_BRIDGE_TOKEN" not in env
+    assert "FORKGITINSTANCE" not in env
+    assert "FL_BRIDGE_TOKEN" not in env
     assert "core.filemode" in env.values()
     session = launcher.read_session(ctx.paths)
-    assert session is not None and "bridge" not in session
+    assert session is not None
+    assert "bridge" not in session
 
 
 def test_run_stops_the_daemon_when_the_exec_fails(
@@ -879,13 +907,15 @@ def test_run_stops_the_daemon_when_the_exec_fails(
     with pytest.raises(WineUnavailable):
         launcher.run(flow["app"], [], execvpe=fail)
     daemon = ctx.cache[bridge.CACHE_KEY]
-    assert isinstance(daemon, bridge.Daemon) and daemon.proc is None
+    assert isinstance(daemon, bridge.Daemon)
+    assert daemon.proc is None
     assert not bridge.daemon_alive(bridged.starts()[0]["pid"])
     # With the bridge off there is no daemon to stop.
     ctx.config.set("git", "bridge", "off")
     with pytest.raises(WineUnavailable):
         launcher.run(flow["app"], [], execvpe=fail)
-    assert ctx.cache[bridge.CACHE_KEY] is None and len(bridged.starts()) == 1
+    assert ctx.cache[bridge.CACHE_KEY] is None
+    assert len(bridged.starts()) == 1
 
 
 def test_fast_path_reuses_the_running_daemon(

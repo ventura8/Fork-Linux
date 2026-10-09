@@ -106,13 +106,29 @@ def run_check(args: argparse.Namespace, ctx: AppContext) -> int:
     reports = repos.scan(git, targets, repos.overlay_text(ctx.paths, winecmd.windows_user(ctx.env)))
     if ctx.json:
         ctx.print_json({"repositories": [_as_dict(report) for report in reports]})
-        return 0
+    else:
+        _print_reports(reports)
+    return 0
+
+
+def _print_reports(reports: list[repos.RepoReport]) -> None:
+    """Each repository followed by its problems."""
     if not reports:
         print("no repositories (open some in Fork, or pass a path)")
     for report in reports:
         print(report.path)
         print("\n".join(_lines(report)))
-    return 0
+
+
+def _plan(todo: list[repos.RepoReport], *, filemode: bool, symlinks: bool) -> list[str]:
+    """One line per change ``fix`` would make."""
+    plan = []
+    for report in todo:
+        if filemode and report.filemode:
+            plan.append(f"{report.path}: set core.filemode = false")
+        if symlinks and report.symlinks:
+            plan.append(f"{report.path}: skip-worktree for {', '.join(report.symlinks)}")
+    return plan
 
 
 def run_fix(args: argparse.Namespace, ctx: AppContext) -> int:
@@ -125,12 +141,7 @@ def run_fix(args: argparse.Namespace, ctx: AppContext) -> int:
     if not todo:
         print("nothing to change")
         return 0
-    plan = []
-    for report in todo:
-        if filemode and report.filemode:
-            plan.append(f"{report.path}: set core.filemode = false")
-        if symlinks and report.symlinks:
-            plan.append(f"{report.path}: skip-worktree for {', '.join(report.symlinks)}")
+    plan = _plan(todo, filemode=filemode, symlinks=symlinks)
     ui = ui_mod.choose(ctx.env, gui=ctx.gui, mode=ctx.config.get("ui", "progress"), runner=ctx.runner)
     text = "\n".join(plan) + "\n\nUndo with 'fork-linux repo undo PATH'."
     if not args.yes and not ui.confirm("Change these repositories?", text, default=False):

@@ -24,7 +24,7 @@ def run(args: argparse.Namespace, ctx: AppContext) -> int:
     version, flavor = get_version(), get_flavor()
     if ctx.json:
         ctx.print_json({"fork_linux": version, "flavor": flavor})
-        return 0
-    print(f"fork-linux {version} ({flavor})")
-    print(credits.short_footer())
+    else:
+        print(f"fork-linux {version} ({flavor})")
+        print(credits.short_footer())
     return 0

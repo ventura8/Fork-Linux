@@ -125,62 +125,97 @@ static int list_size(char *const *v, size_t n, size_t *total, int (*check)(const
     return 0;
 }
 
-static uint8_t *put_tlv(uint8_t *p, uint8_t tag, const void *data, size_t n)
+/* Bounded writer for fl_req_encode(): every record is checked against the capacity before
+   anything is written, so a size mismatch sets err instead of overflowing buf. */
+struct tlv_writer {
+    uint8_t *buf;
+    size_t cap;
+    size_t pos;
+    int err;
+};
+
+static void put_tlv(struct tlv_writer *w, uint8_t tag, const void *data, size_t n)
 {
-    p[0] = tag;
-    put_u32(p + 1, (uint32_t)n);
-    if (n > 0) {
-        memcpy(p + TLV_HDR, data, n);
+    size_t room;
+    if (w->err || w->pos > w->cap) {
+        w->err = 1;
+        return;
     }
-    return p + TLV_HDR + n;
+    room = w->cap - w->pos;
+    if (room < TLV_HDR || n > room - TLV_HDR) {
+        w->err = 1;
+        return;
+    }
+    w->buf[w->pos] = tag;
+    put_u32(w->buf + w->pos + 1u, (uint32_t)n);
+    if (n > 0) {
+        memcpy(w->buf + w->pos + TLV_HDR, data, n);
+    }
+    w->pos += TLV_HDR + n;
 }
 
-static uint8_t *put_list(uint8_t *p, uint8_t tag, char *const *v, size_t n)
+static void put_list(struct tlv_writer *w, uint8_t tag, char *const *v, size_t n)
 {
     for (size_t i = 0; i < n; i++) {
-        p = put_tlv(p, tag, v[i], strlen(v[i]));
+        put_tlv(w, tag, v[i], strlen(v[i]));
     }
-    return p;
+}
+
+static int req_shape_ok(const struct fl_req *r)
+{
+    return r->cwd != NULL && r->argc != 0 && r->argv != NULL && r->argv[0] != NULL && r->argv[0][0] != '\0' &&
+           (r->flags & ~(FL_REQ_DETACH | FL_REQ_HOST_HELPER)) == 0u;
+}
+
+/* Validates r like fl_req_decode() does and computes the encoded size into *total. */
+static int req_size(const struct fl_req *r, size_t *total)
+{
+    size_t cwdlen = strlen(r->cwd);
+    if (!cwd_ok(r->cwd, cwdlen) || add_size(total, cwdlen) != 0 || add_size(total, 4u) != 0) {
+        return -1;
+    }
+    if (list_size(r->argv, r->argc, total, NULL) != 0 || list_size(r->set, r->nset, total, env_set_ok) != 0) {
+        return -1;
+    }
+    if (list_size(r->unset, r->nunset, total, env_unset_ok) != 0) {
+        return -1;
+    }
+    return list_size(r->anchors, r->nanchors, total, NULL);
 }
 
 int fl_req_encode(const struct fl_req *r, uint8_t **out, size_t *outlen)
 {
     size_t total = 0;
     uint8_t flags[4];
-    uint8_t *buf;
-    uint8_t *p;
+    struct tlv_writer w;
     if (out != NULL) {
         *out = NULL;
     }
     if (outlen != NULL) {
         *outlen = 0;
     }
-    if (r == NULL || out == NULL || outlen == NULL || r->cwd == NULL || r->argc == 0 || r->argv == NULL ||
-        r->argv[0] == NULL || r->argv[0][0] == '\0' || (r->flags & ~(FL_REQ_DETACH | FL_REQ_HOST_HELPER)) != 0u) {
+    if (r == NULL || out == NULL || outlen == NULL || !req_shape_ok(r) || req_size(r, &total) != 0) {
         return -1;
     }
-    if (!cwd_ok(r->cwd, strlen(r->cwd)) || add_size(&total, strlen(r->cwd)) != 0 || add_size(&total, 4u) != 0 ||
-        list_size(r->argv, r->argc, &total, NULL) != 0 || list_size(r->set, r->nset, &total, env_set_ok) != 0 ||
-        list_size(r->unset, r->nunset, &total, env_unset_ok) != 0 ||
-        list_size(r->anchors, r->nanchors, &total, NULL) != 0) {
+    w.buf = malloc(total);
+    if (w.buf == NULL) {
         return -1;
     }
-    buf = malloc(total);
-    if (buf == NULL) {
-        return -1;
-    }
+    w.cap = total;
+    w.pos = 0;
+    w.err = 0;
     put_u32(flags, r->flags);
-    p = put_tlv(buf, FL_T_CWD, r->cwd, strlen(r->cwd));
-    p = put_tlv(p, FL_T_FLAGS, flags, sizeof(flags));
-    p = put_list(p, FL_T_ARG, r->argv, r->argc);
-    p = put_list(p, FL_T_ENV_SET, r->set, r->nset);
-    p = put_list(p, FL_T_ENV_UNSET, r->unset, r->nunset);
-    p = put_list(p, FL_T_ANCHOR, r->anchors, r->nanchors);
-    if ((size_t)(p - buf) != total) {
-        free(buf);
+    put_tlv(&w, FL_T_CWD, r->cwd, strlen(r->cwd));
+    put_tlv(&w, FL_T_FLAGS, flags, sizeof(flags));
+    put_list(&w, FL_T_ARG, r->argv, r->argc);
+    put_list(&w, FL_T_ENV_SET, r->set, r->nset);
+    put_list(&w, FL_T_ENV_UNSET, r->unset, r->nunset);
+    put_list(&w, FL_T_ANCHOR, r->anchors, r->nanchors);
+    if (w.err || w.pos != total) {
+        free(w.buf);
         return -1;
     }
-    *out = buf;
+    *out = w.buf;
     *outlen = total;
     return 0;
 }
@@ -246,16 +281,121 @@ static void vec_free(char **v, size_t n)
     free(v);
 }
 
+/* REQ decoder state: the records seen so far (all malloc'd, released by dec_free()). */
+struct req_dec {
+    struct vec argv;
+    struct vec set;
+    struct vec unset;
+    struct vec anchors;
+    char *cwd;
+    uint32_t flags;
+    int have_flags;
+};
+
+static void dec_free(struct req_dec *d)
+{
+    free(d->cwd);
+    vec_free(d->argv.v, d->argv.n);
+    vec_free(d->set.v, d->set.n);
+    vec_free(d->unset.v, d->unset.n);
+    vec_free(d->anchors.v, d->anchors.n);
+    memset(d, 0, sizeof(*d));
+}
+
+/* The next TLV record at buf[*pos]; 0 with *pos advanced past it, -1 when truncated. */
+static int next_tlv(const uint8_t *buf, size_t len, size_t *pos, uint8_t *tag, const uint8_t **data, size_t *n)
+{
+    size_t p = *pos;
+    size_t l;
+    if (p > len || len - p < TLV_HDR) {
+        return -1;
+    }
+    *tag = buf[p];
+    l = (size_t)get_u32(buf + p + 1u);
+    p += TLV_HDR;
+    if (l > len - p) {
+        return -1;
+    }
+    *data = buf + p;
+    *n = l;
+    *pos = p + l;
+    return 0;
+}
+
+static int dec_cwd(struct req_dec *d, const uint8_t *data, size_t n)
+{
+    if (d->cwd != NULL || !cwd_ok((const char *)data, n)) {
+        return -1;
+    }
+    d->cwd = malloc(n + 1);
+    if (d->cwd == NULL) {
+        return -1;
+    }
+    memcpy(d->cwd, data, n);
+    d->cwd[n] = '\0';
+    return 0;
+}
+
+static int dec_flags(struct req_dec *d, const uint8_t *data, size_t n)
+{
+    if (d->have_flags || n != 4u) {
+        return -1;
+    }
+    d->flags = get_u32(data);
+    d->have_flags = 1;
+    return (d->flags & ~(FL_REQ_DETACH | FL_REQ_HOST_HELPER)) != 0u ? -1 : 0;
+}
+
+/* Apply one record; 0 ok, -1 invalid (or out of memory). */
+static int dec_record(struct req_dec *d, uint8_t tag, const uint8_t *data, size_t n)
+{
+    if (tag != FL_T_FLAGS && n > 0 && memchr(data, '\0', n) != NULL) {
+        return -1;
+    }
+    switch (tag) {
+    case FL_T_CWD:
+        return dec_cwd(d, data, n);
+    case FL_T_ARG:
+        if (d->argv.n == 0 && n == 0) {
+            return -1; /* argv[0] must name a program */
+        }
+        return vec_push(&d->argv, data, n);
+    case FL_T_ENV_SET:
+        return env_set_ok((const char *)data, n) ? vec_push(&d->set, data, n) : -1;
+    case FL_T_ENV_UNSET:
+        return env_unset_ok((const char *)data, n) ? vec_push(&d->unset, data, n) : -1;
+    case FL_T_FLAGS:
+        return dec_flags(d, data, n);
+    case FL_T_ANCHOR:
+        return vec_push(&d->anchors, data, n);
+    default:
+        return -1;
+    }
+}
+
+static int dec_all(struct req_dec *d, const uint8_t *buf, size_t len)
+{
+    size_t pos = 0;
+    while (pos < len) {
+        uint8_t tag = 0;
+        const uint8_t *data = NULL;
+        size_t n = 0;
+        if (next_tlv(buf, len, &pos, &tag, &data, &n) != 0 || dec_record(d, tag, data, n) != 0) {
+            return -1;
+        }
+    }
+    if (d->cwd == NULL || d->argv.n == 0) {
+        return -1;
+    }
+    if (vec_terminate(&d->set) != 0 || vec_terminate(&d->unset) != 0) {
+        return -1;
+    }
+    return vec_terminate(&d->anchors);
+}
+
 int fl_req_decode(const uint8_t *buf, size_t len, struct fl_req *r)
 {
-    struct vec argv = { NULL, 0, 0 };
-    struct vec set = { NULL, 0, 0 };
-    struct vec unset = { NULL, 0, 0 };
-    struct vec anchors = { NULL, 0, 0 };
-    char *cwd = NULL;
-    uint32_t flags = 0;
-    int have_flags = 0;
-    size_t pos = 0;
+    struct req_dec d;
     if (r == NULL) {
         return -1;
     }
@@ -263,94 +403,22 @@ int fl_req_decode(const uint8_t *buf, size_t len, struct fl_req *r)
     if (buf == NULL || len > FL_MAX_REQ) {
         return -1;
     }
-    while (pos < len) {
-        uint8_t tag;
-        uint32_t n32;
-        size_t n;
-        const uint8_t *d;
-        int rc = 0;
-        if (len - pos < TLV_HDR) {
-            goto fail;
-        }
-        tag = buf[pos];
-        n32 = get_u32(buf + pos + 1);
-        pos += TLV_HDR;
-        if ((size_t)n32 > len - pos) {
-            goto fail;
-        }
-        n = (size_t)n32;
-        d = buf + pos;
-        pos += n;
-        if (tag != FL_T_FLAGS && n > 0 && memchr(d, '\0', n) != NULL) {
-            goto fail;
-        }
-        switch (tag) {
-        case FL_T_CWD:
-            if (cwd != NULL || !cwd_ok((const char *)d, n)) {
-                goto fail;
-            }
-            cwd = malloc(n + 1);
-            if (cwd == NULL) {
-                goto fail;
-            }
-            memcpy(cwd, d, n);
-            cwd[n] = '\0';
-            break;
-        case FL_T_ARG:
-            if (argv.n == 0 && n == 0) {
-                goto fail; /* argv[0] must name a program */
-            }
-            rc = vec_push(&argv, d, n);
-            break;
-        case FL_T_ENV_SET:
-            rc = env_set_ok((const char *)d, n) ? vec_push(&set, d, n) : -1;
-            break;
-        case FL_T_ENV_UNSET:
-            rc = env_unset_ok((const char *)d, n) ? vec_push(&unset, d, n) : -1;
-            break;
-        case FL_T_FLAGS:
-            if (have_flags || n != 4u) {
-                goto fail;
-            }
-            flags = get_u32(d);
-            have_flags = 1;
-            if ((flags & ~(FL_REQ_DETACH | FL_REQ_HOST_HELPER)) != 0u) {
-                goto fail;
-            }
-            break;
-        case FL_T_ANCHOR:
-            rc = vec_push(&anchors, d, n);
-            break;
-        default:
-            goto fail;
-        }
-        if (rc != 0) {
-            goto fail;
-        }
+    memset(&d, 0, sizeof(d));
+    if (dec_all(&d, buf, len) != 0) {
+        dec_free(&d);
+        return -1;
     }
-    if (cwd == NULL || argv.n == 0 || vec_terminate(&set) != 0 || vec_terminate(&unset) != 0 ||
-        vec_terminate(&anchors) != 0) {
-        goto fail;
-    }
-    r->cwd = cwd;
-    r->argc = argv.n;
-    r->argv = argv.v;
-    r->nset = set.n;
-    r->set = set.v;
-    r->nunset = unset.n;
-    r->unset = unset.v;
-    r->flags = flags;
-    r->nanchors = anchors.n;
-    r->anchors = anchors.v;
+    r->cwd = d.cwd;
+    r->argc = d.argv.n;
+    r->argv = d.argv.v;
+    r->nset = d.set.n;
+    r->set = d.set.v;
+    r->nunset = d.unset.n;
+    r->unset = d.unset.v;
+    r->flags = d.flags;
+    r->nanchors = d.anchors.n;
+    r->anchors = d.anchors.v;
     return 0;
-fail:
-    free(cwd);
-    vec_free(argv.v, argv.n);
-    vec_free(set.v, set.n);
-    vec_free(unset.v, unset.n);
-    vec_free(anchors.v, anchors.n);
-    memset(r, 0, sizeof(*r));
-    return -1;
 }
 
 void fl_req_free(struct fl_req *r)

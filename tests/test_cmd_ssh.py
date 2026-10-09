@@ -36,12 +36,14 @@ def host_ssh(xdg: Path) -> Path:
 def test_sync_dry_run_then_for_real(capsys: pytest.CaptureFixture[str], host_ssh: Path) -> None:
     code, out, _err = run_cli(capsys, "ssh", "sync", "--dry-run")
     assert code == 0
-    assert "would link: " in out and "would write config: " in out
+    assert "would link: " in out
+    assert "would write config: " in out
     assert "commented out: IdentityAgent" in out
     wine_ssh = paths().wine_user_dir(USER) / ".ssh"
     assert not wine_ssh.exists()
     code, out, _err = run_cli(capsys, "ssh", "sync")
-    assert "linked: " in out and "wrote config: " in out
+    assert "linked: " in out
+    assert "wrote config: " in out
     assert (wine_ssh / "id_ed25519").is_symlink()
     result = run_json(capsys, "ssh", "sync", "--mode", "copy", "--no-config")
     assert result["dry_run"] is False
@@ -78,9 +80,12 @@ def test_status(capsys: pytest.CaptureFixture[str], host_ssh: Path) -> None:
     assert "not shared yet" in out
     run_cli(capsys, "ssh", "sync")
     out = run_cli(capsys, "ssh", "status")[1]
-    assert "(mode 0700, ok)" in out and "managed:" in out and "config:" in out
+    assert "(mode 0700, ok)" in out
+    assert "managed:" in out
+    assert "config:" in out
     info = run_json(capsys, "ssh", "status")
-    assert info["exists"] is True and info["host_present"] is True
+    assert info["exists"] is True
+    assert info["host_present"] is True
 
 
 def test_status_problems(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
@@ -99,4 +104,6 @@ def test_status_problems(capsys: pytest.CaptureFixture[str], monkeypatch: pytest
     monkeypatch.setattr(ssh_sync, "status", lambda *a: info)
     out = run_cli(capsys, "ssh", "status")[1]
     assert "/h/.ssh (missing)" in out
-    assert "NOT private" in out and "insecure:    id_rsa" in out and "broken link: gone" in out
+    assert "NOT private" in out
+    assert "insecure:    id_rsa" in out
+    assert "broken link: gone" in out

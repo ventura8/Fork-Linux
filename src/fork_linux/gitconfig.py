@@ -29,7 +29,7 @@ import os
 import re
 import shlex
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +82,8 @@ OPTIONAL_PREFIX = ":(optional)"
 # Include paths that git resolves against the directory of the file that names them.
 INCLUDE_KEYS = frozenset({"include.path", "includeif.*.path"})
 # The host files git reads, in order (later values win).
-HOST_FILES = ((".config", "git", "config"), (".gitconfig",))
+GITCONFIG_NAME = ".gitconfig"
+HOST_FILES = ((".config", "git", "config"), (GITCONFIG_NAME,))
 # Bump when the generated overlay changes, so existing installs regenerate it.
 OVERLAY_REVISION = 2
 MANAGED_HEADER = "# fork-linux: added for Wine (comes last, so it wins over the values above)\n"
@@ -97,7 +98,7 @@ GIT_VERSION_CACHE = "host-git-version.json"
 # modes, line endings and symlinks itself.
 BUNDLED_ONLY_KEYS = frozenset({"core.filemode", "core.autocrlf", "core.symlinks"})
 GIT_VERSION_TIMEOUT = 5.0
-_GIT_VERSION_RE = re.compile(r"git version ([0-9]+)\.([0-9]+)(?:\.([0-9]+))?")
+_GIT_VERSION_RE = re.compile(r"git version (\d+)\.(\d+)(?:\.(\d+))?", re.ASCII)
 
 _HEADER_RE = re.compile(r'^(\s*)\[\s*([A-Za-z0-9.-]+)(?:\s+"((?:[^"\\\n]|\\.)*)")?\s*\]')
 _ENTRY_RE = re.compile(r"^(\s*)([A-Za-z][A-Za-z0-9-]*)\s*(=?)(.*)$", re.DOTALL)
@@ -166,54 +167,77 @@ def _from_header(rel: tuple[str, ...], text: str) -> str:
     return f"# from ~/{'/'.join(rel)}\n{text}" + ("" if text.endswith("\n") else "\n")
 
 
-def _parse_value(lines: list[str], index: int, rest: str) -> tuple[str | None, int]:
+_Parsed = tuple[str | None, int]
+
+
+@dataclass
+class _ValueParser:
+    """Git's value parser: a cursor over ``text`` (``lines[index]`` once a continuation is followed)."""
+
+    lines: list[str]
+    index: int
+    text: str
+    pos: int = 0
+    out: list[str] = field(default_factory=list)
+    quote: bool = False
+    comment: bool = False
+    trim_len: int = 0
+
+    def parse(self) -> _Parsed:
+        """Consume up to the end of the logical line; ``(value, last_index)``."""
+        while self.pos < len(self.text) and self.text[self.pos] != "\n":
+            char = self.text[self.pos]
+            self.pos += 1
+            done = None if self.comment else self._step(char)
+            if done is not None:
+                return done
+        if self.quote:
+            return None, self.index
+        return ("".join(self.out[: self.trim_len]) if self.trim_len else "".join(self.out)), self.index
+
+    def _step(self, char: str) -> _Parsed | None:
+        """Handle one character outside a comment; a result ends the parse early."""
+        if char in _SPACES and not self.quote:
+            if not self.trim_len:
+                self.trim_len = len(self.out)
+            if self.out:
+                self.out.append(char)
+            return None
+        if not self.quote and char in "#;":
+            self.comment = True
+            return None
+        self.trim_len = 0
+        if char == "\\":
+            return self._escape()
+        if char == '"':
+            self.quote = not self.quote
+        else:
+            self.out.append(char)
+        return None
+
+    def _escape(self) -> _Parsed | None:
+        """A backslash: a line continuation or an escape sequence (unknown ones are invalid)."""
+        nxt = self.text[self.pos] if self.pos < len(self.text) else "\n"
+        self.pos += 1
+        if nxt == "\n":
+            if self.index + 1 >= len(self.lines):
+                return "".join(self.out), self.index
+            self.index += 1
+            self.text, self.pos = self.lines[self.index], 0
+            return None
+        if nxt not in _ESCAPES:
+            return None, self.index
+        self.out.append(_ESCAPES[nxt])
+        return None
+
+
+def _parse_value(lines: list[str], index: int, rest: str) -> _Parsed:
     """Git's value parser over ``rest`` (and continuation lines after ``lines[index]``).
 
     Returns ``(value, last_index)``; ``value`` is ``None`` when git would
     reject the value (open quote at the end of the line, unknown escape).
     """
-    out: list[str] = []
-    quote = False
-    comment = False
-    trim_len = 0
-    text = rest
-    pos = 0
-    while True:
-        if pos >= len(text) or text[pos] == "\n":
-            if quote:
-                return None, index
-            return ("".join(out[:trim_len]) if trim_len else "".join(out)), index
-        char = text[pos]
-        pos += 1
-        if comment:
-            continue
-        if char in _SPACES and not quote:
-            if not trim_len:
-                trim_len = len(out)
-            if out:
-                out.append(char)
-            continue
-        if not quote and char in "#;":
-            comment = True
-            continue
-        trim_len = 0
-        if char == "\\":
-            nxt = text[pos] if pos < len(text) else "\n"
-            pos += 1
-            if nxt == "\n":
-                if index + 1 >= len(lines):
-                    return "".join(out), index
-                index += 1
-                text, pos = lines[index], 0
-                continue
-            if nxt not in _ESCAPES:
-                return None, index
-            out.append(_ESCAPES[nxt])
-            continue
-        if char == '"':
-            quote = not quote
-            continue
-        out.append(char)
+    return _ValueParser(lines, index, rest).parse()
 
 
 def _quote(value: str) -> str:
@@ -534,7 +558,7 @@ def sync(
     overlay = overlay_path(paths, user)
     if _replace(overlay, HEADER + note_lines + translated):
         changed.append(overlay)
-    gitconfig = user_dir / ".gitconfig"
+    gitconfig = user_dir / GITCONFIG_NAME
     # A .gitconfig linked to the host's would hand Fork untranslated paths: replace the link.
     base = "" if gitconfig.is_symlink() else _read(gitconfig)
     if _replace(gitconfig, ensure_block(base)):
@@ -546,7 +570,7 @@ def remove(paths: Paths, user: str) -> list[Path]:
     """Undo :func:`sync`: drop the managed block and our generated overlay; return the files changed."""
     user_dir = paths.wine_user_dir(user)
     changed = []
-    gitconfig = user_dir / ".gitconfig"
+    gitconfig = user_dir / GITCONFIG_NAME
     text = _read(gitconfig)
     stripped = _strip_block(text)
     if stripped != text:

@@ -188,7 +188,8 @@ def test_ldd_missing_when_ldd_times_out(tmp_path: Path, caplog: pytest.LogCaptur
 
     with caplog.at_level(logging.WARNING, logger="fork_linux.hostdeps"):
         assert hostdeps.ldd_missing(RecordingRunner({"ldd": hang}), tmp_path) == []
-    assert "could not scan" in caplog.text and "timed out" in caplog.text
+    assert "could not scan" in caplog.text
+    assert "timed out" in caplog.text
 
 
 def test_ldd_missing_with_fake_ldd(fake_bin: Path, tmp_path: Path) -> None:

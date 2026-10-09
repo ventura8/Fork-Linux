@@ -49,7 +49,8 @@ def test_host_argv(xdg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert sandbox.host_argv(argv, "flatpak") == ["flatpak-spawn", "--host", "xdg-open", "/home/u/repo"]
     assert sandbox.host_argv(argv, "snap") == argv
     result = sandbox.host_argv(argv)
-    assert result == argv and result is not argv
+    assert result == argv
+    assert result is not argv
     monkeypatch.setenv("FLATPAK_ID", "io.github.ventura8.ForkLinux")
     assert sandbox.host_argv(argv)[:2] == ["flatpak-spawn", "--host"]
 

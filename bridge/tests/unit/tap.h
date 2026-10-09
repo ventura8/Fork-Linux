@@ -29,5 +29,6 @@ void test_proto(void);
 void test_sha256(void);
 void test_shquote(void);
 void test_translate(void);
+void test_translate_cov(void);
 
 #endif /* FL_TAP_H */

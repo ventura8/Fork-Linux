@@ -16,6 +16,8 @@
  *   fl-testdrv.exe surrogate <exe> [args...]  like run, with an extra argument holding a
  *                                             lone UTF-16 surrogate (U+D800)
  *   fl-testdrv.exe nostd <exe> [args...]      no std handles at all (a GUI parent)
+ *   fl-testdrv.exe long <exe> [args...]       like run, with 100-character arguments added
+ *                                             until the command line is nearly 32767 long
  *
  * Every mode prints "fl-testdrv: rc=<code> ms=<elapsed>" on its stderr when the child
  * is gone. <exe> may be a Unix path (mapped with wine_get_dos_file_name).
@@ -144,149 +146,226 @@ static DWORD WINAPI copy_thread(LPVOID arg)
     park(p->done);
 }
 
+/* Write all n bytes of buf to h; 0 on success, -1 when a write fails. */
+static int write_all(HANDLE h, const char *buf, DWORD n)
+{
+    DWORD off = 0;
+    while (off < n) {
+        DWORD w = 0;
+        if (!WriteFile(h, buf + off, n - off, &w, NULL) || w == 0) {
+            return -1;
+        }
+        off += w;
+    }
+    return 0;
+}
+
 static DWORD WINAPI stdin_thread(LPVOID arg)
 {
     struct pump *p = arg;
     static char buf[65536];
     DWORD n = 0;
     if (p->from != NULL && p->from != INVALID_HANDLE_VALUE) {
-        while (ReadFile(p->from, buf, (DWORD)sizeof(buf), &n, NULL) && n > 0) {
-            DWORD off = 0;
-            while (off < n) {
-                DWORD w = 0;
-                if (!WriteFile(p->to, buf + off, n - off, &w, NULL) || w == 0) {
-                    CloseHandle(p->to);
-                    park(NULL);
-                }
-                off += w;
-            }
+        while (ReadFile(p->from, buf, (DWORD)sizeof(buf), &n, NULL) && n > 0 && write_all(p->to, buf, n) == 0) {
+            n = 0;
         }
     }
     CloseHandle(p->to);
     park(NULL);
 }
 
-enum mode { M_RUN, M_HOLD, M_CLOSEOUT, M_KILL, M_SURROGATE, M_NOSTD };
+enum mode { M_RUN, M_HOLD, M_CLOSEOUT, M_KILL, M_SURROGATE, M_NOSTD, M_LONG };
+
+/* Parsed command line. */
+struct opts {
+    enum mode m;
+    int first;      /* index of <exe> in argv */
+    DWORD kill_ms;
+};
+
+/* The child's ends and our ends of its three std pipes. */
+struct pipes {
+    HANDLE in_r;
+    HANDLE in_w;
+    HANDLE out_r;
+    HANDLE out_w;
+    HANDLE err_r;
+    HANDLE err_w;
+};
+
+/* Helper threads and the events of the ones main joins. */
+struct relay {
+    struct pump pin;
+    struct pump pout;
+    struct pump perr;
+    HANDLE done[2];
+    DWORD ndone;
+};
+
+/* 0 and *o filled, or -1 after printing why (usage error, exit 2). */
+static int parse_opts(int argc, WCHAR **argv, struct opts *o)
+{
+    static const struct {
+        const WCHAR *name;
+        enum mode m;
+    } simple[] = {
+        { L"run", M_RUN }, { L"hold", M_HOLD }, { L"closeout", M_CLOSEOUT },
+        { L"surrogate", M_SURROGATE }, { L"nostd", M_NOSTD }, { L"long", M_LONG },
+    };
+    if (argc < 3) {
+        fwprintf(stderr, L"usage: fl-testdrv.exe run|hold|closeout|kill <ms>|surrogate|nostd|long <exe> [args...]\n");
+        return -1;
+    }
+    o->first = 2;
+    o->kill_ms = 0;
+    for (size_t i = 0; i < sizeof(simple) / sizeof(simple[0]); i++) {
+        if (wcscmp(argv[1], simple[i].name) == 0) {
+            o->m = simple[i].m;
+            return 0;
+        }
+    }
+    if (wcscmp(argv[1], L"kill") == 0 && argc >= 4) {
+        o->m = M_KILL;
+        o->kill_ms = (DWORD)wcstoul(argv[2], NULL, 10);
+        o->first = 3;
+        return 0;
+    }
+    fwprintf(stderr, L"fl-testdrv: unknown mode\n");
+    return -1;
+}
+
+/* The child's command line in cmd (CMD_CAP units); 0 on success. */
+static int build_cmdline(WCHAR *cmd, int argc, WCHAR **argv, const struct opts *o)
+{
+    static const WCHAR lone[] = { L'x', (WCHAR)0xD800, L'y', 0 };
+    WCHAR *exe = to_dos(argv[o->first]);
+    if (exe == NULL || append_quoted(cmd, CMD_CAP, exe) != 0) {
+        return -1;
+    }
+    free(exe);
+    for (int i = o->first + 1; i < argc; i++) {
+        if (append_quoted(cmd, CMD_CAP, argv[i]) != 0) {
+            return -1;
+        }
+    }
+    if (o->m == M_SURROGATE && append_quoted(cmd, CMD_CAP, lone) != 0) {
+        return -1;
+    }
+    if (o->m == M_LONG) {
+        WCHAR pad[101];
+        int more = 1;
+        wmemset(pad, L'a', 100);
+        pad[100] = L'\0';
+        while (more) {
+            more = append_quoted(cmd, CMD_CAP, pad) == 0;
+        }
+    }
+    return 0;
+}
+
+/* Anonymous pipes for the child's std handles, our ends not inheritable; 0 on success. */
+static int make_pipes(struct pipes *pp, STARTUPINFOW *si)
+{
+    SECURITY_ATTRIBUTES sa = { sizeof(sa), NULL, TRUE };
+    if (!CreatePipe(&pp->in_r, &pp->in_w, &sa, 0) || !CreatePipe(&pp->out_r, &pp->out_w, &sa, 0) ||
+        !CreatePipe(&pp->err_r, &pp->err_w, &sa, 0)) {
+        fwprintf(stderr, L"fl-testdrv: CreatePipe failed\n");
+        return -1;
+    }
+    SetHandleInformation(pp->in_w, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(pp->out_r, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(pp->err_r, HANDLE_FLAG_INHERIT, 0);
+    si->dwFlags = STARTF_USESTDHANDLES;
+    si->hStdInput = pp->in_r;
+    si->hStdOutput = pp->out_w;
+    si->hStdError = pp->err_w;
+    return 0;
+}
+
+/* Start a joined copy thread from -> to. */
+static void start_copy(struct relay *r, struct pump *p, HANDLE from, HANDLE to)
+{
+    HANDLE ev = CreateEventW(NULL, TRUE, FALSE, NULL);
+    p->from = from;
+    p->to = to;
+    p->done = ev;
+    r->done[r->ndone] = ev;
+    r->ndone++;
+    CloseHandle(CreateThread(NULL, 0, copy_thread, p, 0, NULL));
+}
+
+/* closeout: relay one chunk of the child's stdout, then close the read end. */
+static void close_out_after_one_chunk(HANDLE out_r)
+{
+    static char chunk[4096];
+    DWORD n = 0;
+    if (ReadFile(out_r, chunk, (DWORD)sizeof(chunk), &n, NULL) && n > 0) {
+        DWORD w = 0;
+        WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), chunk, n, &w, NULL);
+    }
+    CloseHandle(out_r);
+}
+
+/* After the child started: close its ends and run the stdio helper threads. */
+static void start_relay(struct relay *r, const struct pipes *pp, enum mode m)
+{
+    CloseHandle(pp->in_r);
+    CloseHandle(pp->out_w);
+    CloseHandle(pp->err_w);
+    start_copy(r, &r->perr, pp->err_r, GetStdHandle(STD_ERROR_HANDLE));
+    if (m == M_CLOSEOUT) {
+        close_out_after_one_chunk(pp->out_r);
+    } else {
+        start_copy(r, &r->pout, pp->out_r, GetStdHandle(STD_OUTPUT_HANDLE));
+    }
+    if (m != M_HOLD) {
+        r->pin.from = GetStdHandle(STD_INPUT_HANDLE);
+        r->pin.to = pp->in_w;
+        r->pin.done = NULL;
+        /* not joined: it may block on our own stdin */
+        CloseHandle(CreateThread(NULL, 0, stdin_thread, &r->pin, 0, NULL));
+    }
+}
 
 int wmain(int argc, WCHAR **argv);
 
 int wmain(int argc, WCHAR **argv)
 {
     static WCHAR cmd[CMD_CAP];
-    static const WCHAR lone[] = { L'x', (WCHAR)0xD800, L'y', 0 };
-    SECURITY_ATTRIBUTES sa = { sizeof(sa), NULL, TRUE };
-    HANDLE in_r = NULL, in_w = NULL, out_r = NULL, out_w = NULL, err_r = NULL, err_w = NULL;
+    static struct relay r;
+    struct pipes pp;
     STARTUPINFOW si;
     PROCESS_INFORMATION pi;
-    struct pump pin, pout, perr;
-    HANDLE done[2];
-    DWORD ndone = 0;
-    enum mode m;
-    int first;
-    DWORD kill_ms = 0;
+    struct opts o;
     DWORD code = 0;
     ULONGLONG t0;
-    WCHAR *exe;
 
-    if (argc < 3) {
-        fwprintf(stderr, L"usage: fl-testdrv.exe run|hold|closeout|kill <ms>|surrogate|nostd <exe> [args...]\n");
+    if (parse_opts(argc, argv, &o) != 0 || build_cmdline(cmd, argc, argv, &o) != 0) {
         return 2;
     }
-    first = 2;
-    if (wcscmp(argv[1], L"run") == 0) {
-        m = M_RUN;
-    } else if (wcscmp(argv[1], L"hold") == 0) {
-        m = M_HOLD;
-    } else if (wcscmp(argv[1], L"closeout") == 0) {
-        m = M_CLOSEOUT;
-    } else if (wcscmp(argv[1], L"surrogate") == 0) {
-        m = M_SURROGATE;
-    } else if (wcscmp(argv[1], L"nostd") == 0) {
-        m = M_NOSTD;
-    } else if (wcscmp(argv[1], L"kill") == 0 && argc >= 4) {
-        m = M_KILL;
-        kill_ms = (DWORD)wcstoul(argv[2], NULL, 10);
-        first = 3;
-    } else {
-        fwprintf(stderr, L"fl-testdrv: unknown mode\n");
-        return 2;
-    }
-    exe = to_dos(argv[first]);
-    if (exe == NULL || append_quoted(cmd, CMD_CAP, exe) != 0) {
-        return 2;
-    }
-    free(exe);
-    for (int i = first + 1; i < argc; i++) {
-        if (append_quoted(cmd, CMD_CAP, argv[i]) != 0) {
-            return 2;
-        }
-    }
-    if (m == M_SURROGATE && append_quoted(cmd, CMD_CAP, lone) != 0) {
-        return 2;
-    }
-
+    memset(&pp, 0, sizeof(pp));
     memset(&si, 0, sizeof(si));
     si.cb = sizeof(si);
-    if (m != M_NOSTD) {
-        if (!CreatePipe(&in_r, &in_w, &sa, 0) || !CreatePipe(&out_r, &out_w, &sa, 0) ||
-            !CreatePipe(&err_r, &err_w, &sa, 0)) {
-            fwprintf(stderr, L"fl-testdrv: CreatePipe failed\n");
-            return 2;
-        }
-        SetHandleInformation(in_w, HANDLE_FLAG_INHERIT, 0);
-        SetHandleInformation(out_r, HANDLE_FLAG_INHERIT, 0);
-        SetHandleInformation(err_r, HANDLE_FLAG_INHERIT, 0);
-        si.dwFlags = STARTF_USESTDHANDLES;
-        si.hStdInput = in_r;
-        si.hStdOutput = out_w;
-        si.hStdError = err_w;
+    if (o.m != M_NOSTD && make_pipes(&pp, &si) != 0) {
+        return 2;
     }
     memset(&pi, 0, sizeof(pi));
     t0 = GetTickCount64();
-    if (!CreateProcessW(NULL, cmd, NULL, NULL, m != M_NOSTD, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, NULL,
+    if (!CreateProcessW(NULL, cmd, NULL, NULL, o.m != M_NOSTD, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, NULL,
                         NULL, &si, &pi)) {
         fwprintf(stderr, L"fl-testdrv: CreateProcessW failed: %lu\n", GetLastError());
         return 2;
     }
-    if (m != M_NOSTD) {
-        CloseHandle(in_r);
-        CloseHandle(out_w);
-        CloseHandle(err_w);
-        perr.from = err_r;
-        perr.to = GetStdHandle(STD_ERROR_HANDLE);
-        perr.done = done[ndone++] = CreateEventW(NULL, TRUE, FALSE, NULL);
-        CloseHandle(CreateThread(NULL, 0, copy_thread, &perr, 0, NULL));
-        if (m == M_CLOSEOUT) {
-            static char chunk[4096];
-            DWORD n = 0;
-            if (ReadFile(out_r, chunk, (DWORD)sizeof(chunk), &n, NULL) && n > 0) {
-                DWORD w = 0;
-                WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), chunk, n, &w, NULL);
-            }
-            CloseHandle(out_r);
-        } else {
-            pout.from = out_r;
-            pout.to = GetStdHandle(STD_OUTPUT_HANDLE);
-            pout.done = done[ndone++] = CreateEventW(NULL, TRUE, FALSE, NULL);
-            CloseHandle(CreateThread(NULL, 0, copy_thread, &pout, 0, NULL));
-        }
-        if (m != M_HOLD) {
-            pin.from = GetStdHandle(STD_INPUT_HANDLE);
-            pin.to = in_w;
-            pin.done = NULL;
-            /* not joined: it may block on our own stdin */
-            CloseHandle(CreateThread(NULL, 0, stdin_thread, &pin, 0, NULL));
-        }
+    if (o.m != M_NOSTD) {
+        start_relay(&r, &pp, o.m);
     }
-    if (m == M_KILL) {
-        if (WaitForSingleObject(pi.hProcess, kill_ms) == WAIT_TIMEOUT) {
-            TerminateProcess(pi.hProcess, 99);
-        }
+    if (o.m == M_KILL && WaitForSingleObject(pi.hProcess, o.kill_ms) == WAIT_TIMEOUT) {
+        TerminateProcess(pi.hProcess, 99);
     }
     WaitForSingleObject(pi.hProcess, INFINITE);
     GetExitCodeProcess(pi.hProcess, &code);
-    if (ndone > 0) {
-        WaitForMultipleObjects(ndone, done, TRUE, 5000);
+    if (r.ndone > 0) {
+        WaitForMultipleObjects(r.ndone, r.done, TRUE, 5000);
     }
     fwprintf(stderr, L"fl-testdrv: rc=%lu ms=%llu\n", code, GetTickCount64() - t0);
     fflush(stderr);

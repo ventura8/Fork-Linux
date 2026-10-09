@@ -109,8 +109,11 @@ def test_create_hardlinks_current_and_copies_data(paths: Paths, layout: ForkLayo
     toml = root / "data" / "ForkData" / "repositories.toml"
     assert os.stat(toml).st_ino != os.stat(layout.forkdata_dir / "repositories.toml").st_ino
     meta = _meta(snap)
-    assert meta["schema"] == 1 and meta["reason"] == "manual" and meta["skipped"] == []
-    assert meta["with_accounts"] is False and meta["with_settings"] is True
+    assert meta["schema"] == 1
+    assert meta["reason"] == "manual"
+    assert meta["skipped"] == []
+    assert meta["with_accounts"] is False
+    assert meta["with_settings"] is True
     assert meta["files"]["current/Fork.exe"] == [layout.exe.stat().st_size, layout.exe.stat().st_mtime_ns]
     assert "data/ForkData/repositories.toml" in meta["files"]
     assert "meta.json" not in meta["files"]
@@ -353,8 +356,9 @@ def test_prune_keeps_newest_and_protected(paths: Paths, layout: ForkLayout, cloc
     _upgrade(layout, "2.25.0")
     newest = snaps.create(paths, layout)
     newest_dup = snaps.create(paths, layout)
+    protected: set[str] = set()
     with pytest.raises(ValueError, match="negative"):
-        snaps.prune(paths, -1, set())
+        snaps.prune(paths, -1, protected)
     deleted = snaps.prune(paths, 1, {"2.23.2", "not-a-version"})
     assert deleted == [newest.id, middle.id]
     assert snaps.list_snapshots(paths) == [newest_dup, oldest]
@@ -376,7 +380,9 @@ def test_prune_removes_stale_partials(paths: Paths, layout: ForkLayout, clock: _
     os.utime(stale_file, (old, old))
     assert snaps.prune(paths, 5, set()) == []
     assert not stale.exists()
-    assert fresh.exists() and stale_file.exists() and snap.path.exists()
+    assert fresh.exists()
+    assert stale_file.exists()
+    assert snap.path.exists()
 
 
 def test_prune_without_snapshot_dir(paths: Paths) -> None:
@@ -387,11 +393,13 @@ def test_ensure_current(paths: Paths, layout: ForkLayout, clock: _Clock) -> None
     assert snaps.ensure_current(paths, layout, keep=0) is None
     assert not paths.snapshots_dir.exists()
     first = snaps.ensure_current(paths, layout, keep=2)
-    assert first is not None and first.fork_version == "2.23.2"
+    assert first is not None
+    assert first.fork_version == "2.23.2"
     assert snaps.ensure_current(paths, layout, keep=2) is None
     _upgrade(layout, "2.24.0")
     second = snaps.ensure_current(paths, layout, keep=2, method="copy")
-    assert second is not None and second.method == "copy"
+    assert second is not None
+    assert second.method == "copy"
     _upgrade(layout, "2.25.0")
     third = snaps.ensure_current(paths, layout, keep=2)
     assert third is not None
@@ -442,7 +450,8 @@ def test_restore_with_settings(paths: Paths, layout: ForkLayout, clock: _Clock) 
     assert sorted(p.name for p in layout.forkdata_dir.iterdir()) == ["repositories.toml"]
     assert "Z:" in (layout.forkdata_dir / "repositories.toml").read_text()
     backups = fork_settings.list_backups(fork_settings.default_backup_dir(paths))
-    assert len(backups) == 1 and json.loads(backups[0].read_text()) == {"Theme": 0, "Changed": True}
+    assert len(backups) == 1
+    assert json.loads(backups[0].read_text()) == {"Theme": 0, "Changed": True}
     assert _leftovers(layout.forkdata_dir.parent) == []
 
 

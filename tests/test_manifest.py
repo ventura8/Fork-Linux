@@ -88,8 +88,9 @@ def test_wine_default_build() -> None:
 
 
 def test_wine_build_unknown_raises_not_found() -> None:
+    loaded = manifest.load()
     with pytest.raises(NotFound) as info:
-        manifest.load().wine_build("nope")
+        loaded.wine_build("nope")
     assert info.value.exit_code == ExitCode.NOT_FOUND
     assert WINE_ID in info.value.hint
 
@@ -154,13 +155,15 @@ def test_installer_entry_for_unknown_version_requires_tofu() -> None:
 
 @pytest.mark.parametrize("bad", ["", "2.23.2/../x", "latest", "2.23.2-beta", "1.2.3.4.5", "２.23"])
 def test_installer_url_rejects_non_plain_versions(bad: str) -> None:
+    loaded = manifest.load()
     with pytest.raises(UsageError):
-        manifest.load().installer_url(bad)
+        loaded.installer_url(bad)
 
 
 def test_installer_url_rejects_non_string() -> None:
+    loaded = manifest.load()
     with pytest.raises(UsageError):
-        manifest.load().installer_url(2.23)
+        loaded.installer_url(2.23)
 
 
 def test_known_good_and_known_bad() -> None:
@@ -224,8 +227,9 @@ def test_missing_override_is_ignored(tmp_path: Path) -> None:
 
 
 def test_override_null_document_must_be_an_object(tmp_path: Path) -> None:
+    override = write(tmp_path, "o.json", None)
     with pytest.raises(IntegrityFailed, match="must be a JSON object"):
-        manifest.load(override=write(tmp_path, "o.json", None))
+        manifest.load(override=override)
 
 
 def test_unreadable_override_is_an_error_not_ignored(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -243,8 +247,9 @@ def test_unreadable_override_is_an_error_not_ignored(tmp_path: Path, monkeypatch
 
 
 def test_override_must_be_an_object(tmp_path: Path) -> None:
+    override = write(tmp_path, "o.json", ["not", "an", "object"])
     with pytest.raises(IntegrityFailed, match="must be a JSON object"):
-        manifest.load(override=write(tmp_path, "o.json", ["not", "an", "object"]))
+        manifest.load(override=override)
 
 
 def test_override_with_invalid_json(tmp_path: Path) -> None:
@@ -261,8 +266,9 @@ def test_override_that_is_a_directory(tmp_path: Path) -> None:
 
 
 def test_override_that_breaks_validation(tmp_path: Path) -> None:
+    override = write(tmp_path, "o.json", {"wine": {"default": "missing-build"}})
     with pytest.raises(IntegrityFailed) as info:
-        manifest.load(override=write(tmp_path, "o.json", {"wine": {"default": "missing-build"}}))
+        manifest.load(override=override)
     assert info.value.exit_code == ExitCode.INTEGRITY_FAILED
     assert "override" in info.value.hint
 
@@ -315,10 +321,12 @@ def test_comment_keys_are_ignored_inside_maps() -> None:
 
 
 def test_a_map_holding_only_comments_counts_as_empty() -> None:
+    no_builds = mutate(base_data(), ("wine", "builds"), {"_comment": "nothing yet"})
     with pytest.raises(IntegrityFailed, match="at least one build"):
-        manifest.Manifest(mutate(base_data(), ("wine", "builds"), {"_comment": "nothing yet"}))
+        manifest.Manifest(no_builds)
+    no_versions = mutate(base_data(), ("fork", "versions"), {"_comment": "nothing yet"})
     with pytest.raises(IntegrityFailed, match="at least one version"):
-        manifest.Manifest(mutate(base_data(), ("fork", "versions"), {"_comment": "nothing yet"}))
+        manifest.Manifest(no_versions)
 
 
 def test_deeply_nested_json_is_rejected(tmp_path: Path) -> None:
@@ -343,8 +351,9 @@ def test_merge_recursion_error_becomes_integrity_failed(tmp_path: Path, monkeypa
         raise RecursionError("maximum recursion depth exceeded")
 
     monkeypatch.setattr(manifest, "merge_patch", overflow)
+    override = write(tmp_path, "o.json", {"revision": "2026.10.2"})
     with pytest.raises(IntegrityFailed, match="nested too deeply"):
-        manifest.load(override=write(tmp_path, "o.json", {"revision": "2026.10.2"}))
+        manifest.load(override=override)
 
 
 def test_override_may_not_add_download_hosts(tmp_path: Path) -> None:
@@ -354,8 +363,9 @@ def test_override_may_not_add_download_hosts(tmp_path: Path) -> None:
             "installer_url_template": "https://mirror.example/Fork-{version}.exe",
         }
     }
+    override = write(tmp_path, "o.json", patch)
     with pytest.raises(IntegrityFailed, match="may not add Fork download hosts: mirror.example") as info:
-        manifest.load(override=write(tmp_path, "o.json", patch))
+        manifest.load(override=override)
     assert "official hosts" in info.value.hint
 
 
@@ -503,8 +513,9 @@ INVALID: list[tuple[tuple[str, ...], Any]] = [
 
 @pytest.mark.parametrize(("path", "value"), INVALID, ids=[f"{'.'.join(p)}={v!r}"[:60] for p, v in INVALID])
 def test_invalid_manifests_raise_integrity_failed(path: tuple[str, ...], value: Any) -> None:
+    data = mutate(base_data(), path, value)
     with pytest.raises(IntegrityFailed) as info:
-        manifest.Manifest(mutate(base_data(), path, value))
+        manifest.Manifest(data)
     assert info.value.message.startswith("runtime manifest: ")
     assert info.value.hint
 

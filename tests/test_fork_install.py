@@ -182,8 +182,9 @@ def test_plan_latest_without_full_package(manifest: Manifest, assets: Any) -> No
 
 
 def test_plan_latest_known_bad(manifest: Manifest) -> None:
+    assets = [_asset("2.22.0")]
     with pytest.raises(UsageError, match="crashes on start"):
-        fi.plan(manifest, latest=True, feed_assets=[_asset("2.22.0")])
+        fi.plan(manifest, latest=True, feed_assets=assets)
 
 
 # -- download_installer ------------------------------------------------------------------
@@ -240,8 +241,9 @@ def test_download_installer_passes_pins(manifest: Manifest, tmp_path: Path, fake
 def test_download_installer_rejects_non_pe(manifest: Manifest, tmp_path: Path, fake_fetch: _FakeFetch) -> None:
     fake_fetch.body = b"<html>not an exe</html>"
     paths = make_paths(tmp_path)
+    plan = fi.plan(manifest)
     with pytest.raises(IntegrityFailed, match="no MZ header") as info:
-        fi.download_installer(fi.plan(manifest), manifest, paths)
+        fi.download_installer(plan, manifest, paths)
     assert info.value.exit_code == ExitCode.INTEGRITY_FAILED
     assert not (paths.downloads_dir / "Fork-2.23.2.exe").exists()
 
@@ -285,8 +287,9 @@ def test_download_installer_pinned_skips_size_window(
 def test_download_installer_refuses_foreign_urls(
     manifest: Manifest, tmp_path: Path, fake_fetch: _FakeFetch, plan: InstallPlan
 ) -> None:
+    paths = make_paths(tmp_path)
     with pytest.raises(IntegrityFailed, match="refusing installer URL"):
-        fi.download_installer(plan, manifest, make_paths(tmp_path))
+        fi.download_installer(plan, manifest, paths)
     assert fake_fetch.calls == []
 
 
@@ -317,10 +320,10 @@ def test_run_installer_runs_silent_install(installer: Path, tmp_path: Path) -> N
 def test_run_installer_failure_is_a_setup_failure(installer: Path, tmp_path: Path) -> None:
     runner = RecordingRunner({"wine": Completed([], 3, "", "line1\nwine: installer crashed\n")})
     log_file = tmp_path / "logs" / "wine.log"
+    wine = Path("/w/wine")
+    pathmap = PathMap.with_drives({"z": "/"})
     with pytest.raises(SetupFailed) as info:
-        fi.run_installer(
-            runner, {}, Path("/w/wine"), installer, PathMap.with_drives({"z": "/"}), timeout=5, log_file=log_file
-        )
+        fi.run_installer(runner, {}, wine, installer, pathmap, timeout=5, log_file=log_file)
     assert info.value.step == "fork_install"
     assert "exited with code 3" in info.value.message
     assert runner.calls[0]["timeout"] == 5
@@ -329,15 +332,19 @@ def test_run_installer_failure_is_a_setup_failure(installer: Path, tmp_path: Pat
 
 def test_run_installer_failure_with_stderr(installer: Path) -> None:
     runner = RecordingRunner({"wine": Completed([], 3, "", "wine: installer crashed\n")})
+    wine = Path("/w/wine")
+    pathmap = PathMap.with_drives({"z": "/"})
     with pytest.raises(SetupFailed, match="installer crashed") as info:
-        fi.run_installer(runner, {}, Path("/w/wine"), installer, PathMap.with_drives({"z": "/"}))
+        fi.run_installer(runner, {}, wine, installer, pathmap)
     assert info.value.hint == "run 'fork-linux setup' again to retry"
 
 
 def test_run_installer_failure_without_output(installer: Path) -> None:
     runner = RecordingRunner({"wine": 1})
+    wine = Path("/w/wine")
+    pathmap = PathMap.with_drives({"z": "/"})
     with pytest.raises(SetupFailed) as info:
-        fi.run_installer(runner, {}, Path("/w/wine"), installer, PathMap.with_drives({"z": "/"}))
+        fi.run_installer(runner, {}, wine, installer, pathmap)
     assert info.value.message.endswith("the Fork installer exited with code 1")
 
 
@@ -346,14 +353,19 @@ def test_run_installer_timeout_becomes_setup_failure(installer: Path) -> None:
         raise ForkLinuxError("command timed out after 900s: wine")
 
     runner = RecordingRunner({"wine": hang})
+    wine = Path("/w/wine")
+    pathmap = PathMap.with_drives({"z": "/"})
     with pytest.raises(SetupFailed, match="did not finish: command timed out") as info:
-        fi.run_installer(runner, {}, Path("/w/wine"), installer, PathMap.with_drives({"z": "/"}))
+        fi.run_installer(runner, {}, wine, installer, pathmap)
     assert info.value.exit_code == ExitCode.SETUP_FAILED
 
 
 def test_run_installer_unreachable_path(installer: Path) -> None:
+    runner = RecordingRunner()
+    wine = Path("/w/wine")
+    pathmap = PathMap.with_drives({"c": "/nowhere"})
     with pytest.raises(UsageError, match="not reachable"):
-        fi.run_installer(RecordingRunner(), {}, Path("/w/wine"), installer, PathMap.with_drives({"c": "/nowhere"}))
+        fi.run_installer(runner, {}, wine, installer, pathmap)
 
 
 # -- finish_install -------------------------------------------------------------------------
@@ -391,7 +403,8 @@ def test_finish_install_never_follows_symlinks(tmp_path: Path) -> None:
     layout.desktop_lnk.parent.mkdir(parents=True)
     layout.desktop_lnk.symlink_to(victim)
     fi.finish_install(layout, _plan())
-    assert victim.exists() and layout.desktop_lnk.is_symlink()
+    assert victim.exists()
+    assert layout.desktop_lnk.is_symlink()
 
 
 def test_finish_install_keeps_shortcut_outside_prefix(tmp_path: Path) -> None:
@@ -419,8 +432,9 @@ def test_finish_install_detects_failed_install(tmp_path: Path, installed: str | 
     layout = make_layout(tmp_path)
     if installed is not None:
         write_sq_version(layout, installed)
+    plan = _plan()
     with pytest.raises(SetupFailed, match="was not installed") as info:
-        fi.finish_install(layout, _plan())
+        fi.finish_install(layout, plan)
     assert info.value.step == "fork_install"
 
 

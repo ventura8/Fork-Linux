@@ -39,8 +39,7 @@ enum persona { P_GIT, P_BASH, P_SH };
 
 static const char *const persona_name[] = { "git", "bash", "sh" };
 static const char *const persona_unix[] = { "git", "/bin/bash", "/bin/sh" };
-
-#define XBUF (64u * 1024u)
+static const char *const persona_prog[] = { "fl-shim(git)", "fl-shim(bash)", "fl-shim(sh)" };
 
 /* Everything the exit hook needs to write the JSON log line. */
 struct call {
@@ -84,6 +83,34 @@ static int env_selected(const char *name)
     return 0;
 }
 
+/* Append the "K=V" environment entry p as "K":"V" when K is selected; updates *first. */
+static void json_env_entry(struct flw_buf *b, const wchar_t *p, int *first)
+{
+    char *kv;
+    char *eq;
+    if (p[0] == L'=') {
+        return;
+    }
+    kv = flw_utf8(p);
+    if (kv == NULL) {
+        return;
+    }
+    eq = strchr(kv, '=');
+    if (eq != NULL) {
+        *eq = '\0';
+    }
+    if (eq != NULL && env_selected(kv)) {
+        if (!*first) {
+            flw_buf_put(b, ",", 1);
+        }
+        *first = 0;
+        flw_buf_json(b, kv);
+        flw_buf_put(b, ":", 1);
+        flw_buf_json_env_value(b, kv, eq + 1);
+    }
+    free(kv);
+}
+
 static void json_env(struct flw_buf *b)
 {
     wchar_t *blk = GetEnvironmentStringsW();
@@ -91,29 +118,7 @@ static void json_env(struct flw_buf *b)
     flw_buf_put(b, "{", 1);
     if (blk != NULL) {
         for (const wchar_t *p = blk; *p != L'\0'; p += wcslen(p) + 1) {
-            char *kv;
-            char *eq;
-            if (p[0] == L'=') {
-                continue;
-            }
-            kv = flw_utf8(p);
-            if (kv == NULL) {
-                continue;
-            }
-            eq = strchr(kv, '=');
-            if (eq != NULL) {
-                *eq = '\0';
-                if (env_selected(kv)) {
-                    if (!first) {
-                        flw_buf_put(b, ",", 1);
-                    }
-                    first = 0;
-                    flw_buf_json(b, kv);
-                    flw_buf_put(b, ":", 1);
-                    flw_buf_json_env_value(b, kv, eq + 1);
-                }
-            }
-            free(kv);
+            json_env_entry(b, p, &first);
         }
         FreeEnvironmentStringsW(blk);
     }
@@ -302,10 +307,10 @@ static _Noreturn void record_mode(struct call *c)
     c->target = bundled_target(c->persona, bundled);
     free(bundled);
     if (c->target == NULL) {
-        flw_fail("cannot derive the bundled %s from FL_BRIDGE_BUNDLED_GIT", persona_name[c->persona]);
+        flw_fail_s("cannot derive the bundled ", persona_name[c->persona], " from FL_BRIDGE_BUNDLED_GIT");
     }
     if (c->exe != NULL && same_file(c->exe, c->target)) {
-        flw_fail("FL_BRIDGE_BUNDLED_GIT points at this shim (%s): refusing to recurse", c->target);
+        flw_fail_s("FL_BRIDGE_BUNDLED_GIT points at this shim (", c->target, "): refusing to recurse");
     }
     wtarget = flw_utf16(c->target);
     if (wtarget == NULL) {
@@ -317,10 +322,7 @@ static _Noreturn void record_mode(struct call *c)
     if (tl + cl + 3 > 32767u) {
         flw_fail("command line too long");
     }
-    cmd = malloc((tl + cl + 3) * sizeof(wchar_t));
-    if (cmd == NULL) {
-        flw_fail("out of memory");
-    }
+    cmd = flw_xmalloc((tl + cl + 3) * sizeof(wchar_t));
     cmd[0] = L'"';
     memcpy(cmd + 1, wtarget, tl * sizeof(wchar_t));
     cmd[tl + 1] = L'"';
@@ -352,7 +354,15 @@ static _Noreturn void record_mode(struct call *c)
     if (!CreateProcessW(wtarget, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED,
                         NULL, NULL, &si, &pi)) {
         DWORD e = GetLastError();
-        flw_msg("cannot start the bundled %s '%s' (win32 error %lu)", persona_name[c->persona], c->target, e);
+        struct flw_buf m = { 0 };
+        flw_buf_puts(&m, "cannot start the bundled ");
+        flw_buf_puts(&m, persona_name[c->persona]);
+        flw_buf_puts(&m, " '");
+        flw_buf_puts(&m, c->target);
+        flw_buf_puts(&m, "' (win32 error ");
+        flw_buf_putu(&m, e);
+        flw_buf_puts(&m, ")");
+        flw_msg_buf(&m);
         flw_exit(FLW_EXIT_SPAWN);
     }
     if (job != NULL) {
@@ -363,7 +373,14 @@ static _Noreturn void record_mode(struct call *c)
     free(cmd);
     free(wtarget);
     if (WaitForSingleObject(pi.hProcess, INFINITE) != WAIT_OBJECT_0 || !GetExitCodeProcess(pi.hProcess, &code)) {
-        flw_fail("lost track of the bundled %s (win32 error %lu)", persona_name[c->persona], GetLastError());
+        DWORD e = GetLastError();
+        struct flw_buf m = { 0 };
+        flw_buf_puts(&m, "lost track of the bundled ");
+        flw_buf_puts(&m, persona_name[c->persona]);
+        flw_buf_puts(&m, " (win32 error ");
+        flw_buf_putu(&m, e);
+        flw_buf_puts(&m, ")");
+        flw_fail_buf(&m);
     }
     CloseHandle(pi.hProcess);
     flw_exit(code); /* the job handle closes at exit; the child is already gone */
@@ -412,6 +429,55 @@ static void anchor_add(struct anchors *a, const char *win_norm)
     a->n++;
 }
 
+/* -C value: follow it in *dir (relative values resolve against the previous one). */
+static void chdir_anchor(struct anchors *a, char **dir, const char *val)
+{
+    char *nd = flw_norm_win(val, *dir);
+    if (nd != NULL) {
+        free(*dir);
+        *dir = nd;
+        anchor_add(a, nd);
+    }
+}
+
+/* Global options whose value is the next argument and names no directory. */
+static int takes_plain_value(const char *s)
+{
+    return strcmp(s, "-c") == 0 || strcmp(s, "--namespace") == 0 || strcmp(s, "--config-env") == 0;
+}
+
+/* Handle the global option argv[i]: record its anchor and return how many argv
+ * entries it takes (1, or 2 when its value is the next argument). */
+static int global_opt(int argc, char **argv, int i, struct anchors *a, char **dir)
+{
+    const char *s = argv[i];
+    const char *val = NULL;
+    int used = 1;
+    if (strcmp(s, "-C") == 0) {
+        if (i + 1 < argc && argv[i + 1][0] != '\0') {
+            chdir_anchor(a, dir, argv[i + 1]);
+        }
+        return 2;
+    }
+    if (takes_plain_value(s)) {
+        return 2;
+    }
+    if (strcmp(s, "--git-dir") == 0 || strcmp(s, "--work-tree") == 0) {
+        val = i + 1 < argc ? argv[i + 1] : NULL;
+        used = 2;
+    } else if (strncmp(s, "--git-dir=", 10) == 0) {
+        val = s + 10;
+    } else if (strncmp(s, "--work-tree=", 12) == 0) {
+        val = s + 12;
+    }
+    if (val != NULL && val[0] != '\0') {
+        char *n = flw_norm_win(val, *dir);
+        anchor_add(a, n);
+        free(n);
+    }
+    return used;
+}
+
 /*
  * Walk git's global options (argv[0] excluded) the way git does: record the
  * anchors (-C, --git-dir, --work-tree) and return the index of the subcommand
@@ -419,46 +485,16 @@ static void anchor_add(struct anchors *a, const char *win_norm)
  */
 static int scan_global(int argc, char **argv, struct anchors *a, char **dir)
 {
-    int i;
-    for (i = 0; i < argc; i++) {
+    int i = 0;
+    while (i < argc) {
         const char *s = argv[i];
-        const char *val = NULL;
-        int is_dir = 0;
         if (strcmp(s, "--") == 0) {
             return argc;
         }
         if (s[0] != '-') {
             return i;
         }
-        if (strcmp(s, "-C") == 0) {
-            if (i + 1 < argc && argv[i + 1][0] != '\0') {
-                char *nd = flw_norm_win(argv[i + 1], *dir);
-                if (nd != NULL) {
-                    free(*dir);
-                    *dir = nd;
-                    anchor_add(a, nd);
-                }
-            }
-            i++;
-            continue;
-        }
-        if (strcmp(s, "--git-dir") == 0 || strcmp(s, "--work-tree") == 0) {
-            val = i + 1 < argc ? argv[++i] : NULL;
-            is_dir = 1;
-        } else if (strncmp(s, "--git-dir=", 10) == 0) {
-            val = s + 10;
-            is_dir = 1;
-        } else if (strncmp(s, "--work-tree=", 12) == 0) {
-            val = s + 12;
-            is_dir = 1;
-        } else if (strcmp(s, "-c") == 0 || strcmp(s, "--namespace") == 0 || strcmp(s, "--config-env") == 0) {
-            i++;
-        }
-        if (is_dir && val != NULL && val[0] != '\0') {
-            char *n = flw_norm_win(val, *dir);
-            anchor_add(a, n);
-            free(n);
-        }
+        i += global_opt(argc, argv, i, a, dir);
     }
     return argc;
 }
@@ -483,7 +519,10 @@ static int cmp_anchor_len(const void *pa, const void *pb)
     const struct anchor *b = pb;
     size_t la = strlen(a->unix_path);
     size_t lb = strlen(b->unix_path);
-    return la < lb ? 1 : (la > lb ? -1 : 0);
+    if (la < lb) {
+        return 1;
+    }
+    return la > lb ? -1 : 0;
 }
 
 static void add_anchors(struct fl_out *o, struct anchors *a)
@@ -528,34 +567,116 @@ static char *anchors_env(const struct anchors *a)
     return b.p;
 }
 
-/* bash / sh personas: translate whole-argument Windows-absolute paths only. */
-static int translate_whole_args(const struct fl_xlate *x, int argc, char **argv, struct fl_strvec *out)
+/* Output translation chosen from the git subcommand. */
+struct outcfg {
+    enum fl_outplan plan;
+    int nul;
+    int stderr_paths;
+};
+
+/* GIT_DIR from the environment as an anchor (relative to dir). */
+static void git_dir_anchor(struct anchors *anc, const char *dir)
 {
-    char *buf = malloc(XBUF);
-    if (buf == NULL) {
-        return -1;
+    char *gd = flw_getenv(L"GIT_DIR");
+    if (gd != NULL && gd[0] != '\0') {
+        char *n = flw_norm_win(gd, dir);
+        anchor_add(anc, n);
+        free(n);
     }
-    out->n = 0;
-    out->cap = (size_t)argc + 1;
-    out->v = calloc(out->cap, sizeof(char *));
-    if (out->v == NULL) {
-        free(buf);
-        return -1;
+    free(gd);
+}
+
+/* git persona: anchors from the global options and GIT_DIR, translated argv, output plan. */
+static void git_args(struct call *c, const struct fl_xlate *x, struct anchors *anc, char **dir,
+                     struct fl_strvec *targs, struct fl_cmdinfo *info, struct outcfg *oc)
+{
+    int sub = scan_global(c->argc - 1, c->argv + 1, anc, dir);
+    if (fl_translate_argv(x, c->argc - 1, c->argv + 1, targs, info) != 0) {
+        flw_fail("cannot translate the git arguments to Unix form");
     }
-    for (int i = 0; i < argc; i++) {
-        const char *src = argv[i];
-        if (fl_is_win_abs(src) && fl_win_to_unix(x, src, buf, XBUF) == 0) {
-            src = buf;
-        }
-        out->v[out->n] = flw_strdup(src);
-        if (out->v[out->n] == NULL) {
-            free(buf);
-            return -1;
-        }
-        out->n++;
+    info->subcmd[sizeof(info->subcmd) - 1] = '\0';
+    if (sub < c->argc - 1) {
+        oc->nul = wants_nul(c->argc - 1, c->argv + 1, sub);
     }
-    free(buf);
-    return 0;
+    oc->plan = info->out_plan;
+    oc->stderr_paths = info->stderr_paths;
+    c->subcmd = info->subcmd;
+    c->out_plan = (int)oc->plan;
+    git_dir_anchor(anc, *dir);
+}
+
+/* argv sent to the daemon: the Unix program, then the translated arguments (taken over). */
+static char **unix_argv(enum persona p, const struct fl_strvec *targs)
+{
+    char **argv = flw_xcalloc(targs->n + 2, sizeof(char *));
+    argv[0] = flw_xstrdup(persona_unix[p]);
+    for (size_t i = 0; i < targs->n; i++) {
+        argv[i + 1] = targs->v[i];
+    }
+    return argv;
+}
+
+/* The request's environment: the translated set plus FL_BRIDGE_ANCHORS (last one wins). */
+static void req_env(struct fl_req *req, const struct fl_envops *ops, const struct anchors *anc)
+{
+    size_t nset = 0;
+    char **set = flw_xcalloc(ops->set.n + 2, sizeof(char *));
+    for (size_t i = 0; i < ops->set.n; i++) {
+        set[nset] = ops->set.v[i];
+        nset++;
+    }
+    set[nset] = anchors_env(anc);
+    if (set[nset] != NULL) {
+        nset++;
+    }
+    req->nset = nset;
+    req->set = set;
+    req->nunset = ops->unset.n;
+    req->unset = ops->unset.v;
+}
+
+/* The anchors' Unix paths in the request, for the daemon to resolve. */
+static void req_anchors(struct fl_req *req, const struct anchors *anc)
+{
+    req->anchors = flw_xcalloc(anc->n, sizeof(char *));
+    for (size_t i = 0; i < anc->n; i++) {
+        req->anchors[i] = anc->v[i].unix_path;
+    }
+    req->nanchors = anc->n;
+}
+
+/* cwd (Windows and Unix forms) of a bridge call; exits 125 when unmappable. */
+static void bridge_cwd(struct call *c)
+{
+    if (c->cwd == NULL) {
+        flw_fail("cannot read the current directory");
+    }
+    c->unix_cwd = flw_path_to_unix(c->cwd);
+    if (c->unix_cwd == NULL) {
+        flw_fail_s("cannot map the current directory '", c->cwd, "' to a Unix path");
+    }
+}
+
+/* Relay with the output translation of oc; never returns. */
+static _Noreturn void bridge_relay(const struct fl_xlate *x, const struct outcfg *oc, struct anchors *anc)
+{
+    struct fl_out o_out;
+    struct fl_out o_err;
+    struct flw_sink s_out;
+    struct flw_sink s_err;
+    fl_out_init(&o_out, x, oc->plan, oc->nul);
+    if (oc->plan != FL_OUT_NONE) {
+        add_anchors(&o_out, anc);
+    }
+    flw_sink_init(&s_out, STD_OUTPUT_HANDLE, &o_out);
+    if (oc->stderr_paths) {
+        fl_out_init(&o_err, x, FL_OUT_PATHS_LINES, 0);
+        add_anchors(&o_err, anc);
+        flw_sink_init(&s_err, STD_ERROR_HANDLE, &o_err);
+    } else {
+        flw_sink_init(&s_err, STD_ERROR_HANDLE, NULL);
+    }
+    flw_relay(&s_out, &s_err, 1);
 }
 
 static _Noreturn void bridge_mode(struct call *c)
@@ -567,20 +688,10 @@ static _Noreturn void bridge_mode(struct call *c)
     struct fl_envops ops;
     struct anchors anc;
     struct fl_req req;
-    struct fl_out o_out;
-    struct fl_out o_err;
-    struct flw_sink s_out;
-    struct flw_sink s_err;
-    char **envp;
-    char **argv;
-    char **set;
+    struct outcfg oc = { FL_OUT_NONE, 0, 0 };
     char **real = NULL;
     char *dir;
-    size_t nset = 0;
     size_t nreal = 0;
-    int nul = 0;
-    int stderr_paths = 0;
-    enum fl_outplan plan = FL_OUT_NONE;
 
     memset(&info, 0, sizeof(info));
     memset(&ops, 0, sizeof(ops));
@@ -593,128 +704,38 @@ static _Noreturn void bridge_mode(struct call *c)
         flw_fail("wine_get_unix_file_name is unavailable: the bridge only works under Wine");
     }
     flw_xlate_init(&x, &cfg);
-    if (c->cwd == NULL) {
-        flw_fail("cannot read the current directory");
-    }
-    c->unix_cwd = flw_path_to_unix(c->cwd);
-    if (c->unix_cwd == NULL) {
-        flw_fail("cannot map the current directory '%s' to a Unix path", c->cwd);
-    }
+    bridge_cwd(c);
 
     /* argv; anchors = logical Windows path <-> Unix path of cwd, -C, --git-dir,
      * --work-tree and GIT_DIR */
     dir = flw_norm_win(c->cwd, NULL);
     anchor_add(&anc, dir);
     if (c->persona == P_GIT) {
-        int sub;
-        sub = scan_global(c->argc - 1, c->argv + 1, &anc, &dir);
-        if (fl_translate_argv(&x, c->argc - 1, c->argv + 1, &targs, &info) != 0) {
-            flw_fail("cannot translate the git arguments to Unix form");
-        }
-        info.subcmd[sizeof(info.subcmd) - 1] = '\0';
-        if (sub < c->argc - 1) {
-            nul = wants_nul(c->argc - 1, c->argv + 1, sub);
-        }
-        plan = info.out_plan;
-        stderr_paths = info.stderr_paths;
-        c->subcmd = info.subcmd;
-        c->out_plan = (int)plan;
-        {
-            char *gd = flw_getenv(L"GIT_DIR");
-            if (gd != NULL && gd[0] != '\0') {
-                char *n = flw_norm_win(gd, dir);
-                anchor_add(&anc, n);
-                free(n);
-            }
-            free(gd);
-        }
-    } else if (translate_whole_args(&x, c->argc - 1, c->argv + 1, &targs) != 0) {
-        flw_fail("cannot translate the %s arguments", persona_name[c->persona]);
+        git_args(c, &x, &anc, &dir, &targs, &info, &oc);
+    } else if (flw_xlate_args(&x, c->argc - 1, c->argv + 1, &targs) != 0) {
+        /* bash / sh personas: translate whole-argument Windows-absolute paths only */
+        flw_fail_s("cannot translate the ", persona_name[c->persona], " arguments");
     }
     free(dir);
-    argv = calloc(targs.n + 2, sizeof(char *));
-    if (argv == NULL) {
-        flw_fail("out of memory");
-    }
-    argv[0] = flw_strdup(persona_unix[c->persona]);
-    if (argv[0] == NULL) {
-        flw_fail("out of memory");
-    }
-    for (size_t i = 0; i < targs.n; i++) {
-        argv[i + 1] = targs.v[i];
-    }
+    c->xargv = unix_argv(c->persona, &targs);
     c->xargc = targs.n + 1;
-    c->xargv = argv;
 
-    /* environment */
-    envp = flw_environ();
-    if (envp == NULL || fl_translate_env(&x, envp, &ops) != 0) {
-        flw_fail("cannot translate the environment");
-    }
-    flw_free_strv(envp);
-
-    /* request: the translated environment plus FL_BRIDGE_ANCHORS (last one wins) */
-    set = calloc(ops.set.n + 2, sizeof(char *));
-    if (set == NULL) {
-        flw_fail("out of memory");
-    }
-    for (size_t i = 0; i < ops.set.n; i++) {
-        set[nset++] = ops.set.v[i];
-    }
-    set[nset] = anchors_env(&anc);
-    if (set[nset] != NULL) {
-        nset++;
-    }
+    flw_translate_environ(&x, &ops);
     req.cwd = c->unix_cwd;
-    req.argc = targs.n + 1;
-    req.argv = argv;
-    req.nset = nset;
-    req.set = set;
-    req.nunset = ops.unset.n;
-    req.unset = ops.unset.v;
+    req.argc = c->xargc;
+    req.argv = c->xargv;
+    req_env(&req, &ops, &anc);
     req.flags = 0;
-    if (anc.n > 0 && (plan != FL_OUT_NONE || stderr_paths)) {
-        req.anchors = calloc(anc.n, sizeof(char *));
-        if (req.anchors == NULL) {
-            flw_fail("out of memory");
-        }
-        for (size_t i = 0; i < anc.n; i++) {
-            req.anchors[i] = anc.v[i].unix_path;
-        }
-        req.nanchors = anc.n;
+    if (anc.n > 0 && (oc.plan != FL_OUT_NONE || oc.stderr_paths)) {
+        req_anchors(&req, &anc);
     }
 
-    if (flw_connect(cfg.port) != 0) {
-        flw_fail("cannot connect to the bridge daemon on 127.0.0.1:%u (WSA error %d): is fork-linux still running?",
-                 (unsigned)cfg.port, WSAGetLastError());
-    }
-    if (flw_handshake(cfg.key) != 0) {
-        flw_cfg_clear(&cfg);
-        flw_exit(FLW_EXIT_BRIDGE);
-    }
-    SecureZeroMemory(cfg.key, sizeof(cfg.key));
-    if (flw_send_req(&req) != 0) {
-        flw_exit(FLW_EXIT_BRIDGE);
-    }
-    c->pid = flw_wait_spawn(argv[0], &real, &nreal);
+    flw_start_call(&cfg, &req);
+    c->pid = flw_wait_spawn(c->xargv[0], &real, &nreal);
     for (size_t i = 0; i < nreal && i < req.nanchors; i++) {
         anc.v[i].real = real[i];
     }
-
-    /* output translation */
-    fl_out_init(&o_out, &x, plan, nul);
-    if (plan != FL_OUT_NONE) {
-        add_anchors(&o_out, &anc);
-    }
-    flw_sink_init(&s_out, STD_OUTPUT_HANDLE, &o_out);
-    if (stderr_paths) {
-        fl_out_init(&o_err, &x, FL_OUT_PATHS_LINES, 0);
-        add_anchors(&o_err, &anc);
-        flw_sink_init(&s_err, STD_ERROR_HANDLE, &o_err);
-    } else {
-        flw_sink_init(&s_err, STD_ERROR_HANDLE, NULL);
-    }
-    flw_relay(&s_out, &s_err, 1);
+    bridge_relay(&x, &oc, &anc);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -745,25 +766,16 @@ int wmain(int argc, wchar_t **wargv)
     flw_set_prog("fl-shim");
     c->exe = flw_module_path();
     if (c->exe == NULL || persona_of(c->exe, &c->persona) != 0) {
-        flw_msg("unknown persona '%s': install this program as git.exe, bash.exe or sh.exe",
-                c->exe != NULL ? flw_basename(c->exe) : "?");
+        flw_msg_s("unknown persona '", c->exe != NULL ? flw_basename(c->exe) : "?",
+                  "': install this program as git.exe, bash.exe or sh.exe");
         flw_exit(FLW_EXIT_BRIDGE);
     }
-    flw_set_prog(c->persona == P_GIT ? "fl-shim(git)" : (c->persona == P_BASH ? "fl-shim(bash)" : "fl-shim(sh)"));
+    flw_set_prog(persona_prog[c->persona]);
     if (argc < 1) {
         flw_fail("empty command line");
     }
     c->argc = argc;
-    c->argv = calloc((size_t)argc + 1, sizeof(char *));
-    if (c->argv == NULL) {
-        flw_fail("out of memory");
-    }
-    for (int i = 0; i < argc; i++) {
-        c->argv[i] = flw_utf8(wargv[i]);
-        if (c->argv[i] == NULL) {
-            flw_fail("argument %d is not valid UTF-16", i);
-        }
-    }
+    c->argv = flw_args_utf8(argc, wargv);
     c->cwd = flw_cwd();
     c->log = flw_getenv(L"FL_BRIDGE_LOG");
     mode = flw_getenv(L"FL_BRIDGE_MODE");
@@ -772,7 +784,7 @@ int wmain(int argc, wchar_t **wargv)
     } else if (strcmp(mode, "record") == 0) {
         c->mode = "record";
     } else {
-        flw_msg("FL_BRIDGE_MODE must be 'bridge' or 'record', not '%s'", mode);
+        flw_msg_s("FL_BRIDGE_MODE must be 'bridge' or 'record', not '", mode, "'");
         flw_exit(FLW_EXIT_BRIDGE);
     }
     free(mode);

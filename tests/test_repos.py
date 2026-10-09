@@ -83,12 +83,17 @@ def test_scan_finds_every_problem(git: repos.Git, messy: Path, xdg: Path) -> Non
     not_repo.mkdir()
     reports = repos.scan(git, [messy, clean, not_repo], '[url "Z:/home/"]\n\tinsteadOf = /home/\n')
     report = reports[0]
-    assert report.name == "messy" and report.error == ""
+    assert report.name == "messy"
+    assert report.error == ""
     assert report.hooks == ["pre-commit"]
-    assert report.symlinks == ["link"] and report.skipped_links == []
-    assert report.submodules is True and report.filemode is True
+    assert report.symlinks == ["link"]
+    assert report.skipped_links == []
+    assert report.submodules is True
+    assert report.filemode is True
     assert report.linux_remotes == ["/srv/remote.git", "/media/usb/r.git"]
-    assert reports[1].hooks == [] and reports[1].symlinks == [] and not reports[1].submodules
+    assert reports[1].hooks == []
+    assert reports[1].symlinks == []
+    assert not reports[1].submodules
     assert reports[2].error == "not a git repository"
     assert repos.describe(reports, "hooks") == ["messy (pre-commit)"]
     assert repos.describe(reports, "filemode") == ["messy", "clean"]  # git init on Linux writes it
@@ -112,7 +117,9 @@ def test_fix_and_undo(git: repos.Git, messy: Path) -> None:
     done = repos.fix(git, report)
     assert done == [f"{messy}: core.filemode = false", f"{messy}: skip-worktree for link"]
     after = repos.scan_one(git, messy, set())
-    assert not after.filemode and after.symlinks == [] and after.skipped_links == ["link"]
+    assert not after.filemode
+    assert after.symlinks == []
+    assert after.skipped_links == ["link"]
     assert "S link" in _git(messy, "ls-files", "-v")
     assert repos.fix(git, after) == []
     assert repos.undo(git, messy) == [
@@ -120,7 +127,8 @@ def test_fix_and_undo(git: repos.Git, messy: Path) -> None:
         f"{messy}: skip-worktree removed from link",
     ]
     restored = repos.scan_one(git, messy, set())
-    assert restored.filemode and restored.symlinks == ["link"]
+    assert restored.filemode
+    assert restored.symlinks == ["link"]
     assert "H link" in _git(messy, "ls-files", "-v")
     assert repos.undo(git, messy) == []
     assert repos.fix(git, restored, filemode=False, symlinks=False) == []
@@ -129,15 +137,17 @@ def test_fix_and_undo(git: repos.Git, messy: Path) -> None:
 def test_fix_reports_git_failures(messy: Path, xdg: Path) -> None:
     runner = RecordingRunner({"git": Completed([], 1, "", "locked")}, which_map={"git": "/usr/bin/git"})
     report = repos.RepoReport(messy, filemode=True)
+    git = repos.Git(runner, {})
     with pytest.raises(ForkLinuxError, match="failed"):
-        repos.fix(repos.Git(runner, {}), report)
+        repos.fix(git, report)
 
 
 def test_git_without_git() -> None:
     git = repos.Git(RecordingRunner(which_map={"git": None}), {"PATH": "/none"})
     assert not git.available
+    root = Path("/")
     with pytest.raises(ForkLinuxError, match="not installed"):
-        git.run(Path("/"), "status")
+        git.run(root, "status")
 
 
 def test_known_reads_repositories_and_workspaces(xdg: Path) -> None:

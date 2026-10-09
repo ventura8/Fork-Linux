@@ -87,7 +87,13 @@ def _check(ctx: AppContext) -> int:
     info["update_policy"] = ctx.config.get("fork", "update_policy")
     if ctx.json:
         ctx.print_json(info)
-        return 0
+    else:
+        _print_check(info, feed_error)
+    return 0
+
+
+def _print_check(info: dict[str, Any], feed_error: str | None) -> None:
+    """Print the ``--check`` report as text."""
     rows = [
         ("Installed", info["installed"] or "not installed"),
         ("Tested", info["default"]),
@@ -101,7 +107,6 @@ def _check(ctx: AppContext) -> int:
         print(f"warning: the installed version is known not to work well: {info['known_bad']}")
     if info["update_available"]:
         print(f"Fork {info['latest']} is available: 'fork-linux update --fork --latest' installs it")
-    return 0
 
 
 def _install_fork(ctx: bootstrap.Ctx, args: argparse.Namespace) -> dict[str, Any]:

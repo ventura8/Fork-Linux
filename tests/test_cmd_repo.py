@@ -75,7 +75,8 @@ def test_check_named_and_known(capsys: pytest.CaptureFixture[str], repo: Path, x
     fork_data.path(forkdata).write_text(f"[[repository]]\npath = '{win}'\n", encoding="utf-8")
     data = run_json(capsys, "repo", "check")
     assert data["repositories"][0]["path"] == str(repo)
-    assert data["repositories"][0]["symlinks"] == ["link"] and data["repositories"][0]["filemode"] is True
+    assert data["repositories"][0]["symlinks"] == ["link"]
+    assert data["repositories"][0]["filemode"] is True
 
 
 def test_check_lines_cover_every_problem() -> None:
@@ -84,35 +85,46 @@ def test_check_lines_cover_every_problem() -> None:
     report = repos.RepoReport(Path("/r"), hooks=["pre-commit"], skipped_links=["l"], submodules=True,
                               linux_remotes=["/srv/r.git"])
     lines = "\n".join(repo_cmd._lines(report))
-    assert "pre-commit" in lines and "skip-worktree" in lines and "submodules" in lines and "/srv/r.git" in lines
+    assert "pre-commit" in lines
+    assert "skip-worktree" in lines
+    assert "submodules" in lines
+    assert "/srv/r.git" in lines
     assert repo_cmd._lines(repos.RepoReport(Path("/r"))) == ["  ok"]
 
 
 def test_fix_asks_and_undo_reverts(capsys: pytest.CaptureFixture[str], repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     declined = _ui(monkeypatch, False)
     code, out, _err = run_cli(capsys, "repo", "fix", str(repo))
-    assert code == 1 and "nothing changed" in out
-    assert "set core.filemode = false" in declined.asked[0] and "skip-worktree for link" in declined.asked[0]
+    assert code == 1
+    assert "nothing changed" in out
+    assert "set core.filemode = false" in declined.asked[0]
+    assert "skip-worktree for link" in declined.asked[0]
     _ui(monkeypatch, True)
     code, out, _err = run_cli(capsys, "repo", "fix", str(repo))
-    assert code == 0 and "core.filemode = false" in out
+    assert code == 0
+    assert "core.filemode = false" in out
     assert _git(repo, "config", "core.filemode").strip() == "false"
     assert run_cli(capsys, "repo", "fix", "--yes", str(repo))[1] == "nothing to change\n"
     code, out, _err = run_cli(capsys, "repo", "undo", str(repo))
-    assert code == 0 and "skip-worktree removed from link" in out
+    assert code == 0
+    assert "skip-worktree removed from link" in out
     assert "nothing to undo" in run_cli(capsys, "repo", "undo", str(repo))[1]
 
 
 def test_fix_options(capsys: pytest.CaptureFixture[str], repo: Path) -> None:
     code, out, _err = run_cli(capsys, "repo", "fix", "--yes", "--no-symlinks", str(repo))
-    assert code == 0 and "skip-worktree" not in out and "core.filemode = false" in out
+    assert code == 0
+    assert "skip-worktree" not in out
+    assert "core.filemode = false" in out
     code, out, _err = run_cli(capsys, "repo", "fix", "--yes", "--no-filemode", str(repo))
-    assert code == 0 and "skip-worktree for link" in out
+    assert code == 0
+    assert "skip-worktree for link" in out
 
 
 def test_errors(capsys: pytest.CaptureFixture[str], xdg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     code, _out, err = run_cli(capsys, "repo", "fix", str(xdg / "missing"))
-    assert code != 0 and "no such directory" in err
+    assert code != 0
+    assert "no such directory" in err
     from fork_linux import cli
 
     original = cli.AppContext.__init__
@@ -123,4 +135,5 @@ def test_errors(capsys: pytest.CaptureFixture[str], xdg: Path, monkeypatch: pyte
 
     monkeypatch.setattr(cli.AppContext, "__init__", no_git)
     code, _out, err = run_cli(capsys, "repo", "undo", str(xdg))
-    assert code != 0 and "git is not installed" in err
+    assert code != 0
+    assert "git is not installed" in err

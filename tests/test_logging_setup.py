@@ -92,7 +92,8 @@ def test_filter_survives_mismatched_format_arguments(paths: Paths) -> None:
     text = _log_text(paths)
     assert "two %s %s (unformattable arguments:" in text
     assert "number %d (unformattable arguments: ('not-a-number',))" in text
-    assert GHP not in text and "ghp_***" in text
+    assert GHP not in text
+    assert "ghp_***" in text
 
 
 # --------------------------------------------------------------------------- configure
@@ -129,7 +130,8 @@ def test_console_format_and_redaction(paths: Paths, capsys: pytest.CaptureFixtur
     err = capsys.readouterr().err
     assert "hidden" not in err
     assert err.startswith("fork-linux: warning: cloning https://me:***@example.com with ghp_***")
-    assert "pw123" not in err and GHP not in err
+    assert "pw123" not in err
+    assert GHP not in err
     assert "pw123" not in _log_text(paths)
     assert GHP not in _log_text(paths)
 
@@ -158,7 +160,8 @@ def test_tracebacks_are_redacted_and_only_verbose_on_console(paths: Paths, capsy
     err = capsys.readouterr().err
     assert err == "fork-linux: error: failed\n"
     text = _log_text(paths)
-    assert "Traceback" in text and "RuntimeError: bad token ghp_***" in text
+    assert "Traceback" in text
+    assert "RuntimeError: bad token ghp_***" in text
     assert GHP not in text
 
     configure(paths, verbose=2)

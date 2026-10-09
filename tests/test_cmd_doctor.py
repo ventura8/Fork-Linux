@@ -41,40 +41,51 @@ def fake_checks(monkeypatch: pytest.MonkeyPatch) -> list[Check]:
 
 def test_text_report(capsys: pytest.CaptureFixture[str], fake_checks: list[Check]) -> None:
     code, out, err = run_cli(capsys, "doctor")
-    assert code == 0 and err == ""
+    assert code == 0
+    assert err == ""
     lines = out.splitlines()
     assert lines[0] == "env:"
     assert lines[1] == f"  [  ok] {'env.arch':<26} x86_64"
     assert "  [info] env.note" in lines[2]
     assert lines[3] == "wine:"
-    assert "  [WARN] wine.present" in lines[4] and lines[5].strip() == "hint: upgrade it"
-    assert "never shown" not in out and "info hint" not in out and "deep one" not in out
+    assert "  [WARN] wine.present" in lines[4]
+    assert lines[5].strip() == "hint: upgrade it"
+    assert "never shown" not in out
+    assert "info hint" not in out
+    assert "deep one" not in out
     assert lines[-1] == "1 ok, 1 warning(s), 0 failed, 1 info"
 
 
 def test_verbose_shows_every_hint(capsys: pytest.CaptureFixture[str], fake_checks: list[Check]) -> None:
     out = run_cli(capsys, "doctor", "-v")[1]
-    assert "never shown" in out and "info hint" in out
+    assert "never shown" in out
+    assert "info hint" in out
 
 
 def test_deep_and_network_flags(capsys: pytest.CaptureFixture[str], fake_checks: list[Check]) -> None:
     out = run_cli(capsys, "doctor", "--deep", "--network")[1]
-    assert "git.selftest" in out and "network.reach" in out
+    assert "git.selftest" in out
+    assert "network.reach" in out
 
 
 def test_check_selection(capsys: pytest.CaptureFixture[str], fake_checks: list[Check]) -> None:
     out = run_cli(capsys, "doctor", "--check", "env.arch", "--check", "network")[1]
-    assert "env.arch" in out and "network.reach" in out and "wine.present" not in out
+    assert "env.arch" in out
+    assert "network.reach" in out
+    assert "wine.present" not in out
     code, _out, err = run_cli(capsys, "doctor", "--check", "bogus")
-    assert code == 2 and "unknown doctor check(s): bogus" in err
+    assert code == 2
+    assert "unknown doctor check(s): bogus" in err
 
 
 def test_failure_exit_code(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(doctor, "CHECKS", [_check("env.arch", "fail", "arm64", "buy x86"), _check("env.b", "ok")])
     code, out, err = run_cli(capsys, "doctor")
     assert code == 17
-    assert "[FAIL] env.arch" in out and "hint: buy x86" in out
-    assert "1 check(s) failed: env.arch" in err and "doctor --fix" in err
+    assert "[FAIL] env.arch" in out
+    assert "hint: buy x86" in out
+    assert "1 check(s) failed: env.arch" in err
+    assert "doctor --fix" in err
 
 
 def test_json_report(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
@@ -82,8 +93,10 @@ def test_json_report(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.Mon
     code, out, _err = run_cli(capsys, "--json", "doctor")
     assert code == 17
     data = json.loads(out)
-    assert data["schema"] == 1 and data["summary"] == {"ok": 0, "warn": 0, "fail": 1, "info": 0}
-    assert data["checks"][0]["id"] == "env.arch" and "fix" not in data
+    assert data["schema"] == 1
+    assert data["summary"] == {"ok": 0, "warn": 0, "fail": 1, "info": 0}
+    assert data["checks"][0]["id"] == "env.arch"
+    assert "fix" not in data
 
 
 def test_fix(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, fake_checks: list[Check]) -> None:
@@ -96,7 +109,8 @@ def test_fix(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(doctor, "fix", fake_fix)
     code, out, _err = run_cli(capsys, "doctor", "--fix")
-    assert code == 0 and seen[0][1] == ["env.arch", "env.note", "wine.present"]
+    assert code == 0
+    assert seen[0][1] == ["env.arch", "env.note", "wine.present"]
     assert out.startswith("fixed: re-ran setup steps: wine_runtime\nfix failed: x: oops\n")
     assert out.splitlines()[-1] == "3 ok, 0 warning(s), 0 failed, 0 info"
     code, out, _err = run_cli(capsys, "--json", "doctor", "--fix")
@@ -127,7 +141,8 @@ def test_show_gui() -> None:
     assert doctor_cmd.show_gui(_Ctx({"DISPLAY": ":0", "PATH": "/usr/bin"}, runner), "report") is True
     call = runner.calls[0]
     assert call["argv"][:2] == ["/usr/bin/zenity", "--text-info"]
-    assert call["input"] == "report" and call["env"]["DISPLAY"] == ":0"
+    assert call["input"] == "report"
+    assert call["env"]["DISPLAY"] == ":0"
     missing = RecordingRunner(which_map={"zenity": None})
     assert doctor_cmd.show_gui(_Ctx({"WAYLAND_DISPLAY": "wayland-0"}, missing), "report") is False
     assert missing.calls == []
@@ -142,6 +157,9 @@ def test_registered_after_logs() -> None:
 def test_real_checks_run_offline(capsys: pytest.CaptureFixture[str]) -> None:
     code, out, _err = run_cli(capsys, "--json", "--offline", "doctor", "--check", "env", "prefix", "fork")
     data = json.loads(out)
-    assert code == 17 and data["schema"] == 1
+    assert code == 17
+    assert data["schema"] == 1
     ids = {item["id"]: item["status"] for item in data["checks"]}
-    assert ids["prefix.exists"] == "fail" and ids["fork.installed"] == "fail" and ids["env.python"] == "ok"
+    assert ids["prefix.exists"] == "fail"
+    assert ids["fork.installed"] == "fail"
+    assert ids["env.python"] == "ok"

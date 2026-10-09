@@ -184,11 +184,12 @@ int fl_ct_equal(const void *a, const void *b, size_t n)
 {
     const uint8_t *x = a;
     const uint8_t *y = b;
-    volatile uint8_t diff = 0;
+    uint32_t diff = 0;
     for (size_t i = 0; i < n; i++) {
-        diff = (uint8_t)(diff | (x[i] ^ y[i]));
+        diff |= (uint32_t)(x[i] ^ y[i]);
     }
-    return diff == 0;
+    /* Branch-free: (diff - 1) >> 8 has bit 0 set only when diff == 0 (diff <= 0xff). */
+    return (int)(((diff - 1u) >> 8) & 1u);
 }
 
 static int hex_val(char c)

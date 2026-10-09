@@ -59,36 +59,42 @@ def test_missing_file_is_not_found(capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_show_get_and_path(capsys: pytest.CaptureFixture[str], settings: Path) -> None:
     code, out, _err = run_cli(capsys, "settings", "show")
-    assert code == 0 and json.loads(out) == ORIGINAL
+    assert code == 0
+    assert json.loads(out) == ORIGINAL
     assert run_json(capsys, "settings", "show") == ORIGINAL
     assert run_cli(capsys, "settings", "get", "Guid")[1] == "abc\n"
     assert run_json(capsys, "settings", "get", "Guid") == "abc"
     assert run_json(capsys, "settings", "get", "RepositoryManager.SourceDirectories") == [f"C:\\users\\{USER}"]
     assert run_cli(capsys, "settings", "get", "Theme")[1] == "0\n"
     code, _out, err = run_cli(capsys, "settings", "get", "Nope.Nested")
-    assert code == 20 and "Nope.Nested" in err
+    assert code == 20
+    assert "Nope.Nested" in err
     assert run_cli(capsys, "settings", "path")[1] == f"{settings}\n"
     assert run_json(capsys, "settings", "path") == {"path": str(settings), "exists": True}
 
 
 def test_set_values_and_backups(capsys: pytest.CaptureFixture[str], settings: Path) -> None:
     code, out, _err = run_cli(capsys, "settings", "set", "Theme", "1")
-    assert code == 0 and out.startswith("changed: Theme (backup: ")
+    assert code == 0
+    assert out.startswith("changed: Theme (backup: ")
     assert _read(settings)["Theme"] == 1
     assert len(_backups()) == 1
     assert run_cli(capsys, "settings", "set", "Theme", "1")[1] == "nothing to change\n"
     assert len(_backups()) == 1
     result = run_json(capsys, "settings", "set", "Theme", "1", "--string")
-    assert result["changed"] == ["Theme"] and result["backup"]
+    assert result["changed"] == ["Theme"]
+    assert result["backup"]
     assert _read(settings)["Theme"] == "1"
     run_cli(capsys, "settings", "set", "New.Deep", "plain text")
     run_cli(capsys, "settings", "set", "Flag", "true")
     data = _read(settings)
-    assert data["New"] == {"Deep": "plain text"} and data["Flag"] is True
+    assert data["New"] == {"Deep": "plain text"}
+    assert data["Flag"] is True
     assert data["Unknown"] == {"Keep": [1, 2]}
     assert run_json(capsys, "settings", "set", "Flag", "true") == {"changed": [], "backup": None}
     code, _out, err = run_cli(capsys, "settings", "set", "a..b", "1")
-    assert code == 2 and "invalid settings key" in err
+    assert code == 2
+    assert "invalid settings key" in err
     code, _out, _err = run_cli(capsys, "settings", "set", "Guid.Sub", "1")
     assert code == 13
 
@@ -123,7 +129,8 @@ def test_apply_defaults(capsys: pytest.CaptureFixture[str], settings: Path) -> N
     }
     assert result["backup"] is not None
     data = _read(settings)
-    assert data["Theme"] == 1 and "LayoutScaling" not in data
+    assert data["Theme"] == 1
+    assert "LayoutScaling" not in data
     assert data["RepositoryManager"]["Other"] == 1
     code, out, _err = run_cli(capsys, "settings", "apply-defaults")
     assert (code, out) == (0, "nothing to change\n")
@@ -131,17 +138,21 @@ def test_apply_defaults(capsys: pytest.CaptureFixture[str], settings: Path) -> N
 
 def test_backup_and_restore(capsys: pytest.CaptureFixture[str], settings: Path, tmp_path: Path) -> None:
     code, _out, err = run_cli(capsys, "settings", "restore")
-    assert code == 20 and "no backup" in err
+    assert code == 20
+    assert "no backup" in err
     code, out, _err = run_cli(capsys, "settings", "backup")
-    assert code == 0 and out.startswith("backed up to ")
+    assert code == 0
+    assert out.startswith("backed up to ")
     saved = run_json(capsys, "settings", "backup")["backup"]
     run_cli(capsys, "settings", "set", "Theme", "1")
     code, out, _err = run_cli(capsys, "settings", "restore")
     # The newest backup is the one taken just before 'set'.
-    assert code == 0 and out.startswith(f"restored {settings} from ")
+    assert code == 0
+    assert out.startswith(f"restored {settings} from ")
     assert _read(settings)["Theme"] == 0
     result = run_json(capsys, "settings", "restore", saved)
-    assert result["restored"] == saved and result["backup"]
+    assert result["restored"] == saved
+    assert result["backup"]
     custom = tmp_path / "mine.json"
     custom.write_text('{"Theme": 1}', encoding="utf-8")
     assert run_cli(capsys, "settings", "restore", str(custom))[0] == 0

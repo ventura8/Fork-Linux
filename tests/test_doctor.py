@@ -116,7 +116,8 @@ def test_check_ids_are_unique_and_grouped() -> None:
 
 def test_select_by_flags_ids_and_groups() -> None:
     plain = doctor.select(doctor.CHECKS)
-    assert "git.selftest" not in {c.id for c in plain} and "network.reach" not in {c.id for c in plain}
+    assert "git.selftest" not in {c.id for c in plain}
+    assert "network.reach" not in {c.id for c in plain}
     every = doctor.select(doctor.CHECKS, deep=True, network=True)
     assert len(every) == len(doctor.CHECKS)
     chosen = doctor.select(doctor.CHECKS, only=["wine", "git.selftest"])
@@ -169,7 +170,8 @@ def test_run_checks_with_nothing_installed_never_raises() -> None:
     ctx = make(runner=RecordingRunner(which_map={"fork": None, "desktop-file-validate": None}))
     results = doctor.run_checks(ctx, deep=True, network=False)
     by_id = {check.id: result for check, result in results}
-    assert ctx.deep and not ctx.network
+    assert ctx.deep
+    assert not ctx.network
     assert by_id["wine.present"].status == "fail"
     assert "not installed" in by_id["wine.present"].detail
     assert by_id["prefix.exists"].status == "fail"
@@ -195,9 +197,13 @@ class _App:
 def test_from_app_reads_state_and_user() -> None:
     env = dict(os.environ)
     ctx = DoctorCtx.from_app(_App(env))
-    assert ctx.user == USER and ctx.offline and not ctx.allow_root
-    assert ctx.state_error == "" and ctx.user_error == ""
-    assert ctx.layout.user == USER and ctx.layout is ctx.layout
+    assert ctx.user == USER
+    assert ctx.offline
+    assert not ctx.allow_root
+    assert ctx.state_error == ""
+    assert ctx.user_error == ""
+    assert ctx.layout.user == USER
+    assert ctx.layout is ctx.layout
     assert ctx.host_home == Path(env["HOME"])
     assert ctx.data_home == ctx.paths.data_dir.parent
     assert DoctorCtx.from_app(_App(env, allow_root=True)).allow_root
@@ -211,14 +217,16 @@ def test_from_app_survives_corrupt_state_and_bad_user() -> None:
     app.paths.state_file.write_text("{not json", encoding="utf-8")
     ctx = DoctorCtx.from_app(app)
     assert "unusable" in ctx.state_error
-    assert "a/b" in ctx.user_error and ctx.user == ""
+    assert "a/b" in ctx.user_error
+    assert ctx.user == ""
     with pytest.raises(UsageError):
         assert ctx.layout is None
     assert run(ctx, "env.user").status == "fail"
     assert run(ctx, "fork.installed").status == "fail"
     prefix(ctx)
     result = run(ctx, "prefix.exists")
-    assert result.status == "fail" and "unusable" in result.detail
+    assert result.status == "fail"
+    assert "unusable" in result.detail
     assert run(ctx, "desktop.entry").status == "fail"
 
 
@@ -229,11 +237,15 @@ def test_wine_is_resolved_once_and_reset() -> None:
     info = wine_info(ctx.paths.data_dir / "w")
     ctx._wine_error = None
     ctx._wine = info
-    assert ctx.wine() is info and ctx.wine_error() == ""
+    assert ctx.wine() is info
+    assert ctx.wine_error() == ""
     boot = ctx.boot
-    assert boot is ctx.boot and boot.wine() is info and boot.state is ctx.state
+    assert boot is ctx.boot
+    assert boot.wine() is info
+    assert boot.state is ctx.state
     ctx.reset()
-    assert ctx.wine() is None and ctx.boot.state is ctx.state
+    assert ctx.wine() is None
+    assert ctx.boot.state is ctx.state
     make_prefix(ctx.paths)
     assert set(ctx.pathmap.drives()) == {"c", "z"}
 
@@ -280,7 +292,8 @@ def test_env_user(monkeypatch: pytest.MonkeyPatch) -> None:
 )
 def test_env_display(env: dict[str, str], status: str, words: str) -> None:
     result = run(make(env=env), "env.display")
-    assert result.status == status and words in result.detail
+    assert result.status == status
+    assert words in result.detail
 
 
 def test_env_disk(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -307,9 +320,11 @@ def test_host_tools() -> None:
     assert run(make(RecordingRunner(which_map=have)), "host.tools").status == "ok"
     missing_optional = dict(have, kdialog=None)
     result = run(make(RecordingRunner(which_map=missing_optional)), "host.tools")
-    assert result.status == "info" and "kdialog" in result.detail
+    assert result.status == "info"
+    assert "kdialog" in result.detail
     result = run(make(RecordingRunner(which_map=dict(have, cabextract=None))), "host.tools")
-    assert result.status == "fail" and result.detail == "missing: cabextract"
+    assert result.status == "fail"
+    assert result.detail == "missing: cabextract"
 
 
 def _loader(missing: set[str]) -> Any:
@@ -337,11 +352,15 @@ def _managed_runtime(ctx: DoctorCtx) -> WineInfo:
 def test_host_libs() -> None:
     ctx = make(lib_loader=_loader(set()))
     result = run(ctx, "host.libs")
-    assert result.status == "ok" and "ldd" not in result.detail
+    assert result.status == "ok"
+    assert "ldd" not in result.detail
     result = run(make(lib_loader=_loader({"libvulkan.so.1"})), "host.libs")
-    assert result.status == "info" and "libvulkan.so.1" in result.detail
+    assert result.status == "info"
+    assert "libvulkan.so.1" in result.detail
     result = run(make(lib_loader=_loader({"libX11.so.6"})), "host.libs")
-    assert result.status == "fail" and "libX11.so.6" in result.detail and result.hint
+    assert result.status == "fail"
+    assert "libX11.so.6" in result.detail
+    assert result.hint
 
 
 def test_host_libs_scans_the_managed_runtime() -> None:
@@ -349,7 +368,8 @@ def test_host_libs_scans_the_managed_runtime() -> None:
     ctx = make(runner, lib_loader=_loader(set()))
     ctx._wine = _managed_runtime(ctx)
     result = run(ctx, "host.libs")
-    assert result.status == "fail" and "the Wine runtime needs: libfoo.so.1" == result.detail
+    assert result.status == "fail"
+    assert result.detail == "the Wine runtime needs: libfoo.so.1"
     assert runner.argvs[0][0] == "ldd"
     clean = make(RecordingRunner({"ldd": ""}), lib_loader=_loader(set()))
     clean._wine = _managed_runtime_existing(clean)
@@ -367,10 +387,13 @@ def test_host_fonts() -> None:
     assert run(make(good), "host.fonts") == Result("ok", "Segoe UI -> Noto Sans, Consolas -> Noto Sans Mono")
     sans_only = RecordingRunner({"fc-list": "DejaVu Sans\n"}, which_map=fc)
     result = run(make(sans_only), "host.fonts")
-    assert result.status == "warn" and "monospace" in result.detail and "Segoe" not in result.detail
+    assert result.status == "warn"
+    assert "monospace" in result.detail
+    assert "Segoe" not in result.detail
     mono_only = RecordingRunner({"fc-list": "Noto Sans Mono\n"}, which_map=fc)
     result = run(make(mono_only), "host.fonts")
-    assert "Segoe UI replacement" in result.detail and "monospace" not in result.detail
+    assert "Segoe UI replacement" in result.detail
+    assert "monospace" not in result.detail
     none = RecordingRunner({"fc-list": "Comic Neue\n"}, which_map=fc)
     assert "Segoe UI replacement" in run(make(none), "host.fonts").detail
     missing = RecordingRunner(which_map={"fc-list": None})
@@ -396,7 +419,9 @@ def test_wine_present_and_version_managed(monkeypatch: pytest.MonkeyPatch) -> No
     _managed_runtime(ctx)
     ctx = make()
     present = run(ctx, "wine.present")
-    assert present.status == "ok" and "managed kron4ek" in present.detail and "(Staging)" in present.detail
+    assert present.status == "ok"
+    assert "managed kron4ek" in present.detail
+    assert "(Staging)" in present.detail
     assert "sha256 matches" in run(ctx, "wine.version").detail
     assert run(ctx, "wine.staging").status == "ok"
     monkeypatch.setattr(wine_provider, "is_installed", lambda _p, _b: False)
@@ -411,9 +436,11 @@ def test_wine_version_system(version: str, status: str) -> None:
     ctx = make(wine=wine_info(Path("/usr"), provider="system", version=version, staging=False))
     assert run(ctx, "wine.version").status == status
     present = run(ctx, "wine.present")
-    assert present.status == "ok" and "Staging" not in present.detail
+    assert present.status == "ok"
+    assert "Staging" not in present.detail
     staging = run(ctx, "wine.staging")
-    assert staging.status == "warn" and "55138" in staging.detail
+    assert staging.status == "warn"
+    assert "55138" in staging.detail
 
 
 def _proc(root: Path, pid: int, environ: dict[str, str] | None, exe: str | None = None) -> None:
@@ -444,7 +471,8 @@ def test_wineserver_mismatch(tmp_path: Path) -> None:
     _proc(proc_root, 106, {"WINEPREFIX": pfx}, exe=str(tmp_path / "other" / "wineserver64"))
     result = run(ctx, "wine.wineserver")
     assert result.status == "fail"
-    assert "pid 105 (/opt/other/bin/wineserver)" in result.detail and "pid 106" in result.detail
+    assert "pid 105 (/opt/other/bin/wineserver)" in result.detail
+    assert "pid 106" in result.detail
     assert doctor.foreign_wineservers(ctx, info) == [
         (105, "/opt/other/bin/wineserver"),
         (106, str(tmp_path / "other" / "wineserver64")),
@@ -467,7 +495,8 @@ def test_prefix_exists() -> None:
     assert run(ctx, "prefix.exists").status == "fail"
     make_prefix(ctx.paths)
     result = run(ctx, "prefix.exists")
-    assert result.status == "fail" and "system.reg is missing" in result.detail
+    assert result.status == "fail"
+    assert "system.reg is missing" in result.detail
     pfx = prefix(ctx)
     assert run(ctx, "prefix.exists") == Result("ok", f"{pfx} (win64)")
     os.chmod(pfx, 0o755)
@@ -520,21 +549,26 @@ def test_prefix_font_replacements() -> None:
     ctx = make(runner)
     prefix(ctx)
     result = run(ctx, "prefix.font_replacements")
-    assert result.status == "warn" and "Segoe UI" in result.detail and "Consolas" in result.detail
+    assert result.status == "warn"
+    assert "Segoe UI" in result.detail
+    assert "Consolas" in result.detail
     lines = [f'"{name}"="Noto Sans"' for name in ("Segoe UI", "Segoe UI Semibold", "Segoe UI Light")]
     user_values(ctx, FONT_KEY, *lines, '"Consolas"="DejaVu Sans Mono"')
     result = run(ctx, "prefix.font_replacements")
-    assert result.status == "warn" and result.detail.endswith("Segoe UI Symbol")
+    assert result.status == "warn"
+    assert result.detail.endswith("Segoe UI Symbol")
     user_values(ctx, FONT_KEY, '"Segoe UI Symbol"="Noto Sans"')
     result = run(ctx, "prefix.font_replacements")
-    assert result.status == "ok" and "Consolas -> DejaVu Sans Mono" in result.detail
+    assert result.status == "ok"
+    assert "Consolas -> DejaVu Sans Mono" in result.detail
 
 
 def test_prefix_avalon_and_appdefaults() -> None:
     ctx = make()
     prefix(ctx)
     avalon = run(ctx, "prefix.avalon")
-    assert avalon.status == "fail" and "DisableHWAcceleration is None" in avalon.detail
+    assert avalon.status == "fail"
+    assert "DisableHWAcceleration is None" in avalon.detail
     user_values(ctx, "Software\\Microsoft\\Avalon.Graphics", '"DisableHWAcceleration"=dword:00000001')
     assert run(ctx, "prefix.avalon") == Result("ok", "WPF hardware acceleration off")
     user_values(ctx, "Software\\Wine\\AppDefaults\\Fork.exe", '"Version"="win10"')
@@ -575,12 +609,14 @@ def test_prefix_menubuilder(monkeypatch: pytest.MonkeyPatch) -> None:
     os.utime(ctx.paths.created_by_marker, (1000, 1000))
     assert doctor.menubuilder_leftovers(ctx) == leftovers
     result = run(ctx, "prefix.menubuilder")
-    assert result.status == "fail" and "not disabled" in result.detail
+    assert result.status == "fail"
+    assert "not disabled" in result.detail
     ran: list[Any] = []
     monkeypatch.setattr(bootstrap, "run_steps", lambda boot, only: ran.append(only) or list(only))
     message = doctor.fix_menubuilder(ctx)
     assert message == f"deleted {leftovers[0]}; deleted {leftovers[1]}; re-ran setup step registry"
-    assert ran == [["registry"]] and not any(path.exists() for path in leftovers)
+    assert ran == [["registry"]]
+    assert not any(path.exists() for path in leftovers)
     assert (ctx.data_home / "applications" / "wine" / "Programs" / "Other.desktop").exists()
     user_values(ctx, "Software\\Wine\\DllOverrides", '"winemenubuilder.exe"=""')
     assert run(ctx, "prefix.menubuilder") == Result("ok", "winemenubuilder disabled; no leftovers")
@@ -653,10 +689,12 @@ def test_fork_version_statuses() -> None:
     assert run(ctx, "fork.version") == Result("ok", "Fork 2.23.2 is known-good")
     install_fork(ctx.layout, "2.24.0")
     result = run(ctx, "fork.version")
-    assert result.status == "warn" and "2.24.0 is untested" in result.detail
+    assert result.status == "warn"
+    assert "2.24.0 is untested" in result.detail
     ctx = make(manifest=_bad_manifest("2.24.0"))
     result = run(ctx, "fork.version")
-    assert result.status == "fail" and "crashes on start" in result.detail
+    assert result.status == "fail"
+    assert "crashes on start" in result.detail
 
 
 def test_fork_version_testing_status() -> None:
@@ -708,7 +746,8 @@ def test_fork_integrity() -> None:
     assert run(ctx, "fork.integrity").status == "info"
     install_fork(ctx.layout, "2.23.2")
     result = run(ctx, "fork.integrity")
-    assert result.status == "fail" and "does not match" in result.detail
+    assert result.status == "fail"
+    assert "does not match" in result.detail
     package = ctx.layout.packages_dir / "Fork-2.23.2-full.nupkg"
     sha = fsutil.sha256_file(package)
 
@@ -748,7 +787,8 @@ def test_fork_settings() -> None:
     write_settings(ctx.layout, {"Guid": "nope", "UpdateSubmodulesOnCheckout": True})
     result = run(ctx, "fork.settings")
     assert result.status == "warn"
-    assert "no valid Guid" in result.detail and "UpdateSubmodulesOnCheckout is True" in result.detail
+    assert "no valid Guid" in result.detail
+    assert "UpdateSubmodulesOnCheckout is True" in result.detail
     assert "DisableHardwareAcceleration is None" in result.detail
     ctx.layout.settings_file.write_text("{broken", encoding="utf-8")
     assert run(ctx, "fork.settings").status == "fail"
@@ -775,14 +815,17 @@ def test_fork_pending_update(monkeypatch: pytest.MonkeyPatch) -> None:
         (ctx.layout.packages_dir / f"Fork-{version}-full.nupkg").write_bytes(b"PK")
     (ctx.layout.packages_dir / "Fork-2.24.0-delta.nupkg").write_bytes(b"PK")
     result = run(ctx, "fork.pending_update")
-    assert result.status == "warn" and "2.23.10, 2.24.0" in result.detail and "no snapshot" in result.detail
+    assert result.status == "warn"
+    assert "2.23.10, 2.24.0" in result.detail
+    assert "no snapshot" in result.detail
     snap = snapshots.Snapshot("s1", "2.23.2", "2026-01-01T00:00:00+00:00", "copy", ctx.paths.snapshots_dir, False)
     odd = snapshots.Snapshot("s0", "weird", "2026-01-01T00:00:00+00:00", "copy", ctx.paths.snapshots_dir, False)
     monkeypatch.setattr(snapshots, "list_snapshots", lambda _paths: [odd, snap])
     assert run(ctx, "fork.pending_update").status == "info"
     pinned = make(env={"FORK_LINUX_FORK_UPDATE_POLICY": "pinned"})
     result = run(pinned, "fork.pending_update")
-    assert result.status == "warn" and "pinned" in result.detail
+    assert result.status == "warn"
+    assert "pinned" in result.detail
 
 
 @pytest.mark.parametrize(
@@ -813,7 +856,9 @@ def test_fork_log_signatures(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(doctor, "LOG_TAIL_BYTES", 64)
     log.write_text("0x88980406 early\n" + "x" * 200 + "\nSSL error\n", encoding="utf-8")
     result = run(ctx, "fork.log_signatures")
-    assert result.status == "warn" and "TLS" in result.detail and "0x88980406" not in result.detail
+    assert result.status == "warn"
+    assert "TLS" in result.detail
+    assert "0x88980406" not in result.detail
     log.unlink()
     os.mkfifo(log)
     assert run(ctx, "fork.log_signatures").status == "info"
@@ -874,7 +919,8 @@ def test_git_overlay() -> None:
     ctx = make()
     prefix(ctx)
     result = run(ctx, "git.overlay")
-    assert result.status == "warn" and "core.filemode=false, core.autocrlf=false" in result.detail
+    assert result.status == "warn"
+    assert "core.filemode=false, core.autocrlf=false" in result.detail
     from fork_linux import gitconfig
 
     overlay = gitconfig.overlay_path(ctx.paths, USER)
@@ -936,21 +982,26 @@ def test_git_selftest_runs_bundled_git(tmp_path: Path) -> None:
     assert all(argv[1] == git_win for argv in runner.argvs)
     assert [argv[2] for argv in runner.argvs][:2] == ["--version", "init"]
     env = runner.calls[-1]["env"]
-    assert env["GIT_CONFIG_KEY_0"] == "core.filemode" and env["WINEPREFIX"] == str(ctx.paths.prefix)
+    assert env["GIT_CONFIG_KEY_0"] == "core.filemode"
+    assert env["WINEPREFIX"] == str(ctx.paths.prefix)
     repo_win = runner.argvs[1][-1]
-    assert repo_win.startswith("Z:\\") and not list(ctx.paths.cache_dir.glob("doctor-git-*"))
+    assert repo_win.startswith("Z:\\")
+    assert not list(ctx.paths.cache_dir.glob("doctor-git-*"))
 
 
 def test_git_selftest_problems(tmp_path: Path) -> None:
     dirty = make(RecordingRunner({"wine": GitFake(status=" M run.sh\n")}), wine=wine_info(tmp_path / "w"))
     _git_ready(dirty)
     result = run(dirty, "git.selftest")
-    assert result.status == "warn" and "M run.sh" in result.detail
+    assert result.status == "warn"
+    assert "M run.sh" in result.detail
     plain = make(RecordingRunner({"wine": GitFake()}), wine=wine_info(tmp_path / "w", staging=False))
     assert run(plain, "git.selftest").status == "warn"
     broken = make(RecordingRunner({"wine": GitFake(fail="commit")}), wine=wine_info(tmp_path / "w"))
     result = run(broken, "git.selftest")
-    assert result.status == "fail" and "git -c" in result.detail and "fatal: broken" in result.detail
+    assert result.status == "fail"
+    assert "git -c" in result.detail
+    assert "fatal: broken" in result.detail
     silent = make(RecordingRunner({"wine": GitFake(fail="--version")}), wine=wine_info(tmp_path / "w"))
     assert run(silent, "git.selftest").status == "fail"
     assert not list(silent.paths.cache_dir.glob("doctor-git-*"))
@@ -984,7 +1035,8 @@ def test_bridge_status(monkeypatch: pytest.MonkeyPatch) -> None:
     assert run(ctx, "bridge.status") == Result("fail", "not built", "run 'fork-linux git-bridge disable'")
     info.update(available=True, reason="the shims are not installed in the prefix")
     result = run(ctx, "bridge.status")
-    assert result.status == "warn" and "falls back to its bundled git: the shims" in result.detail
+    assert result.status == "warn"
+    assert "falls back to its bundled git: the shims" in result.detail
     assert "fork-linux setup" in result.hint
     info.update(ready=True, reason="")
     assert run(ctx, "bridge.status") == Result(
@@ -995,7 +1047,8 @@ def test_bridge_status(monkeypatch: pytest.MonkeyPatch) -> None:
     assert detail.endswith("record mode: Fork's bundled git 2.53.0; daemon running (pid 7, port 4242)")
     info.update(git_recommended=False)
     result = run(ctx, "bridge.status")
-    assert result.status == "warn" and "2.50 or newer" in result.hint
+    assert result.status == "warn"
+    assert "2.50 or newer" in result.hint
     info.update(enabled=False, ready=False, reason="invalid value")
     assert run(ctx, "bridge.status").status == "warn"
 
@@ -1020,7 +1073,8 @@ def test_desktop_entry(monkeypatch: pytest.MonkeyPatch) -> None:
     assert run(ctx, "desktop.entry") == Result("ok", f"menu entry {menu}")
     install_fork(ctx.layout)
     result = run(ctx, "desktop.entry")
-    assert result.status == "warn" and "icon" in result.detail
+    assert result.status == "warn"
+    assert "icon" in result.detail
     icon = ctx.data_home / "icons" / "hicolor" / "48x48" / "apps" / "io.github.ventura8.ForkLinux.png"
     icon.parent.mkdir(parents=True)
     icon.write_bytes(b"png")
@@ -1037,7 +1091,8 @@ def test_desktop_entry_validation() -> None:
     ctx = make(bad, env={"XDG_DATA_DIRS": "/nonexistent"})
     menu = _menu(ctx)
     result = run(ctx, "desktop.entry")
-    assert result.status == "warn" and "missing key" in result.detail
+    assert result.status == "warn"
+    assert "missing key" in result.detail
     assert bad.argvs == [["/usr/bin/desktop-file-validate", str(menu)]]
     failing = RecordingRunner({"desktop-file-validate": Completed([], 1, "", "boom\n")}, which_map=validate)
     assert "boom" in run(make(failing, env={"XDG_DATA_DIRS": "/nonexistent"}), "desktop.entry").detail
@@ -1066,7 +1121,8 @@ def test_desktop_cli(tmp_path: Path) -> None:
     other = tmp_path / "fork"
     other.write_text("#!/bin/sh\necho spoon\n", encoding="utf-8")
     result = run(make(RecordingRunner(which_map={"fork": str(other)})), "desktop.cli")
-    assert result.status == "warn" and str(other) in result.detail
+    assert result.status == "warn"
+    assert str(other) in result.detail
     wrapper = tmp_path / "wrapper"
     wrapper.write_text("#!/bin/sh\n# Fork for Linux (unofficial)\nexec x\n", encoding="utf-8")
     assert run(make(RecordingRunner(which_map={"fork": str(wrapper)})), "desktop.cli").status == "ok"
@@ -1100,7 +1156,9 @@ def test_license_reminder() -> None:
     pfx = prefix(ctx)
     add_values(pfx, "system.reg", "Software\\Microsoft\\Cryptography", ['"MachineGuid"="abc-123"'])
     result = run(ctx, "license.reminder")
-    assert result.status == "info" and "MachineGuid abc-123" in result.detail and "deactivate" in result.hint
+    assert result.status == "info"
+    assert "MachineGuid abc-123" in result.detail
+    assert "deactivate" in result.hint
 
 
 # -- network -------------------------------------------------------------------------------------
@@ -1110,13 +1168,16 @@ def test_network_reach(monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = make()
     targets = [url for _what, url in doctor.network_targets(ctx)]
     assert targets[0] == "https://cdn.fork.dev/win/Fork-2.23.2.exe"
-    assert targets[1].startswith("https://git-fork.com/") and targets[2].startswith("https://github.com/")
+    assert targets[1].startswith("https://git-fork.com/")
+    assert targets[2].startswith("https://github.com/")
     asked: list[str] = []
     monkeypatch.setattr(doctor, "_head_ok", lambda url: asked.append(url) or True)
-    assert run(ctx, "network.reach").status == "ok" and asked == targets
+    assert run(ctx, "network.reach").status == "ok"
+    assert asked == targets
     monkeypatch.setattr(doctor, "_head_ok", lambda url: "github" not in url)
     result = run(ctx, "network.reach")
-    assert result.status == "warn" and result.detail == "unreachable: managed Wine (github.com)"
+    assert result.status == "warn"
+    assert result.detail == "unreachable: managed Wine (github.com)"
     assert run(make(offline=True), "network.reach") == Result("info", "skipped: --offline")
 
 
@@ -1148,7 +1209,8 @@ def test_fix_runs_steps_in_setup_order_and_rechecks(monkeypatch: pytest.MonkeyPa
     assert [c.id for c, r in results if r.status == "fail"] == ["prefix.dotnet", "prefix.avalon", "prefix.appdefaults"]
     report = doctor.fix(ctx, results)
     assert ran == [["registry", "dotnet"]]
-    assert report.actions == ["re-ran setup steps: registry, dotnet"] and report.errors == []
+    assert report.actions == ["re-ran setup steps: registry, dotnet"]
+    assert report.errors == []
     statuses = {check.id: result.status for check, result in report.results}
     assert statuses == {"prefix.dotnet": "ok", "prefix.avalon": "ok", "prefix.appdefaults": "fail", "env.arch": "ok"}
 
@@ -1173,7 +1235,8 @@ def test_fix_collects_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     assert report.actions == []
     good = Check("x.good", "Good", "x", lambda _c: Result("ok", "fixed"), fixer=lambda _c: "did it")
     report = doctor.fix(ctx, [(good, Result("fail", "broken"))])
-    assert report.actions == ["x.good: did it"] and report.results[0][1].detail == "fixed"
+    assert report.actions == ["x.good: did it"]
+    assert report.results[0][1].detail == "fixed"
 
 
 def test_fix_errors_without_hint(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1192,7 +1255,9 @@ def test_fix_with_nothing_to_do() -> None:
     check = Check("x.ok", "Ok", "x", lambda _c: Result("ok", ""), fix_steps=("registry",))
     results = [(check, Result("ok", ""))]
     report = doctor.fix(ctx, results)
-    assert report.results == results and report.actions == [] and report.errors == []
+    assert report.results == results
+    assert report.actions == []
+    assert report.errors == []
 
 
 def test_newest_git_instance_sorts_numerically() -> None:
@@ -1231,7 +1296,8 @@ def test_fork_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert run(ctx, "fork.tools") == Result("ok", "terminal: Z:\\x\\fork-linux-terminal")
     write_settings(ctx.layout, {"Guid": GUID, "ShellTool": DEAD, "MergeTool": {**DEAD, "Arguments": "merge"}})
     result = run(ctx, "fork.tools")
-    assert result.status == "warn" and result.detail.startswith("ShellTool, MergeTool run(s) fl-launch.exe")
+    assert result.status == "warn"
+    assert result.detail.startswith("ShellTool, MergeTool run(s) fl-launch.exe")
     monkeypatch.setattr(doctor.bridge, "host_actions_active", lambda _ctx: True)
     assert run(ctx, "fork.tools").status == "ok"
 
@@ -1243,7 +1309,8 @@ def test_fix_fork_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     write_settings(ctx.layout, {"Guid": GUID, "ShellTool": DEAD, "MergeTool": {**DEAD, "Arguments": "merge"}})
     assert doctor.fix_fork_tools(ctx) == "reset ShellTool, MergeTool"
     data = json.loads(ctx.layout.settings_file.read_text(encoding="utf-8"))
-    assert data["ShellTool"] is None and data["MergeTool"] == {"Type": "Custom", "ApplicationPath": "", "Arguments": ""}
+    assert data["ShellTool"] is None
+    assert data["MergeTool"] == {"Type": "Custom", "ApplicationPath": "", "Arguments": ""}
     assert doctor.fix_fork_tools(ctx) == "nothing to do"
     _libexec(tmp_path, monkeypatch, "fork-linux-terminal")
     write_settings(ctx.layout, {"Guid": GUID, "ShellTool": DEAD})
@@ -1257,7 +1324,8 @@ def test_fix_fork_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     ours = fork_tools.list_entry(fork_tools.DIFF_ARGUMENTS)
     write_settings(ctx.layout, {"Guid": GUID, "ExternalDiffTools": [user, ours], "ExternalMergeTools": "odd"})
     result = run(ctx, "fork.tools")
-    assert result.status == "warn" and result.detail.startswith("ExternalDiffTools run(s) fl-launch.exe")
+    assert result.status == "warn"
+    assert result.detail.startswith("ExternalDiffTools run(s) fl-launch.exe")
     assert doctor.fix_fork_tools(ctx) == "reset ExternalDiffTools"
     assert json.loads(ctx.layout.settings_file.read_text(encoding="utf-8"))["ExternalDiffTools"] == [user]
     monkeypatch.setattr(doctor.bridge, "host_actions_active", lambda _ctx: True)
@@ -1273,7 +1341,8 @@ def test_source_dirs(monkeypatch: pytest.MonkeyPatch) -> None:
     toml.parent.mkdir(parents=True)
     toml.write_text(f"source_dirs = ['C:\\users\\{USER}\\']\nscan_depth = 5\n", encoding="utf-8")
     result = run(ctx, "fork.source_dirs")
-    assert result.status == "warn" and "inside the Wine prefix" in result.detail
+    assert result.status == "warn"
+    assert "inside the Wine prefix" in result.detail
     assert doctor.fix_source_dirs(ctx).startswith("source folder set to Z:\\")
     assert run(ctx, "fork.source_dirs").status == "ok"
     assert doctor.fix_source_dirs(ctx) == "nothing to do"
@@ -1289,7 +1358,8 @@ def test_integration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert run(ctx, "prefix.integration").status == "info"
     prefix(ctx)
     result = run(ctx, "prefix.integration")
-    assert result.status == "warn" and "redirects are missing" in result.detail
+    assert result.status == "warn"
+    assert "redirects are missing" in result.detail
     lines = [
         '@="' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
         for _key, _name, value in integration.open_expected()
@@ -1297,7 +1367,8 @@ def test_integration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     for (key, _name, _value), line in zip(integration.open_expected(), lines):
         add_values(ctx.paths.prefix, "system.reg", key.replace("HKLM\\", ""), [line])
     result = run(ctx, "prefix.integration")
-    assert result.status == "info" and "fork-linux-explorer is not installed" in result.detail
+    assert result.status == "info"
+    assert "fork-linux-explorer is not installed" in result.detail
     assert "no H: drive" in result.detail
     libexec = _libexec(tmp_path, monkeypatch, "fork-linux-explorer")
     win = "Z:" + str(libexec / "fork-linux-explorer").replace("/", "\\")
@@ -1306,7 +1377,8 @@ def test_integration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         add_values(ctx.paths.prefix, "system.reg", key, [f'@="{win}"'.replace("\\", "\\\\")])
     (ctx.paths.prefix / "dosdevices" / "h:").symlink_to(ctx.host_home)
     result = run(ctx, "prefix.integration")
-    assert result.status == "ok" and f"H: -> {ctx.host_home}" in result.detail
+    assert result.status == "ok"
+    assert f"H: -> {ctx.host_home}" in result.detail
 
 
 # -- repositories ----------------------------------------------------------------------------------
@@ -1359,7 +1431,9 @@ def test_repo_checks(xdg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     messy = _git_repo(xdg / "src" / "messy")
     _known(ctx, messy)
     hooks = run(ctx, "repo.hooks")
-    assert hooks.status == "warn" and "messy (pre-commit)" in hooks.detail and "git-bridge enable" in hooks.hint
+    assert hooks.status == "warn"
+    assert "messy (pre-commit)" in hooks.detail
+    assert "git-bridge enable" in hooks.hint
     assert "enable the git bridge" in run(ctx, "repo.submodules").hint
     from fork_linux import bridge
 
@@ -1367,7 +1441,8 @@ def test_repo_checks(xdg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         patch.setattr(bridge, "check", lambda _ctx: bridge.Readiness(True, [], [], (2, 53, 0)))
         for name in ("repo.hooks", "repo.submodules"):
             result = run(ctx, name)
-            assert result.status == "ok" and "the git bridge runs Fork's git with Linux git" in result.detail, name
+            assert result.status == "ok", name
+            assert "the git bridge runs Fork's git with Linux git" in result.detail, name
         assert run(ctx, "repo.symlinks").status == "warn", "the bridge does not fix Fork's own status view"
     assert "messy (l)" in run(ctx, "repo.symlinks").detail
     assert "messy" in run(ctx, "repo.submodules").detail

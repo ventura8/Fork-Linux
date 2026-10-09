@@ -82,7 +82,8 @@ def test_status(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(desktop_integration, "status", lambda paths, env: info)
     code, out, _err = run_cli(capsys, "desktop", "status")
     assert code == 0
-    assert "launcher: fork-linux" in out and "not installed" in out
+    assert "launcher: fork-linux" in out
+    assert "not installed" in out
     info["system_desktop"] = "/usr/share/applications/x.desktop"
     info["entries"] = [{"state": "ok", "kind": "menu", "path": "/p/menu.desktop"}]
     code, out, _err = run_cli(capsys, "desktop", "status")

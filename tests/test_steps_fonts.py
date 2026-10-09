@@ -32,7 +32,8 @@ def test_fonts_installs_corefonts_once(xdg: Path) -> None:
     ctx, fake = _ctx()
     assert not fonts.verify_fonts(ctx)
     fonts.run_fonts(ctx)
-    assert fake.verbs == ["corefonts"] and fonts.verify_fonts(ctx)
+    assert fake.verbs == ["corefonts"]
+    assert fonts.verify_fonts(ctx)
     fonts.run_fonts(ctx)
     assert fake.verbs == ["corefonts"]
 
@@ -68,7 +69,8 @@ def test_fonts_retries_a_transient_failure(xdg: Path) -> None:
     ctx, fake = _ctx()
     fake.fail_once.add("corefonts")
     fonts.run_fonts(ctx)
-    assert fake.verbs == ["corefonts", "corefonts"] and fonts.verify_fonts(ctx)
+    assert fake.verbs == ["corefonts", "corefonts"]
+    assert fonts.verify_fonts(ctx)
 
 
 def test_fonts_partial_corefonts_is_not_done(xdg: Path) -> None:
@@ -80,7 +82,8 @@ def test_fonts_partial_corefonts_is_not_done(xdg: Path) -> None:
     (ctx.paths.prefix / "winetricks.log").write_text("andale\narial\n", encoding="utf-8")
     assert not fonts.verify_fonts(ctx)
     fonts.run_fonts(ctx)
-    assert fake.verbs == ["corefonts"] and fonts.verify_fonts(ctx)
+    assert fake.verbs == ["corefonts"]
+    assert fonts.verify_fonts(ctx)
 
 
 # -- font_replacements ---------------------------------------------------------------------------
@@ -113,7 +116,8 @@ def test_replacements_prefer_noto_then_fallbacks(xdg: Path) -> None:
 def test_replacements_without_known_fonts(xdg: Path, response: object) -> None:
     ctx, _fake = _ctx({"fc-list": response})
     chosen = fonts.replacements(ctx)
-    assert chosen["Segoe UI"] == fonts.SANS_FALLBACK and chosen["Consolas"] == fonts.MONO_FALLBACK
+    assert chosen["Segoe UI"] == fonts.SANS_FALLBACK
+    assert chosen["Consolas"] == fonts.MONO_FALLBACK
 
 
 def test_replacements_when_fc_list_cannot_run(xdg: Path) -> None:
@@ -139,7 +143,8 @@ def test_font_replacements_are_imported_and_verified(xdg: Path) -> None:
 
 def test_dpi_auto_follows_the_desktop(xdg: Path) -> None:
     ctx, _fake = _ctx(env={"GDK_SCALE": "2", "PATH": "/usr/bin"})
-    assert display.dpi(ctx) == 192 and display.inputs(ctx) == {"dpi": 192}
+    assert display.dpi(ctx) == 192
+    assert display.inputs(ctx) == {"dpi": 192}
     assert not display.verify(ctx)
     display.run(ctx)
     assert display.verify(ctx)

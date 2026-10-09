@@ -46,7 +46,8 @@ def test_prior_art_entries() -> None:
     names = [name for name, _url, _note in credits.PRIOR_ART]
     assert len(names) == len(set(names)) == 12
     for name, url, note in credits.PRIOR_ART:
-        assert name and note
+        assert name
+        assert note
         assert url.startswith("https://"), name
     urls = {url for _name, url, _note in credits.PRIOR_ART}
     assert "https://github.com/jasonnicholson/fork-wine-setup" in urls
@@ -79,7 +80,8 @@ def test_about_text_content() -> None:
     assert "official, unmodified Fork for Windows" in text
     assert "under Wine" in text
     assert "please buy a license" in text
-    assert "endorsed by" in text and "supported by" in text
+    assert "endorsed by" in text
+    assert "supported by" in text
     assert "not to Fork support" in text
     assert "EULA" in text
     assert "Thanks to" in text
@@ -109,10 +111,12 @@ def test_desktop_comment() -> None:
 
 def test_metainfo_paragraphs_are_plain_text() -> None:
     paragraphs = credits.render_metainfo_paragraphs()
-    assert isinstance(paragraphs, list) and len(paragraphs) >= 3
+    assert isinstance(paragraphs, list)
+    assert len(paragraphs) >= 3
     joined = " ".join(paragraphs)
     for paragraph in paragraphs:
-        assert paragraph.strip() == paragraph and paragraph
+        assert paragraph.strip() == paragraph
+        assert paragraph
         assert not re.search(r"[<>&*`\[\]\n]", paragraph), paragraph
     assert APP_NAME in joined
     for developer in credits.DEVELOPERS:

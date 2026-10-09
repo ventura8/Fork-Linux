@@ -43,7 +43,8 @@ int fl_win_to_unix(const struct fl_xlate *x, const char *in, char *out, size_t o
 
 /* A growable string vector; v is NULL-terminated (v[n] == NULL) whenever it is non-NULL. */
 struct fl_strvec {
-    size_t n, cap;
+    size_t n;
+    size_t cap;
     char **v;
 };
 /* Free every string and the array, and zero the struct (NULL and zeroed structs are fine). */
@@ -107,7 +108,8 @@ int fl_translate_argv(const struct fl_xlate *x, int argc, char **argv, struct fl
  * Returns 0, or -1 (bad arguments or out of memory; ops is then freed).
  */
 struct fl_envops {
-    struct fl_strvec set, unset;
+    struct fl_strvec set;
+    struct fl_strvec unset;
 };
 int fl_translate_env(const struct fl_xlate *x, char **envp, struct fl_envops *ops);
 

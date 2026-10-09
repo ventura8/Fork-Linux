@@ -142,8 +142,9 @@ def test_query_version_timeout(tmp_path: Path) -> None:
     def hang(argv: list[str]) -> Completed:
         raise ForkLinuxError("command timed out after 30s")
 
+    runner = RecordingRunner({"wine": hang})
     with pytest.raises(WineUnavailable, match="did not finish: command timed out"):
-        winecmd.query_version(RecordingRunner({"wine": hang}), tmp_path / "wine")
+        winecmd.query_version(runner, tmp_path / "wine")
 
 
 def test_query_version_with_fake_wine(fake_bin: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -269,8 +270,9 @@ def test_wineserver_wait(info: WineInfo) -> None:
 
 
 def test_wineserver_wait_failure_raises(info: WineInfo) -> None:
+    runner = RecordingRunner({"wineserver": 1})
     with pytest.raises(CommandError):
-        winecmd.wineserver(RecordingRunner({"wineserver": 1}), {}, info, "-w", timeout=5)
+        winecmd.wineserver(runner, {}, info, "-w", timeout=5)
 
 
 def test_wineserver_kill_tolerates_failure(info: WineInfo) -> None:
@@ -282,8 +284,9 @@ def test_wineserver_kill_tolerates_failure(info: WineInfo) -> None:
 
 
 def test_wineserver_rejects_other_flags(info: WineInfo) -> None:
+    runner = RecordingRunner()
     with pytest.raises(ValueError, match="unsupported wineserver flag"):
-        winecmd.wineserver(RecordingRunner(), {}, info, "-p")
+        winecmd.wineserver(runner, {}, info, "-p")
 
 
 # --------------------------------------------------------------------------- import_reg
@@ -328,8 +331,9 @@ def test_import_reg_keeps_existing_winehome_and_custom_name(paths: Paths, info: 
 
 def test_import_reg_failure_with_output(paths: Paths, info: WineInfo) -> None:
     runner = RecordingRunner({"wine": Completed([], 1, "", "regedit: Unable to open the registry file\n")})
+    batch = _batch()
     with pytest.raises(ForkLinuxError, match="importing registry settings failed \\(exit code 1\\)") as excinfo:
-        winecmd.import_reg(runner, {}, info, _batch(), paths, "alice")
+        winecmd.import_reg(runner, {}, info, batch, paths, "alice")
     assert "Unable to open" in str(excinfo.value)
     assert "fork-linux.reg" in excinfo.value.hint
     assert len(runner.calls) == 1
@@ -337,20 +341,23 @@ def test_import_reg_failure_with_output(paths: Paths, info: WineInfo) -> None:
 
 def test_import_reg_failure_without_output(paths: Paths, info: WineInfo) -> None:
     runner = RecordingRunner({"wine": 3})
+    batch = _batch()
     with pytest.raises(ForkLinuxError) as excinfo:
-        winecmd.import_reg(runner, {}, info, _batch(), paths, "alice")
+        winecmd.import_reg(runner, {}, info, batch, paths, "alice")
     assert "\n" not in str(excinfo.value)
 
 
 @pytest.mark.parametrize("name", ["", "../x", "a/b", ".hidden", "x" * 65, "a b"])
 def test_import_reg_rejects_bad_names(paths: Paths, info: WineInfo, name: str) -> None:
+    runner, batch = RecordingRunner(), _batch()
     with pytest.raises(ValueError, match="plain file name"):
-        winecmd.import_reg(RecordingRunner(), {}, info, _batch(), paths, "alice", name=name)
+        winecmd.import_reg(runner, {}, info, batch, paths, "alice", name=name)
 
 
 def test_import_reg_rejects_bad_user(paths: Paths, info: WineInfo) -> None:
+    runner, batch = RecordingRunner(), _batch()
     with pytest.raises(UsageError):
-        winecmd.import_reg(RecordingRunner(), {}, info, _batch(), paths, "a/b")
+        winecmd.import_reg(runner, {}, info, batch, paths, "a/b")
 
 
 def test_import_reg_with_fake_wine(paths: Paths, fake_bin: Path) -> None:
@@ -379,6 +386,7 @@ def test_import_reg_with_failing_fake_wine(paths: Paths, fake_bin: Path, monkeyp
     monkeypatch.setenv("FL_FAKE_WINE_RC", "5")
     info = _info(FAKES_BIN.parent)
     env = winecmd.build_env(paths, info, user="alice", base_env=dict(os.environ))
+    runner, batch = Runner(), _batch()
     with pytest.raises(ForkLinuxError, match="exit code 5") as excinfo:
-        winecmd.import_reg(Runner(), env, info, _batch(), paths, "alice")
+        winecmd.import_reg(runner, env, info, batch, paths, "alice")
     assert "simulated failure" in str(excinfo.value)

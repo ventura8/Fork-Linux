@@ -202,7 +202,8 @@ def test_backup_copies_privately_and_rotates(
     for number in range(5):
         path.write_text(json.dumps({"n": number}))
         made.append(fs.backup(path, backup_dir=backups, keep=2))
-    assert made[0] is not None and made[0].name == "settings.json.20261009T100000.000005Z"
+    assert made[0] is not None
+    assert made[0].name == "settings.json.20261009T100000.000005Z"
     assert stat.S_IMODE(backups.stat().st_mode) == 0o700
     remaining = fs.list_backups(backups)
     assert remaining == [made[4], made[3]]
@@ -217,7 +218,9 @@ def test_backup_name_collision_gets_counter(tmp_path: Path, backups: Path, monke
     first = fs.backup(path, backup_dir=backups)
     second = fs.backup(path, backup_dir=backups)
     third = fs.backup(path, backup_dir=backups)
-    assert first is not None and second is not None and third is not None
+    assert first is not None
+    assert second is not None
+    assert third is not None
     assert second.name == first.name + "-1"
     assert third.name == first.name + "-2"
     assert fs.list_backups(backups) == [third, second, first]
@@ -251,7 +254,8 @@ def test_save_backs_up_existing(tmp_path: Path, backups: Path) -> None:
     path = tmp_path / "settings.json"
     path.write_text('{"Theme": 0}')
     saved = fs.save(path, {"Theme": 1}, backup_dir=backups, keep=1)
-    assert saved is not None and saved.read_text() == '{"Theme": 0}'
+    assert saved is not None
+    assert saved.read_text() == '{"Theme": 0}'
     assert json.loads(path.read_text()) == {"Theme": 1}
 
 
@@ -476,7 +480,8 @@ def test_seed_creates_the_file_with_a_guid(layout: ForkLayout, backups: Path) ->
     changed = fs.seed(layout, {"Theme": 1}, backup_dir=backups)
     assert changed == ["Guid", "Theme"]
     data = json.loads(layout.settings_file.read_text())
-    assert data["Theme"] == 1 and str(uuid.UUID(data["Guid"])) == data["Guid"]
+    assert data["Theme"] == 1
+    assert str(uuid.UUID(data["Guid"])) == data["Guid"]
     # An existing file is merged as by apply(): its Guid is kept.
     assert fs.seed(layout, {"Theme": 0}, backup_dir=backups) == ["Theme"]
     again = json.loads(layout.settings_file.read_text())
@@ -512,9 +517,11 @@ def test_apply_merges_preserving_unknown_keys(layout: ForkLayout, backups: Path)
     assert result["Workspaces"] == original["Workspaces"]
     assert result["Future"] == original["Future"]
     assert result["RepositoryManager"] == {"SourceDirectories": ["Z:\\home\\tester"], "Depth": 3}
-    assert result["Theme"] == 1 and result["DisableHardwareAcceleration"] is True
+    assert result["Theme"] == 1
+    assert result["DisableHardwareAcceleration"] is True
     saved = fs.list_backups(backups)
-    assert len(saved) == 1 and json.loads(saved[0].read_text()) == original
+    assert len(saved) == 1
+    assert json.loads(saved[0].read_text()) == original
 
 
 def test_apply_without_changes_does_not_write(layout: ForkLayout, backups: Path) -> None:

@@ -108,21 +108,28 @@ def test_wine_choice_validation(tmp_path: Path) -> None:
         assert setup_cmd._wine_choice(value) == value
     with pytest.raises(argparse.ArgumentTypeError):
         setup_cmd._wine_choice("relative/wine")
+    parser = _parser()
     with pytest.raises(SystemExit):
-        _parser().parse_args(["setup", "--wine", "nope"])
+        parser.parse_args(["setup", "--wine", "nope"])
 
 
 def test_options_parse() -> None:
-    args = _parser().parse_args(
+    parser = _parser()
+    args = parser.parse_args(
         ["setup", "--fork-version", "2.23.2", "--only", "fonts", "--only", "icon", "--dotnet", "dotnet472",
          "--accept-fork-eula", "--no-launch", "--force", "--json"]
     )
-    assert args.fork_version == "2.23.2" and args.only == ["fonts", "icon"] and args.dotnet == "dotnet472"
-    assert args.accept_fork_eula and args.no_launch and args.force and args.json
+    assert args.fork_version == "2.23.2"
+    assert args.only == ["fonts", "icon"]
+    assert args.dotnet == "dotnet472"
+    assert args.accept_fork_eula
+    assert args.no_launch
+    assert args.force
+    assert args.json
     with pytest.raises(SystemExit):
-        _parser().parse_args(["setup", "--fork-version", "2.23.2", "--latest"])
+        parser.parse_args(["setup", "--fork-version", "2.23.2", "--latest"])
     with pytest.raises(SystemExit):
-        _parser().parse_args(["setup", "--dotnet", "dotnet40"])
+        parser.parse_args(["setup", "--dotnet", "dotnet40"])
 
 
 def test_bootstrap_seam() -> None:
@@ -140,7 +147,8 @@ def test_full_setup_then_resume(harness: Harness, capsys: pytest.CaptureFixture[
     assert state.get("setup.complete") is True
     assert set(state.data["steps"]) == set(STEP_IDS) - {"preflight", "finalize"}
     assert state.get("fork.version") == "2.23.2"
-    assert state.get("wine.provider") == "custom" and state.get("dotnet.verb") == "dotnet48"
+    assert state.get("wine.provider") == "custom"
+    assert state.get("dotnet.verb") == "dotnet48"
     assert state.get("consent.method") == "flag"
     assert harness.fake.verbs == ["dotnet48", "win10", "corefonts"]
     assert harness.paths.created_by_marker.read_text().startswith("fork-linux ")
@@ -155,8 +163,10 @@ def test_full_setup_then_resume(harness: Harness, capsys: pytest.CaptureFixture[
     calls = len(harness.runner.calls)
     assert harness.run("--json") == 0
     report = json.loads(capsys.readouterr().out)
-    assert report["ran"] == ["preflight", "finalize"] and report["complete"] is True
-    assert report["fork_version"] == "2.23.2" and report["log"].endswith(".log")
+    assert report["ran"] == ["preflight", "finalize"]
+    assert report["complete"] is True
+    assert report["fork_version"] == "2.23.2"
+    assert report["log"].endswith(".log")
     assert [call["argv"][-1] for call in harness.runner.calls[calls:] if "wineserver" in call["argv"][0]] == ["-w"]
 
 
@@ -164,25 +174,30 @@ def test_list_steps(harness: Harness, capsys: pytest.CaptureFixture[str]) -> Non
     assert harness.run("--list-steps", "--wine", str(harness.wine_root)) == 0
     lines = capsys.readouterr().out.splitlines()
     assert [line.split()[1] for line in lines] == list(STEP_IDS)
-    assert lines[0].startswith("always") and lines[1].startswith("pending")
+    assert lines[0].startswith("always")
+    assert lines[1].startswith("pending")
     harness.run("--accept-fork-eula")
     capsys.readouterr()
     assert harness.run("--list-steps", "--json") == 0
     listed = json.loads(capsys.readouterr().out)
-    assert listed["complete"] is True and listed["schema"] == 1
+    assert listed["complete"] is True
+    assert listed["schema"] == 1
     statuses = {row["id"]: row["status"] for row in listed["steps"]}
-    assert statuses["dotnet"] == "done" and statuses["finalize"] == "always"
+    assert statuses["dotnet"] == "done"
+    assert statuses["finalize"] == "always"
     assert {row["id"]: row["needs_network"] for row in listed["steps"]}["fork_download"] is True
 
 
 def test_non_interactive_without_consent_is_declined(harness: Harness) -> None:
     harness.ui.answer = False
     harness.ui.interactive = False
+    wine_root = str(harness.wine_root)
     with pytest.raises(Declined) as caught:
-        harness.run("--wine", str(harness.wine_root))
+        harness.run("--wine", wine_root)
     assert "--accept-fork-eula" in caught.value.hint
     assert harness.state().get("setup.last_error")["step"] == "consent"
-    assert harness.downloads == [] and harness.fake.verbs == []
+    assert harness.downloads == []
+    assert harness.fake.verbs == []
 
 
 def test_only_selected_steps(harness: Harness, capsys: pytest.CaptureFixture[str]) -> None:
@@ -199,7 +214,9 @@ def test_reset_requires_confirmation(harness: Harness) -> None:
     with pytest.raises(Declined, match="not reset"):
         harness.run("--reset", "--accept-fork-eula")
     title, text = harness.ui.kinds("confirm")[0]
-    assert title == setup_cmd.RESET_TITLE and "3 activations" in text and "Help > Activation" in text
+    assert title == setup_cmd.RESET_TITLE
+    assert "3 activations" in text
+    assert "Help > Activation" in text
 
 
 def test_reset_rebuilds_everything(harness: Harness, capsys: pytest.CaptureFixture[str]) -> None:
@@ -210,7 +227,8 @@ def test_reset_rebuilds_everything(harness: Harness, capsys: pytest.CaptureFixtu
     assert harness.run("--reset") == 0
     assert not stray.exists()
     state = harness.state()
-    assert state.get("setup.complete") is True and state.get("consent.method") == "flag"
+    assert state.get("setup.complete") is True
+    assert state.get("consent.method") == "flag"
     assert harness.fake.verbs == ["dotnet48", "win10", "corefonts"]
     assert any(call["argv"][-1] == "-k" for call in harness.runner.calls)
 
@@ -233,7 +251,8 @@ def test_reset_warns_when_wine_is_gone(harness: Harness, monkeypatch: pytest.Mon
     setup_cmd.reset(bctx)
     assert "could not stop Wine" in harness.ui.kinds("warn")[0]
     assert not harness.paths.prefix.exists()
-    assert bctx.state.get("consent.method") == "flag" and bctx.state.is_new
+    assert bctx.state.get("consent.method") == "flag"
+    assert bctx.state.is_new
 
 
 def test_reset_refuses_a_prefix_we_did_not_create(harness: Harness) -> None:

@@ -31,6 +31,19 @@ def _version_only(blob: bytes) -> PEFile:
     return PEFile(pb.build_pe({pb.RT_VERSION: {1: {LANG: blob}}}))
 
 
+def _read_everything(data: bytes) -> None:
+    pe = PEFile(data)
+    pe.group_icons()
+    pe.best_icons()
+    pe.version_info()
+
+
+def _read_icons_and_version(data: bytes) -> None:
+    pe = PEFile(data)
+    pe.best_icons()
+    pe.version_info()
+
+
 # --- headers -------------------------------------------------------------------
 
 
@@ -78,10 +91,7 @@ def test_image_without_resource_section() -> None:
 def test_malformed_images_raise_integrity_failed(name: str) -> None:
     data = pb.MALFORMED[name]()
     with pytest.raises(IntegrityFailed, match="malformed PE image") as caught:
-        pe = PEFile(data)
-        pe.group_icons()
-        pe.best_icons()
-        pe.version_info()
+        _read_everything(data)
     assert caught.value.exit_code == ExitCode.INTEGRITY_FAILED
     assert "fork-linux setup" in caught.value.hint
 
@@ -105,10 +115,9 @@ def test_malformed_images_raise_integrity_failed(name: str) -> None:
     ],
 )
 def test_malformed_messages(name: str, message: str) -> None:
+    data = pb.MALFORMED[name]()
     with pytest.raises(IntegrityFailed, match=message):
-        pe = PEFile(pb.MALFORMED[name]())
-        pe.best_icons()
-        pe.version_info()
+        _read_icons_and_version(data)
 
 
 def test_declared_resource_size_past_the_section_is_tolerated() -> None:
@@ -123,8 +132,9 @@ def test_resource_directory_header_must_be_mapped() -> None:
     built = pb.build_pe_ex()
     (raw_size,) = struct.unpack_from("<I", built.data, built.sections_offset + 40 + 16)
     struct.pack_into("<I", built.data, built.data_dirs_offset + 8 * 2, pb.RSRC_RVA + raw_size - 8)
+    pe = PEFile(bytes(built))
     with pytest.raises(IntegrityFailed, match="resource directory at RVA .* is outside every section"):
-        PEFile(bytes(built)).group_icons()
+        pe.group_icons()
 
 
 def test_headers_parse_even_when_resources_are_broken() -> None:
@@ -139,14 +149,16 @@ def test_headers_parse_even_when_resources_are_broken() -> None:
 
 def test_total_entry_cap(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(pe_resources, "MAX_TOTAL_ENTRIES", 5)
+    pe = PEFile(pb.build_pe())
     with pytest.raises(IntegrityFailed, match="too many entries"):
-        PEFile(pb.build_pe()).group_icons()
+        pe.group_icons()
 
 
 def test_resource_byte_cap(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(pe_resources, "MAX_RESOURCE_BYTES", 1000)
+    pe = PEFile(pb.build_pe())
     with pytest.raises(IntegrityFailed, match="resources exceed 1000 bytes"):
-        PEFile(pb.build_pe()).group_icons()
+        pe.group_icons()
 
 
 def test_data_entry_above_language_level_is_ignored() -> None:
@@ -186,16 +198,18 @@ def test_resource_name_length_out_of_bounds() -> None:
         (name_field,) = struct.unpack_from("<I", layout.data, entry)
         struct.pack_into("<H", layout.data, name_field & 0x7FFFFFFF, 0xFFFF)
 
+    pe = PEFile(_named_group_pe(huge_length))
     with pytest.raises(IntegrityFailed, match="resource name is out of bounds"):
-        PEFile(_named_group_pe(huge_length)).group_icons()
+        pe.group_icons()
 
 
 def test_resource_name_offset_out_of_bounds() -> None:
     def far_name(layout: pb.RsrcLayout, entry: int) -> None:
         struct.pack_into("<I", layout.data, entry, 0x00100000 | pb.HIGH_BIT)
 
+    pe = PEFile(_named_group_pe(far_name))
     with pytest.raises(IntegrityFailed, match="resource name at offset 1048576 is out of bounds"):
-        PEFile(_named_group_pe(far_name)).group_icons()
+        pe.group_icons()
 
 
 # --- icons -------------------------------------------------------------------------
@@ -223,8 +237,9 @@ def test_icon_image_returns_exact_resource_bytes() -> None:
 
 def test_icon_image_missing_id() -> None:
     pe = PEFile(pb.build_pe())
+    missing = IconEntry(16, 16, 0, 1, 32, 0, 99)
     with pytest.raises(IntegrityFailed, match="icon 99 listed in the icon group is missing"):
-        pe.icon_image(IconEntry(16, 16, 0, 1, 32, 0, 99))
+        pe.icon_image(missing)
 
 
 def test_best_icons_sorted_with_png_flag() -> None:
@@ -312,8 +327,9 @@ def test_best_icons_uses_only_first_group() -> None:
 )
 def test_bad_icon_groups(group: bytes, message: str) -> None:
     tree: pb.Tree = {pb.RT_GROUP_ICON: {1: {LANG: group}}}
+    pe = PEFile(pb.build_pe(tree))
     with pytest.raises(IntegrityFailed, match=message):
-        PEFile(pb.build_pe(tree)).group_icons()
+        pe.group_icons()
 
 
 # --- version info ---------------------------------------------------------------------
@@ -357,8 +373,9 @@ def test_version_info_first_string_table_wins() -> None:
 
 
 def test_version_info_wrong_root_key() -> None:
+    pe = _version_only(pb.make_version(root_key="NOT_VERSION"))
     with pytest.raises(IntegrityFailed, match="unexpected key 'NOT_VERSION'"):
-        _version_only(pb.make_version(root_key="NOT_VERSION")).version_info()
+        pe.version_info()
 
 
 @pytest.mark.parametrize(
@@ -371,16 +388,18 @@ def test_version_info_wrong_root_key() -> None:
     ],
 )
 def test_version_info_malformed_blocks(blob: bytes, message: str) -> None:
+    pe = _version_only(blob)
     with pytest.raises(IntegrityFailed, match=message):
-        _version_only(blob).version_info()
+        pe.version_info()
 
 
 def test_version_info_child_overflowing_parent() -> None:
     child = pb.version_block("StringFileInfo", text=True)
     root = bytearray(pb.version_block("VS_VERSION_INFO", children=(child,)))
     struct.pack_into("<H", root, len(root) - len(child), len(child) + 8)
+    pe = _version_only(bytes(root))
     with pytest.raises(IntegrityFailed, match="bad length"):
-        _version_only(bytes(root)).version_info()
+        pe.version_info()
 
 
 # --- file helpers ------------------------------------------------------------------------
@@ -400,8 +419,9 @@ def test_from_path_size_cap(tmp_path: Path) -> None:
     data = pb.build_pe()
     exe.write_bytes(data)
     assert PEFile.from_path(exe, max_size=len(data)).machine == pb.MACHINE_AMD64
+    too_small = len(data) - 1
     with pytest.raises(IntegrityFailed, match="larger than"):
-        PEFile.from_path(exe, max_size=len(data) - 1)
+        PEFile.from_path(exe, max_size=too_small)
 
 
 @pytest.mark.parametrize("delta", [-100, 1])

@@ -103,10 +103,15 @@ def test_from_app_builds_everything(xdg: Path, monkeypatch: pytest.MonkeyPatch) 
     app = _app(xdg, args={"allow_root": True, "offline": True})
     ctx = Ctx.from_app(app, accept_eula=True, fork_version="2.23.2")
     assert isinstance(ctx.ui, ui_mod.NullUI)
-    assert chosen[0]["mode"] == "auto" and chosen[0]["gui"] is False
-    assert ctx.user == USER and ctx.accept_eula and ctx.fork_version == "2.23.2"
-    assert ctx.allow_root is True and ctx.offline is True
-    assert ctx.log_file is not None and ctx.log_file.parent == ctx.paths.logs_dir
+    assert chosen[0]["mode"] == "auto"
+    assert chosen[0]["gui"] is False
+    assert ctx.user == USER
+    assert ctx.accept_eula
+    assert ctx.fork_version == "2.23.2"
+    assert ctx.allow_root is True
+    assert ctx.offline is True
+    assert ctx.log_file is not None
+    assert ctx.log_file.parent == ctx.paths.logs_dir
     assert ctx.log_file.name.startswith("setup-")
     assert ctx.state.is_new
     assert ctx.manifest.fork_default == manifest_mod.load().fork_default
@@ -116,7 +121,8 @@ def test_from_app_keeps_given_ui_and_log_and_reads_root_env(xdg: Path, tmp_path:
     given = FakeUI()
     app = _app(xdg, env={bootstrap.ALLOW_ROOT_ENV: "1"})
     ctx = Ctx.from_app(app, ui=given, log_file=tmp_path / "x.log")
-    assert ctx.ui is given and ctx.log_file == tmp_path / "x.log"
+    assert ctx.ui is given
+    assert ctx.log_file == tmp_path / "x.log"
     assert ctx.allow_root is True
     plain = Ctx.from_app(_app(xdg), ui=given)
     assert plain.allow_root is False
@@ -140,8 +146,11 @@ def test_wine_is_resolved_lazily_and_cached(ctx: Ctx, monkeypatch: pytest.Monkey
     monkeypatch.setattr(bootstrap.wine_provider, "resolve", resolve)
     ctx.reset_wine()
     ctx.wine_choice = "system"
-    assert ctx.wine() is info and ctx.wine() is info
-    assert len(calls) == 1 and calls[0]["install"] is False and calls[0]["choice"] == "system"
+    assert ctx.wine() is info
+    assert ctx.wine() is info
+    assert len(calls) == 1
+    assert calls[0]["install"] is False
+    assert calls[0]["choice"] == "system"
     assert ctx.wine_provider_choice() == "system"
     ctx.wine_choice = None
     assert ctx.wine_provider_choice() == "managed"
@@ -155,7 +164,9 @@ def test_wine_env_layout_and_pathmap(ctx: Ctx) -> None:
     assert env["WINEPREFIX"] == str(ctx.paths.prefix)
     assert env["WINEDLLOVERRIDES"] == "mscoree=;winemenubuilder.exe=d"
     layout = ctx.layout
-    assert isinstance(layout, ForkLayout) and ctx.layout is layout and layout.user == USER
+    assert isinstance(layout, ForkLayout)
+    assert ctx.layout is layout
+    assert layout.user == USER
     dosdevices = ctx.paths.prefix / "dosdevices"
     dosdevices.mkdir(parents=True)
     (dosdevices / "z:").symlink_to("/")
@@ -176,7 +187,8 @@ def test_default_steps_are_the_steps_package() -> None:
 def test_inputs_hash_depends_on_inputs_and_rev(ctx: Ctx, rec: Recorder) -> None:
     one = rec.step("a")
     first = bootstrap.inputs_hash(one, ctx)
-    assert first == bootstrap.inputs_hash(one, ctx) and len(first) == 64
+    assert first == bootstrap.inputs_hash(one, ctx)
+    assert len(first) == 64
     rec.values["a"] = 5
     assert bootstrap.inputs_hash(one, ctx) != first
     assert bootstrap.inputs_hash(rec.step("a", rev=2), ctx) != bootstrap.inputs_hash(one, ctx)
@@ -223,7 +235,8 @@ def test_pending_and_clear_markers(ctx: Ctx, rec: Recorder, monkeypatch: pytest.
     assert _ids(bootstrap.pending(ctx)) == ["pre", "b"]
     bootstrap.mark_done(listed[2], ctx)
     bootstrap.clear_markers(ctx, keep=["b"])
-    assert ctx.state.step_marker("a") is None and ctx.state.step_marker("b") is not None
+    assert ctx.state.step_marker("a") is None
+    assert ctx.state.step_marker("b") is not None
 
 
 def test_init_prefix_meta_creates_private_prefix_and_marker(ctx: Ctx) -> None:
@@ -262,17 +275,20 @@ def test_run_step_failures_record_last_error(
 ) -> None:
     bootstrap.init_prefix_meta(ctx)
     ctx.log_file = ctx.paths.logs_dir / "setup.log"
+    step = rec.step("a", error=error)
     with pytest.raises(expected) as caught:
-        bootstrap.run_step(ctx, rec.step("a", error=error))
+        bootstrap.run_step(ctx, step)
     assert (caught.value is error) is same
     saved = state_mod.State.load(ctx.paths.state_file)
     last = saved.get(bootstrap.LAST_ERROR)
-    assert last["step"] == "a" and last["log"] == str(ctx.log_file)
+    assert last["step"] == "a"
+    assert last["log"] == str(ctx.log_file)
     assert saved.get("setup.complete") is False
     assert saved.step_marker("a") is None
     if expected is SetupFailed and not same:
         assert caught.value.step == "a"
-        assert "setup.log" in caught.value.hint and "resume" in caught.value.hint
+        assert "setup.log" in caught.value.hint
+        assert "resume" in caught.value.hint
     if isinstance(error, ForkLinuxError) and not same:
         assert caught.value.hint.startswith("do this")
 
@@ -280,8 +296,9 @@ def test_run_step_failures_record_last_error(
 def test_run_step_verify_failure(ctx: Ctx, rec: Recorder) -> None:
     bootstrap.init_prefix_meta(ctx)
     rec.ok["a"] = False
+    step = rec.step("a")
     with pytest.raises(SetupFailed, match="could not be verified") as caught:
-        bootstrap.run_step(ctx, rec.step("a"))
+        bootstrap.run_step(ctx, step)
     assert caught.value.hint == "run 'fork-linux setup' again to resume at this step"
     assert ctx.state.get(bootstrap.LAST_ERROR)["log"] is None
 
@@ -290,15 +307,17 @@ def test_failure_is_recorded_even_when_saving_fails(ctx: Ctx, rec: Recorder) -> 
     # A directory where state.json belongs: saving fails, the original error still wins.
     ctx.paths.state_file.mkdir(parents=True)
     rec.ok["a"] = False
+    step = rec.step("a")
     with pytest.raises(SetupFailed, match="could not be verified"):
-        bootstrap.run_step(ctx, rec.step("a"))
+        bootstrap.run_step(ctx, step)
     assert ctx.paths.state_file.is_dir()
 
 
 def test_keyboard_interrupt_leaves_no_marker(ctx: Ctx, rec: Recorder) -> None:
     bootstrap.init_prefix_meta(ctx)
+    step = rec.step("a", error=KeyboardInterrupt())
     with pytest.raises(KeyboardInterrupt):
-        bootstrap.run_step(ctx, rec.step("a", error=KeyboardInterrupt()))
+        bootstrap.run_step(ctx, step)
     assert ctx.state.step_marker("a") is None
 
 
@@ -383,16 +402,18 @@ def _fork_process(proc: Path, prefix: Path) -> None:
 def test_run_steps_refuses_while_fork_runs(ctx: Ctx, rec: Recorder) -> None:
     ctx.paths.prefix.mkdir(parents=True)
     _fork_process(ctx.proc_root, ctx.paths.prefix)
+    listed = [rec.step("a")]
     with pytest.raises(ForkRunning):
-        bootstrap.run_steps(ctx, [rec.step("a")])
+        bootstrap.run_steps(ctx, listed)
     assert rec.runs == []
     # Steps that do not need Fork closed still run.
     assert bootstrap.run_steps(ctx, [rec.step("b", closed=False)]) == ["b"]
 
 
 def test_run_steps_holds_the_lock(ctx: Ctx, rec: Recorder) -> None:
+    listed = [rec.step("a")]
     with FileLock(ctx.paths.lock_file, "update"), pytest.raises(Locked):
-        bootstrap.run_steps(ctx, [rec.step("a")])
+        bootstrap.run_steps(ctx, listed)
 
     seen: list[bool] = []
 
@@ -471,8 +492,9 @@ def test_ensure_ready_defers_closed_steps_while_fork_runs(ctx: Ctx, rec: Recorde
 def test_ensure_ready_before_setup_completed_refuses_while_fork_runs(ctx: Ctx, rec: Recorder) -> None:
     ctx.paths.prefix.mkdir(parents=True)
     _fork_process(ctx.proc_root, ctx.paths.prefix)
+    listed = [rec.step("a")]
     with pytest.raises(ForkRunning):
-        bootstrap.ensure_ready(ctx, steps=[rec.step("a")])
+        bootstrap.ensure_ready(ctx, steps=listed)
 
 
 def test_update_completion_uses_default_steps(ctx: Ctx, rec: Recorder, monkeypatch: pytest.MonkeyPatch) -> None:

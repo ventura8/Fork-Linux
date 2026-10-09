@@ -121,8 +121,8 @@ def replacements(ctx: Ctx) -> dict[str, str]:
     families = installed_families(ctx)
     sans = _pick(families, SANS_CHOICES, SANS_FALLBACK)
     mono = _pick(families, MONO_CHOICES, MONO_FALLBACK)
-    chosen = {name: sans for name in SANS_FAMILIES}
-    chosen.update({name: mono for name in MONO_FAMILIES})
+    chosen = dict.fromkeys(SANS_FAMILIES, sans)
+    chosen.update(dict.fromkeys(MONO_FAMILIES, mono))
     return chosen
 
 

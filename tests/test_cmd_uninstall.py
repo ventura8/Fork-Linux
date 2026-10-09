@@ -69,11 +69,14 @@ def test_without_purge_only_removes_the_integration(
 ) -> None:
     code, out, _err = run_cli(capsys, "uninstall")
     assert code == 0
-    assert "removed 1 desktop integration file(s)" in out and "--purge" in out
+    assert "removed 1 desktop integration file(s)" in out
+    assert "--purge" in out
     assert removed == [1]
-    assert ours.prefix.is_dir() and ours.config_dir.is_dir()
+    assert ours.prefix.is_dir()
+    assert ours.config_dir.is_dir()
     result = run_json(capsys, "uninstall")
-    assert result["purged"] is False and len(result["integration_removed"]) == 1
+    assert result["purged"] is False
+    assert len(result["integration_removed"]) == 1
     assert "removed" not in result
 
 
@@ -82,10 +85,13 @@ def test_purge_needs_confirmation(
 ) -> None:
     monkeypatch.setattr(uninstall, "_ask", lambda prompt: None)
     code, _out, err = run_cli(capsys, "uninstall", "--purge")
-    assert code == 18 and "Help > Activation > Deactivate" in err and "--yes" in err
+    assert code == 18
+    assert "Help > Activation > Deactivate" in err
+    assert "--yes" in err
     monkeypatch.setattr(uninstall, "_ask", lambda prompt: "yes")
     assert run_cli(capsys, "uninstall", "--purge")[0] == 18
-    assert removed == [] and ours.prefix.is_dir()
+    assert removed == []
+    assert ours.prefix.is_dir()
 
 
 def test_purge_deletes_everything_we_created(
@@ -98,15 +104,18 @@ def test_purge_deletes_everything_we_created(
         assert not directory.exists(), directory
     assert not ours.session_file.exists()
     assert (xdg / ".wine" / "E2E_SENTINEL").read_text(encoding="utf-8") == "keep"
-    assert f"deleted {ours.prefix}" in out and "~/.wine was never touched" in out
+    assert f"deleted {ours.prefix}" in out
+    assert "~/.wine was never touched" in out
 
 
 def test_purge_keep_downloads_and_json(capsys: pytest.CaptureFixture[str], removed: list[int], ours: Paths) -> None:
     result = run_json(capsys, "uninstall", "--purge", "--yes", "--keep-downloads")
     assert (ours.downloads_dir / "file").exists()
-    assert not ours.feeds_dir.exists() and not (ours.cache_dir / "file").exists()
+    assert not ours.feeds_dir.exists()
+    assert not (ours.cache_dir / "file").exists()
     assert result["kept"] == [str(ours.downloads_dir)]
-    assert result["purged"] is True and result["wineserver_stopped"] is False
+    assert result["purged"] is True
+    assert result["wineserver_stopped"] is False
     assert str(ours.prefix) in result["removed"]
 
 
@@ -153,13 +162,15 @@ def test_foreign_prefixes_are_kept(tmp_path: Path, xdg: Path) -> None:
     (elsewhere / "user.reg").write_text("x", encoding="utf-8")
     custom = Paths(base.config_dir, base.data_dir, base.cache_dir, base.state_dir, base.runtime_dir, elsewhere)
     result = uninstall._purge(_ctx(custom, xdg), _purge_args())
-    assert result["kept"] == [str(elsewhere)] and elsewhere.is_dir()
+    assert result["kept"] == [str(elsewhere)]
+    assert elsewhere.is_dir()
     wine_home = xdg / ".wine"
     (wine_home / ".fork-linux").mkdir(parents=True)
     (wine_home / ".fork-linux" / "created-by").write_text("forged", encoding="utf-8")
     custom = Paths(base.config_dir, base.data_dir, base.cache_dir, base.state_dir, base.runtime_dir, wine_home)
     result = uninstall._purge(_ctx(custom, xdg), _purge_args())
-    assert result["kept"] == [str(wine_home)] and wine_home.is_dir()
+    assert result["kept"] == [str(wine_home)]
+    assert wine_home.is_dir()
 
 
 def test_marked_prefix_outside_our_data_dir_is_deleted(tmp_path: Path, xdg: Path) -> None:
@@ -168,14 +179,16 @@ def test_marked_prefix_outside_our_data_dir_is_deleted(tmp_path: Path, xdg: Path
     custom = Paths(base.config_dir, base.data_dir, base.cache_dir, base.state_dir, base.runtime_dir, elsewhere)
     make_prefix(custom)
     result = uninstall._purge(_ctx(custom, xdg), _purge_args())
-    assert str(elsewhere) in result["removed"] and not elsewhere.exists()
+    assert str(elsewhere) in result["removed"]
+    assert not elsewhere.exists()
 
 
 def test_unmarked_prefix_inside_our_data_dir_goes_with_it(tmp_path: Path, xdg: Path) -> None:
     where = paths()
     where.prefix.mkdir(parents=True)
     result = uninstall._purge(_ctx(where, xdg), _purge_args())
-    assert result["removed"] == [str(where.data_dir)] and not where.prefix.exists()
+    assert result["removed"] == [str(where.data_dir)]
+    assert not where.prefix.exists()
 
 
 def test_running_wine_is_stopped_first(tmp_path: Path, xdg: Path, monkeypatch: pytest.MonkeyPatch) -> None:

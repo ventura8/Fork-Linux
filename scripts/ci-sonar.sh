@@ -20,8 +20,11 @@
 #                   In CI: the SONAR_TOKEN repository secret.
 #
 # Optional:
-#   FL_SONAR_COVERAGE=1  — regenerate artifacts/coverage/coverage.xml with pytest on
-#                          the host first (otherwise an existing report is reused).
+#   FL_SONAR_COVERAGE=1  — regenerate the coverage reports first (otherwise existing
+#                          ones are reused): artifacts/coverage/coverage.xml with pytest
+#                          on the host, and artifacts/coverage/c-coverage.xml with
+#                          scripts/ci-c-coverage.sh (native unit + daemon tests and the
+#                          Wine tier against --coverage builds of the bridge, in Docker).
 #   FL_SONAR_IMAGE       — override the pinned scanner image.
 set -euo pipefail
 
@@ -65,7 +68,8 @@ check_token() {
 	fi
 	message="SONAR_TOKEN is invalid or expired. Create a new one at ${SONAR_HOST}/account/security, then update .sonar-token (local) and the SONAR_TOKEN repository secret (CI)."
 	if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
-		echo "::error title=SonarQube Cloud token::${message}"
+		# The runner reads workflow commands from stderr as well as stdout.
+		echo "::error title=SonarQube Cloud token::${message}" >&2
 	fi
 	echo "error: ${message}" >&2
 	exit 2
@@ -77,6 +81,8 @@ ensure_coverage() {
 		mkdir -p "$(dirname "${COVERAGE_XML}")"
 		python3 -m pytest -q -p no:cacheprovider --cov=fork_linux --cov-branch \
 			--cov-report="xml:${COVERAGE_XML}" tests
+		echo "==> refreshing C coverage (scripts/ci-c-coverage.sh)"
+		"${ROOT}/scripts/ci-c-coverage.sh"
 	fi
 	if [[ ! -f "${COVERAGE_XML}" ]]; then
 		echo "==> note: ${COVERAGE_XML#"${ROOT}"/} is missing — analysing without Python coverage."

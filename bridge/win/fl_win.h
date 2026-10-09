@@ -52,10 +52,16 @@
 
 /* ---- diagnostics -------------------------------------------------------- */
 
+struct flw_buf;
+
 /* Set the program name used as the prefix of every message ("fl-shim", ...). */
 void flw_set_prog(const char *name);
-/* Print "<prog>: <message>\n" on our stderr handle (works in GUI-subsystem builds). */
-void flw_msg(const char *fmt, ...);
+/* Print "<prog>: <text>\n" on our stderr handle (works in GUI-subsystem builds). */
+void flw_msg(const char *text);
+/* flw_msg of pre + s + post. */
+void flw_msg_s(const char *pre, const char *s, const char *post);
+/* flw_msg of the text built in m (an out-of-memory buffer prints what it holds); frees m. */
+void flw_msg_buf(struct flw_buf *m);
 
 /* ---- text --------------------------------------------------------------- */
 
@@ -66,6 +72,8 @@ char *flw_utf8(const wchar_t *w);
 char *flw_utf8n(const wchar_t *w, size_t n);
 /* malloc'd UTF-16 copy of a NUL-terminated UTF-8 string; NULL on error. */
 wchar_t *flw_utf16(const char *s);
+/* malloc'd UTF-16 copy of n UTF-8 bytes (no terminator needed); NULL on error. */
+wchar_t *flw_utf16n(const char *s, size_t n);
 /* malloc'd copy of s; NULL on error. */
 char *flw_strdup(const char *s);
 /* malloc'd UTF-8 value of an environment variable; NULL when unset. */
@@ -150,10 +158,11 @@ void flw_xlate_init(struct fl_xlate *x, const struct flw_cfg *c);
  * strings, without the per-drive "=C:=..." entries, without FL_BRIDGE_*
  * (bridge configuration, including the token, never reaches the Unix side) and
  * without variables that are not valid UTF-16 (lone surrogates).
- * NULL on error; free with flw_free_strv.
+ * *n receives the number of strings. NULL on error; free with flw_free_strv(v, *n).
  */
-char **flw_environ(void);
-void flw_free_strv(char **v);
+char **flw_environ(size_t *n);
+/* Free the first n strings of v, then v itself (v may be NULL). */
+void flw_free_strv(char **v, size_t n);
 
 /* ---- JSON-line call log (FL_BRIDGE_LOG) --------------------------------- */
 
@@ -214,7 +223,33 @@ typedef void (*flw_exit_hook)(void *ud, UINT code);
 void flw_set_exit_hook(flw_exit_hook fn, void *ud);
 /* Run the exit hook, stop and join the stdin pump (B2 fix 1), ExitProcess(code). */
 _Noreturn void flw_exit(UINT code);
-/* Print "<prog>: <message>\n" and flw_exit(125). */
-_Noreturn void flw_fail(const char *fmt, ...);
+/* flw_msg(text) and flw_exit(125). */
+_Noreturn void flw_fail(const char *text);
+/* flw_msg_s(pre, s, post) and flw_exit(125). */
+_Noreturn void flw_fail_s(const char *pre, const char *s, const char *post);
+/* flw_msg of pre + decimal n + post and flw_exit(125). */
+_Noreturn void flw_fail_n(const char *pre, long long n, const char *post);
+/* flw_msg_buf(m) and flw_exit(125). */
+_Noreturn void flw_fail_buf(struct flw_buf *m);
+
+/* ---- shared by the fl-shim and fl-launch entry points ------------------- */
+
+/* malloc'd NULL-terminated UTF-8 copy of wargv[0..argc); exits 125 on failure. */
+char **flw_args_utf8(int argc, wchar_t **wargv);
+/* malloc / calloc / flw_strdup that print "out of memory" and exit 125 on failure. */
+void *flw_xmalloc(size_t n);
+void *flw_xcalloc(size_t n, size_t size);
+char *flw_xstrdup(const char *s);
+
+#define FLW_XLATE_BUF (64u * 1024u)  /* longest translated argument */
+/* out = argv[0..argc) with every whole-argument Windows-absolute path that maps turned
+ * into its Unix path (others unchanged); 0, or -1 when out of memory (out partially
+ * filled: release with fl_strvec_free). */
+int flw_xlate_args(const struct fl_xlate *x, int argc, char *const *argv, struct fl_strvec *out);
+/* fl_translate_env of flw_environ(); exits 125 on failure. */
+void flw_translate_environ(const struct fl_xlate *x, struct fl_envops *ops);
+/* flw_connect + flw_handshake (the key is wiped afterwards) + flw_send_req; exits 125
+ * on failure. */
+void flw_start_call(struct flw_cfg *cfg, const struct fl_req *req);
 
 #endif /* FL_WIN_H */

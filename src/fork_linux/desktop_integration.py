@@ -509,6 +509,41 @@ def _refresh(dirs: _Dirs, env: Mapping[str, str], runner: Runner, *, menu: bool,
             log.debug("%s exited with %d", argv[0], result.returncode)
 
 
+def _install_menu(
+    dirs: _Dirs, cmd: list[str], registry: _Registry, system_desktop_present: bool | None, installed: list[Path]
+) -> bool:
+    """Write the personal menu entry unless a packaged one exists; True if the menu changed."""
+    system = _system_desktop(dirs) if system_desktop_present is None else None
+    if system is not None or system_desktop_present:
+        log.info("a packaged menu entry exists (%s); not adding a personal one", system)
+        return _remove_owned(dirs.menu_file, registry)
+    if _write_owned(dirs.menu_file, _render_menu(cmd).encode("utf-8"), 0o644, MENU, registry):
+        installed.append(dirs.menu_file)
+        return True
+    return False
+
+
+def _install_icons(fork_exe: Path, dirs: _Dirs, registry: _Registry) -> list[Path]:
+    """Extract Fork's icon into the hicolor theme and record the PNGs written."""
+    try:
+        pngs = icon_extract.extract_icons(fork_exe, dirs.hicolor, APP_ID)
+    except ForkLinuxError as exc:
+        log.warning("cannot extract Fork's icon from %s: %s", fork_exe, exc)
+        pngs = []
+    for png in pngs:
+        registry.record(png, ICON, sha256=fsutil.sha256_file(png))
+    return pngs
+
+
+def _install_kind(kind: str, dirs: _Dirs, cmd: list[str], registry: _Registry) -> list[Path]:
+    """Install one file-manager integration; the path written, if any."""
+    if kind == THUNAR:
+        return [dirs.thunar_uca] if _install_thunar(dirs, cmd, registry) else []
+    content, mode = _render_kind(kind, cmd)
+    path = dirs.kind_path(kind)
+    return [path] if _write_owned(path, content.encode("utf-8"), mode, kind, registry) else []
+
+
 def install(
     paths: Paths,
     env: Mapping[str, str] | None = None,
@@ -535,33 +570,14 @@ def install(
     kinds = _kinds(file_managers)
     registry = _Registry.load(paths.integrations_file)
     installed: list[Path] = []
-    menu_changed = icons_changed = False
-    if menu:
-        system = _system_desktop(dirs) if system_desktop_present is None else None
-        if system is not None or system_desktop_present:
-            log.info("a packaged menu entry exists (%s); not adding a personal one", system)
-            menu_changed = _remove_owned(dirs.menu_file, registry)
-        elif _write_owned(dirs.menu_file, _render_menu(cmd).encode("utf-8"), 0o644, MENU, registry):
-            installed.append(dirs.menu_file)
-            menu_changed = True
+    menu_changed = menu and _install_menu(dirs, cmd, registry, system_desktop_present, installed)
+    icons_changed = False
     if icons and fork_exe is not None and Path(fork_exe).is_file():
-        try:
-            pngs = icon_extract.extract_icons(Path(fork_exe), dirs.hicolor, APP_ID)
-        except ForkLinuxError as exc:
-            log.warning("cannot extract Fork's icon from %s: %s", fork_exe, exc)
-            pngs = []
-        for png in pngs:
-            registry.record(png, ICON, sha256=fsutil.sha256_file(png))
+        pngs = _install_icons(Path(fork_exe), dirs, registry)
         installed.extend(pngs)
         icons_changed = bool(pngs)
     for kind in kinds:
-        if kind == THUNAR:
-            if _install_thunar(dirs, cmd, registry):
-                installed.append(dirs.thunar_uca)
-            continue
-        content, mode = _render_kind(kind, cmd)
-        if _write_owned(dirs.kind_path(kind), content.encode("utf-8"), mode, kind, registry):
-            installed.append(dirs.kind_path(kind))
+        installed.extend(_install_kind(kind, dirs, cmd, registry))
     if cli_alias:
         installed.extend(_install_aliases(dirs, cmd, registry))
     registry.save()

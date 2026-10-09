@@ -77,6 +77,11 @@ log = logging.getLogger(__name__)
 SCHEMA = 1
 STATUSES = ("ok", "info", "warn", "fail")
 NOT_OK = ("warn", "fail")
+
+_NO_WINE = "no usable Wine"
+_NOT_INSTALLED = "Fork is not installed"
+_NOTHING_TO_DO = "nothing to do"
+_RUN_FIX = "run 'fork-linux doctor --fix'"
 X86_64 = ("x86_64", "amd64")
 MIN_PYTHON = (3, 10)
 FC_LIST_TIMEOUT = 30.0
@@ -565,7 +570,7 @@ def check_wine_version(ctx: DoctorCtx) -> Result:
     """Managed: the build is complete and pinned; others: at least the minimum version."""
     info = ctx.wine()
     if info is None:
-        return _skip("no usable Wine")
+        return _skip(_NO_WINE)
     if info.provider == "managed" and info.build_id is not None:
         build = ctx.manifest.wine_build(info.build_id)
         if not wine_provider.is_installed(ctx.paths, build):
@@ -589,7 +594,7 @@ def check_wine_staging(ctx: DoctorCtx) -> Result:
     """A staging build: on other builds hooks and bash custom commands hang (Wine bug 55138)."""
     info = ctx.wine()
     if info is None:
-        return _skip("no usable Wine")
+        return _skip(_NO_WINE)
     if info.staging:
         return Result("ok", f"wine {info.version} is a staging build")
     return Result(
@@ -654,7 +659,7 @@ def check_wineserver(ctx: DoctorCtx) -> Result:
     """No process in our prefix runs with a wineserver from another Wine build."""
     info = ctx.wine()
     if info is None:
-        return _skip("no usable Wine")
+        return _skip(_NO_WINE)
     foreign = foreign_wineservers(ctx, info)
     if foreign:
         listed = ", ".join(f"pid {pid} ({server})" for pid, server in foreign)
@@ -695,10 +700,10 @@ def check_dotnet(ctx: DoctorCtx) -> Result:
     found = dotnet_step.release(ctx.boot)
     minimum = ctx.manifest.dotnet_min_release
     if found is None:
-        return Result("fail", ".NET Framework 4.x is not installed", "run 'fork-linux doctor --fix'")
+        return Result("fail", ".NET Framework 4.x is not installed", _RUN_FIX)
     if found < minimum:
         return Result(
-            "fail", f".NET Framework release {found} is older than {minimum}", "run 'fork-linux doctor --fix'"
+            "fail", f".NET Framework release {found} is older than {minimum}", _RUN_FIX
         )
     return Result("ok", f".NET Framework release {found} (>= {minimum})")
 
@@ -709,10 +714,10 @@ def check_corefonts(ctx: DoctorCtx) -> Result:
         return _skip(NO_PREFIX)
     found = fonts_step.arial(ctx.boot)
     if found is None:
-        return Result("fail", "Microsoft core fonts are not installed", "run 'fork-linux doctor --fix'")
+        return Result("fail", "Microsoft core fonts are not installed", _RUN_FIX)
     if not fonts_step.verify_fonts(ctx.boot):
         return Result(
-            "warn", "Microsoft core fonts are only partly installed", "run 'fork-linux doctor --fix'"
+            "warn", "Microsoft core fonts are only partly installed", _RUN_FIX
         )
     return Result("ok", f"core fonts installed ({found.name})")
 
@@ -725,7 +730,7 @@ def check_font_replacements(ctx: DoctorCtx) -> Result:
     wrong = [name for name, target in wanted.items() if _reg(ctx, fonts_step.REPLACEMENTS_KEY, name) != target]
     if wrong:
         return Result(
-            "warn", f"replacements missing or outdated for: {', '.join(wrong)}", "run 'fork-linux doctor --fix'"
+            "warn", f"replacements missing or outdated for: {', '.join(wrong)}", _RUN_FIX
         )
     return Result("ok", ", ".join(f"{name} -> {target}" for name, target in sorted(wanted.items())))
 
@@ -739,7 +744,7 @@ def _registry_result(ctx: DoctorCtx, key: str, name: str, expected: object, what
     return Result(
         "fail",
         f"{key}\\{name} is {value!r}, expected {expected!r}",
-        "run 'fork-linux doctor --fix'",
+        _RUN_FIX,
     )
 
 
@@ -813,7 +818,7 @@ def check_menubuilder(ctx: DoctorCtx) -> Result:
         return Result(
             "fail",
             "winemenubuilder is not disabled in the prefix (it would add Wine entries to your menu)",
-            "run 'fork-linux doctor --fix'",
+            _RUN_FIX,
         )
     if leftovers:
         return Result(
@@ -835,7 +840,7 @@ def fix_menubuilder(ctx: DoctorCtx) -> str:
     if _has_prefix(ctx) and _menubuilder_override(ctx) not in MENUBUILDER_OFF_VALUES:
         bootstrap.run_steps(ctx.boot, only=["registry"])
         done.append("re-ran setup step registry")
-    return "; ".join(done) or "nothing to do"
+    return "; ".join(done) or _NOTHING_TO_DO
 
 
 def check_dpi(ctx: DoctorCtx) -> Result:
@@ -846,7 +851,7 @@ def check_dpi(ctx: DoctorCtx) -> Result:
     value = _reg(ctx, display_step.DESKTOP_KEY, display_step.LOG_PIXELS)
     if value == wanted:
         return Result("ok", f"{wanted} DPI")
-    return Result("warn", f"LogPixels is {value!r}, expected {wanted}", "run 'fork-linux doctor --fix'")
+    return Result("warn", f"LogPixels is {value!r}, expected {wanted}", _RUN_FIX)
 
 
 # -- fork ------------------------------------------------------------------------------------------
@@ -876,7 +881,7 @@ def check_fork_version(ctx: DoctorCtx) -> Result:
     """The installed version is known-good (not known-bad); with --network: is a newer one out?"""
     installed = ctx.layout.installed_version()
     if installed is None:
-        return _skip("Fork is not installed")
+        return _skip(_NOT_INSTALLED)
     reason = ctx.manifest.known_bad_reason(installed)
     if reason is not None:
         return Result(
@@ -907,7 +912,7 @@ def check_fork_integrity(ctx: DoctorCtx) -> Result:
     """The installed full package matches the sha256 pinned in the manifest."""
     installed = ctx.layout.installed_version()
     if installed is None:
-        return _skip("Fork is not installed")
+        return _skip(_NOT_INSTALLED)
     entry = ctx.manifest.fork_version(installed)
     if entry is None:
         return Result("info", f"no pinned package sha256 for Fork {installed}")
@@ -938,7 +943,7 @@ def check_gitinstance(ctx: DoctorCtx) -> Result:
     """Fork's bundled Git for Windows is unpacked."""
     layout = ctx.layout
     if not layout.is_installed():
-        return _skip("Fork is not installed")
+        return _skip(_NOT_INSTALLED)
     found = layout.git_instances()
     if found:
         return Result("ok", f"bundled git {', '.join(found)}")
@@ -984,7 +989,7 @@ def check_pending_update(ctx: DoctorCtx) -> Result:
     layout = ctx.layout
     installed = layout.installed_version()
     if installed is None:
-        return _skip("Fork is not installed")
+        return _skip(_NOT_INSTALLED)
     staged = sorted({version for version, _path in layout.staged_packages()}, key=versions.Version)
     if not staged:
         return Result("ok", "no staged Fork update")
@@ -1091,7 +1096,7 @@ def fix_fork_tools(ctx: DoctorCtx) -> str:
     if fork_tools.SHELL_TOOL in wanted and terminal is not None:
         wanted[fork_tools.SHELL_TOOL] = terminal
     changed = settings_mod.apply(ctx.layout, wanted, backup_dir=settings_mod.default_backup_dir(ctx.paths))
-    return f"reset {', '.join(changed)}" if changed else "nothing to do"
+    return f"reset {', '.join(changed)}" if changed else _NOTHING_TO_DO
 
 
 def _home_win(ctx: DoctorCtx) -> str:
@@ -1122,7 +1127,7 @@ def fix_source_dirs(ctx: DoctorCtx) -> str:
     written = fork_data.ensure_source_dirs(
         ctx.layout.forkdata_dir, user=ctx.user, home_win=home, backup_dir=settings_mod.default_backup_dir(ctx.paths)
     )
-    return f"source folder set to {home}" if written else "nothing to do"
+    return f"source folder set to {home}" if written else _NOTHING_TO_DO
 
 
 def check_integration(ctx: DoctorCtx) -> Result:
@@ -1135,7 +1140,7 @@ def check_integration(ctx: DoctorCtx) -> Result:
         return Result(
             "warn",
             f"{len(wrong)} of {len(expected)} file-manager / open redirects are missing",
-            "run 'fork-linux doctor --fix'",
+            _RUN_FIX,
         )
     explorer = any("App Paths" in key for key, _name, _value in expected)
     drive = integration_step.home_drive(ctx.boot)
@@ -1244,10 +1249,10 @@ def _fix_repos(ctx: DoctorCtx, *, filemode: bool, symlinks: bool, what: str) -> 
     """Apply :func:`repos.fix` to the scanned repositories after the user confirmed."""
     reports = _repo_reports(ctx)
     if isinstance(reports, Result):
-        return "nothing to do"
+        return _NOTHING_TO_DO
     targets = [r for r in reports if (filemode and r.filemode) or (symlinks and r.symlinks)]
     if not targets:
-        return "nothing to do"
+        return _NOTHING_TO_DO
     listed = "\n".join(f"  {report.path}" for report in targets)
     if not ctx.ui.confirm(
         "Change your repositories?",
@@ -1352,12 +1357,12 @@ def check_git_overlay(ctx: DoctorCtx) -> Result:
     gitconfig_file = ctx.paths.wine_user_dir(ctx.user) / ".gitconfig"
     text = _read_text(gitconfig_file, HIVE_HEAD_BYTES) or ""
     if not overlay.is_file() or gitconfig.MARK_BEGIN not in text:
-        return Result("warn", "the translated git config is not in place" + env_note, "run 'fork-linux doctor --fix'")
+        return Result("warn", "the translated git config is not in place" + env_note, _RUN_FIX)
     if gitconfig.MANAGED_HEADER.strip() not in repos.overlay_text(ctx.paths, ctx.user):
         return Result(
             "warn",
             "the git overlay predates the remote-path and credential fixes" + env_note,
-            "run 'fork-linux doctor --fix'",
+            _RUN_FIX,
         )
     return Result("ok", f"{overlay}{env_note}")
 
@@ -1382,7 +1387,7 @@ def check_git_selftest(ctx: DoctorCtx) -> Result:
     """Fork's bundled git runs under Wine and a fresh repository is clean (deep)."""
     info = ctx.wine()
     if info is None:
-        return _skip("no usable Wine")
+        return _skip(_NO_WINE)
     instances = ctx.layout.git_instances()
     if not instances:
         return _skip("Fork's bundled git is not unpacked yet")
@@ -1480,7 +1485,7 @@ def check_desktop_entry(ctx: DoctorCtx) -> Result:
     if layout_installed and not _icons(ctx):
         level = "warn"
         notes.append("Fork's icon is not installed")
-        hint = "run 'fork-linux doctor --fix'"
+        hint = _RUN_FIX
     return Result(level, "; ".join(notes), hint)
 
 
@@ -1669,7 +1674,7 @@ def run_checks(
 
 def summary(results: Iterable[tuple[Check, Result]]) -> dict[str, int]:
     """How many results have each status."""
-    counts = {status: 0 for status in ("ok", "warn", "fail", "info")}
+    counts = dict.fromkeys(("ok", "warn", "fail", "info"), 0)
     for _check, result in results:
         counts[result.status] += 1
     return counts
@@ -1700,6 +1705,32 @@ def failed(results: Iterable[tuple[Check, Result]]) -> list[str]:
     return [check.id for check, result in results if result.status == "fail"]
 
 
+def _run_fixers(ctx: DoctorCtx, checks: Sequence[Check], report: FixReport) -> list[str]:
+    """Run the custom fixers of ``checks``; return the setup steps the other checks want re-run."""
+    step_ids: list[str] = []
+    for check in checks:
+        if check.fixer is not None:
+            try:
+                report.actions.append(f"{check.id}: {check.fixer(ctx)}")
+            except (ForkLinuxError, OSError) as exc:
+                report.errors.append(f"{check.id}: {exc}")
+            continue
+        for step_id in check.fix_steps:
+            if step_id not in step_ids:
+                step_ids.append(step_id)
+    return step_ids
+
+
+def _rerun_steps(ctx: DoctorCtx, step_ids: list[str], report: FixReport) -> None:
+    """Re-run ``step_ids`` in setup order, recording the outcome in ``report``."""
+    ordered = [step_id for step_id in steps.STEP_IDS if step_id in step_ids]
+    try:
+        ran = bootstrap.run_steps(ctx.boot, only=ordered)
+        report.actions.append("re-ran setup steps: " + ", ".join(step for step in ran if step in ordered))
+    except ForkLinuxError as exc:
+        report.errors.append(exc.message + (f" ({exc.hint})" if exc.hint else ""))
+
+
 def fix(ctx: DoctorCtx, results: Sequence[tuple[Check, Result]]) -> FixReport:
     """Repair the fixable checks that warn or fail, then check them again.
 
@@ -1710,24 +1741,9 @@ def fix(ctx: DoctorCtx, results: Sequence[tuple[Check, Result]]) -> FixReport:
     """
     report = FixReport(results=list(results))
     targets = [(check, result) for check, result in results if result.status in NOT_OK and check.fixable]
-    step_ids: list[str] = []
-    for check, _result in targets:
-        if check.fixer is not None:
-            try:
-                report.actions.append(f"{check.id}: {check.fixer(ctx)}")
-            except (ForkLinuxError, OSError) as exc:
-                report.errors.append(f"{check.id}: {exc}")
-            continue
-        for step_id in check.fix_steps:
-            if step_id not in step_ids:
-                step_ids.append(step_id)
+    step_ids = _run_fixers(ctx, [check for check, _result in targets], report)
     if step_ids:
-        ordered = [step_id for step_id in steps.STEP_IDS if step_id in step_ids]
-        try:
-            ran = bootstrap.run_steps(ctx.boot, only=ordered)
-            report.actions.append("re-ran setup steps: " + ", ".join(step for step in ran if step in ordered))
-        except ForkLinuxError as exc:
-            report.errors.append(exc.message + (f" ({exc.hint})" if exc.hint else ""))
+        _rerun_steps(ctx, step_ids, report)
     if targets:
         ctx.reset()
         fixed_ids = {check.id for check, _result in targets}

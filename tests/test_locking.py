@@ -46,11 +46,17 @@ def test_context_manager(tmp_path: Path) -> None:
     assert not lock.held
 
 
+def _fail_while_holding(lock: FileLock) -> None:
+    with lock:
+        raise ValueError("boom")
+
+
 def test_context_manager_releases_on_error(tmp_path: Path) -> None:
     lock_path = tmp_path / "setup.lock"
+    lock = FileLock(lock_path, "rollback")
     with pytest.raises(ValueError):
-        with FileLock(lock_path, "rollback"):
-            raise ValueError("boom")
+        _fail_while_holding(lock)
+    assert not lock.held
     with FileLock(lock_path, "again") as lock:
         assert lock.held
 
@@ -58,8 +64,9 @@ def test_context_manager_releases_on_error(tmp_path: Path) -> None:
 def test_busy_lock_names_the_holder(tmp_path: Path) -> None:
     lock_path = tmp_path / "setup.lock"
     with FileLock(lock_path, "setup"):
+        contender = FileLock(lock_path, "uninstall")
         with pytest.raises(Locked) as info:
-            FileLock(lock_path, "uninstall").acquire()
+            contender.acquire()
     err = info.value
     assert err.exit_code == ExitCode.LOCKED
     assert f"held by pid {os.getpid()} (setup) since " in err.message
@@ -87,8 +94,9 @@ def test_busy_lock_held_by_another_process(tmp_path: Path) -> None:
     try:
         assert child.stdout is not None
         assert child.stdout.readline().strip() == "locked"
+        contender = FileLock(lock_path, "setup")
         with pytest.raises(Locked, match=rf"held by pid {child.pid} \(child-setup\)"):
-            FileLock(lock_path, "setup").acquire()
+            contender.acquire()
     finally:
         child.communicate("\n", timeout=30)
     with FileLock(lock_path, "setup") as lock:
@@ -107,8 +115,9 @@ def test_unreadable_holder_record(tmp_path: Path, content: bytes) -> None:
     lock_path = tmp_path / "setup.lock"
     fd = _hold_raw(lock_path, content)
     try:
+        contender = FileLock(lock_path, "setup")
         with pytest.raises(Locked) as info:
-            FileLock(lock_path, "setup").acquire()
+            contender.acquire()
     finally:
         os.close(fd)
     assert info.value.message.endswith("held by another process")
@@ -119,8 +128,9 @@ def test_partial_holder_record(tmp_path: Path) -> None:
     lock_path = tmp_path / "setup.lock"
     fd = _hold_raw(lock_path, json.dumps({"purpose": "doctor"}).encode())
     try:
+        contender = FileLock(lock_path, "setup")
         with pytest.raises(Locked) as info:
-            FileLock(lock_path, "setup").acquire()
+            contender.acquire()
     finally:
         os.close(fd)
     assert "held by pid ? (doctor) since ?" in info.value.message
@@ -153,8 +163,9 @@ def test_unexpected_flock_error_closes_and_propagates(tmp_path: Path, monkeypatc
 
     monkeypatch.setattr(locking.fcntl, "flock", broken_flock)
     monkeypatch.setattr(locking.os, "close", tracking_close)
+    contender = FileLock(tmp_path / "setup.lock", "setup")
     with pytest.raises(OSError, match="No locks available"):
-        FileLock(tmp_path / "setup.lock", "setup").acquire()
+        contender.acquire()
     assert len(closed) == 1
 
 
@@ -163,8 +174,9 @@ def test_symlinked_lock_file_is_refused(tmp_path: Path) -> None:
     target.write_text("keep", encoding="utf-8")
     link = tmp_path / "setup.lock"
     link.symlink_to(target)
+    contender = FileLock(link, "setup")
     with pytest.raises(ForkLinuxError, match="cannot open the lock file") as info:
-        FileLock(link, "setup").acquire()
+        contender.acquire()
     assert not isinstance(info.value, Locked)
     assert "symbolic link" in info.value.hint
     assert target.read_text(encoding="utf-8") == "keep"

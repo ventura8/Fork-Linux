@@ -59,7 +59,8 @@ def test_shims_are_copied(xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyP
     for rel in ("cmd/git.exe", "bin/git.exe", "mingw64/bin/git.exe", "bin/bash.exe", "bin/sh.exe",
                 "usr/bin/bash.exe", "usr/bin/sh.exe"):
         target = root / "gitInstance" / rel
-        assert target.read_bytes() == b"MZ shim" and not target.is_symlink(), rel
+        assert target.read_bytes() == b"MZ shim", rel
+        assert not target.is_symlink(), rel
         assert target.stat().st_mode & 0o777 == 0o755
     assert integration.verify_shims(ctx)
     integration.run_shims(ctx)
@@ -157,7 +158,8 @@ def test_icon_without_fork(xdg: Path) -> None:
     assert integration.icon_inputs(ctx) == {"exe_sha256": None}
     assert not integration.verify_icon(ctx)
     integration.run_icon(ctx)
-    assert ctx.state.get(integration.ICONS_KEY) == [] and integration.verify_icon(ctx)
+    assert ctx.state.get(integration.ICONS_KEY) == []
+    assert integration.verify_icon(ctx)
 
 
 def test_icon_extracted_from_fork_exe(xdg: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -174,7 +176,9 @@ def test_icon_extracted_from_fork_exe(xdg: Path, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(integration.desktop_integration, "install", install)
     assert len(integration.icon_inputs(ctx)["exe_sha256"]) == 64
     integration.run_icon(ctx)
-    assert calls[0]["fork_exe"] == ctx.layout.exe and calls[0]["menu"] is False and calls[0]["icons"] is True
+    assert calls[0]["fork_exe"] == ctx.layout.exe
+    assert calls[0]["menu"] is False
+    assert calls[0]["icons"] is True
     assert calls[0]["file_managers"] is None
     assert integration.verify_icon(ctx)
     png.unlink()
@@ -185,7 +189,8 @@ def test_icon_extraction_failure_is_not_fatal(xdg: Path, tmp_path: Path) -> None
     ctx = make_ctx(RecordingRunner(), env=_env(xdg, tmp_path))
     install_fork(ctx.layout)
     integration.run_icon(ctx)
-    assert ctx.state.get(integration.ICONS_KEY) == [] and integration.verify_icon(ctx)
+    assert ctx.state.get(integration.ICONS_KEY) == []
+    assert integration.verify_icon(ctx)
 
 
 # -- desktop_entry -------------------------------------------------------------------------------
@@ -197,7 +202,8 @@ def test_desktop_entry_is_installed(xdg: Path, tmp_path: Path) -> None:
     assert not integration.verify_desktop(ctx)
     integration.run_desktop(ctx)
     menu = Path(os.environ["XDG_DATA_HOME"]) / "applications" / f"{APP_ID}.desktop"
-    assert menu.is_file() and "StartupWMClass=fork.exe" in menu.read_text()
+    assert menu.is_file()
+    assert "StartupWMClass=fork.exe" in menu.read_text()
     assert integration.verify_desktop(ctx)
 
 
@@ -243,7 +249,8 @@ def test_host_integration_registers_redirects_and_the_home_drive(
     integration.run_integration(ctx)
     assert integration.verify_integration(ctx)
     drive = integration.home_drive(ctx)
-    assert drive.is_symlink() and os.readlink(drive) == str(ctx.host_home)
+    assert drive.is_symlink()
+    assert os.readlink(drive) == str(ctx.host_home)
     # A drive h: the user mapped elsewhere is kept.
     drive.unlink()
     drive.symlink_to("/srv")

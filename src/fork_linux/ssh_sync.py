@@ -44,13 +44,14 @@ PUBLIC_MODE = 0o644
 MAX_INCLUDE_DEPTH = 16
 MSYS_DRIVE = "/z"
 
+_NO_SOCKETS = "connection sharing needs Unix sockets that Wine's ssh cannot use"
 # Directives commented out, with the reason shown in the generated file.
 DROPPED = {
     "identityagent": "the agent socket of the Linux session is not reachable from Wine",
     "usekeychain": "macOS only",
-    "controlmaster": "connection sharing needs Unix sockets that Wine's ssh cannot use",
-    "controlpath": "connection sharing needs Unix sockets that Wine's ssh cannot use",
-    "controlpersist": "connection sharing needs Unix sockets that Wine's ssh cannot use",
+    "controlmaster": _NO_SOCKETS,
+    "controlpath": _NO_SOCKETS,
+    "controlpersist": _NO_SOCKETS,
     "knownhostscommand": "it runs a Linux command",
     "localcommand": "it runs a Linux command",
     "pkcs11provider": "it loads a Linux library",
@@ -65,7 +66,7 @@ PATH_LIST_KEYWORDS = frozenset({"userknownhostsfile", "globalknownhostsfile"})
 KEY_REFERENCES = frozenset({"identityfile", "certificatefile"})
 UNTRANSLATED = frozenset({"none", "/dev/null"})
 
-_KEYWORD_RE = re.compile(r"^(\s*)([A-Za-z][A-Za-z0-9]*)(?:\s*=\s*|\s+)(.*?)\s*$")
+_KEYWORD_NAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*")
 
 
 @dataclass
@@ -104,6 +105,26 @@ def _is_ssh_proxy(value: str) -> bool:
 def _has_exec(value: str) -> bool:
     """True when a ``Match`` line uses the ``exec`` (or ``!exec``) criterion."""
     return any(word.lstrip("!").lower() == "exec" for word in _split_args(value))
+
+
+def _directive_parts(line: str) -> tuple[str, str, str] | None:
+    """``(indent, keyword, value)`` of a ``Keyword value`` / ``Keyword=value`` line (no line breaks).
+
+    None for blank lines, comments and anything else that is not a directive.
+    """
+    body = line.lstrip()
+    if not body or body.startswith("#"):
+        return None
+    name = _KEYWORD_NAME_RE.match(body)
+    if name is None:
+        return None
+    after = body[name.end():]
+    rest = after.lstrip()
+    if rest.startswith("="):
+        rest = rest[1:].lstrip()
+    elif len(rest) == len(after):
+        return None
+    return line[: len(line) - len(body)], name.group(), rest.rstrip()
 
 
 class _Translator:
@@ -151,32 +172,35 @@ class _Translator:
         dropping = False
         had_headers = False
         for line in text.splitlines():
-            stripped = line.strip()
-            match = _KEYWORD_RE.match(line) if stripped and not stripped.startswith("#") else None
-            if match is None:
+            parts = _directive_parts(line)
+            if parts is None:
                 self.out.append(line)
                 continue
-            indent, keyword, value = match.groups()
+            indent, keyword, value = parts
             lower = keyword.lower()
             if lower in ("host", "match"):
                 had_headers = True
-                dropping = lower == "match" and _has_exec(value)
-                if dropping:
-                    self.drop(indent, line, MATCH_EXEC_REASON)
-                    continue
-                header = stripped
-                self.out.append(line)
-                continue
-            if dropping:
+                dropping = self.block_header(line, indent, lower, value)
+                if not dropping:
+                    header = line.strip()
+            elif dropping:
                 self.drop(indent, line, IN_MATCH_EXEC_REASON)
-                continue
-            if lower == "include":
-                self.include(value, path, stack, header)
-                continue
-            self.directive(line, indent, keyword, value)
+            elif lower == "include":
+                self.include(value, stack, header)
+            else:
+                self.directive(line, indent, keyword, value)
         return had_headers
 
-    def include(self, value: str, path: Path, stack: tuple[str, ...], header: str | None) -> None:
+    def block_header(self, line: str, indent: str, lower: str, value: str) -> bool:
+        """Copy a ``Host`` / ``Match`` line; True (and dropped) for a ``Match exec`` block."""
+        dropping = lower == "match" and _has_exec(value)
+        if dropping:
+            self.drop(indent, line, MATCH_EXEC_REASON)
+        else:
+            self.out.append(line)
+        return dropping
+
+    def include(self, value: str, stack: tuple[str, ...], header: str | None) -> None:
         """Inline every file an ``Include`` names (glob, relative to ``~/.ssh``), cycle-safe."""
         for pattern in _split_args(value):
             expanded = self.expand(pattern)
@@ -186,16 +210,20 @@ class _Translator:
             if not matches:
                 self.out.append(f"# fork-linux: Include {pattern} matched no file")
             for name in matches:
-                real = os.path.realpath(name)
-                if real in stack or len(stack) >= MAX_INCLUDE_DEPTH:
-                    self.out.append(f"# fork-linux: skipped Include {name} (include loop or too deep)")
-                    continue
-                self.out.append(f"# fork-linux: begin Include {name}")
-                changed_block = self.file(Path(name), (*stack, real))
-                self.out.append(f"# fork-linux: end Include {name}")
-                if changed_block:
-                    # The included file started its own Host/Match blocks: return to ours.
-                    self.out.append(header if header is not None else "Host *")
+                self.include_file(name, stack, header)
+
+    def include_file(self, name: str, stack: tuple[str, ...], header: str | None) -> None:
+        """Inline one included file unless it would loop or nest too deep."""
+        real = os.path.realpath(name)
+        if real in stack or len(stack) >= MAX_INCLUDE_DEPTH:
+            self.out.append(f"# fork-linux: skipped Include {name} (include loop or too deep)")
+            return
+        self.out.append(f"# fork-linux: begin Include {name}")
+        changed_block = self.file(Path(name), (*stack, real))
+        self.out.append(f"# fork-linux: end Include {name}")
+        if changed_block:
+            # The included file started its own Host/Match blocks: return to ours.
+            self.out.append(header if header is not None else "Host *")
 
     def directive(self, line: str, indent: str, keyword: str, value: str) -> None:
         """Translate (or drop) one directive line."""
@@ -238,26 +266,34 @@ def translate_config(config: Path, host_home: Path) -> tuple[str, list[tuple[str
     return text, translator.dropped, translator.referenced
 
 
+def _id_keys(host_ssh: Path) -> dict[str, Path]:
+    """The ``id_*`` private keys of ``host_ssh`` that have a ``.pub`` next to them."""
+    if not host_ssh.is_dir():
+        return {}
+    return {
+        entry.name: entry
+        for entry in host_ssh.glob("id_*")
+        if not entry.name.endswith(".pub") and entry.is_file() and entry.with_name(entry.name + ".pub").is_file()
+    }
+
+
 def _host_keys(host_ssh: Path, referenced: Iterable[Path]) -> list[tuple[str, Path]]:
     """``(relative name, host path)`` of every key file to share, sorted by name.
 
     ``id_*`` private keys that have a ``.pub``, the files the config names
     under ``~/.ssh``, and the ``.pub`` / ``-cert.pub`` next to each of them.
     """
-    found: dict[str, Path] = {}
-    if host_ssh.is_dir():
-        for entry in host_ssh.glob("id_*"):
-            if not entry.name.endswith(".pub") and entry.is_file() and entry.with_name(entry.name + ".pub").is_file():
-                found[entry.name] = entry
+    found = _id_keys(host_ssh)
     prefix = str(host_ssh) + "/"
     for path in referenced:
         if str(path).startswith(prefix) and path.is_file():
             found[str(path)[len(prefix):]] = path
-    for rel, path in list(found.items()):
-        for suffix in (".pub", "-cert.pub"):
-            companion = path.with_name(path.name + suffix)
-            if companion.is_file():
-                found[rel + suffix] = companion
+    companions = {
+        rel + suffix: path.with_name(path.name + suffix)
+        for rel, path in found.items()
+        for suffix in (".pub", "-cert.pub")
+    }
+    found.update({rel: path for rel, path in companions.items() if path.is_file()})
     return sorted(found.items())
 
 

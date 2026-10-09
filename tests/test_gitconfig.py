@@ -307,7 +307,8 @@ def test_translate_condition_quoting(pathmap: PathMap) -> None:
     # A quote in the literal part cannot be mapped to a Windows path.
     lines, notes = _translate('[includeIf "gitdir:/q\\"x/"]\n', pathmap)
     assert lines == ['[includeIf "gitdir:/q\\"x/"]']
-    assert len(notes) == 1 and "kept unchanged" in notes[0]
+    assert len(notes) == 1
+    assert "kept unchanged" in notes[0]
 
 
 def test_translate_keeps_unreachable_paths_with_a_note(paths: Paths) -> None:
@@ -379,8 +380,9 @@ def _home(tmp_path: Path, text: str | None = "[core]\n\teditor = vim\n\texcludes
 
 def test_sync_requires_the_wine_user_dir(xdg: Path, pathmap: PathMap, tmp_path: Path) -> None:
     paths = Paths.from_env(dict(os.environ))
+    home = _home(tmp_path)
     with pytest.raises(NotSetUpError):
-        gitconfig.sync(paths, "nobody", _home(tmp_path), pathmap)
+        gitconfig.sync(paths, "nobody", home, pathmap)
 
 
 def test_sync_writes_overlay_and_block(paths: Paths, pathmap: PathMap, tmp_path: Path) -> None:
@@ -488,13 +490,15 @@ def test_env_overrides_empty(tmp_path: Path) -> None:
 
 def test_env_overrides_allows_empty_values(tmp_path: Path) -> None:
     env = gitconfig.env_overrides(_config(tmp_path, env_overrides="credential.helper="))
-    assert env["GIT_CONFIG_KEY_0"] == "credential.helper" and env["GIT_CONFIG_VALUE_0"] == ""
+    assert env["GIT_CONFIG_KEY_0"] == "credential.helper"
+    assert env["GIT_CONFIG_VALUE_0"] == ""
 
 
 @pytest.mark.parametrize("item", ["core.filemode", "=x", "nodot=1", ".lead=1", "trail.=1", "core .x=1"])
 def test_env_overrides_rejects_bad_entries(tmp_path: Path, item: str) -> None:
+    config = _config(tmp_path, env_overrides=item)
     with pytest.raises(UsageError, match=r"invalid git\.env_overrides entry"):
-        gitconfig.env_overrides(_config(tmp_path, env_overrides=item))
+        gitconfig.env_overrides(config)
 
 
 # --- host home and per-file include bases (Wine's "~" is the Windows user directory) -----------------

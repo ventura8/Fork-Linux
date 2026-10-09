@@ -223,32 +223,34 @@ def bundle(paths: Paths, layout: ForkLayout, directory: Path) -> tuple[Path, lis
     return target, included
 
 
-def run(args: argparse.Namespace, ctx: AppContext) -> int:
-    """Show, follow, locate or bundle logs."""
-    paths = ctx.paths
-    layout = ForkLayout(paths, winecmd.windows_user(ctx.env))
-    if args.bundle:
-        target, included = bundle(paths, layout, Path(os.getcwd()))
-        if ctx.json:
-            ctx.print_json({"bundle": str(target), "files": included})
-        else:
-            print(f"wrote {target} ({len(included)} files)")
-            print("review before sharing: secrets are redacted, but the logs name your files and repositories")
-        return 0
-    sources = SOURCES if args.source == "all" else (args.source or "wine",)
-    files = {source: _source_files(source, paths, layout) for source in sources}
-    if args.path:
-        if ctx.json:
-            ctx.print_json({source: [str(path) for path in found] for source, found in files.items()})
-        else:
-            for found in files.values():
-                for path in found:
-                    print(path)
-        return 0
+def _run_bundle(ctx: AppContext, paths: Paths, layout: ForkLayout) -> int:
+    """``--bundle``: write the support bundle into the current directory."""
+    target, included = bundle(paths, layout, Path(os.getcwd()))
+    if ctx.json:
+        ctx.print_json({"bundle": str(target), "files": included})
+    else:
+        print(f"wrote {target} ({len(included)} files)")
+        print("review before sharing: secrets are redacted, but the logs name your files and repositories")
+    return 0
+
+
+def _print_paths(ctx: AppContext, files: dict[str, list[Path]]) -> int:
+    """``--path``: print where each log lives."""
+    if ctx.json:
+        ctx.print_json({source: [str(path) for path in found] for source, found in files.items()})
+    else:
+        for found in files.values():
+            for path in found:
+                print(path)
+    return 0
+
+
+def _show(sources: tuple[str, ...], files: dict[str, list[Path]], *, follow: bool) -> int:
+    """Print the tail of each existing log, or follow the single one."""
     existing = [(source, found[0]) for source, found in files.items() if found]
     if not existing:
         raise NotFound(f"no {' / '.join(sources)} log yet", hint="start Fork with 'fork-linux run' first")
-    if args.follow:
+    if follow:
         if len(existing) > 1:
             raise UsageError("--follow follows one log; pick --wine, --fork, --velopack or --setup")
         return _follow_until_interrupted(existing[0][1])
@@ -257,3 +259,16 @@ def run(args: argparse.Namespace, ctx: AppContext) -> int:
             print(f"==> {source}: {path} <==")
         sys.stdout.write(_read_tail(path, TAIL_LINES))
     return 0
+
+
+def run(args: argparse.Namespace, ctx: AppContext) -> int:
+    """Show, follow, locate or bundle logs."""
+    paths = ctx.paths
+    layout = ForkLayout(paths, winecmd.windows_user(ctx.env))
+    if args.bundle:
+        return _run_bundle(ctx, paths, layout)
+    sources = SOURCES if args.source == "all" else (args.source or "wine",)
+    files = {source: _source_files(source, paths, layout) for source in sources}
+    if args.path:
+        return _print_paths(ctx, files)
+    return _show(sources, files, follow=args.follow)

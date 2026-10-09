@@ -74,7 +74,13 @@ def run(args: argparse.Namespace, ctx: AppContext) -> int:
     info = collect(ctx)
     if ctx.json:
         ctx.print_json(info)
-        return 0
+    else:
+        _print_report(info)
+    return 0
+
+
+def _print_report(info: dict[str, Any]) -> None:
+    """Print the status report as text."""
     provider = info["wine_provider"] or "unknown"
     if info["wine_build"]:
         provider += f" ({info['wine_build']})"
@@ -95,4 +101,3 @@ def run(args: argparse.Namespace, ctx: AppContext) -> int:
     print(f"fork-linux {info['fork_linux']} ({info['flavor']})")
     for label, value in rows:
         print(f"{label + ':':<10} {value}")
-    return 0

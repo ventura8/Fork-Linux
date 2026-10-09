@@ -38,14 +38,19 @@ DEFAULT_PATH = resources.manifest_path()
 
 _HINT = "reinstall fork-linux, or fix or remove your manifest override file"
 _MISSING = object()
+_WINE_DEFAULT = "wine.default"
+_FORK_DEFAULT = "fork.default"
+_FORK_VERSIONS = "fork.versions"
+_INSTALLER_TEMPLATE = "fork.installer_url_template"
+_VERSION_FIELD = "{version}"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _SHA256_ANY_CASE = re.compile(r"[0-9a-fA-F]{64}")
-_REVISION = re.compile(r"[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,4}")
-_PLAIN_VERSION = re.compile(r"[0-9]{1,6}(?:\.[0-9]{1,6}){0,3}")
+_REVISION = re.compile(r"\d{4}\.\d{1,2}\.\d{1,4}", re.ASCII)
+_PLAIN_VERSION = re.compile(r"\d{1,6}(?:\.\d{1,6}){0,3}", re.ASCII)
 _BUILD_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 _TOKEN = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
-_VERB = re.compile(r"dotnet[0-9]{2,3}")
-_WINETRICKS_VERSION = re.compile(r"[0-9]{8}")
+_VERB = re.compile(r"dotnet\d{2,3}", re.ASCII)
+_WINETRICKS_VERSION = re.compile(r"\d{8}", re.ASCII)
 _HOSTNAME = re.compile(r"(?=.{1,253}\Z)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*")
 
 
@@ -262,11 +267,11 @@ class Manifest:
         if not builds:
             raise _fail("wine.builds", "must list at least one build")
         self._wine_builds = {build_id: _parse_build(build_id, raw) for build_id, raw in builds.items()}
-        default = _str(wine["default"], "wine.default", _BUILD_ID)
+        default = _str(wine["default"], _WINE_DEFAULT, _BUILD_ID)
         if default not in self._wine_builds:
-            raise _fail("wine.default", f"{default!r} is not in wine.builds")
+            raise _fail(_WINE_DEFAULT, f"{default!r} is not in wine.builds")
         if self._wine_builds[default].status == "known-bad":
-            raise _fail("wine.default", f"{default!r} is marked known-bad")
+            raise _fail(_WINE_DEFAULT, f"{default!r} is marked known-bad")
         self._wine_default = default
 
     def _load_winetricks(self, value: Any) -> None:
@@ -291,32 +296,32 @@ class Manifest:
             ("known_bad",),
         )
         self.allowed_hosts = _str_list(fork["allowed_hosts"], "fork.allowed_hosts", _HOSTNAME)
-        template = _str(fork["installer_url_template"], "fork.installer_url_template")
-        rest = template.replace("{version}", "")
-        if template.count("{version}") != 1 or "{" in rest or "}" in rest:
-            raise _fail("fork.installer_url_template", "must contain {version} exactly once and no other braces")
-        _https(template.replace("{version}", "0"), "fork.installer_url_template", self.allowed_hosts)
+        template = _str(fork["installer_url_template"], _INSTALLER_TEMPLATE)
+        rest = template.replace(_VERSION_FIELD, "")
+        if template.count(_VERSION_FIELD) != 1 or "{" in rest or "}" in rest:
+            raise _fail(_INSTALLER_TEMPLATE, "must contain {version} exactly once and no other braces")
+        _https(template.replace(_VERSION_FIELD, "0"), _INSTALLER_TEMPLATE, self.allowed_hosts)
         self._installer_template = template
         self.feed_url = _https(fork["feed_url"], "fork.feed_url", self.allowed_hosts)
         self.legacy_feed_url = _https(fork["legacy_feed_url"], "fork.legacy_feed_url", self.allowed_hosts)
         requires = _obj(fork["requires"], "fork.requires", ("dotnet_framework",))
         self.dotnet_framework = _version(requires["dotnet_framework"], "fork.requires.dotnet_framework")
 
-        raw_versions = _entries(fork["versions"], "fork.versions")
+        raw_versions = _entries(fork["versions"], _FORK_VERSIONS)
         if not raw_versions:
-            raise _fail("fork.versions", "must list at least one version")
-        keys = _unique_versions(raw_versions, "fork.versions")
+            raise _fail(_FORK_VERSIONS, "must list at least one version")
+        keys = _unique_versions(raw_versions, _FORK_VERSIONS)
         self._fork_versions = {parsed: _parse_fork_version(key, raw_versions[key]) for parsed, key in keys.items()}
 
         raw_bad = _entries(fork.get("known_bad", {}), "fork.known_bad")
         bad_keys = _unique_versions(raw_bad, "fork.known_bad")
         self._known_bad = {parsed: _str(raw_bad[key], f"fork.known_bad.{key}") for parsed, key in bad_keys.items()}
 
-        default = _version(fork["default"], "fork.default")
+        default = _version(fork["default"], _FORK_DEFAULT)
         if versions.Version(default) not in self._fork_versions:
-            raise _fail("fork.default", f"{default!r} has no entry in fork.versions")
+            raise _fail(_FORK_DEFAULT, f"{default!r} has no entry in fork.versions")
         if self.is_known_bad(default):
-            raise _fail("fork.default", f"{default!r} is marked known-bad")
+            raise _fail(_FORK_DEFAULT, f"{default!r} is marked known-bad")
         self.fork_default = default
 
     # -- Wine ---------------------------------------------------------------
@@ -376,8 +381,8 @@ class Manifest:
         """The official installer URL for ``version``; the host is checked against allowed_hosts."""
         if not isinstance(version, str) or _PLAIN_VERSION.fullmatch(version) is None:
             raise UsageError(f"not a Fork version: {version!r}", hint="use a dotted number such as 2.23.2")
-        url = self._installer_template.replace("{version}", version)
-        return _https(url, "fork.installer_url_template", self.allowed_hosts)
+        url = self._installer_template.replace(_VERSION_FIELD, version)
+        return _https(url, _INSTALLER_TEMPLATE, self.allowed_hosts)
 
     def installer_entry(self, version: str | None = None) -> InstallerEntry:
         """Download details for ``version`` (default: ``fork.default``).

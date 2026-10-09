@@ -93,7 +93,8 @@ def test_wanted(libexec: Path) -> None:
     }
     _script(libexec, fork_tools.TERMINAL_SCRIPT)
     shell = fork_tools.wanted(bridge_active=True, fl_launch=False, pathmap=z_map)["ShellTool"]
-    assert shell["ApplicationPath"].endswith("\\fork-linux-terminal") and shell["Arguments"] == ""
+    assert shell["ApplicationPath"].endswith("\\fork-linux-terminal")
+    assert shell["Arguments"] == ""
     bridged = fork_tools.wanted(bridge_active=True, fl_launch=True, pathmap=z_map)
     assert {bridged[key]["ApplicationPath"] for key in fork_tools.TOOL_KEYS} == {fork_tools.FL_LAUNCH_WIN}
     assert bridged["ExternalDiffTool"]["Arguments"] == 'diff "$LOCAL" "$REMOTE"'
@@ -119,4 +120,5 @@ def test_tool_lists_keep_the_users_entries() -> None:
     assert fork_tools.merged_list([user, ours], ours) is None
     assert fork_tools.merged_list([user, ours], None) == [user]
     assert fork_tools.merged_list({"not": "a list"}, ours) is None
-    assert not fork_tools.is_our_entry({"Path": 3}) and not fork_tools.is_our_entry("x")
+    assert not fork_tools.is_our_entry({"Path": 3})
+    assert not fork_tools.is_our_entry("x")

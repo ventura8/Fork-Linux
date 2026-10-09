@@ -792,10 +792,12 @@ def test_credits_and_disclaimer_present(rel: str) -> None:
 def test_readme_credits_markers_wrap_the_block() -> None:
     text = (ROOT / "README.md").read_text(encoding="utf-8")
     begin, end = "<!-- credits:begin -->", "<!-- credits:end -->"
-    assert text.count(begin) == 1 and text.count(end) == 1
+    assert text.count(begin) == 1
+    assert text.count(end) == 1
     block = text[text.index(begin): text.index(end)]
     assert "https://git-fork.com/buy" in block
-    assert "Dan Pristupov" in block and "Tanya Pristupova" in block
+    assert "Dan Pristupov" in block
+    assert "Tanya Pristupova" in block
 
 
 # --- Agent docs stay in sync (AGENTS.md §4.7, §5) ------------------------------

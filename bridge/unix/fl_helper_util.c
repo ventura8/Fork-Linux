@@ -290,12 +290,77 @@ void fl_env_free(char **env)
     free(env);
 }
 
+/* Number of unset operations that are ignored (malformed, HOME/PATH/TMPDIR, LANG). */
+static size_t count_ignored_unsets(char *const *unset, size_t nunset)
+{
+    size_t skipped = 0;
+    for (size_t i = 0; i < nunset; i++) {
+        size_t ul = unset_valid(unset[i]) ? strlen(unset[i]) : 0;
+        if (ul == 0 || key_fixed(unset[i], ul) || key_eq(unset[i], ul, "LANG")) {
+            skipped++;
+        }
+    }
+    return skipped;
+}
+
+/* 1 when the base entry with key kv[0..kl) is not passed on (secret, or removed by an unset). */
+static int base_dropped(const char *kv, size_t kl, char *const *unset, size_t nunset)
+{
+    if (kl == 0 || key_secret(kv, kl)) {
+        return 1;
+    }
+    if (key_fixed(kv, kl) || key_eq(kv, kl, "LANG")) {
+        return 0;
+    }
+    for (size_t j = 0; j < nunset; j++) {
+        if (unset_valid(unset[j]) && key_eq(kv, kl, unset[j])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Index of the entry of env[0..n) with key kv[0..kl) ("K=" included), or n. */
+static size_t find_key(char *const *env, size_t n, const char *kv, size_t kl)
+{
+    for (size_t j = 0; j < n; j++) {
+        if (key_len(env[j]) == kl && memcmp(env[j], kv, kl + 1) == 0) {
+            return j;
+        }
+    }
+    return n;
+}
+
+/* Apply one set operation to env[0..*n); 0 applied, 1 ignored, -1 out of memory. */
+static int apply_set(char **env, size_t *n, const char *kv)
+{
+    size_t kl = kv ? key_len(kv) : 0;
+    size_t j;
+    char *copy;
+    if (kl == 0 || key_fixed(kv, kl) || key_secret(kv, kl)) {
+        return 1;
+    }
+    copy = strdup(kv);
+    if (copy == NULL) {
+        return -1;
+    }
+    j = find_key(env, *n, kv, kl);
+    if (j < *n) {
+        free(env[j]);
+        env[j] = copy;
+    } else {
+        env[*n] = copy;
+        (*n)++;
+    }
+    return 0;
+}
+
 int fl_env_build(char *const *base, char *const *set, size_t nset, char *const *unset, size_t nunset,
                  char ***out, size_t *ignored)
 {
     size_t nbase = 0;
     size_t n = 0;
-    size_t skipped = 0;
+    size_t skipped;
     char **env;
     while (base && base[nbase]) {
         nbase++;
@@ -307,22 +372,9 @@ int fl_env_build(char *const *base, char *const *set, size_t nset, char *const *
     if (env == NULL) {
         return -1;
     }
-    for (size_t i = 0; i < nunset; i++) {
-        size_t ul = unset_valid(unset[i]) ? strlen(unset[i]) : 0;
-        if (ul == 0 || key_fixed(unset[i], ul) || key_eq(unset[i], ul, "LANG")) {
-            skipped++;
-        }
-    }
+    skipped = count_ignored_unsets(unset, nunset);
     for (size_t i = 0; i < nbase; i++) {
-        size_t kl = key_len(base[i]);
-        int drop = kl == 0 || key_secret(base[i], kl);
-        for (size_t j = 0; !drop && j < nunset; j++) {
-            if (unset_valid(unset[j]) && key_eq(base[i], kl, unset[j]) && !key_fixed(base[i], kl) &&
-                !key_eq(base[i], kl, "LANG")) {
-                drop = 1;
-            }
-        }
-        if (drop) {
+        if (base_dropped(base[i], key_len(base[i]), unset, nunset)) {
             continue;
         }
         env[n] = strdup(base[i]);
@@ -333,29 +385,12 @@ int fl_env_build(char *const *base, char *const *set, size_t nset, char *const *
         n++;
     }
     for (size_t i = 0; i < nset; i++) {
-        size_t kl = set[i] ? key_len(set[i]) : 0;
-        size_t j;
-        char *copy;
-        if (kl == 0 || key_fixed(set[i], kl) || key_secret(set[i], kl)) {
-            skipped++;
-            continue;
-        }
-        copy = strdup(set[i]);
-        if (copy == NULL) {
+        int r = apply_set(env, &n, set[i]);
+        if (r < 0) {
             fl_env_free(env);
             return -1;
         }
-        for (j = 0; j < n; j++) {
-            if (key_len(env[j]) == kl && memcmp(env[j], set[i], kl + 1) == 0) {
-                break;
-            }
-        }
-        if (j < n) {
-            free(env[j]);
-            env[j] = copy;
-        } else {
-            env[n++] = copy;
-        }
+        skipped += (size_t)r;
     }
     env[n] = NULL;
     *out = env;
@@ -444,7 +479,7 @@ static int join_win(const char *win, size_t winlen, const char *rest, char *out,
     return b.overflow ? -1 : 0;
 }
 
-/* 1 when s starts like a Windows absolute path: "X:" or a UNC "\\" / "//" prefix. */
+/* 1 when s starts like a Windows absolute path: a drive ("X:") or a UNC prefix (two separators). */
 static int win_abs_start(const char *s, const char *end)
 {
     if (end - s >= 2 && is_alpha(s[0]) && s[1] == ':') {
@@ -462,82 +497,135 @@ static int component_prefix(const char *path, const char *u, size_t ulen)
     return strncmp(path, u, ulen) == 0 && (path[ulen] == '\0' || path[ulen] == '/');
 }
 
-int fl_unix_to_win(const char *path, const char *anchors, const char *wineprefix, char *out,
-                   size_t outsz)
+/* One FL_BRIDGE_ANCHORS entry e[0..end): its unix side and its windows side. */
+struct anchor_entry {
+    const char *unix_path;
+    size_t ulen;
+    const char *win;
+    size_t winlen;
+};
+
+/* Split at the first '=' that starts a Windows absolute path, else the first '='. NULL if none. */
+static const char *anchor_split(const char *e, const char *end)
 {
-    const char *best_win = NULL;
-    size_t best_ulen = 0;
-    size_t best_winlen = 0;
-    if (path == NULL || path[0] != '/' || out == NULL || outsz == 0) {
+    const char *first = NULL;
+    for (const char *q = e; q < end; q++) {
+        if (*q != '=') {
+            continue;
+        }
+        if (win_abs_start(q + 1, end)) {
+            return q;
+        }
+        if (first == NULL) {
+            first = q;
+        }
+    }
+    return first;
+}
+
+/* Parse the entry e[0..end); 0 when it is a usable "/unix=win" pair. */
+static int anchor_parse(const char *e, const char *end, struct anchor_entry *a)
+{
+    const char *eq = anchor_split(e, end);
+    if (eq == NULL || e[0] != '/' || eq + 1 >= end) {
         return -1;
     }
-    for (const char *e = anchors; e && *e;) {
+    a->unix_path = e;
+    a->ulen = (size_t)(eq - e);
+    while (a->ulen > 1 && e[a->ulen - 1] == '/') {
+        a->ulen--;
+    }
+    a->win = eq + 1;
+    a->winlen = (size_t)(end - (eq + 1));
+    return 0;
+}
+
+/* The longest-matching anchor of the list for path; 0 when one matched (*best set). */
+static int best_anchor_entry(const char *path, const char *anchors, struct anchor_entry *best)
+{
+    int found = 0;
+    const char *e = anchors;
+    while (e != NULL && *e != '\0') {
         const char *end = strchr(e, ';');
-        const char *eq = NULL;
-        size_t ulen;
+        struct anchor_entry a;
         if (end == NULL) {
             end = e + strlen(e);
         }
-        /* Split at the first '=' that starts a Windows absolute path, else the first '='. */
-        for (const char *q = e; q < end; q++) {
-            if (*q == '=') {
-                if (eq == NULL) {
-                    eq = q;
-                }
-                if (win_abs_start(q + 1, end)) {
-                    eq = q;
-                    break;
-                }
-            }
-        }
-        if (eq != NULL && e[0] == '/' && eq + 1 < end) {
-            ulen = (size_t)(eq - e);
-            while (ulen > 1 && e[ulen - 1] == '/') {
-                ulen--;
-            }
-            if (component_prefix(path, e, ulen) && (best_win == NULL || ulen > best_ulen)) {
-                best_win = eq + 1;
-                best_winlen = (size_t)(end - (eq + 1));
-                best_ulen = ulen;
-            }
+        if (anchor_parse(e, end, &a) == 0 && component_prefix(path, a.unix_path, a.ulen) &&
+            (!found || a.ulen > best->ulen)) {
+            *best = a;
+            found = 1;
         }
         e = *end ? end + 1 : end;
     }
-    if (wineprefix != NULL && wineprefix[0] == '/') {
-        /* $WINEPREFIX/drive_c is an implicit "C:" anchor taking part in the longest match. */
-        static const char dc[] = "/drive_c";
-        size_t pl = strlen(wineprefix);
-        size_t dl;
-        while (pl > 1 && wineprefix[pl - 1] == '/') {
-            pl--;
-        }
-        dl = pl + sizeof(dc) - 1;
-        if (pl > 1 && strncmp(path, wineprefix, pl) == 0 && strncmp(path + pl, dc, sizeof(dc) - 1) == 0 &&
-            (path[dl] == '\0' || path[dl] == '/') && (best_win == NULL || dl > best_ulen)) {
-            return join_win("C:", 2, path + dl, out, outsz);
-        }
+    return found ? 0 : -1;
+}
+
+/* Length of "$WINEPREFIX/drive_c" when path lies inside it (the implicit "C:" anchor), else 0. */
+static size_t drive_c_len(const char *path, const char *wineprefix)
+{
+    static const char dc[] = "/drive_c";
+    size_t pl;
+    size_t dl;
+    if (wineprefix == NULL || wineprefix[0] != '/') {
+        return 0;
     }
-    if (best_win != NULL) {
-        const char *rest = (best_ulen == 1) ? path : path + best_ulen;
-        return join_win(best_win, best_winlen, rest, out, outsz);
+    pl = strlen(wineprefix);
+    while (pl > 1 && wineprefix[pl - 1] == '/') {
+        pl--;
+    }
+    dl = pl + sizeof(dc) - 1;
+    if (pl > 1 && strncmp(path, wineprefix, pl) == 0 && strncmp(path + pl, dc, sizeof(dc) - 1) == 0 &&
+        (path[dl] == '\0' || path[dl] == '/')) {
+        return dl;
+    }
+    return 0;
+}
+
+int fl_unix_to_win(const char *path, const char *anchors, const char *wineprefix, char *out,
+                   size_t outsz)
+{
+    struct anchor_entry best;
+    int have_best;
+    size_t dl;
+    if (path == NULL || path[0] != '/' || out == NULL || outsz == 0) {
+        return -1;
+    }
+    have_best = best_anchor_entry(path, anchors, &best) == 0;
+    /* $WINEPREFIX/drive_c is an implicit "C:" anchor taking part in the longest match. */
+    dl = drive_c_len(path, wineprefix);
+    if (dl > 0 && (!have_best || dl > best.ulen)) {
+        return join_win("C:", 2, path + dl, out, outsz);
+    }
+    if (have_best) {
+        const char *rest = (best.ulen == 1) ? path : path + best.ulen;
+        return join_win(best.win, best.winlen, rest, out, outsz);
     }
     return join_win("Z:", 2, path, out, outsz);
+}
+
+/* 1 when s[0..n) contains "winemenubuilder" (any case). */
+static int mentions_menubuilder(const char *s, size_t n)
+{
+    static const char needle[] = "winemenubuilder";
+    size_t m = sizeof(needle) - 1;
+    for (size_t i = 0; i + m <= n; i++) {
+        size_t k = 0;
+        while (k < m && lower(s[i + k]) == needle[k]) {
+            k++;
+        }
+        if (k == m) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 int fl_dlloverrides(const char *cur, char *out, size_t outsz)
 {
     static const char add[] = "winemenubuilder.exe=d";
-    static const char needle[] = "winemenubuilder";
     size_t cl = cur ? strlen(cur) : 0;
-    int found = 0;
-    for (size_t i = 0; !found && i + sizeof(needle) - 1 <= cl; i++) {
-        size_t k = 0;
-        while (k < sizeof(needle) - 1 && lower(cur[i + k]) == needle[k]) {
-            k++;
-        }
-        found = k == sizeof(needle) - 1;
-    }
-    if (found) {
+    if (cl > 0 && mentions_menubuilder(cur, cl)) {
         if (cl + 1 > outsz) {
             return -1;
         }

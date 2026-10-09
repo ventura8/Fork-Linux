@@ -177,8 +177,9 @@ def test_plan_latest_from_feed_then_legacy(xdg: Path, feeds: dict[str, Any]) -> 
 
 
 def test_plan_latest_without_any_feed(xdg: Path, feeds: dict[str, Any]) -> None:
+    ctx = make_ctx(latest=True)
     with pytest.raises(DownloadFailed, match="release feed"):
-        fork_steps.plan(make_ctx(latest=True))
+        fork_steps.plan(ctx)
 
 
 # -- fork_download ---------------------------------------------------------------------------
@@ -190,7 +191,8 @@ def test_download_records_the_plan(xdg: Path, downloads: list[InstallPlan]) -> N
     fork_steps.run_download(ctx)
     assert downloads[0].version == "2.23.2"
     recorded = ctx.state.get(fork_steps.PLAN_KEY)
-    assert recorded["sha256"] == DEFAULT_SHA and recorded["request"] == {"source": "default"}
+    assert recorded["sha256"] == DEFAULT_SHA
+    assert recorded["request"] == {"source": "default"}
     assert ctx.state.get(fork_steps.REQUEST_KEY) is None
     assert fork_steps.verify_download(ctx)
     (ctx.paths.downloads_dir / "Fork-2.23.2.exe").unlink()
@@ -202,7 +204,8 @@ def test_download_of_an_unpinned_version_records_its_hash(xdg: Path, downloads: 
     fork_steps.run_download(ctx)
     recorded = ctx.state.get(fork_steps.PLAN_KEY)
     expected = hashlib.sha256(b"MZ installer 2.24.0").hexdigest()
-    assert recorded["sha256"] == expected and recorded["tofu"] is True
+    assert recorded["sha256"] == expected
+    assert recorded["tofu"] is True
     assert recorded["size"] == len(b"MZ installer 2.24.0")
     assert ctx.state.get(fork_steps.REQUEST_KEY) == {"source": "requested", "version": "2.24.0"}
 
@@ -211,7 +214,8 @@ def test_download_skipped_when_fork_is_installed(xdg: Path, downloads: list[Inst
     ctx = make_ctx()
     install_fork(ctx.layout, "2.25.0")
     fork_steps.run_download(ctx)
-    assert downloads == [] and fork_steps.verify_download(ctx)
+    assert downloads == []
+    assert fork_steps.verify_download(ctx)
     ctx.force = True
     assert not fork_steps.satisfied(ctx)
 
@@ -249,10 +253,12 @@ def test_install_runs_the_official_installer(xdg: Path, downloads: list[InstallP
     fork_steps.run_install(ctx)
     wine_call = ctx.runner.calls[0]
     assert wine_call["argv"][2] == "--silent"
-    assert wine_call["argv"][1].startswith("Z:\\") and wine_call["argv"][1].endswith("Fork-2.23.2.exe")
+    assert wine_call["argv"][1].startswith("Z:\\")
+    assert wine_call["argv"][1].endswith("Fork-2.23.2.exe")
     assert ctx.runner.calls[1]["argv"][1:] == ["-w"]
     assert fork_steps.verify_install(ctx)
-    assert ctx.state.get("fork.version") == "2.23.2" and ctx.state.get("fork.source") == "default"
+    assert ctx.state.get("fork.version") == "2.23.2"
+    assert ctx.state.get("fork.source") == "default"
     assert ctx.state.get("fork.installer_sha256") == DEFAULT_SHA
     assert isinstance(ctx.state.get("fork.installed_at"), str)
     assert not ctx.layout.desktop_lnk.exists()
@@ -261,7 +267,8 @@ def test_install_runs_the_official_installer(xdg: Path, downloads: list[InstallP
     install_fork(ctx.layout, "2.26.0")
     calls = len(ctx.runner.calls)
     fork_steps.run_install(ctx)
-    assert len(ctx.runner.calls) == calls and ctx.state.get("fork.version") == "2.26.0"
+    assert len(ctx.runner.calls) == calls
+    assert ctx.state.get("fork.version") == "2.26.0"
 
 
 def test_install_failure(xdg: Path, downloads: list[InstallPlan]) -> None:
@@ -284,7 +291,8 @@ def _tofu_ctx(feeds: dict[str, Any], sha: str | None) -> Ctx:
 def test_install_tofu_checks_the_feed(xdg: Path, downloads: list[InstallPlan], feeds: dict[str, Any]) -> None:
     ctx = _tofu_ctx(feeds, _nupkg_sha("2.24.0"))
     fork_steps.run_install(ctx)
-    assert ctx.state.get("fork.version") == "2.24.0" and ctx.state.get("fork.source") == "requested"
+    assert ctx.state.get("fork.version") == "2.24.0"
+    assert ctx.state.get("fork.source") == "requested"
     assert ctx.ui.kinds("warn") == []
 
 
@@ -314,7 +322,8 @@ def test_settings_are_seeded_before_the_first_start(xdg: Path) -> None:
     assert fork_steps.verify_settings(ctx)
     data = json.loads(ctx.layout.settings_file.read_text())
     assert str(uuid.UUID(data["Guid"])) == data["Guid"]
-    assert data["UpdateSubmodulesOnCheckout"] is False and data["DisableHardwareAcceleration"] is True
+    assert data["UpdateSubmodulesOnCheckout"] is False
+    assert data["DisableHardwareAcceleration"] is True
     assert "settings_present" not in fork_steps.settings_inputs(ctx)
     assert not list(fork_settings_mod.default_backup_dir(ctx.paths).glob("settings.json.*"))
 
@@ -341,10 +350,14 @@ def test_settings_are_merged(xdg: Path, monkeypatch: pytest.MonkeyPatch, tmp_pat
     toml.write_text(f"source_dirs = ['C:\\users\\{ctx.user}\\']\nscan_depth = 5\n", encoding="utf-8")
     fork_steps.run_settings(ctx)
     data = json.loads(ctx.layout.settings_file.read_text())
-    assert data["UpdateSubmodulesOnCheckout"] is False and data["DisableHardwareAcceleration"] is True
+    assert data["UpdateSubmodulesOnCheckout"] is False
+    assert data["DisableHardwareAcceleration"] is True
     # The old double scaling (LayoutScaling = the desktop's 125 %) is undone: LogPixels scales now.
-    assert data["Theme"] == 1 and data["FollowSystemTheme"] is False and data["LayoutScaling"] == 100
-    assert data["ShellTool"] == terminal and data["Unknown"] == 1
+    assert data["Theme"] == 1
+    assert data["FollowSystemTheme"] is False
+    assert data["LayoutScaling"] == 100
+    assert data["ShellTool"] == terminal
+    assert data["Unknown"] == 1
     home = "Z:" + str(ctx.host_home).replace("/", "\\")
     assert data["RepositoryManager"]["SourceDirectories"] == [home]
     assert toml.read_text(encoding="utf-8") == f"source_dirs = ['{home}']\nscan_depth = 5\n"
@@ -387,7 +400,8 @@ def test_bootstrap_resumes_install_from_the_recorded_plan(
     assert later.state.get(fork_steps.REQUEST_KEY) == {"source": "latest"}
     assert bootstrap.is_done(fork_steps.FORK_DOWNLOAD, later)
     plan = fork_steps._current_plan(later)
-    assert plan.version == "2.24.0" and plan.sha256 == hashlib.sha256(b"MZ installer 2.24.0").hexdigest()
+    assert plan.version == "2.24.0"
+    assert plan.sha256 == hashlib.sha256(b"MZ installer 2.24.0").hexdigest()
     bootstrap.run_step(later, fork_steps.FORK_INSTALL)
     assert later.state.get("fork.version") == "2.24.0"
     assert downloads[-1].sha256 == plan.sha256

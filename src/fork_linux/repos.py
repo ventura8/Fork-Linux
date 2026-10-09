@@ -39,6 +39,7 @@ from .procrun import Runner
 GIT_TIMEOUT = 30.0
 SYMLINK_MODE = "120000"
 MARK_FILEMODE = "forklinux.filemodefixed"
+_FILEMODE = "core.filemode"
 MARK_SKIP = "forklinux.skipworktree"
 WORKSPACES = "Workspaces"
 
@@ -172,7 +173,7 @@ def scan_one(git: Git, repo: Path, covered: set[str]) -> RepoReport:
         top = linux_path_remote(url)
         if top is not None and top not in covered:
             report.linux_remotes.append(url)
-    status, out = git.run(repo, "config", "--local", "--bool", "core.filemode")
+    status, out = git.run(repo, "config", "--local", "--bool", _FILEMODE)
     report.filemode = status == 0 and out.strip() == "true"
     return report
 
@@ -202,7 +203,7 @@ def fix(git: Git, report: RepoReport, *, filemode: bool = True, symlinks: bool =
     done: list[str] = []
     repo = report.path
     if filemode and report.filemode:
-        _check(git, repo, "config", "--local", "core.filemode", "false")
+        _check(git, repo, "config", "--local", _FILEMODE, "false")
         _check(git, repo, "config", "--local", MARK_FILEMODE, "true")
         done.append(f"{repo}: core.filemode = false")
     if symlinks and report.symlinks:
@@ -217,7 +218,7 @@ def undo(git: Git, repo: Path) -> list[str]:
     """Revert what :func:`fix` recorded in ``repo``; return what was done."""
     done: list[str] = []
     if git.config_list(repo, MARK_FILEMODE):
-        _check(git, repo, "config", "--local", "core.filemode", "true")
+        _check(git, repo, "config", "--local", _FILEMODE, "true")
         _check(git, repo, "config", "--local", "--unset-all", MARK_FILEMODE)
         done.append(f"{repo}: core.filemode = true again")
     links = git.config_list(repo, MARK_SKIP)

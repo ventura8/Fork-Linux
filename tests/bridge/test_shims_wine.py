@@ -479,9 +479,8 @@ def test_whole_argument_windows_paths_are_translated(env: Env) -> None:
     assert proc.returncode == 0, err_text(proc)
     first, second = proc.stdout.decode().splitlines()
     # Wine 10 keeps the dosdevices form, Wine 11 resolves the symlink: same directory.
-    assert first.startswith("/") and os.path.realpath(first) == os.path.realpath(
-        env.repo
-    )
+    assert first.startswith("/")
+    assert os.path.realpath(first) == os.path.realpath(env.repo)
     assert second == "--opt=C:\\r\\repo"
 
 
@@ -615,13 +614,12 @@ def test_bridge_log_line_redacts_and_never_holds_the_token(env: Env) -> None:
     assert proc.returncode != 125, err_text(proc)
     text = log.read_text()
     assert env.token not in text
-    assert "hunter2" not in text and "s3cr3t" not in text
+    assert "hunter2" not in text
+    assert "s3cr3t" not in text
     rec = json.loads(text.splitlines()[-1])
-    assert (
-        rec["mode"] == "bridge"
-        and rec["persona"] == "git"
-        and rec["exit"] == proc.returncode
-    )
+    assert rec["mode"] == "bridge"
+    assert rec["persona"] == "git"
+    assert rec["exit"] == proc.returncode
     assert rec["xargv"][0] == "git"
 
 
@@ -645,7 +643,8 @@ def test_record_mode_forwards_and_logs(env: Env) -> None:
     assert proc.returncode == 1
     lines = [json.loads(line) for line in log.read_text().splitlines()]
     assert [r["exit"] for r in lines] == [3, 1]
-    assert lines[0]["mode"] == "record" and lines[0]["argv"][1:] == ["/c", "exit 3"]
+    assert lines[0]["mode"] == "record"
+    assert lines[0]["argv"][1:] == ["/c", "exit 3"]
     assert lines[0]["stdio"] == {"stdin": "pipe", "stdout": "pipe", "stderr": "pipe"}
     assert env.token not in log.read_text()
 
@@ -680,8 +679,10 @@ def test_launch_detached_verb_translates_paths(env: Env) -> None:
         time.sleep(0.05)
     time.sleep(0.2)
     verb, path, flag = out.read_text().splitlines()
-    assert verb == "open" and flag == "--flag"
-    assert path.startswith("/") and path.endswith("/file.txt")
+    assert verb == "open"
+    assert flag == "--flag"
+    assert path.startswith("/")
+    assert path.endswith("/file.txt")
     assert os.path.realpath(path) == os.path.realpath(env.repo / "file.txt")
 
 

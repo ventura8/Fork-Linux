@@ -235,7 +235,8 @@ def test_valid_values(section: str, key: str, value: str) -> None:
 )
 def test_invalid_values(section: str, key: str, value: str, fragment: str) -> None:
     why = config_mod.problem(SCHEMA[section][key], value)
-    assert why is not None and fragment in why
+    assert why is not None
+    assert fragment in why
 
 
 def test_open_ended_int_ranges() -> None:
@@ -356,8 +357,9 @@ def test_set_write_failure_is_a_fork_linux_error(paths: Paths, monkeypatch: pyte
         raise PermissionError("read-only")
 
     monkeypatch.setattr(config_mod.config_edit, "set_option", boom)
+    config = Config.load(paths, env={})
     with pytest.raises(ForkLinuxError, match="cannot write"):
-        Config.load(paths, env={}).set("wine", "debug", "+seh")
+        config.set("wine", "debug", "+seh")
 
 
 def test_unset(paths: Paths) -> None:
@@ -380,5 +382,6 @@ def test_unset_write_failure_is_a_fork_linux_error(paths: Paths, monkeypatch: py
         raise PermissionError("read-only")
 
     monkeypatch.setattr(config_mod.config_edit, "unset_option", boom)
+    config = Config.load(paths, env={})
     with pytest.raises(ForkLinuxError, match="cannot write"):
-        Config.load(paths, env={}).unset("wine", "debug")
+        config.unset("wine", "debug")

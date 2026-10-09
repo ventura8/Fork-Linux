@@ -70,12 +70,16 @@ def test_status_enable_disable_when_built(kit: bridge_kit.Kit) -> None:
     assert bridge.enable(ctx) == []
     assert ctx.config.getbool("git", "bridge") is True
     info = bridge.status(ctx)
-    assert info["enabled"] and not info["ready"] and info["git_version"] == "2.53.0"
-    assert "not installed in the prefix" in info["reason"] and "gitInstance" in info["reason"]
+    assert info["enabled"]
+    assert not info["ready"]
+    assert info["git_version"] == "2.53.0"
+    assert "not installed in the prefix" in info["reason"]
+    assert "gitInstance" in info["reason"]
     assert info["reason"].endswith(" is missing and 7 more)")
     integration.run_shims(ctx)
     info = bridge.status(ctx)
-    assert info["ready"] and info["reason"] == ""
+    assert info["ready"]
+    assert info["reason"] == ""
     (ctx.paths.fork_linux_win_dir / "bin" / bridge.LAUNCH).unlink()
     assert bridge.status(ctx)["reason"] == f"the shims are not installed in the prefix ({Path('bin/fl-launch.exe')} is missing)"
     integration.run_shims(ctx)
@@ -88,14 +92,16 @@ def test_enable_refused_when_not_built(xdg: Path, tmp_path: Path, monkeypatch: p
     monkeypatch.setattr(resources, "shims_dir", lambda: None)
     ctx = make_ctx()
     info = bridge.status(ctx)
-    assert info["available"] is False and info["shims_dir"] is None
+    assert info["available"] is False
+    assert info["shims_dir"] is None
     for name in (*bridge.SHIM_EXES, bridge.HELPER):
         assert name in info["reason"]
     with pytest.raises(UsageError, match="experimental") as excinfo:
         bridge.enable(ctx)
     assert "build-bridge.sh" in excinfo.value.hint
     assert not ctx.paths.config_file.exists()
-    assert bridge.shim_sources() == {} and bridge.shim_targets(ctx.paths) == []
+    assert bridge.shim_sources() == {}
+    assert bridge.shim_targets(ctx.paths) == []
 
 
 def test_enable_checks_the_host_git(kit: bridge_kit.Kit) -> None:
@@ -106,7 +112,8 @@ def test_enable_checks_the_host_git(kit: bridge_kit.Kit) -> None:
     assert ctx.config.getbool("git", "bridge") is False
     ctx = _ctx(kit, "2.43.0")
     warnings = bridge.enable(ctx)
-    assert len(warnings) == 1 and "2.43.0 is older than 2.50" in warnings[0]
+    assert len(warnings) == 1
+    assert "2.43.0 is older than 2.50" in warnings[0]
     assert bridge.status(ctx)["git_recommended"] is False
     ctx = _ctx(kit)
     ctx.runner.which_map["git"] = None
@@ -118,13 +125,15 @@ def test_partial_build_lists_what_is_missing(kit: bridge_kit.Kit) -> None:
     (kit.shims / bridge.LAUNCH).unlink()
     info = bridge.status(_ctx(kit))
     assert info["available"] is False
-    assert "fl-launch.exe" in info["reason"] and "fl-shim.exe" not in info["reason"]
+    assert "fl-launch.exe" in info["reason"]
+    assert "fl-shim.exe" not in info["reason"]
 
 
 def test_invalid_setting_counts_as_off(kit: bridge_kit.Kit, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FORK_LINUX_GIT_BRIDGE", "maybe")
     info = bridge.status(_ctx(kit, env=None))
-    assert info["enabled"] is False and info["available"] is True
+    assert info["enabled"] is False
+    assert info["available"] is True
     assert "maybe" in info["reason"]
 
 
@@ -156,12 +165,14 @@ def test_shim_layout_problems(kit: bridge_kit.Kit) -> None:
 def test_check_only_probes_git_when_enabled(kit: bridge_kit.Kit) -> None:
     ctx = _ctx(kit, "1.0")
     readiness = bridge.check(ctx)
-    assert readiness.git is None and not readiness.ready
+    assert readiness.git is None
+    assert not readiness.ready
     assert ctx.runner.calls == []
     ctx.config.set("git", "bridge", "on")
     integration.run_shims(ctx)
     readiness = bridge.check(ctx)
-    assert not readiness.ready and readiness.problems == ["the Linux git 1.0.0 is older than 2.40"]
+    assert not readiness.ready
+    assert readiness.problems == ["the Linux git 1.0.0 is older than 2.40"]
 
 
 def test_host_actions_active(kit: bridge_kit.Kit) -> None:
@@ -224,7 +235,9 @@ def test_host_helper_installed_template_or_missing(kit: bridge_kit.Kit, monkeypa
     wrapper = bridge.host_helper(ctx.paths)
     assert wrapper == bridge.personas_dir(ctx.paths) / resources.HOST_HELPER
     text = wrapper.read_text(encoding="utf-8")
-    assert text.startswith("#!/bin/sh\nexec ") and str(template) in text and " -I " in text
+    assert text.startswith("#!/bin/sh\nexec ")
+    assert str(template) in text
+    assert " -I " in text
     assert stat.S_IMODE(wrapper.stat().st_mode) == 0o700
     mtime = wrapper.stat().st_mtime_ns
     time.sleep(0.01)
@@ -236,7 +249,8 @@ def test_write_token(kit: bridge_kit.Kit) -> None:
     ctx = _ctx(kit)
     path, token = bridge.write_token(ctx.paths)
     other, token2 = bridge.write_token(ctx.paths)
-    assert path != other and token != token2
+    assert path != other
+    assert token != token2
     assert path.parent == ctx.paths.runtime_dir
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
@@ -269,7 +283,8 @@ def test_new_log_rotates(kit: bridge_kit.Kit, monkeypatch: pytest.MonkeyPatch) -
     for _ in range(12):
         bridge._new_log(ctx.paths, bridge.LOG_PREFIX, ".log").write_text("x", encoding="utf-8")
     kept = sorted(p.name for p in ctx.paths.logs_dir.iterdir())
-    assert len(kept) == bridge.LOGS_KEEP and kept[-1] == "bridge-20260112T000000Z.log"
+    assert len(kept) == bridge.LOGS_KEEP
+    assert kept[-1] == "bridge-20260112T000000Z.log"
 
 
 def test_bundled_git_win(kit: bridge_kit.Kit) -> None:
@@ -306,8 +321,10 @@ def test_start_daemon_success(kit: bridge_kit.Kit, monkeypatch: pytest.MonkeyPat
     ctx.env["GIT_DIR"] = "/somewhere/.git"
     ctx.env["FL_BRIDGE_TOKEN"] = "leaked"
     daemon = bridge.start_daemon(ctx)
-    assert daemon is not None and daemon.port == 4242
-    assert ctx.cache[bridge.CACHE_KEY] is daemon and bridge.host_actions_active(ctx)
+    assert daemon is not None
+    assert daemon.port == 4242
+    assert ctx.cache[bridge.CACHE_KEY] is daemon
+    assert bridge.host_actions_active(ctx)
     (start,) = kit.starts()
     argv = start["argv"]
     assert isinstance(argv, list)
@@ -316,12 +333,17 @@ def test_start_daemon_success(kit: bridge_kit.Kit, monkeypatch: pytest.MonkeyPat
     assert argv[argv.index("--host-helper") + 1] == str(kit.libexec / resources.HOST_HELPER)
     assert argv[argv.index("--log") + 1] == str(daemon.log_file)
     token_file = Path(argv[argv.index("--token-file") + 1])
-    assert token_file.parent == ctx.paths.runtime_dir and not token_file.exists()
-    assert start["token_mode"] == 0o600 and start["token_regular"] is True
+    assert token_file.parent == ctx.paths.runtime_dir
+    assert not token_file.exists()
+    assert start["token_mode"] == 0o600
+    assert start["token_regular"] is True
     env = start["env"]
     assert isinstance(env, dict)
-    assert env["FL_BRIDGE_TOKEN"] is None and env["GIT_DIR"] is None and env["WINEHOME"] is None
-    assert env["WINEPREFIX"] == str(ctx.paths.prefix) and env["FL_WINE"] == str(ctx.wine().wine)
+    assert env["FL_BRIDGE_TOKEN"] is None
+    assert env["GIT_DIR"] is None
+    assert env["WINEHOME"] is None
+    assert env["WINEPREFIX"] == str(ctx.paths.prefix)
+    assert env["FL_WINE"] == str(ctx.wine().wine)
     assert env["PATH"] == ctx.env["PATH"]
     personas = bridge.personas_dir(ctx.paths)
     assert daemon.env == {
@@ -336,13 +358,17 @@ def test_start_daemon_success(kit: bridge_kit.Kit, monkeypatch: pytest.MonkeyPat
     }
     assert bridge.launch_env(ctx, daemon) == daemon.env
     assert bridge.launch_env(ctx, None) == {}
-    assert bridge.native_git(daemon.env) and not bridge.native_git({})
-    assert daemon.log_file is not None and stat.S_IMODE(daemon.log_file.stat().st_mode) == 0o600
+    assert bridge.native_git(daemon.env)
+    assert not bridge.native_git({})
+    assert daemon.log_file is not None
+    assert stat.S_IMODE(daemon.log_file.stat().st_mode) == 0o600
     # The daemon follows its parent: still alive now, stopped on request.
-    assert daemon.proc is not None and daemon.proc.poll() is None
+    assert daemon.proc is not None
+    assert daemon.proc.poll() is None
     proc = daemon.proc
     daemon.stop()
-    assert proc.returncode is not None and daemon.proc is None
+    assert proc.returncode is not None
+    assert daemon.proc is None
     daemon.stop()
     ctx.config.set("git", "bridge", "off")
     assert bridge.launch_env(ctx, daemon) == {}
@@ -355,10 +381,13 @@ def test_start_daemon_debug_record_and_no_host_helper(kit: bridge_kit.Kit) -> No
     daemon = bridge.start_daemon(ctx, debug=True)
     assert daemon is not None
     argv = kit.starts()[0]["argv"]
-    assert isinstance(argv, list) and "--host-helper" not in argv
-    assert daemon.env[bridge.LOG_ENV].endswith(".jsonl") and "/bridge-calls-" in daemon.env[bridge.LOG_ENV]
+    assert isinstance(argv, list)
+    assert "--host-helper" not in argv
+    assert daemon.env[bridge.LOG_ENV].endswith(".jsonl")
+    assert "/bridge-calls-" in daemon.env[bridge.LOG_ENV]
     assert bridge.MODE_ENV not in daemon.env
-    assert isinstance(ctx.ui, FakeUI) and "record mode needs Fork's bundled git" in ctx.ui.kinds("warn")[0]
+    assert isinstance(ctx.ui, FakeUI)
+    assert "record mode needs Fork's bundled git" in ctx.ui.kinds("warn")[0]
     daemon.stop()
     git_exe = ctx.paths.fork_local_dir(USER) / "gitInstance/2.50.1/cmd/git.exe"
     git_exe.parent.mkdir(parents=True)
@@ -391,7 +420,8 @@ def test_start_daemon_failures_fall_back_to_bundled_git(
     assert ctx.cache[bridge.CACHE_KEY] is None
     assert isinstance(ctx.ui, FakeUI)
     (warning,) = ctx.ui.kinds("warn")
-    assert message in warning and "Fork uses its bundled git" in warning
+    assert message in warning
+    assert "Fork uses its bundled git" in warning
     assert list(ctx.paths.runtime_dir.glob("bridge-token-*")) == []
     (start,) = kit.starts()
     pid = start["pid"]
@@ -404,7 +434,8 @@ def test_start_daemon_spawn_error_removes_the_token(kit: bridge_kit.Kit) -> None
     kit.helper.chmod(0o644)
     ctx = _ready(kit)
     assert bridge.start_daemon(ctx) is None
-    assert isinstance(ctx.ui, FakeUI) and "Permission denied" in ctx.ui.kinds("warn")[0]
+    assert isinstance(ctx.ui, FakeUI)
+    assert "Permission denied" in ctx.ui.kinds("warn")[0]
     assert list(ctx.paths.runtime_dir.glob("bridge-token-*")) == []
 
 
@@ -413,7 +444,8 @@ def test_stop_kills_a_stubborn_daemon(kit: bridge_kit.Kit, monkeypatch: pytest.M
     ctx = _ready(kit)
     ctx.env["FL_FAKE_DAEMON"] = "stubborn"
     daemon = bridge.start_daemon(ctx)
-    assert daemon is not None and daemon.proc is not None
+    assert daemon is not None
+    assert daemon.proc is not None
     proc = daemon.proc
     daemon.stop()
     assert proc.returncode == -9
@@ -423,7 +455,8 @@ def test_daemon_that_exits_after_reporting(kit: bridge_kit.Kit) -> None:
     ctx = _ready(kit)
     ctx.env["FL_FAKE_DAEMON"] = "exit"
     daemon = bridge.start_daemon(ctx)
-    assert daemon is not None and daemon.proc is not None
+    assert daemon is not None
+    assert daemon.proc is not None
     daemon.proc.wait(timeout=5)
     daemon.stop()
     assert daemon.proc is None

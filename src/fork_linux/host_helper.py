@@ -58,22 +58,31 @@ terminal: $FORK_LINUX_TERMINAL or [integration] terminal (a command, {{dir}} is
 replaced by the directory), else xdg-terminal-exec, $TERMINAL, then known terminals.
 """
 
+# Placeholders filled by :func:`fill`.
+_DIR = "{dir}"
+_WORKING_DIRECTORY = ("--working-directory=" + _DIR,)
+_LEFT = "{left}"
+_RIGHT = "{right}"
+_BASE = "{base}"
+_LOCAL = "{local}"
+_REMOTE = "{remote}"
+
 # Terminal -> arguments that open it in {dir}; an empty tuple relies on the working directory.
 TERMINALS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("ptyxis", ("--new-window", "-d", "{dir}")),
-    ("kgx", ("--working-directory={dir}",)),
-    ("gnome-terminal", ("--working-directory={dir}",)),
-    ("konsole", ("--workdir", "{dir}")),
-    ("xfce4-terminal", ("--working-directory={dir}",)),
-    ("tilix", ("--working-directory={dir}",)),
-    ("terminator", ("--working-directory={dir}",)),
-    ("mate-terminal", ("--working-directory={dir}",)),
-    ("lxterminal", ("--working-directory={dir}",)),
-    ("alacritty", ("--working-directory", "{dir}")),
-    ("kitty", ("--directory", "{dir}")),
-    ("foot", ("--working-directory={dir}",)),
-    ("wezterm", ("start", "--cwd", "{dir}")),
-    ("ghostty", ("--working-directory={dir}",)),
+    ("ptyxis", ("--new-window", "-d", _DIR)),
+    ("kgx", _WORKING_DIRECTORY),
+    ("gnome-terminal", _WORKING_DIRECTORY),
+    ("konsole", ("--workdir", _DIR)),
+    ("xfce4-terminal", _WORKING_DIRECTORY),
+    ("tilix", _WORKING_DIRECTORY),
+    ("terminator", _WORKING_DIRECTORY),
+    ("mate-terminal", _WORKING_DIRECTORY),
+    ("lxterminal", _WORKING_DIRECTORY),
+    ("alacritty", ("--working-directory", _DIR)),
+    ("kitty", ("--directory", _DIR)),
+    ("foot", _WORKING_DIRECTORY),
+    ("wezterm", ("start", "--cwd", _DIR)),
+    ("ghostty", _WORKING_DIRECTORY),
     ("x-terminal-emulator", ()),
     ("xterm", ()),
 )
@@ -87,15 +96,15 @@ DESKTOP_TERMINALS = {
 }
 # Diff/merge tool -> (diff arguments, merge arguments or None).
 DIFF_TOOLS: tuple[tuple[str, tuple[str, ...], tuple[str, ...] | None], ...] = (
-    ("meld", ("{left}", "{right}"), ("--output={merged}", "{local}", "{base}", "{remote}")),
-    ("kdiff3", ("{left}", "{right}"), ("--auto", "{base}", "{local}", "{remote}", "-o", "{merged}")),
-    ("bcompare", ("{left}", "{right}"), ("{local}", "{remote}", "{base}", "-mergeoutput={merged}")),
+    ("meld", (_LEFT, _RIGHT), ("--output={merged}", _LOCAL, _BASE, _REMOTE)),
+    ("kdiff3", (_LEFT, _RIGHT), ("--auto", _BASE, _LOCAL, _REMOTE, "-o", "{merged}")),
+    ("bcompare", (_LEFT, _RIGHT), (_LOCAL, _REMOTE, _BASE, "-mergeoutput={merged}")),
     (
         "code",
-        ("--wait", "--diff", "{left}", "{right}"),
-        ("--wait", "--merge", "{remote}", "{local}", "{base}", "{merged}"),
+        ("--wait", "--diff", _LEFT, _RIGHT),
+        ("--wait", "--merge", _REMOTE, _LOCAL, _BASE, "{merged}"),
     ),
-    ("kompare", ("{left}", "{right}"), None),
+    ("kompare", (_LEFT, _RIGHT), None),
 )
 FILE_MANAGER1 = "org.freedesktop.FileManager1"
 FILE_MANAGER1_PATH = "/org/freedesktop/FileManager1"
@@ -208,7 +217,7 @@ class Host:
 
     def _command(self, words: list[str], directory: str) -> list[str]:
         """A terminal command: ``{dir}`` fields filled, or a known terminal's own arguments."""
-        if any("{dir}" in word for word in words):
+        if any(_DIR in word for word in words):
             return fill(words, {"dir": directory})
         if len(words) == 1 and os.path.basename(words[0]) in _TERMINAL_ARGS:
             return [words[0], *fill(_TERMINAL_ARGS[os.path.basename(words[0])], {"dir": directory})]
