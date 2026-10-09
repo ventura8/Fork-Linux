@@ -203,7 +203,7 @@ def test_installed_verbs(tmp_path: Path) -> None:
     (tmp_path / "winetricks.log").write_bytes(
         b"remove_mono internal\n\ndotnet48\n  corefonts  \n-q\n# comment\nwin10\n\xff\xfe\n"
     )
-    assert winetricks.installed_verbs(tmp_path) == {"remove_mono", "dotnet48", "corefonts", "win10", "��"}
+    assert winetricks.installed_verbs(tmp_path) == {"remove_mono", "dotnet48", "corefonts", "win10", "\ufffd\ufffd"}
 
 
 def test_installed_verbs_unreadable(tmp_path: Path) -> None:

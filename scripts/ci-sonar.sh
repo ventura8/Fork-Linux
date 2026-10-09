@@ -103,11 +103,14 @@ run_scanner() {
 	local version
 	version="$(python3 "${ROOT}/scripts/read-version.py")"
 	echo "==> sonar-scanner ${SCANNER_IMAGE} (project version ${version})"
+	# Mounted at the SAME absolute path as on the host: the meson compile database and
+	# coverage.xml carry absolute paths, and Sonar matches them literally.
 	docker run --rm \
 		--user "$(id -u):$(id -g)" \
 		--env SONAR_TOKEN \
-		--env "SONAR_SCANNER_OPTS=-Dsonar.projectVersion=${version}" \
-		--volume "${ROOT}:/usr/src" \
+		--env "SONAR_SCANNER_OPTS=-Dsonar.projectVersion=${version} -Dsonar.projectBaseDir=${ROOT}" \
+		--volume "${ROOT}:${ROOT}" \
+		--workdir "${ROOT}" \
 		"${SCANNER_IMAGE}"
 }
 

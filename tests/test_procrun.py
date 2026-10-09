@@ -56,7 +56,7 @@ def test_run_captures_stdout_and_stderr() -> None:
 
 def test_run_decodes_invalid_utf8_with_replacement() -> None:
     done = Runner().run(_py("import sys; sys.stdout.buffer.write(b'ok\\xff\\n')"))
-    assert done.stdout == "ok�\n"
+    assert done.stdout == "ok\ufffd\n"
 
 
 def test_run_accepts_path_arguments(tmp_path: Path) -> None:
