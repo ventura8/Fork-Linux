@@ -37,7 +37,7 @@ class LineCov:
     def merge(self, hits: int, branches: list[bool]) -> None:
         self.hits += hits
         if len(branches) == len(self.branches):
-            self.branches = [a or b for a, b in zip(self.branches, branches)]
+            self.branches = [a or b for a, b in zip(self.branches, branches, strict=True)]
         elif sum(branches) > sum(self.branches) or len(branches) > len(self.branches):
             self.branches = list(branches)
 

@@ -92,7 +92,9 @@ def test_check_lines_cover_every_problem() -> None:
     assert repo_cmd._lines(repos.RepoReport(Path("/r"))) == ["  ok"]
 
 
-def test_fix_asks_and_undo_reverts(capsys: pytest.CaptureFixture[str], repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fix_asks_and_undo_reverts(
+    capsys: pytest.CaptureFixture[str], repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     declined = _ui(monkeypatch, False)
     code, out, _err = run_cli(capsys, "repo", "fix", str(repo))
     assert code == 1

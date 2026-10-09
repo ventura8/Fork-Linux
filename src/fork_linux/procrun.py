@@ -16,7 +16,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, BinaryIO, Union
+from typing import Any, BinaryIO
 
 from .errors import ForkLinuxError
 from .logging_setup import redact
@@ -118,7 +118,7 @@ def _spawn_logged(args: list[str], log_file: Path, options: dict[str, Any]) -> t
     """
     stamp = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
     with _open_log(log_file) as handle:
-        handle.write(f"--- {stamp} $ {format_argv(args)}\n".encode("utf-8"))
+        handle.write(f"--- {stamp} $ {format_argv(args)}\n".encode())
         handle.flush()
         start = handle.tell()
         completed = _spawn(args, stdout=handle, stderr=subprocess.STDOUT, **options)
@@ -183,7 +183,7 @@ class Runner:
         return shutil.which(name, path=path)
 
 
-Response = Union[Completed, int, str, None, Callable[..., Any], list[Any]]
+Response = Completed | int | str | None | Callable[..., Any] | list[Any]
 
 
 class RecordingRunner(Runner):

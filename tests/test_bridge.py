@@ -81,7 +81,10 @@ def test_status_enable_disable_when_built(kit: bridge_kit.Kit) -> None:
     assert info["ready"]
     assert info["reason"] == ""
     (ctx.paths.fork_linux_win_dir / "bin" / bridge.LAUNCH).unlink()
-    assert bridge.status(ctx)["reason"] == f"the shims are not installed in the prefix ({Path('bin/fl-launch.exe')} is missing)"
+    assert (
+        bridge.status(ctx)["reason"]
+        == f"the shims are not installed in the prefix ({Path('bin/fl-launch.exe')} is missing)"
+    )
     integration.run_shims(ctx)
     bridge.disable(ctx)
     assert bridge.status(ctx)["enabled"] is False
@@ -156,7 +159,9 @@ def test_shim_layout_problems(kit: bridge_kit.Kit) -> None:
     assert bridge.shims_problems(ctx.paths) == []
     sh = ctx.paths.fork_linux_win_dir / "gitInstance/usr/bin/sh.exe"
     sh.write_bytes(b"MZ other")
-    assert bridge.shims_problems(ctx.paths) == [f"{Path('gitInstance/usr/bin/sh.exe')} differs from the built fl-shim.exe"]
+    assert bridge.shims_problems(ctx.paths) == [
+        f"{Path('gitInstance/usr/bin/sh.exe')} differs from the built fl-shim.exe"
+    ]
     sh.unlink()
     sh.symlink_to(kit.shims / bridge.SHIM)
     assert bridge.shims_problems(ctx.paths) == [f"{Path('gitInstance/usr/bin/sh.exe')} is missing"]

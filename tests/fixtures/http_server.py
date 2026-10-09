@@ -27,7 +27,16 @@ from typing import Any
 import pytest
 
 _RANGE = re.compile(r"bytes=([0-9]+)-")
-_PROXY_VARS = ("http_proxy", "https_proxy", "all_proxy", "no_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
+_PROXY_VARS = (
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "no_proxy",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+)
 
 
 @dataclass

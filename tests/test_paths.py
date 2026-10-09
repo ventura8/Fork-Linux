@@ -97,7 +97,7 @@ def test_wine_user_locations(tmp_path: Path) -> None:
 def test_paths_is_frozen(tmp_path: Path) -> None:
     p = Paths.from_env({"HOME": str(tmp_path)})
     with pytest.raises(dataclasses.FrozenInstanceError):
-        setattr(p, "prefix", tmp_path)
+        p.prefix = tmp_path
 
 
 def test_prefix_under_data_dir_is_accepted(xdg: Path) -> None:

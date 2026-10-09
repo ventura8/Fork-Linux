@@ -367,7 +367,9 @@ class _Translator:
         self.section = _Section(name, sub)
         new_sub = sub
         if name.lower() == "includeif" and sub is not None:
-            new_sub = self._mapped(sub, f"includeIf condition {sub!r}", lambda: _translate_gitdir(sub, self.pathmap, self.home))
+            new_sub = self._mapped(
+                sub, f"includeIf condition {sub!r}", lambda: _translate_gitdir(sub, self.pathmap, self.home)
+            )
         if new_sub == sub:
             self.out.append(line[: match.end()])
         else:

@@ -247,7 +247,9 @@ class Manifest:
     """A validated, read-only view of the runtime manifest."""
 
     def __init__(self, data: Any, *, overridden: bool = False) -> None:
-        top = _obj(data, "manifest", ("schema", "revision", "bootstrap_revision", "wine", "winetricks", "dotnet", "fork"))
+        top = _obj(
+            data, "manifest", ("schema", "revision", "bootstrap_revision", "wine", "winetricks", "dotnet", "fork")
+        )
         schema = _int(top["schema"], "schema", 1)
         if schema != SCHEMA:
             raise _fail("schema", f"unsupported schema {schema} (this fork-linux understands {SCHEMA})")
@@ -292,7 +294,15 @@ class Manifest:
         fork = _obj(
             value,
             "fork",
-            ("default", "installer_url_template", "feed_url", "legacy_feed_url", "allowed_hosts", "requires", "versions"),
+            (
+                "default",
+                "installer_url_template",
+                "feed_url",
+                "legacy_feed_url",
+                "allowed_hosts",
+                "requires",
+                "versions",
+            ),
             ("known_bad",),
         )
         self.allowed_hosts = _str_list(fork["allowed_hosts"], "fork.allowed_hosts", _HOSTNAME)

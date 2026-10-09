@@ -94,7 +94,9 @@ def test_preflight_needs_disk_space(xdg: Path, host: None, monkeypatch: pytest.M
 
 
 def test_preflight_names_missing_tools_with_a_hint(xdg: Path, host: None, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(preflight.hostdeps, "distro", lambda: preflight.hostdeps.DistroInfo("ubuntu", (), "debian", "Ubuntu"))
+    monkeypatch.setattr(
+        preflight.hostdeps, "distro", lambda: preflight.hostdeps.DistroInfo("ubuntu", (), "debian", "Ubuntu")
+    )
     ctx = _ctx({"cabextract": None, "unzip": "/usr/bin/unzip"})
     with pytest.raises(ForkLinuxError, match="cabextract") as caught:
         preflight.run(ctx)

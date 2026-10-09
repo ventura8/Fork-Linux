@@ -58,7 +58,14 @@ def test_fetch_downloads_verifies_and_moves_into_place(http_server: FakeHTTPServ
     http_server.add("/wine.tar.xz", BODY)
     seen: list[tuple[int, int | None]] = []
     cache = tmp_path / "cache" / "nested"
-    path = get(http_server, "/wine.tar.xz", cache, sha256=BODY_SHA.upper(), size=len(BODY), progress=lambda d, t: seen.append((d, t)))
+    path = get(
+        http_server,
+        "/wine.tar.xz",
+        cache,
+        sha256=BODY_SHA.upper(),
+        size=len(BODY),
+        progress=lambda d, t: seen.append((d, t)),
+    )
     assert path == cache / "wine.tar.xz"
     assert path.read_bytes() == BODY
     assert not (cache / "wine.tar.xz.part").exists()
@@ -116,7 +123,9 @@ def test_resume_from_part_file(http_server: FakeHTTPServer, tmp_path: Path) -> N
     http_server.add("/f.bin", BODY)
     (tmp_path / "f.bin.part").write_bytes(BODY[:1000])
     seen: list[tuple[int, int | None]] = []
-    path = get(http_server, "/f.bin", tmp_path, sha256=BODY_SHA, size=len(BODY), progress=lambda d, t: seen.append((d, t)))
+    path = get(
+        http_server, "/f.bin", tmp_path, sha256=BODY_SHA, size=len(BODY), progress=lambda d, t: seen.append((d, t))
+    )
     assert path.read_bytes() == BODY
     assert http_server.requests_for("/f.bin")[0].headers["Range"] == "bytes=1000-"
     assert seen[0] == (1000, len(BODY))
@@ -193,7 +202,9 @@ def test_content_range_with_unknown_total(http_server: FakeHTTPServer, tmp_path:
 def test_truncated_body_is_resumed(http_server: FakeHTTPServer, tmp_path: Path) -> None:
     http_server.add("/f.bin", BODY, truncate_after=1000)
     sleeps: list[float] = []
-    assert get(http_server, "/f.bin", tmp_path, sha256=BODY_SHA, size=len(BODY), sleep=sleeps.append).read_bytes() == BODY
+    assert (
+        get(http_server, "/f.bin", tmp_path, sha256=BODY_SHA, size=len(BODY), sleep=sleeps.append).read_bytes() == BODY
+    )
     assert sleeps == [1.0]
     assert [r.headers.get("Range") for r in http_server.requests] == [None, "bytes=1000-"]
 
@@ -222,7 +233,9 @@ def test_retries_exhausted(http_server: FakeHTTPServer, tmp_path: Path) -> None:
     assert not (tmp_path / "f.bin").exists()
 
 
-@pytest.mark.parametrize(("status", "hint"), [(404, "no longer published"), (403, "refused access"), (418, "try again later")])
+@pytest.mark.parametrize(
+    ("status", "hint"), [(404, "no longer published"), (403, "refused access"), (418, "try again later")]
+)
 def test_client_errors_are_not_retried(http_server: FakeHTTPServer, tmp_path: Path, status: int, hint: str) -> None:
     http_server.add("/f.bin", status=status)
     sleeps: list[float] = []
@@ -437,7 +450,9 @@ def test_loopback_http_needs_policy_and_env(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_check_url_lowercases_and_matches_hosts() -> None:
-    assert download.check_url("https://CDN.Fork.dev/win/Fork-2.23.2.exe", allowed_hosts=["cdn.FORK.dev"]) == "cdn.fork.dev"
+    assert (
+        download.check_url("https://CDN.Fork.dev/win/Fork-2.23.2.exe", allowed_hosts=["cdn.FORK.dev"]) == "cdn.fork.dev"
+    )
     with pytest.raises(IntegrityFailed):
         download.check_url("https://cdn.fork.dev.evil.example/x", allowed_hosts=["cdn.fork.dev"])
 
@@ -526,7 +541,9 @@ def test_user_agent_keeps_dev_versions(monkeypatch: pytest.MonkeyPatch) -> None:
     assert download.user_agent().startswith("fork-linux/0.1.0-dev+g1a2b3c ")
 
 
-@pytest.mark.parametrize(("raw", "value"), [(None, None), ("42", 42), (" 7 ", 7), ("-1", None), ("1e3", None), ("", None)])
+@pytest.mark.parametrize(
+    ("raw", "value"), [(None, None), ("42", 42), (" 7 ", 7), ("-1", None), ("1e3", None), ("", None)]
+)
 def test_parse_length(raw: str | None, value: int | None) -> None:
     assert download.parse_length(raw) == value
 

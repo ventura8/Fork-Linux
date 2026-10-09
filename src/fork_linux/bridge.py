@@ -506,8 +506,9 @@ def start_daemon(ctx: Any, *, debug: bool = False) -> Daemon | None:
     Must run on the launcher's main thread right before it execs Wine
     (``--parent-pid`` then tracks the Wine process that runs Fork until a
     process carrying our prefix and the daemon's port appears; from then on
-    ``--watch-prefix`` keeps it alive across Fork's self-update restart). Returns None, after a warning when the bridge is
-    on, if the bridge is off or cannot start: Fork then uses its bundled git.
+    ``--watch-prefix`` keeps it alive across Fork's self-update restart).
+    Returns None, after a warning when the bridge is on, if the bridge is off
+    or cannot start: Fork then uses its bundled git.
     The outcome is recorded in ``ctx.cache`` for :func:`host_actions_active`.
     """
     ctx.cache[CACHE_KEY] = None

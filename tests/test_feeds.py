@@ -169,7 +169,9 @@ def test_parse_fixture_legacy_feed() -> None:
 def test_legacy_crlf_blank_lines_and_delta() -> None:
     text = "\r\n52376CB9A78706DF0E62CE21E9CC0BB9116C838D  Fork-2.23.2-delta.nupkg\t2465782\r\n   \r\n"
     assert feeds.parse_releases_legacy(text) == [
-        feeds.FeedAsset("2.23.2", "Delta", "Fork-2.23.2-delta.nupkg", None, "52376cb9a78706df0e62ce21e9cc0bb9116c838d", 2465782)
+        feeds.FeedAsset(
+            "2.23.2", "Delta", "Fork-2.23.2-delta.nupkg", None, "52376cb9a78706df0e62ce21e9cc0bb9116c838d", 2465782
+        )
     ]
     assert feeds.parse_releases_legacy("") == []
 
@@ -437,7 +439,9 @@ def test_oversized_chunked_feed_is_refused_while_reading(
 
 def test_truncated_feed_is_not_cached(http_server: FakeHTTPServer, tmp_path: Path) -> None:
     url = serve_feed(http_server, content_length=len(RELEASES_JSON) + 50)
-    with pytest.raises(DownloadFailed, match=f"closed after {len(RELEASES_JSON)} of {len(RELEASES_JSON) + 50} bytes") as info:
+    with pytest.raises(
+        DownloadFailed, match=f"closed after {len(RELEASES_JSON)} of {len(RELEASES_JSON) + 50} bytes"
+    ) as info:
         feeds.fetch_feed(url, tmp_path, policy=LOOP)
     assert info.value.exit_code == ExitCode.DOWNLOAD_FAILED
     assert not (tmp_path / feeds.FEED_FILE).exists()

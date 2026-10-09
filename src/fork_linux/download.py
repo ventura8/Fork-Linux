@@ -65,6 +65,8 @@ class Policy:
     allow_loopback_http: bool = False
 
 
+DEFAULT_POLICY = Policy()
+
 @dataclass(frozen=True)
 class _Transfer:
     digest: str
@@ -83,7 +85,7 @@ def _loopback_http_allowed(host: str, policy: Policy) -> bool:
     return policy.allow_loopback_http and host in LOOPBACK_HOSTS and os.environ.get(LOOPBACK_ENV) == "1"
 
 
-def check_url(url: str, policy: Policy = Policy(), allowed_hosts: Iterable[str] | None = None) -> str:
+def check_url(url: str, policy: Policy = DEFAULT_POLICY, allowed_hosts: Iterable[str] | None = None) -> str:
     """Return the lowercase host of ``url``; raise :class:`IntegrityFailed` if the policy forbids it."""
     try:
         parts = urlsplit(url)
@@ -366,7 +368,7 @@ def fetch(
     cache_dir: Path,
     sha256: str | None = None,
     size: int | None = None,
-    policy: Policy = Policy(),
+    policy: Policy = DEFAULT_POLICY,
     offline: bool = False,
     retries: int = 4,
     timeout: float = 30,
@@ -424,7 +426,7 @@ def fetch(
     return dest
 
 
-def head_ok(url: str, timeout: float = 10, *, policy: Policy = Policy()) -> bool:
+def head_ok(url: str, timeout: float = 10, *, policy: Policy = DEFAULT_POLICY) -> bool:
     """True if a HEAD request to ``url`` succeeds (used by ``doctor --network``)."""
     try:
         host = check_url(url, policy)

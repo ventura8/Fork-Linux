@@ -106,7 +106,12 @@ def test_launcher_started_daemon_serves_the_shim_and_follows_wine(tmp_path: Path
     prefix = home / ".local/share/fork-linux/prefix"
     prefix.mkdir(parents=True, mode=0o700)
     server = _wineserver(wine)
-    boot_env = {**env, "WINEPREFIX": str(prefix), "WINEDEBUG": "-all", "WINEDLLOVERRIDES": "mscoree,mshtml=;winemenubuilder.exe=d"}
+    boot_env = {
+        **env,
+        "WINEPREFIX": str(prefix),
+        "WINEDEBUG": "-all",
+        "WINEDLLOVERRIDES": "mscoree,mshtml=;winemenubuilder.exe=d",
+    }
     try:
         subprocess.run([str(wine), "wineboot", "-i"], env=boot_env, timeout=BOOT_TIMEOUT, check=True,
                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

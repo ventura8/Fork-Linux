@@ -216,7 +216,10 @@ def list_backups(backup_dir: Path) -> list[Path]:
 
 
 def backup(text: str, *, backup_dir: Path, keep: int = DEFAULT_KEEP) -> Path:
-    """Save ``text`` (the current content of ``repositories.toml``) as ``repositories.toml.<UTC time>``; keep ``keep``."""
+    """Save ``text`` (the current ``repositories.toml``) as ``repositories.toml.<UTC time>``.
+
+    Only the newest ``keep`` backups are kept.
+    """
     fsutil.ensure_dir(backup_dir, 0o700)
     stamp = _utcnow().strftime("%Y%m%dT%H%M%S.%fZ")
     target = Path(backup_dir) / f"{BACKUP_PREFIX}{stamp}"

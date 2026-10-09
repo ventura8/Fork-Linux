@@ -449,7 +449,9 @@ def test_safe_extract_never_writes_through_existing_hardlink(tmp_path: Path) -> 
     dest = tmp_path / "dest"
     dest.mkdir()
     os.link(outside, dest / "victim")
-    archive = _make_tar(tmp_path / "a.tar", [_file("victim", b"overwritten"), _link("again", "victim", tarfile.LNKTYPE)])
+    archive = _make_tar(
+        tmp_path / "a.tar", [_file("victim", b"overwritten"), _link("again", "victim", tarfile.LNKTYPE)]
+    )
     fsutil.safe_extract(archive, dest)
     assert (dest / "victim").read_bytes() == b"overwritten"
     assert outside.read_text(encoding="utf-8") == "precious"

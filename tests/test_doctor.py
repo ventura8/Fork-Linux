@@ -1301,7 +1301,9 @@ def test_fork_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert run(ctx, "fork.tools") == Result("ok", "no unusable tool configured")
     write_settings(ctx.layout, {"Guid": GUID, "ShellTool": {"Type": "GitBash"}})
     assert "Git Bash" in run(ctx, "fork.tools").detail
-    write_settings(ctx.layout, {"Guid": GUID, "ShellTool": {"Type": "Custom", "ApplicationPath": "Z:\\x\\fork-linux-terminal"}})
+    write_settings(
+        ctx.layout, {"Guid": GUID, "ShellTool": {"Type": "Custom", "ApplicationPath": "Z:\\x\\fork-linux-terminal"}}
+    )
     assert run(ctx, "fork.tools") == Result("ok", "terminal: Z:\\x\\fork-linux-terminal")
     write_settings(ctx.layout, {"Guid": GUID, "ShellTool": DEAD, "MergeTool": {**DEAD, "Arguments": "merge"}})
     result = run(ctx, "fork.tools")
@@ -1373,7 +1375,7 @@ def test_integration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         '@="' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
         for _key, _name, value in integration.open_expected()
     ]
-    for (key, _name, _value), line in zip(integration.open_expected(), lines):
+    for (key, _name, _value), line in zip(integration.open_expected(), lines, strict=True):
         add_values(ctx.paths.prefix, "system.reg", key.replace("HKLM\\", ""), [line])
     result = run(ctx, "prefix.integration")
     assert result.status == "info"

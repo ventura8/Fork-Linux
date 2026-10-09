@@ -676,4 +676,8 @@ def test_env_overrides_relative_worktrees(tmp_path: Path, version: tuple[int, in
 def test_env_overrides_keeps_the_users_worktree_choice(tmp_path: Path) -> None:
     config = _config(tmp_path, env_overrides="worktree.useRelativePaths=false")
     env = gitconfig.env_overrides(config, git_version=(2, 50, 0))
-    assert env == {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "worktree.useRelativePaths", "GIT_CONFIG_VALUE_0": "false"}
+    assert env == {
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "worktree.useRelativePaths",
+        "GIT_CONFIG_VALUE_0": "false",
+    }

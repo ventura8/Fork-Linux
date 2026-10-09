@@ -99,7 +99,9 @@ def test_handoff_falls_back_to_running_the_helper(box: dict[str, Path]) -> None:
 def test_handoff_uses_the_source_template_with_python(box: dict[str, Path]) -> None:
     (box["libexec"] / "fork-linux-host.in").write_text("#!@PYTHON@ -I\n", encoding="utf-8")
     python = _stub(box["stubs"], "fake-python")
-    code, calls = _run(box, "fork-linux-handoff", "open", "/x", FORK_LINUX_HANDOFF="direct", FORK_LINUX_PYTHON=str(python))
+    code, calls = _run(
+        box, "fork-linux-handoff", "open", "/x", FORK_LINUX_HANDOFF="direct", FORK_LINUX_PYTHON=str(python)
+    )
     assert code == 0
     assert calls == [["fake-python", "-I", str(box["libexec"] / "fork-linux-host.in"), "open", "/x"]]
 
