@@ -109,5 +109,5 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/%{app_id}.metain
 %{_datadir}/fish/vendor_completions.d/fork.fish
 
 %changelog
-* Fri Oct 09 2026 Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com> - 0.1.0-1
+* Fri Oct 09 2026 Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com> - 1.0.0-1
 - First public release

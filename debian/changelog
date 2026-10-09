@@ -1,4 +1,4 @@
-fork-linux (0.1.0) resolute; urgency=medium
+fork-linux (1.0.0) resolute; urgency=medium
 
   * First public release of Fork for Linux (unofficial), an unofficial Wine
     wrapper for the Fork git client by Dan Pristupov and Tanya Pristupova

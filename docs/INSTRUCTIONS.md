@@ -65,7 +65,7 @@ Read every `logs/ci-packaging/<format>.log` after a packaging run (exit 0 is not
 | Format | Build | Image |
 |---|---|---|
 | deb / deb-jammy | `scripts/release-deb.sh` (dpkg-buildpackage + lintian `--fail-on error`) | `Dockerfile.ppa{,.jammy}` |
-| PPA | `scripts/ppa-docker.sh --dry-run` (unsigned `0.1.0+ppa1~ubuntuNN.NN.1` source packages) | `Dockerfile.ppa` |
+| PPA | `scripts/ppa-docker.sh --dry-run` (unsigned `1.0.0+ppa1~ubuntuNN.NN.1` source packages) | `Dockerfile.ppa` |
 | rpm | `scripts/release-rpm.sh fedora|opensuse` (rpmlint, any E/W fails) | `Dockerfile.rpm.*` |
 | Arch | `scripts/release-arch.sh` (makepkg; `.SRCINFO` checked against makepkg); AUR: `scripts/aur-render.sh` | `Dockerfile.arch` |
 | tarball / AppImage / Flatpak | `scripts/release-portable.sh tarball|appimage|flatpak` | `Dockerfile.release` |

@@ -118,13 +118,13 @@ flowchart TD
 
 ## 3. Directory Layout Reference
 
-v0.1.0 is built in phases; rows marked **(planned)** do not exist yet. When you add one, drop the marker in the same change (§4.7).
+v1.0.0 was built in phases; rows marked **(planned)** do not exist yet. When you add one, drop the marker in the same change (§4.7).
 
 | Path | Purpose / Description |
 |---|---|
 | `AGENTS.md` | Agent workspace guidelines (this file, canonical). |
 | `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`, `.cursor/rules/fork-linux-agents.mdc` | Thin tool adapters pointing here. `agent.md`, `skills.md`: legacy stubs (skills index). |
-| `VERSION` | **Single source of truth** for the project semver (`N.N.N`, currently `0.1.0`). See §4.7.2. |
+| `VERSION` | **Single source of truth** for the project semver (`N.N.N`, currently `1.0.0`). See §4.7.2. |
 | `README.md`, `LICENSE` | User docs (credits block between `<!-- credits:begin -->` / `<!-- credits:end -->`); MIT license for this repository only. |
 | `pyproject.toml` | **Tool configuration only** (pytest, coverage). No `[build-system]`, no `[project]`: we are not a pip package. |
 | `meson.build`, `meson.options`, `meson_options.txt` → `meson.options` | Meson build: launchers (`bin/fork-linux` + `fork` symlink, option `fork_alias`), the Python package in `<datadir>/fork-linux` (+ generated `_build.py`, options `flavor` / `python`), host helpers in `<prefix>/lib/fork-linux`, the bridge (`bridge/meson.build`; `bridge_prebuilt_dir` fallback), desktop entry, metainfo, icons, man pages, completions, optional system-wide file-manager actions (`file_manager_actions`, `data/fm-actions/`). Data checks (`gen-data check`, desktop-file-validate, appstreamcli) are always registered as `meson test --suite data`; option `tests` gates the C unit tests. |
@@ -306,7 +306,7 @@ v0.1.0 is built in phases; rows marked **(planned)** do not exist yet. When you 
 * **Never depend on the distro `wine` package** (not Depends / Requires / Recommends): the managed runtime is downloaded per user, the Flatpak uses the `org.winehq.Wine` BaseApp, and `system` Wine is an opt-in provider. Packages never bundle Fork, and deb / rpm / arch / AppImage / snap never bundle Wine.
 * Runtime deps: Python ≥ 3.10 and the host libraries the managed Wine needs (t64 alternatives on Debian/Ubuntu); Recommends zenity | kdialog, git, xdg-utils, fonts. Build deps include `gcc-mingw-w64-x86-64` and `musl-tools`. `scripts/check-dep-names.py` verifies the recipes against `fork_linux.hostdeps` (`--available FAMILY` asks the package manager); RPMs require the libraries by soname (`libX.so.N()(64bit)`).
 * Quality gates: `lintian --fail-on error` with **no overrides**, `rpmlint` with **no filters**, `desktop-file-validate`, `appstreamcli validate`; the deb / rpm / arch builds keep `-Dtests=true` (default) so `dh_auto_test` / `%check` / `check()` run the bridge's C unit tests under the distribution's own hardening flags (`bridge/tests/unit/test_helper_daemon.c` `#undef`s `_FORTIFY_SOURCE` itself, because Fedora / Arch pass `-Wp,-D_FORTIFY_SOURCE=3`, which a later `-U` does not undo); the portable channels (tarball, AppImage, snap, Flatpak) build with `-Dtests=false`; PPA source packages get their changelog entry written directly (no `dch`); Flatpak `finish-args` each carry a `# why:` comment.
-* Versions come from `VERSION` (§4.7.2); PPA uploads use `0.1.0+ppa1~ubuntu{22.04,24.04,26.04}.1`.
+* Versions come from `VERSION` (§4.7.2); PPA uploads use `1.0.0+ppa1~ubuntu{22.04,24.04,26.04}.1`.
 * **Packaging E2E** per format (`scripts/packaging-e2e-install.sh`, program run as the unprivileged `tester`; container doc exclusions are lifted so man pages install): install → assert → upgrade → remove → reinstall. Asserts: `--version` == `VERSION`, `doctor --offline --json` works without Wine, shims are PE32+ x86-64, the helper ELF is ET_EXEC for the portable channels (tarball, AppImage, snap ship the static musl build; deb / rpm / arch / Flatpak ship the glibc PIE per bridge/README.md, ET_DYN accepted there), desktop file validates, metainfo / man pages / completions present, and the test user's `~/.local/share/fork-linux/E2E_MARKER` and `~/.wine/E2E_SENTINEL` survive every operation.
 
 ---
@@ -338,6 +338,6 @@ v0.1.0 is built in phases; rows marked **(planned)** do not exist yet. When you 
 ## 6. Commit, Branch & Release Conventions
 
 * **Conventional Commits**: `type(scope): imperative summary` — types `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `perf`, `chore`, `revert`; scopes **`cli`, `setup`, `wine`, `bridge`, `desktop`, `packaging`, `ci`, `docs`, `deps`, `release`**. Breaking changes use `!` and a `BREAKING CHANGE:` footer.
-* **Release commit**: `release: vX.Y.Z - <Title>` (e.g. `release: v0.1.0 - First public release`); its body summarises **all** changes on the branch (see the `release` skill). The tag `vX.Y.Z` must equal `VERSION`.
-* **Branches**: default branch **`main`**; release integration branches `feature/vX.Y.Z` (e.g. `feature/v0.1.0`); topic branches `feature/<topic>` and `fix/<topic>`. PRs target `main` and use [the PR template](.github/pull_request_template.md).
+* **Release commit**: `release: vX.Y.Z - <Title>` (e.g. `release: v1.0.0 - First public release`); its body summarises **all** changes on the branch (see the `release` skill). The tag `vX.Y.Z` must equal `VERSION`.
+* **Branches**: default branch **`main`**; release integration branches `feature/vX.Y.Z` (e.g. `feature/v1.0.0`); topic branches `feature/<topic>` and `fix/<topic>`. PRs target `main` and use [the PR template](.github/pull_request_template.md).
 * **Never push, tag, force-push or publish without being asked** by the maintainer (hard rule 17). Local commits only when asked; never rewrite published history.

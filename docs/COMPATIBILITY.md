@@ -27,4 +27,4 @@ user) passed in a container of that distribution; it does not start Fork. The re
 
 ## Real Fork under Wine
 
-Not yet recorded by CI for v0.1.0; see `tests/e2e/RESULTS.md` for the manual runs.
+Not yet recorded by CI for v1.0.0; see `tests/e2e/RESULTS.md` for the manual runs.

@@ -4,8 +4,8 @@
 # must exist (docs/releases/vN.N.N.md and vN.N.N_github_description.md) before anything is
 # built. Exports VERSION to $GITHUB_ENV when run in GitHub Actions.
 #
-# Usage: GITHUB_REF_NAME=v0.1.0 ./scripts/release-verify-tag-version.sh
-#        ./scripts/release-verify-tag-version.sh v0.1.0
+# Usage: GITHUB_REF_NAME=v1.0.0 ./scripts/release-verify-tag-version.sh
+#        ./scripts/release-verify-tag-version.sh v1.0.0
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

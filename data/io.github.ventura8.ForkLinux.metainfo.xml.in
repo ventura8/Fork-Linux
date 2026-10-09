@@ -40,7 +40,7 @@
   </supports>
   <content_rating type="oars-1.1"/>
   <releases>
-    <release version="0.1.0" date="2026-10-09">
+    <release version="1.0.0" date="2026-10-09">
       <description>
         <p>First public release: lazy, resumable setup of a pinned Wine runtime, .NET Framework and the official Fork installer; menu entry and fork command; update snapshots and rollback; health check; experimental native-git bridge.</p>
       </description>

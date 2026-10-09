@@ -255,7 +255,7 @@ GIT_KEPT = (
     "debian/source/format",
     "data/icons/hicolor/scalable/apps/io.github.ventura8.ForkLinux.svg",
     "docs/assets/banner.svg",
-    "docs/releases/v0.1.0.md",
+    "docs/releases/v1.0.0.md",
     ".github/banner.png",
     ".cursor/rules/fork-linux-agents.mdc",
     ".agents/skills/release/SKILL.md",

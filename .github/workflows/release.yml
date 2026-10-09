@@ -53,7 +53,7 @@ jobs:
           ./scripts/release-verify-tag-version.sh "${tag}"
           echo "version=${tag#v}" >> "${GITHUB_OUTPUT}"
 
-  # Signed source packages for jammy / noble / resolute (0.1.0+ppa1~ubuntuNN.NN.1). The
+  # Signed source packages for jammy / noble / resolute (1.0.0+ppa1~ubuntuNN.NN.1). The
   # upload runs only for a tag, with the GPG secrets present and vars.PPA_UPLOAD == 'true';
   # otherwise the unsigned dry run proves the source packages build.
   ppa:

@@ -51,7 +51,7 @@ The installer verifies the release tarball against `SHA256SUMS` and keeps a mani
 
 ## Install methods
 
-All channels are **x86_64 only** and never depend on your distribution's `wine` package. The first release is in preparation: channels go live with v0.1.0.
+All channels are **x86_64 only** and never depend on your distribution's `wine` package. The first release is in preparation: channels go live with v1.0.0.
 
 | Channel | Command |
 |---|---|

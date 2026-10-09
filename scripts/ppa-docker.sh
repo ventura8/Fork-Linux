@@ -3,7 +3,7 @@
 # for Ubuntu 22.04 (jammy), 24.04 (noble) and 26.04 (resolute), and upload them only when asked.
 #
 # Runs inside docker/Dockerfile.ppa. Versions: VERSION+ppa1~ubuntuNN.NN.1, e.g.
-# 0.1.0+ppa1~ubuntu22.04.1 (AGENTS.md §4.9). Each series is built from a private copy of the
+# 1.0.0+ppa1~ubuntu22.04.1 (AGENTS.md §4.9). Each series is built from a private copy of the
 # tree whose debian/changelog gets the PPA entry; the repository's changelog is never
 # modified.
 #
