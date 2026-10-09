@@ -6,7 +6,12 @@ useful targets are ours:
 
 * with the native-git bridge daemon running (:func:`bridge.host_actions_active`)
   and ``fl-launch.exe`` installed in ``C:\\fork-linux\\bin``: ``fl-launch.exe
-  terminal|diff|merge`` for all three;
+  terminal|diff|merge`` for all three, plus one entry named :data:`LIST_TOOL_NAME`
+  in Fork's ``ExternalDiffTools`` / ``ExternalMergeTools`` lists: Fork 2.23 only
+  offers "Diff in <name>" (Ctrl+D) / "Merge in <name>" for tools in those lists
+  (``{"Type": "Custom", "Name", "Path", "Arguments"}``, verified against the
+  file Fork itself writes); the single ``ExternalDiffTool`` / ``MergeTool``
+  values alone expose nothing;
 * otherwise the terminal goes to the ``fork-linux-terminal`` script (a Unix
   ``#!/bin/sh`` script that Wine starts directly; Fork passes the repository
   as its working directory) and the diff / merge tools stay unset, because
@@ -41,6 +46,10 @@ SHELL_TOOL = "ShellTool"
 EXTERNAL_DIFF_TOOL = "ExternalDiffTool"
 EXTERNAL_MERGE_TOOL = "MergeTool"
 TOOL_KEYS = (SHELL_TOOL, EXTERNAL_DIFF_TOOL, EXTERNAL_MERGE_TOOL)
+EXTERNAL_DIFF_TOOLS = "ExternalDiffTools"
+EXTERNAL_MERGE_TOOLS = "ExternalMergeTools"
+TOOL_LIST_KEYS = (EXTERNAL_DIFF_TOOLS, EXTERNAL_MERGE_TOOLS)
+LIST_TOOL_NAME = "Linux (fork-linux)"
 CUSTOM = "Custom"
 # Fork's own values for "nothing configured".
 DEFAULT_EXTERNAL_TOOL: dict[str, str] = {"Type": CUSTOM, "ApplicationPath": "", "Arguments": ""}
@@ -95,17 +104,52 @@ def is_dead(tool: Any, *, bridge_active: bool) -> bool:
     return isinstance(app, str) and app.lower().startswith(OUR_WIN_DIR)
 
 
+def is_our_entry(entry: Any) -> bool:
+    """True if ``entry`` of ``ExternalDiffTools`` / ``ExternalMergeTools`` runs one of our programs."""
+    if not isinstance(entry, dict):
+        return False
+    path = entry.get("Path")
+    return isinstance(path, str) and path.lower().startswith(OUR_WIN_DIR)
+
+
+def list_entry(arguments: str) -> dict[str, str]:
+    """Our ``fl-launch.exe`` entry for Fork's tool lists."""
+    return {"Type": CUSTOM, "Name": LIST_TOOL_NAME, "Path": FL_LAUNCH_WIN, "Arguments": arguments}
+
+
+def merged_list(current: Any, entry: Any) -> list[Any] | None:
+    """``current`` (a Fork tool list) with our entries replaced by ``entry`` (None: removed).
+
+    The user's own entries keep their order; ours goes last. Returns None when
+    nothing changes or ``current`` is not a list (a missing list is created only
+    to add ``entry``).
+    """
+    if current is None:
+        current = []
+    if not isinstance(current, list):
+        return None
+    merged = [item for item in current if not is_our_entry(item)]
+    if entry is not None:
+        merged.append(entry)
+    return None if merged == current else merged
+
+
 def wanted(*, bridge_active: bool, fl_launch: bool, pathmap: PathMap | None) -> dict[str, Any]:
-    """``{ShellTool, ExternalDiffTool, MergeTool}`` values we want (None: no wish for that key)."""
+    """``{ShellTool, ExternalDiffTool, MergeTool}`` values we want (None: no wish for that key), plus our
+    entry for ``ExternalDiffTools`` / ``ExternalMergeTools`` (None: our entries are removed)."""
     if bridge_active and fl_launch:
         return {
             SHELL_TOOL: {"Type": CUSTOM, "ApplicationPath": FL_LAUNCH_WIN, "Arguments": "terminal"},
             EXTERNAL_DIFF_TOOL: {"Type": CUSTOM, "ApplicationPath": FL_LAUNCH_WIN, "Arguments": DIFF_ARGUMENTS},
             EXTERNAL_MERGE_TOOL: {"Type": CUSTOM, "ApplicationPath": FL_LAUNCH_WIN, "Arguments": MERGE_ARGUMENTS},
+            EXTERNAL_DIFF_TOOLS: list_entry(DIFF_ARGUMENTS),
+            EXTERNAL_MERGE_TOOLS: list_entry(MERGE_ARGUMENTS),
         }
     terminal = script_win(TERMINAL_SCRIPT, pathmap)
     return {
         SHELL_TOOL: None if terminal is None else {"Type": CUSTOM, "ApplicationPath": terminal, "Arguments": ""},
         EXTERNAL_DIFF_TOOL: None,
         EXTERNAL_MERGE_TOOL: None,
+        EXTERNAL_DIFF_TOOLS: None,
+        EXTERNAL_MERGE_TOOLS: None,
     }

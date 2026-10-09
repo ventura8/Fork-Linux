@@ -197,6 +197,17 @@ def test_terminal_from_fork_linux_terminal_env(tmp_path: Path) -> None:
     assert popen.calls[0]["cwd"] == str(tmp_path)
 
 
+def test_terminal_without_a_directory_uses_the_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fork's Console runs ``fl-launch.exe terminal`` in the repository, with no argument."""
+    monkeypatch.chdir(tmp_path)
+    host, _runner, popen = _host({hh.TERMINAL_ENV: "my-term --cd={dir}"})
+    assert hh.main(["terminal"], host=host) == 0
+    assert popen.calls[0]["argv"] == ["my-term", f"--cd={tmp_path}"] and popen.calls[0]["cwd"] == str(tmp_path)
+    assert hh.main(["terminal", "a", "b"], host=host) == hh.EXIT_USAGE
+
+
 def test_terminal_configured_names(tmp_path: Path) -> None:
     host, _runner, _popen = _host({FORK_TERMINAL_CONFIG: "konsole"})
     assert host.terminal_argv("/r") == ["konsole", "--workdir", "/r"]

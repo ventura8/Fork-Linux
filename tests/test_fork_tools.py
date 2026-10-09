@@ -88,11 +88,35 @@ def test_wanted(libexec: Path) -> None:
         "ShellTool": None,
         "ExternalDiffTool": None,
         "MergeTool": None,
+        "ExternalDiffTools": None,
+        "ExternalMergeTools": None,
     }
     _script(libexec, fork_tools.TERMINAL_SCRIPT)
     shell = fork_tools.wanted(bridge_active=True, fl_launch=False, pathmap=z_map)["ShellTool"]
     assert shell["ApplicationPath"].endswith("\\fork-linux-terminal") and shell["Arguments"] == ""
     bridged = fork_tools.wanted(bridge_active=True, fl_launch=True, pathmap=z_map)
-    assert {tool["ApplicationPath"] for tool in bridged.values()} == {fork_tools.FL_LAUNCH_WIN}
+    assert {bridged[key]["ApplicationPath"] for key in fork_tools.TOOL_KEYS} == {fork_tools.FL_LAUNCH_WIN}
     assert bridged["ExternalDiffTool"]["Arguments"] == 'diff "$LOCAL" "$REMOTE"'
     assert bridged["MergeTool"]["Arguments"] == 'merge "$BASE" "$LOCAL" "$REMOTE" "$MERGED"'
+    # Fork 2.23 offers "Diff in <name>" only for entries of its tool lists (format Fork itself writes).
+    assert bridged["ExternalDiffTools"] == {
+        "Type": "Custom",
+        "Name": "Linux (fork-linux)",
+        "Path": "C:\\fork-linux\\bin\\fl-launch.exe",
+        "Arguments": 'diff "$LOCAL" "$REMOTE"',
+    }
+    assert bridged["ExternalMergeTools"]["Arguments"].startswith("merge ")
+
+
+def test_tool_lists_keep_the_users_entries() -> None:
+    ours = fork_tools.list_entry(fork_tools.DIFF_ARGUMENTS)
+    user = {"Type": "Custom", "Name": "My tool", "Path": "C:\\tools\\x.exe", "Arguments": "$LOCAL"}
+    stale = {**ours, "Arguments": "old"}
+    assert fork_tools.merged_list(None, ours) == [ours]
+    assert fork_tools.merged_list(None, None) is None
+    assert fork_tools.merged_list([], None) is None
+    assert fork_tools.merged_list([stale, user, "odd"], ours) == [user, "odd", ours]
+    assert fork_tools.merged_list([user, ours], ours) is None
+    assert fork_tools.merged_list([user, ours], None) == [user]
+    assert fork_tools.merged_list({"not": "a list"}, ours) is None
+    assert not fork_tools.is_our_entry({"Path": 3}) and not fork_tools.is_our_entry("x")

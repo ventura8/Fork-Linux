@@ -966,14 +966,37 @@ def test_bridge_status(monkeypatch: pytest.MonkeyPatch) -> None:
     from fork_linux import bridge
 
     ctx = make()
-    info: dict[str, Any] = {"enabled": False, "available": False, "reason": "not built"}
-    monkeypatch.setattr(bridge, "status", lambda _ctx: info)
+    info: dict[str, Any] = {
+        "enabled": False,
+        "available": False,
+        "ready": False,
+        "reason": "not built",
+        "mode": "bridge",
+        "git_version": "2.53.0",
+        "git_recommended": True,
+        "daemon": {},
+    }
+    seen: list[Any] = []
+    monkeypatch.setattr(bridge, "status", lambda _ctx, session=None: seen.append(session) or info)
     assert run(ctx, "bridge.status").status == "info"
+    assert seen == [None], "no session.json: no daemon"
     info.update(enabled=True)
     assert run(ctx, "bridge.status") == Result("fail", "not built", "run 'fork-linux git-bridge disable'")
-    info.update(available=True, reason="")
-    assert run(ctx, "bridge.status").status == "ok"
-    info.update(enabled=False, reason="invalid value")
+    info.update(available=True, reason="the shims are not installed in the prefix")
+    result = run(ctx, "bridge.status")
+    assert result.status == "warn" and "falls back to its bundled git: the shims" in result.detail
+    assert "fork-linux setup" in result.hint
+    info.update(ready=True, reason="")
+    assert run(ctx, "bridge.status") == Result(
+        "ok", "native-git bridge enabled (experimental): Linux git 2.53.0; starts with Fork"
+    )
+    info.update(daemon={"pid": 7, "port": 4242}, mode="record")
+    detail = run(ctx, "bridge.status").detail
+    assert detail.endswith("record mode: Fork's bundled git 2.53.0; daemon running (pid 7, port 4242)")
+    info.update(git_recommended=False)
+    result = run(ctx, "bridge.status")
+    assert result.status == "warn" and "2.50 or newer" in result.hint
+    info.update(enabled=False, ready=False, reason="invalid value")
     assert run(ctx, "bridge.status").status == "warn"
 
 
@@ -1227,6 +1250,19 @@ def test_fix_fork_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     doctor.fix_fork_tools(ctx)
     shell = json.loads(ctx.layout.settings_file.read_text(encoding="utf-8"))["ShellTool"]
     assert shell["ApplicationPath"] == "Z:" + str(libexec / "fork-linux-terminal").replace("/", "\\")
+    # Our entry in Fork's tool lists is dead too without the daemon; the user's entry stays.
+    from fork_linux import fork_tools
+
+    user = {"Type": "Custom", "Name": "Mine", "Path": "C:\\x.exe", "Arguments": ""}
+    ours = fork_tools.list_entry(fork_tools.DIFF_ARGUMENTS)
+    write_settings(ctx.layout, {"Guid": GUID, "ExternalDiffTools": [user, ours], "ExternalMergeTools": "odd"})
+    result = run(ctx, "fork.tools")
+    assert result.status == "warn" and result.detail.startswith("ExternalDiffTools run(s) fl-launch.exe")
+    assert doctor.fix_fork_tools(ctx) == "reset ExternalDiffTools"
+    assert json.loads(ctx.layout.settings_file.read_text(encoding="utf-8"))["ExternalDiffTools"] == [user]
+    monkeypatch.setattr(doctor.bridge, "host_actions_active", lambda _ctx: True)
+    write_settings(ctx.layout, {"Guid": GUID, "ExternalDiffTools": [ours]})
+    assert run(ctx, "fork.tools").status == "ok"
 
 
 def test_source_dirs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1315,7 +1351,7 @@ def _real_git(ctx: DoctorCtx) -> DoctorCtx:
     return ctx
 
 
-def test_repo_checks(xdg: Path) -> None:
+def test_repo_checks(xdg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = _real_git(make(env={"GIT_CONFIG_NOSYSTEM": "1"}))
     assert run(ctx, "repo.hooks") == Result("info", "no repositories opened in Fork yet")
     prefix(ctx)
@@ -1324,6 +1360,15 @@ def test_repo_checks(xdg: Path) -> None:
     _known(ctx, messy)
     hooks = run(ctx, "repo.hooks")
     assert hooks.status == "warn" and "messy (pre-commit)" in hooks.detail and "git-bridge enable" in hooks.hint
+    assert "enable the git bridge" in run(ctx, "repo.submodules").hint
+    from fork_linux import bridge
+
+    with monkeypatch.context() as patch:
+        patch.setattr(bridge, "check", lambda _ctx: bridge.Readiness(True, [], [], (2, 53, 0)))
+        for name in ("repo.hooks", "repo.submodules"):
+            result = run(ctx, name)
+            assert result.status == "ok" and "the git bridge runs Fork's git with Linux git" in result.detail, name
+        assert run(ctx, "repo.symlinks").status == "warn", "the bridge does not fix Fork's own status view"
     assert "messy (l)" in run(ctx, "repo.symlinks").detail
     assert "messy" in run(ctx, "repo.submodules").detail
     assert "/opt/r.git" in run(ctx, "repo.remotes").detail

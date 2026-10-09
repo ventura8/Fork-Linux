@@ -419,6 +419,20 @@ def test_desired_merge_tool(tmp_path: Path, current: dict[str, Any], replaced: b
     assert wanted == ({"MergeTool": merge} if replaced else {})
 
 
+def test_desired_tool_lists_add_and_remove_only_our_entry(tmp_path: Path) -> None:
+    from fork_linux import fork_tools
+
+    config = _config(tmp_path, fork__enforce_settings="", display__theme="off")
+    ours = fork_tools.list_entry(fork_tools.DIFF_ARGUMENTS)
+    user = {"Type": "Custom", "Name": "Mine", "Path": "C:\\tools\\x.exe", "Arguments": "$LOCAL"}
+    tools = {"ExternalDiffTools": ours, "ExternalMergeTools": None}
+    assert _desired(config, tools=tools, current={"ExternalDiffTools": [user]}) == {"ExternalDiffTools": [user, ours]}
+    assert _desired(config, tools=tools, current={"ExternalDiffTools": [user, ours]}) == {}
+    # The bridge turned off: our entries go, the user's stay.
+    current = {"ExternalDiffTools": [user, ours], "ExternalMergeTools": [ours]}
+    assert _desired(config, tools={}, current=current) == {"ExternalDiffTools": [user], "ExternalMergeTools": []}
+
+
 @pytest.mark.parametrize(
     ("dirs", "replaced"),
     [

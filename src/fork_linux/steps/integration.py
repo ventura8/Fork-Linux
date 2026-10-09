@@ -1,8 +1,9 @@
 """Steps ``host_shims``, ``host_integration``, ``git_overlay``, ``ssh_sync``, ``icon`` and ``desktop_entry``.
 
 Everything here connects Fork to the Linux side: our Windows shims in
-``C:\\fork-linux\\bin``, the redirects that send "Show in File Explorer" and
-"Open" to the Linux file manager and default applications, the ``H:`` drive,
+``C:\\fork-linux`` (``gitInstance`` for the git bridge, ``bin\\fl-launch.exe``),
+the redirects that send "Show in File Explorer" and "Open" to the Linux file
+manager and default applications, the ``H:`` drive,
 the translated git configuration and ssh keys, Fork's own icon extracted from
 the user's ``Fork.exe`` and the personal menu entry.
 """
@@ -14,7 +15,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .. import desktop_integration, fork_tools, fsutil, gitconfig, resources, ssh_sync
+from .. import bridge, desktop_integration, fork_tools, fsutil, gitconfig, ssh_sync
 from ..bootstrap import Ctx, Step
 from ..errors import ForkLinuxError
 from ..registry import RegBatch
@@ -23,23 +24,25 @@ from . import prefix as prefix_steps
 log = logging.getLogger(__name__)
 
 SHIM_MODE = 0o755
+SHIM_DIR_MODE = 0o755
 ICONS_KEY = "desktop.icons"
 
 
 # -- host_shims ----------------------------------------------------------------------------
 
 
+# Rev 1 copied every built *.exe into C:\fork-linux\bin; the git shim now lives under gitInstance.
+LEGACY_SHIMS = (("bin", bridge.SHIM),)
+
+
 def shim_sources() -> list[Path]:
-    """The built Windows shims (``*.exe``) shipped with fork-linux, sorted (empty if none)."""
-    shims = resources.shims_dir()
-    if shims is None or not shims.is_dir():
-        return []
-    return sorted(path for path in shims.glob("*.exe") if path.is_file())
+    """The built Windows shims (``fl-shim.exe``, ``fl-launch.exe``) shipped with fork-linux, sorted."""
+    return sorted(bridge.shim_sources().values())
 
 
 def shims_dest(ctx: Ctx) -> Path:
-    """``C:\\fork-linux\\bin``."""
-    return ctx.paths.fork_linux_win_dir / "bin"
+    """``C:\\fork-linux``."""
+    return ctx.paths.fork_linux_win_dir
 
 
 def shims_inputs(_ctx: Ctx) -> dict[str, Any]:
@@ -48,26 +51,30 @@ def shims_inputs(_ctx: Ctx) -> dict[str, Any]:
 
 
 def run_shims(ctx: Ctx) -> None:
-    """Copy the shims into the prefix (each written to a temporary file, then renamed)."""
-    sources = shim_sources()
-    if not sources:
+    """Copy the shims into the prefix at :data:`bridge.SHIM_LAYOUT` (temporary file, then rename).
+
+    ``fl-shim.exe`` becomes ``git.exe`` / ``bash.exe`` / ``sh.exe`` under
+    ``C:\\fork-linux\\gitInstance`` (what ``FORKGITINSTANCE`` names) and
+    ``fl-launch.exe`` goes to ``C:\\fork-linux\\bin``. They are copies, not
+    links: a shim's persona is its own file name. Installed whether or not the
+    bridge is on; nothing uses them until ``fork-linux git-bridge enable``.
+    """
+    targets = bridge.shim_targets(ctx.paths)
+    if not targets:
         log.info("no Windows shims were built; Fork keeps its own terminal and git")
         return
-    dest = fsutil.ensure_dir(shims_dest(ctx))
-    for source in sources:
-        fsutil.atomic_write(dest / source.name, source.read_bytes(), mode=SHIM_MODE)
+    for target, source in targets:
+        fsutil.ensure_dir(target.parent, mode=SHIM_DIR_MODE)
+        fsutil.atomic_write(target, source.read_bytes(), mode=SHIM_MODE)
+    for rel in LEGACY_SHIMS:
+        legacy = shims_dest(ctx).joinpath(*rel)
+        if os.path.lexists(legacy):
+            legacy.unlink()
 
 
 def verify_shims(ctx: Ctx) -> bool:
-    """Every shim is in ``C:\\fork-linux\\bin`` with the same content."""
-    dest = shims_dest(ctx)
-    for source in shim_sources():
-        target = dest / source.name
-        if target.is_symlink() or not target.is_file():
-            return False
-        if fsutil.sha256_file(target) != fsutil.sha256_file(source):
-            return False
-    return True
+    """Every built shim is installed at its places with the same content (sha256)."""
+    return not bridge.shims_problems(ctx.paths)
 
 
 # -- host_integration ----------------------------------------------------------------------
@@ -266,7 +273,7 @@ def verify_desktop(ctx: Ctx) -> bool:
 HOST_SHIMS = Step(
     id="host_shims",
     title="Installing the Linux bridge programs",
-    rev=1,
+    rev=2,
     weight=1,
     run=run_shims,
     verify=verify_shims,

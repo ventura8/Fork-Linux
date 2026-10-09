@@ -36,6 +36,7 @@ CONTRACT = {
         "env_overrides": "core.filemode=false, core.autocrlf=false",
         "safe_directory_all": "false",
         "bridge": "off",
+        "bridge_mode": "bridge",
     },
     "integration": {"terminal": "auto", "open_files_natively": "true"},
     "snapshots": {"keep": "2", "method": "auto"},

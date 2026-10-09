@@ -93,6 +93,9 @@ CREDENTIAL_STORE = "dpapi"
 RELATIVE_WORKTREES_KEY = "worktree.useRelativePaths"
 RELATIVE_WORKTREES_MIN = (2, 48)
 GIT_VERSION_CACHE = "host-git-version.json"
+# Overrides that only make sense for Fork's bundled git under Wine; native git (the bridge) tracks
+# modes, line endings and symlinks itself.
+BUNDLED_ONLY_KEYS = frozenset({"core.filemode", "core.autocrlf", "core.symlinks"})
 GIT_VERSION_TIMEOUT = 5.0
 _GIT_VERSION_RE = re.compile(r"git version ([0-9]+)\.([0-9]+)(?:\.([0-9]+))?")
 
@@ -605,14 +608,19 @@ def host_git_version(runner: Runner, env: Mapping[str, str], cache_dir: Path) ->
     return parsed
 
 
-def env_overrides(config: Any, *, git_version: tuple[int, ...] | None = None) -> dict[str, str]:
+def env_overrides(
+    config: Any, *, git_version: tuple[int, ...] | None = None, native: bool = False
+) -> dict[str, str]:
     """``GIT_CONFIG_COUNT`` / ``GIT_CONFIG_KEY_n`` / ``GIT_CONFIG_VALUE_n`` for Fork's git.
 
     The pairs come from ``[git] env_overrides`` (``key=value, key=value``);
     ``safe.directory=*`` is added when ``[git] safe_directory_all`` is true,
     and ``worktree.useRelativePaths=true`` when the host ``git_version`` is
     at least 2.48 (so native git can use worktrees Fork creates) and the user
-    did not set that key. An empty result means no override at all.
+    did not set that key. With ``native`` (the git bridge runs the Linux git)
+    the keys only bundled git needs (:data:`BUNDLED_ONLY_KEYS`: file modes,
+    line endings, symlinks) are left out, so native git sees real modes. An
+    empty result means no override at all.
     """
     pairs: list[tuple[str, str]] = []
     for item in config.getlist("git", "env_overrides"):
@@ -623,7 +631,8 @@ def env_overrides(config: Any, *, git_version: tuple[int, ...] | None = None) ->
                 f"invalid git.env_overrides entry {item!r}: expected section.key=value",
                 hint="for example: fork-linux config set git.env_overrides 'core.filemode=false, core.autocrlf=false'",
             )
-        pairs.append((key, value.strip()))
+        if not (native and key.lower() in BUNDLED_ONLY_KEYS):
+            pairs.append((key, value.strip()))
     if config.getbool("git", "safe_directory_all"):
         pairs.append(("safe.directory", "*"))
     named = {key.lower() for key, _value in pairs}

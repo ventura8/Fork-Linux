@@ -470,6 +470,18 @@ def test_env_overrides_safe_directory(tmp_path: Path) -> None:
     }
 
 
+def test_env_overrides_for_native_git_drop_the_bundled_only_keys(tmp_path: Path) -> None:
+    config = _config(tmp_path, env_overrides="core.FileMode=false, core.autocrlf=false, core.symlinks=true, a.b=c")
+    assert gitconfig.env_overrides(config, native=True, git_version=(2, 53, 0)) == {
+        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_KEY_0": "a.b",
+        "GIT_CONFIG_VALUE_0": "c",
+        "GIT_CONFIG_KEY_1": "worktree.useRelativePaths",
+        "GIT_CONFIG_VALUE_1": "true",
+    }
+    assert gitconfig.env_overrides(_config(tmp_path), native=True) == {}
+
+
 def test_env_overrides_empty(tmp_path: Path) -> None:
     assert gitconfig.env_overrides(_config(tmp_path, env_overrides="")) == {}
 

@@ -170,6 +170,13 @@ SCHEMA: dict[str, dict[str, KeySpec]] = {
             "Experimental native-git bridge; manage it with 'fork-linux git-bridge enable|disable'.",
             kind="bool",
         ),
+        "bridge_mode": KeySpec(
+            "bridge",
+            "What the bridge's git.exe does: bridge (run the Linux git) or record (forward to Fork's "
+            "bundled git, for debugging); set with 'fork-linux git-bridge record on|off'.",
+            kind="choice",
+            choices=("bridge", "record"),
+        ),
     },
     "integration": {
         "terminal": KeySpec(

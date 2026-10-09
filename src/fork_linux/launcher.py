@@ -7,6 +7,12 @@ spike S7), and otherwise makes sure setup is complete, runs the pre-launch
 hooks (:func:`pre_launch`), records the session and replaces this process
 with Wine (``os.execvpe``): the launcher never stays around as a parent.
 
+With ``[git] bridge = on`` the native-git bridge daemon is started first
+(:func:`bridge.start_daemon`, before the hooks so Fork's tool settings follow
+whether it really runs): its ``--parent-pid`` is this process, which the exec
+turns into the Wine process running Fork, so the daemon lives exactly as long
+as Fork. The fast path reuses the running daemon recorded in ``session.json``.
+
 Wine's own output goes to ``<logs>/wine-last.log`` (or, with ``--debug``, a
 new ``wine-<UTC time>.log``; the newest :data:`DEBUG_LOGS_KEEP` are kept).
 """
@@ -161,8 +167,13 @@ def _spec(
     driver: str | None,
     git_version: tuple[int, int, int] | None = None,
 ) -> LaunchSpec:
-    """The :class:`LaunchSpec` for the given pieces (shared by the normal and the fast path)."""
-    overrides = {**gitconfig.env_overrides(config, git_version=git_version), **extra}
+    """The :class:`LaunchSpec` for the given pieces (shared by the normal and the fast path).
+
+    ``extra`` holds the bridge's variables; when they send git to the Linux
+    git, the bundled-git-only ``GIT_CONFIG_*`` overrides are left out.
+    """
+    native = bridge.native_git(extra)
+    overrides = {**gitconfig.env_overrides(config, git_version=git_version, native=native), **extra}
     dll_overrides = config.get("wine", "extra_dll_overrides").strip()
     wine_env = winecmd.build_env(
         paths,
@@ -195,12 +206,13 @@ def build_spec(
     debug: bool = False,
     wine_debug: str | None = None,
     driver: str | None = None,
+    bridge_env: Mapping[str, str] | None = None,
 ) -> LaunchSpec:
     """The launch for :class:`fork_linux.bootstrap.Ctx` ``ctx`` (its Wine, prefix, user and config).
 
     The environment is :func:`winecmd.build_env` (``WINEDEBUG`` from
     ``wine_debug``, the debug channels with ``debug``, else ``[wine] debug``)
-    plus :func:`gitconfig.env_overrides` and :func:`bridge.launch_env`;
+    plus :func:`gitconfig.env_overrides` and ``bridge_env`` (:func:`bridge.launch_env`);
     ``driver`` (or ``[wine] driver``) ``wayland`` drops ``DISPLAY`` so Wine
     uses its Wayland driver. Paths become Windows paths through the prefix's
     drive mapping.
@@ -213,7 +225,7 @@ def build_spec(
         info=ctx.wine(),
         layout=ctx.layout,
         targets=targets,
-        extra=bridge.launch_env(ctx),
+        extra=dict(bridge_env or {}),
         debug=debug,
         wine_debug=wine_debug,
         driver=driver,
@@ -475,9 +487,15 @@ def fork_log_history(paths: Paths) -> list[Path]:
 # -- session ---------------------------------------------------------------------------
 
 
-def write_session(paths: Paths, info: winecmd.WineInfo, pid: int) -> Path:
-    """Record the running session (the Wine in use) in ``session.json``; return its path."""
-    data = {
+def write_session(
+    paths: Paths, info: winecmd.WineInfo, pid: int, bridge_record: Mapping[str, Any] | None = None
+) -> Path:
+    """Record the running session (the Wine in use, the bridge daemon) in ``session.json``; return its path.
+
+    The file is private (0600 in the 0700 runtime directory): ``bridge_record``
+    (:func:`bridge.session_record`) carries the daemon's token.
+    """
+    data: dict[str, Any] = {
         "schema": SESSION_SCHEMA,
         "pid": pid,
         "wine_root": str(info.root),
@@ -487,8 +505,10 @@ def write_session(paths: Paths, info: winecmd.WineInfo, pid: int) -> Path:
         "prefix": str(paths.prefix),
         "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
-    fsutil.ensure_dir(paths.runtime_dir)
-    fsutil.atomic_write(paths.session_file, json.dumps(data, indent=2) + "\n")
+    if bridge_record is not None:
+        data["bridge"] = dict(bridge_record)
+    fsutil.ensure_dir(paths.runtime_dir, mode=0o700)
+    fsutil.atomic_write(paths.session_file, json.dumps(data, indent=2) + "\n", mode=0o600)
     return paths.session_file
 
 
@@ -599,7 +619,10 @@ def _to_terminal(app_ctx: AppContext, debug: bool) -> bool:
 def _fast_spec(
     app_ctx: AppContext, targets: Sequence[Path], *, debug: bool, wine_debug: str | None, driver: str | None
 ) -> LaunchSpec | None:
-    """The launch while Fork already runs: the session's Wine, no setup, no hooks (None if unknown)."""
+    """The launch while Fork already runs: the session's Wine and bridge daemon, no setup, no hooks.
+
+    None when the session is unknown.
+    """
     paths: Paths = app_ctx.paths
     info = _session_wine(paths)
     if info is None:
@@ -613,7 +636,7 @@ def _fast_spec(
         info=info,
         layout=ForkLayout(paths, user),
         targets=targets,
-        extra=bridge.launch_env(app_ctx),
+        extra=bridge.session_env(app_ctx, read_session(paths)),
         debug=debug,
         wine_debug=wine_debug,
         driver=driver,
@@ -636,10 +659,12 @@ def run(
     """Open ``raw_targets`` in Fork (or just start it); returns only when ``execvpe`` does (tests).
 
     1. resolve the paths; 2. Fork already running in our prefix: exec at once
-    with the session's Wine (Fork forwards the paths to its window); 3. make
-    sure setup is complete (``no_setup``: :class:`NotSetUpError` instead of
-    running it); 4. pre-launch hooks unless ``no_hooks``; 5. record the
-    session, send Wine's output to the log and exec.
+    with the session's Wine and bridge daemon (Fork forwards the paths to its
+    window); 3. make sure setup is complete (``no_setup``:
+    :class:`NotSetUpError` instead of running it); 4. start the git bridge
+    daemon when it is on (Fork not running yet); 5. pre-launch hooks unless
+    ``no_hooks``; 6. record the session, send Wine's output to the log and
+    exec. When anything fails before the exec the daemon is stopped again.
     """
     targets = resolve_targets(raw_targets, Path(os.getcwd()), from_file_manager=from_file_manager)
     terminal = _to_terminal(app_ctx, debug)
@@ -661,10 +686,18 @@ def run(
             keep_fork_log(ctx.paths, ctx.layout)
         except (ForkLinuxError, OSError) as exc:
             log.warning("could not keep the previous fork.log: %s", exc)
-    if not no_hooks and not running:
-        pre_launch(ctx)
-    spec = build_spec(ctx, targets, debug=debug, wine_debug=wine_debug, driver=driver)
-    if terminal:
-        spec = dataclasses.replace(spec, log_file=None)
-    write_session(ctx.paths, ctx.wine(), os.getpid())
-    return _exec(spec, truncate=not running and not debug, execvpe=execvpe)
+    daemon = None if running else bridge.start_daemon(ctx, debug=debug)
+    try:
+        if not no_hooks and not running:
+            pre_launch(ctx)
+        spec = build_spec(
+            ctx, targets, debug=debug, wine_debug=wine_debug, driver=driver, bridge_env=bridge.launch_env(ctx, daemon)
+        )
+        if terminal:
+            spec = dataclasses.replace(spec, log_file=None)
+        write_session(ctx.paths, ctx.wine(), os.getpid(), bridge.session_record(daemon))
+        return _exec(spec, truncate=not running and not debug, execvpe=execvpe)
+    except BaseException:
+        if daemon is not None:
+            daemon.stop()
+        raise

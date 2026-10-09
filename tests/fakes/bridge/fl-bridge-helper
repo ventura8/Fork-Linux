@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Test stand-in for ``fl-bridge-helper --daemon`` (tests/test_bridge.py, tests/test_launch_flow.py).
+
+Behaves like the real daemon's start-up as bridge/README.md specifies: reads and unlinks
+the token file, prints ``FL_BRIDGE_PORT=<n>`` and then stays until SIGTERM or until
+``--parent-pid`` is gone. ``$FL_FAKE_DAEMON`` picks a misbehaviour instead: ``exit``
+(prints the port, then exits), ``fail`` (exit 1, nothing printed), ``bad`` (a garbage
+line), ``port0`` (port 0), ``noeol`` (64 bytes without a newline), ``silent`` (prints
+nothing, keeps running), ``stubborn`` (ignores SIGTERM). Each start appends one JSON line
+to ``$FL_FAKE_DAEMON_LOG``: argv, pid, the token file's mode, the token, and the
+environment variables the tests look at.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import signal
+import stat
+import sys
+import time
+
+LIFETIME = 30.0
+
+
+def _option(argv: list[str], name: str) -> str | None:
+    return argv[argv.index(name) + 1] if name in argv else None
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    mode = os.environ.get("FL_FAKE_DAEMON", "ok")
+    record: dict[str, object] = {"argv": argv, "pid": os.getpid(), "mode": mode}
+    token_file = _option(argv, "--token-file")
+    if token_file is not None:
+        info = os.lstat(token_file)
+        record["token_mode"] = stat.S_IMODE(info.st_mode)
+        record["token_regular"] = stat.S_ISREG(info.st_mode)
+        with open(token_file, encoding="ascii") as handle:
+            record["token"] = handle.read().strip()
+        os.unlink(token_file)
+    record["env"] = {
+        key: os.environ.get(key)
+        for key in ("FL_BRIDGE_TOKEN", "PATH", "WINEPREFIX", "WINEHOME", "GIT_DIR", "FL_WINE", "WINELOADER")
+    }
+    log = os.environ.get("FL_FAKE_DAEMON_LOG")
+    if log:
+        with open(log, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record) + "\n")
+    if mode == "fail":
+        print("fl-bridge-helper: cannot bind", file=sys.stderr)
+        return 1
+    lines = {"bad": b"garbage\n", "port0": b"FL_BRIDGE_PORT=0\n", "noeol": b"x" * 64, "silent": b""}
+    os.write(1, lines.get(mode, b"FL_BRIDGE_PORT=4242\n"))
+    if mode == "exit":
+        return 0
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    if mode != "silent":
+        os.dup2(devnull, 1)
+    if mode == "stubborn":
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    parent = int(_option(argv, "--parent-pid") or os.getppid())
+    deadline = time.monotonic() + LIFETIME
+    while time.monotonic() < deadline:
+        try:
+            os.kill(parent, 0)
+        except ProcessLookupError:
+            return 0
+        time.sleep(0.05)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -47,7 +47,7 @@ Runs Linux desktop tools for Fork for Linux (unofficial). Paths may be Linux
 or Windows paths (mapped through $WINEPREFIX).
 
 verbs:
-  terminal DIR                     open a terminal in DIR
+  terminal [DIR]                   open a terminal in DIR (default: the working directory)
   reveal PATH                      show PATH in the file manager
   open PATH|URL                    open a file or an http(s)/mailto link
   diff LEFT RIGHT                  compare two files (waits)
@@ -238,9 +238,14 @@ class Host:
             hint=f"install one, or set {TERMINAL_ENV} (e.g. 'gnome-terminal --working-directory={{dir}}')",
         )
 
-    def terminal(self, directory: str) -> int:
-        """Open a terminal in ``directory`` (a file means its folder)."""
-        path = self.existing(directory)
+    def terminal(self, directory: str = "") -> int:
+        """Open a terminal in ``directory`` (a file means its folder; empty: the working directory).
+
+        Fork's Console button runs ``fl-launch.exe terminal`` with the
+        repository as its working directory and no argument; the bridge daemon
+        starts this helper in that (translated) directory.
+        """
+        path = self.existing(directory or os.getcwd())
         if not os.path.isdir(path):
             path = os.path.dirname(path)
         return self.spawn(self.terminal_argv(path), cwd=path)
@@ -336,7 +341,7 @@ def _split(text: str) -> list[str]:
 
 # verb -> (method name, allowed argument counts)
 VERBS: dict[str, tuple[str, tuple[int, ...]]] = {
-    "terminal": ("terminal", (1,)),
+    "terminal": ("terminal", (0, 1)),
     "reveal": ("reveal", (1,)),
     "open": ("open", (1,)),
     "diff": ("diff", (2,)),

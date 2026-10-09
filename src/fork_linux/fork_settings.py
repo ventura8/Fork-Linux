@@ -42,8 +42,8 @@ DISABLE_HARDWARE_ACCELERATION = "DisableHardwareAcceleration"
 SHELL_TOOL = fork_tools.SHELL_TOOL
 EXTERNAL_DIFF_TOOL = fork_tools.EXTERNAL_DIFF_TOOL
 EXTERNAL_MERGE_TOOL = fork_tools.EXTERNAL_MERGE_TOOL  # Fork 2.23 stores "MergeTool"
-EXTERNAL_DIFF_TOOLS = "ExternalDiffTools"
-EXTERNAL_MERGE_TOOLS = "ExternalMergeTools"
+EXTERNAL_DIFF_TOOLS = fork_tools.EXTERNAL_DIFF_TOOLS
+EXTERNAL_MERGE_TOOLS = fork_tools.EXTERNAL_MERGE_TOOLS
 GIT_INSTANCE_PATH = "GitInstancePath"
 APPLICATION_UPDATE_TYPE = "ApplicationUpdateType"  # 0 Develop (Fork's default), 1 Stable, 2 Off
 REPOSITORY_MANAGER = "RepositoryManager"
@@ -301,6 +301,10 @@ def _tool_values(tools: Mapping[str, Any], current: Mapping[str, Any]) -> dict[s
             values[key] = wanted
         elif wanted is None and fork_tools.is_ours(present):
             values[key] = copy.deepcopy(fork_tools.DEFAULTS[key])
+    for key in fork_tools.TOOL_LIST_KEYS:
+        merged = fork_tools.merged_list(get(current, key), tools.get(key))
+        if merged is not None:
+            values[key] = merged
     return values
 
 
@@ -329,6 +333,8 @@ def desired(
     * ``tools`` (:func:`fork_tools.wanted`) for ``ShellTool`` / ``ExternalDiffTool``
       / ``MergeTool``: they replace Fork's defaults or tools we set before, never
       a tool the user picked; our tools without a replacement go back to Fork's default;
+      in ``ExternalDiffTools`` / ``ExternalMergeTools`` only our own entry is added
+      or removed, the user's entries stay;
     * ``home_win`` replaces the default repository source directory ``C:\\users\\<user>``;
     * ``reset_scaling``: a ``LayoutScaling`` holding this old value goes back to 100
       (scaling is Wine's ``LogPixels`` alone now).

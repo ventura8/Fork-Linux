@@ -101,7 +101,7 @@ Plan for **about 2.5–3 GB of disk** and **10–20 minutes** (less on a fast co
 | `settings show \| get \| set \| unset \| apply-defaults \| backup \| restore [FILE] \| path` | Fork's own `settings.json` (edited only while Fork is closed) |
 | `desktop install [--file-managers LIST] [--no-menu] [--no-icons] [--cli-alias] \| remove \| status` | Menu entry, icon, file-manager actions |
 | `ssh sync [--dry-run] [--mode link\|copy] [--no-config] \| status` | Share your SSH keys and config with Fork |
-| `git-bridge enable \| disable \| status` | Experimental native-git bridge (opt-in) |
+| `git-bridge enable \| disable \| status \| record on\|off` | Experimental native-git bridge (opt-in; `record` forwards to bundled git for debugging) |
 | `logs [--wine \| --fork \| --velopack \| --setup \| --all] [--follow \| --path \| --bundle]` | Show logs or create a redacted bug-report bundle |
 | `uninstall [--purge] [--keep-downloads] [--yes]` | Remove integrations; `--purge` also removes the prefix and runtimes |
 | `about` / `credits`, `version`, `status` | Credits, version, setup and Fork status |
@@ -116,6 +116,26 @@ Exit codes are stable and documented in [AGENTS.md §5](AGENTS.md#5-standard-exi
 | `system` | Your distribution's Wine ≥ 9.0. Non-staging builds trigger a warning: git hooks and bash-based features need staging ([Wine bug 55138](https://bugs.winehq.org/show_bug.cgi?id=55138)). |
 | `flatpak` | The Wine from the `org.winehq.Wine` BaseApp (Flatpak builds only). |
 | custom path | `fork-linux setup --wine /path/to/bin/wine` |
+
+## Git bridge (experimental, opt-in)
+
+By default Fork uses its bundled Git for Windows, which runs under Wine. The git bridge makes Fork's `git.exe`, `bash.exe` and `sh.exe` calls run with your Linux `git` and `/bin/sh` instead, outside Wine:
+
+```sh
+fork-linux git-bridge enable     # needs git 2.40 or newer (2.50+ recommended); restart Fork
+fork-linux git-bridge status     # enabled / ready / Linux git version / running daemon
+fork-linux git-bridge disable    # back to Fork's bundled git at the next start
+```
+
+What it changes, verified with Fork 2.23.2:
+
+- **Hooks run natively**: a `pre-commit` hook that fails now blocks the commit and Fork shows its output (bundled git skips such hooks and commits anyway). **Submodule update**, pushes and fetches to `file://` / `/home/…` remotes, and interactive rebase from Fork's dialog work; commits keep exec bits and symlinks.
+- **Open in Shell / Console** and **Diff in Linux (fork-linux)** (Ctrl+D on a changed file) open your Linux terminal and diff tool (meld, kdiff3, Beyond Compare or VS Code), and Fork waits for the diff tool.
+- Each git call is much faster (about 13 ms against about 90 ms for bundled git).
+
+How it works: when Fork starts, fork-linux starts a small helper (`fl-bridge-helper`) outside Wine and points Fork at its own shims in `C:\fork-linux\gitInstance`. The helper lives exactly as long as that Fork. Only the `[git] bridge` setting and Fork's terminal / diff / merge tool entries change; your `~/.gitconfig` (and its credential helpers, signing and editors) is what git uses.
+
+Limits: Fork's own **Local Changes** list still shows executable files and symlinks as modified (Fork computes it inside Wine; the diff is empty and nothing gets committed); if Fork restarts itself after an update, start it again with `fork` so the helper runs. Built from source, the bridge needs `scripts/build-bridge.sh` first (`git-bridge enable` offers to run it). Details: [bridge/README.md](bridge/README.md).
 
 ## Compatibility
 
@@ -136,8 +156,8 @@ What fork-linux connects for you:
 
 Known Wine limitations:
 
-- **Hooks that start other programs are silently skipped** by Fork's bundled git under Wine (its `sh` dies after the first program, and the commit still succeeds). `fork-linux doctor` lists affected repositories; commit there from a terminal, or try the experimental git bridge (`fork-linux git-bridge enable`).
-- **Symlinks** look like modified files to Fork (and committing them through Fork's git turns them into plain files); **submodule update / init** does nothing; **Git Bash** exits at once. Use a terminal for these, or the experimental git bridge.
+- **Hooks that start other programs are silently skipped** by Fork's bundled git under Wine (its `sh` dies after the first program, and the commit still succeeds). `fork-linux doctor` lists affected repositories; commit there from a terminal, or enable the git bridge (see [Git bridge](#git-bridge-experimental-opt-in)), which runs them with Linux git.
+- **Symlinks** look like modified files to Fork (and committing them through Fork's git turns them into plain files); **submodule update / init** does nothing; **Git Bash** exits at once. Use a terminal for these; the git bridge fixes submodules and symlink-preserving commits.
 - **Spell checking** does nothing under Wine; keep it disabled.
 - **GitHub account sign-in (OAuth) can crash Fork under Wine.** Use a GitHub personal access token instead. Credentials are stored with DPAPI inside the prefix.
 - **Wayland**: Fork runs through XWayland by default; Wine's native Wayland driver is opt-in and experimental.

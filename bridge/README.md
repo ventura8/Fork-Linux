@@ -6,7 +6,10 @@ bridge** is an experimental, opt-in mode in which Fork's `git.exe` / `bash.exe` 
 calls are carried out by the host's native `/usr/bin/git` and `/bin/sh`, outside Wine.
 
 This file is the **hand-off specification** for the Python integration (launcher, setup
-step, `git-bridge` CLI, doctor). Component details live next to the code:
+step, `git-bridge` CLI, doctor), which is implemented in `src/fork_linux/bridge.py`,
+`launcher.py`, `steps/integration.py` (`host_shims`), `fork_tools.py`, `commands/gitbridge.py`
+and `doctor.py`; "Python integration (as built)" below lists where it deviates from or adds to
+the original spec. Component details live next to the code:
 
 | Document | Covers |
 |---|---|
@@ -182,9 +185,9 @@ for the personas. Do **not** put Wine's Windows-only variables into it.
 > **`GIT_CONFIG_COUNT` overlay.** The launcher's bundled-git overlay (`core.filemode=false`,
 > `core.autocrlf=false`, `core.symlinks=true` via `GIT_CONFIG_COUNT/KEY/VALUE`) is
 > inherited by Fork and **forwarded by the shim to native git**. Native git tracks modes and
-> symlinks correctly, so when the bridge is enabled the launcher should drop that overlay
-> (at least `core.filemode=false`), or native git will silently stop recording exec-bit
-> changes.
+> symlinks correctly, so when the bridge runs native git the launcher drops exactly those
+> three keys (`gitconfig.BUNDLED_ONLY_KEYS`; other `[git] env_overrides`, `safe.directory=*`
+> and `worktree.useRelativePaths` stay). Record mode forwards to bundled git and keeps them.
 
 ## Install layout
 
@@ -219,9 +222,12 @@ C:\fork-linux\gitInstance\usr\bin\sh.exe       fl-shim.exe
 C:\fork-linux\bin\fl-launch.exe                fl-launch.exe
 ```
 
-Copies, not links (the persona is the module basename; any other name exits 125). Record a
-sha256 of each installed file so `git-bridge status` / doctor can detect drift, and
-reinstall when the packaged shims change (`git-bridge repair`).
+Copies, not links (the persona is the module basename; any other name exits 125). The setup
+step `host_shims` (rev 2) writes each copy through a temporary file + rename, whether or not the
+bridge is enabled; its inputs are the sha256 of the built shims, so a changed build reinstalls
+them before the next launch, and its verify (also `bridge.check`, used by the launcher,
+`git-bridge status` and doctor) compares every installed copy with the built shim. Rev 1's
+stray `C:\fork-linux\bin\fl-shim.exe` is removed.
 
 ## Launcher: starting and stopping the daemon
 
@@ -272,9 +278,56 @@ export `FORKGITINSTANCE`, log the reason, and show it in `doctor`.
 7. **Second launch while Fork runs.** Fork's single-instance pipe forwards the paths to the
    running Fork, which keeps using the *first* launch's daemon. The second launcher may skip
    starting a daemon; if it starts one, it simply dies with that short-lived Wine process.
+   (As built: it starts none and reuses the first daemon's variables from `session.json`.)
 
 The daemon logs one line per session to `--log` (`0600`, `O_APPEND|O_NOFOLLOW`; never the
 token, arguments, environment values or data). The launcher owns rotation.
+
+## Python integration (as built)
+
+- **Where things are found** (`resources.py`): installed, `<root>/lib/fork-linux/fl-bridge-helper`
+  and `<root>/lib/fork-linux/win64/fl-{shim,launch}.exe`; in a source checkout,
+  `build-bridge/bridge/` (from `scripts/build-bridge.sh`; another `build*/bridge` as a fallback).
+  `FORK_LINUX_SHIMS_DIR` / `FORK_LINUX_LIBEXEC_DIR` override. Persona links shipped next to the
+  helper are used when they resolve to it; otherwise `fl-winexec` / `fl-askpass` /
+  `fl-ssh-askpass` symlinks are kept in `$XDG_DATA_HOME/fork-linux/bridge/bin` (0700). A
+  checkout has only `libexec/fork-linux-host.in`, so the daemon's `--host-helper` is a small
+  `sh` wrapper in the same directory that runs it with the current Python (`-I`).
+- **Checks** (`bridge.check`, side-effect free apart from the cached `git --version` probe):
+  `[git] bridge = on`, helper and both shims built, every shim installed and matching, host
+  git **≥ 2.40** (Fork passes `rebase --update-refs`; `git-bridge enable` refuses older and
+  warns below **2.50**, the version Fork bundles). `bridge.host_actions_active(ctx)` is that
+  check outside a launch; during a launch it is whether `start_daemon` really started the
+  daemon (recorded in `ctx.cache`).
+- **Launcher** (`launcher.run`): Fork not running → `bridge.start_daemon(ctx)` right after
+  `ensure_ready` and **before the pre-launch hooks**, so Fork's tool settings follow whether
+  the daemon really runs; then `build_spec(..., bridge_env=bridge.launch_env(ctx, daemon))`,
+  `write_session` (0600, with `{"bridge": {"pid", "port", "env"}}`) and the exec. Anything
+  failing before the exec stops the daemon again. A failed start is a warning and Fork starts
+  with bundled git. The daemon log is `<logs>/bridge-<UTC>.log` (newest 10); `--debug` adds
+  `FL_BRIDGE_LOG=<logs>/bridge-calls-<UTC>.jsonl`. Fast path (Fork running): the variables of
+  the session's daemon, only while that pid is still a running `fl-bridge-helper --daemon`
+  and the bridge is still on.
+- **Daemon environment**: `winecmd.build_env` for the prefix (so `WINEPREFIX`, `WINESERVER`,
+  `WINELOADER`, `WINEDEBUG`, `WINEDLLOVERRIDES`, `FL_WINE`) minus `WINEHOME` / `WINEARCH`,
+  every `FL_BRIDGE_*`, `GIT_CONFIG_*` and the repository-location `GIT_*` variables, with the
+  host `PATH`.
+- **Record mode**: `fork-linux git-bridge record on|off` sets `[git] bridge_mode = record|bridge`;
+  `record` adds `FL_BRIDGE_MODE=record` and `FL_BRIDGE_BUNDLED_GIT` = Fork's newest
+  `gitInstance\<ver>\cmd\git.exe` (warning and native git when none is found).
+- **Fork's tools** (`fork_tools.wanted`): with the daemon, `ShellTool` = `fl-launch.exe terminal`,
+  `ExternalDiffTool` / `MergeTool` = `fl-launch.exe diff|merge …`, **and** one
+  `{"Type": "Custom", "Name": "Linux (fork-linux)", "Path": "C:\\fork-linux\\bin\\fl-launch.exe",
+  "Arguments": …}` entry in `ExternalDiffTools` / `ExternalMergeTools`: Fork 2.23 only offers
+  "Diff in <name>" (Ctrl+D) / "Merge in <name>" for tools in those lists. Without the daemon:
+  `fork-linux-terminal`, Fork's empty default tools, and only our list entry is removed.
+  Fork's Console runs `fl-launch.exe terminal` with no argument (the repository is the
+  working directory), so `fork-linux-host terminal [DIR]` defaults to its cwd.
+- **CLI / doctor**: `git-bridge enable [--build]` (in a checkout without a build it offers to run
+  `scripts/build-bridge.sh`), `disable`, `status` (enabled / available / ready / mode / git /
+  daemon pid and port, never the token), `record on|off`. `doctor bridge.status` warns when the
+  bridge is on but would fall back; `repo.hooks` / `repo.submodules` hint "enable the git
+  bridge" and report `ok` while it is ready.
 
 ## Building and testing
 
@@ -295,6 +348,10 @@ FL_REAL_WINE=1 FL_WINE=/usr/bin/wine FL_TEST_WINE=/usr/bin/wine \
   python3 -m pytest tests/bridge --basetemp=<scratch dir>
 ```
 
+`tests/bridge/test_launcher_wine.py` runs `scripts/build-bridge.sh` (skip with
+`FL_BRIDGE_SKIP_BUILD=1`), then the launcher's own bridge path against `FL_WINE` (default
+`/usr/bin/wine`) in a fake HOME; the Python unit tests use a fake daemon
+(`tests/fakes/bridge/fl-bridge-helper`).
 `tests/bridge/test_shims_wine.py` reads `FL_WINE` / `FL_BRIDGE_WIN_DIR`;
 `tests/bridge/wine/` reads `FL_TEST_WINE` (`:`-separated list) / `FL_BRIDGE_BUILD`; both
 accept `FL_BRIDGE_HELPER_BIN` (e.g. the musl build). PE flags: `-std=c11 -O2 -municode
@@ -303,8 +360,12 @@ stripped, `--no-insert-timestamp --build-id=none`, `-ffile-prefix-map`.
 
 ## Known limitations
 
-- **Experimental and opt-in.** Bundled git stays the default; nothing in `settings.json`
-  changes.
+- **Experimental and opt-in.** Bundled git stays the default. Enabling it changes only
+  `[git] bridge`; Fork's tool settings follow at the next launch (above), nothing else in
+  `settings.json`. Verified end to end with the real Fork 2.23.2 (docs/qa/FUNCTIONALITY-REPORT.md,
+  "Native-git bridge in the launcher"): blocking and passing hooks, stage / commit / push to a
+  `file://` remote, interactive rebase from Fork's dialog, submodule update, Console and
+  external diff through `fl-launch.exe`, daemon lifetime, and going back to bundled git.
 - **Fork's Local Changes list is computed in-process** through Wine (spike B3.6): exec-bit
   files and symlinks still show as modified even though native git reports them clean.
   The bridge fixes diffs, staging, commits (modes and symlinks are preserved), hooks, and
@@ -330,6 +391,10 @@ stripped, `--no-insert-timestamp --build-id=none`, `-ffile-prefix-map`.
 - `git config --list --system` exits 128 natively when `/etc/gitconfig` is missing (Fork
   2.23.2 tolerates it).
 - Untested so far: HTTPS credential prompts through `fl-ssh-askpass` → Fork.AskPass.exe,
-  ssh remotes, signing, LFS, submodules, Fork custom commands.
+  ssh remotes, signing, LFS, Fork custom commands, the merge tool through `fl-launch.exe merge`.
+- `session.json` keeps the daemon's token (0600, in the 0700 runtime directory) until the next
+  launch overwrites it; the daemon behind it is gone once Fork exits.
+- Submodules with `file://` URLs need `protocol.file.allow=always` in the user's git config
+  (git ≥ 2.38.1 default), as from a terminal.
 - `bridge/unix/meson.build` is a stale standalone variant from the daemon task (installs to
   `libexecdir`); the project builds `bridge/meson.build` only.

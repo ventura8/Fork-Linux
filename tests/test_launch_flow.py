@@ -10,16 +10,22 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
-from fork_linux import bootstrap, launcher, procs, snapshots, updates
-from fork_linux.cli import AppContext
-from fork_linux.errors import ForkLinuxError, IntegrityFailed, NotSetUpError, UsageError, WineUnavailable
-from fork_linux.fork_layout import ForkLayout
-from fork_linux.procrun import RecordingRunner
-
+from fixtures import bridge_kit
 from fixtures.fork_tree import install_fork, write_settings
 from fixtures.setup_ctx import USER, FakeUI, make_ctx
 
+from fork_linux import bootstrap, bridge, launcher, procs, snapshots, updates
+from fork_linux.cli import AppContext
+from fork_linux.errors import (
+    ForkLinuxError,
+    IntegrityFailed,
+    NotSetUpError,
+    UsageError,
+    WineUnavailable,
+)
+from fork_linux.fork_layout import ForkLayout
+from fork_linux.procrun import RecordingRunner
+from fork_linux.steps import integration
 
 # -- fixtures ------------------------------------------------------------------------
 
@@ -191,9 +197,19 @@ def test_build_spec_config_debug_overrides_and_drivers(ctx: bootstrap.Ctx, monke
     assert launcher.build_spec(ctx, []).env["WINEDEBUG"] == launcher.QUIET_CHANNELS
 
 
-def test_build_spec_includes_bridge_env(ctx: bootstrap.Ctx, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(launcher.bridge, "launch_env", lambda _ctx: {"FORKGITINSTANCE": "C:\\fork-linux\\g"})
-    assert launcher.build_spec(ctx, []).env["FORKGITINSTANCE"] == "C:\\fork-linux\\g"
+def test_build_spec_includes_bridge_env_and_drops_the_bundled_git_overlay(ctx: bootstrap.Ctx) -> None:
+    def keys(env: dict[str, str]) -> list[str]:
+        return [env[f"GIT_CONFIG_KEY_{n}"] for n in range(int(env.get("GIT_CONFIG_COUNT", "0")))]
+
+    plain = launcher.build_spec(ctx, []).env
+    assert keys(plain)[:2] == ["core.filemode", "core.autocrlf"] and "FORKGITINSTANCE" not in plain
+    bridged = {"FORKGITINSTANCE": "C:\\fork-linux\\gitInstance", "FL_BRIDGE_PORT": "4242"}
+    env = launcher.build_spec(ctx, [], bridge_env=bridged).env
+    assert env["FORKGITINSTANCE"] == "C:\\fork-linux\\gitInstance" and env["FL_BRIDGE_PORT"] == "4242"
+    assert "core.filemode" not in keys(env) and "core.autocrlf" not in keys(env)
+    # Record mode forwards to bundled git: the overlay stays.
+    env = launcher.build_spec(ctx, [], bridge_env={**bridged, "FL_BRIDGE_MODE": "record"}).env
+    assert keys(env)[:2] == ["core.filemode", "core.autocrlf"]
 
 
 # -- pre_launch -----------------------------------------------------------------------------
@@ -799,3 +815,92 @@ def test_run_keeps_the_previous_fork_log(
     monkeypatch.setattr(launcher, "keep_fork_log", broken)
     launcher.run(flow["app"], [], no_hooks=True, execvpe=flow["exec"])
     assert "could not keep the previous fork.log" in caplog.text
+
+
+# -- the git bridge ----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def bridged(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Any:
+    """``ctx`` with the fake bridge built, installed and enabled (``flow`` wires launcher.run)."""
+    kit = bridge_kit.install(tmp_path, monkeypatch)
+    assert isinstance(ctx.runner, RecordingRunner)
+    bridge_kit.git_runner(kit, runner=ctx.runner)
+    ctx.env["FL_FAKE_DAEMON_LOG"] = str(kit.log)
+    integration.run_shims(ctx)
+    ctx.config.set("git", "bridge", "on")
+    yield kit
+    bridge_kit.kill_daemons(kit)
+
+
+def test_run_starts_the_bridge_before_the_hooks_and_records_it(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], bridged: bridge_kit.Kit, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[bool] = []
+    monkeypatch.setattr(launcher, "pre_launch", lambda c: seen.append(bridge.host_actions_active(c)) or [])
+    launcher.run(flow["app"], ["repo"], execvpe=flow["exec"])
+    assert seen == [True], "the hooks see the daemon that really runs"
+    (start,) = bridged.starts()
+    _file, _argv, env, _cwd = flow["exec"].calls[0]
+    assert env["FORKGITINSTANCE"] == "C:\\fork-linux\\gitInstance"
+    assert env["FL_BRIDGE_PORT"] == "4242" and env["FL_BRIDGE_TOKEN"] == start["token"]
+    assert env["FL_BRIDGE_WINEXEC"].endswith("/fl-winexec") and env["FL_WINE"] == str(ctx.wine().wine)
+    assert "core.filemode" not in env.values()
+    session = launcher.read_session(ctx.paths)
+    assert session is not None and session["bridge"]["pid"] == start["pid"]
+    assert session["bridge"]["env"]["FL_BRIDGE_TOKEN"] == start["token"]
+    assert ctx.paths.session_file.stat().st_mode & 0o777 == 0o600
+    assert ctx.paths.runtime_dir.stat().st_mode & 0o777 == 0o700
+
+
+def test_run_without_a_working_daemon_uses_bundled_git(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], bridged: bridge_kit.Kit, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx.env["FL_FAKE_DAEMON"] = "fail"
+    seen: list[bool] = []
+    monkeypatch.setattr(launcher, "pre_launch", lambda c: seen.append(bridge.host_actions_active(c)) or [])
+    launcher.run(flow["app"], [], execvpe=flow["exec"])
+    assert seen == [False]
+    env = flow["exec"].calls[0][2]
+    assert "FORKGITINSTANCE" not in env and "FL_BRIDGE_TOKEN" not in env
+    assert "core.filemode" in env.values()
+    session = launcher.read_session(ctx.paths)
+    assert session is not None and "bridge" not in session
+
+
+def test_run_stops_the_daemon_when_the_exec_fails(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], bridged: bridge_kit.Kit
+) -> None:
+    def fail(file: str, argv: list[str], env: dict[str, str]) -> None:
+        raise FileNotFoundError(2, "No such file or directory")
+
+    with pytest.raises(WineUnavailable):
+        launcher.run(flow["app"], [], execvpe=fail)
+    daemon = ctx.cache[bridge.CACHE_KEY]
+    assert isinstance(daemon, bridge.Daemon) and daemon.proc is None
+    assert not bridge.daemon_alive(bridged.starts()[0]["pid"])
+    # With the bridge off there is no daemon to stop.
+    ctx.config.set("git", "bridge", "off")
+    with pytest.raises(WineUnavailable):
+        launcher.run(flow["app"], [], execvpe=fail)
+    assert ctx.cache[bridge.CACHE_KEY] is None and len(bridged.starts()) == 1
+
+
+def test_fast_path_reuses_the_running_daemon(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], bridged: bridge_kit.Kit, not_running: list[bool]
+) -> None:
+    launcher.run(flow["app"], [], execvpe=flow["exec"])
+    first = flow["exec"].calls[0][2]
+    not_running[0] = True
+    launcher.run(flow["app"], [str(flow["cwd"] / "repo")], execvpe=flow["exec"])
+    assert len(bridged.starts()) == 1, "no second daemon"
+    second = flow["exec"].calls[1][2]
+    for key in ("FORKGITINSTANCE", "FL_BRIDGE_PORT", "FL_BRIDGE_TOKEN", "FL_BRIDGE_WINEXEC"):
+        assert second[key] == first[key]
+    assert "core.filemode" not in second.values()
+    # Once that daemon is gone, the fast path passes no bridge variables.
+    bridge_kit.kill_daemons(bridged)
+    launcher.run(flow["app"], [], execvpe=flow["exec"])
+    assert "FORKGITINSTANCE" not in flow["exec"].calls[2][2]

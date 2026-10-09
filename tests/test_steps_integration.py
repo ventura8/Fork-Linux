@@ -41,23 +41,35 @@ def test_shims_are_copied(xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyP
     shims.mkdir()
     (shims / "fl-launch.exe").write_bytes(b"MZ launch")
     (shims / "fl-shim.exe").write_bytes(b"MZ shim")
+    (shims / "fl-testdriver.exe").write_bytes(b"MZ test only")
     (shims / "readme.txt").write_text("not a shim")
-    (shims / "dir.exe").mkdir()
     monkeypatch.setenv(resources.SHIMS_ENV, str(shims))
     ctx = make_ctx()
     assert [path.name for path in integration.shim_sources()] == ["fl-launch.exe", "fl-shim.exe"]
     assert set(integration.shims_inputs(ctx)["shims"]) == {"fl-launch.exe", "fl-shim.exe"}
     assert not integration.verify_shims(ctx)
+    root = ctx.paths.fork_linux_win_dir
+    # Rev 1 left a copy of fl-shim.exe in bin\; it goes away.
+    (root / "bin").mkdir(parents=True)
+    (root / "bin" / "fl-shim.exe").write_bytes(b"MZ old")
     integration.run_shims(ctx)
-    dest = ctx.paths.fork_linux_win_dir / "bin"
-    assert (dest / "fl-launch.exe").read_bytes() == b"MZ launch"
-    assert (dest / "fl-shim.exe").stat().st_mode & 0o777 == 0o755
+    assert (root / "bin" / "fl-launch.exe").read_bytes() == b"MZ launch"
+    assert not (root / "bin" / "fl-shim.exe").exists()
+    assert not (root / "bin" / "fl-testdriver.exe").exists()
+    for rel in ("cmd/git.exe", "bin/git.exe", "mingw64/bin/git.exe", "bin/bash.exe", "bin/sh.exe",
+                "usr/bin/bash.exe", "usr/bin/sh.exe"):
+        target = root / "gitInstance" / rel
+        assert target.read_bytes() == b"MZ shim" and not target.is_symlink(), rel
+        assert target.stat().st_mode & 0o777 == 0o755
     assert integration.verify_shims(ctx)
-    (dest / "fl-shim.exe").write_bytes(b"MZ changed")
+    integration.run_shims(ctx)
+    assert integration.verify_shims(ctx)
+    (root / "gitInstance" / "bin" / "git.exe").write_bytes(b"MZ changed")
     assert not integration.verify_shims(ctx)
-    (dest / "fl-shim.exe").unlink()
-    (dest / "fl-shim.exe").symlink_to(shims / "fl-shim.exe")
+    (root / "gitInstance" / "bin" / "git.exe").unlink()
+    (root / "gitInstance" / "bin" / "git.exe").symlink_to(shims / "fl-shim.exe")
     assert not integration.verify_shims(ctx)
+    assert integration.HOST_SHIMS.rev == 2
 
 
 def test_shims_absent(xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -68,6 +80,18 @@ def test_shims_absent(xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert not ctx.paths.fork_linux_win_dir.exists()
     monkeypatch.setattr(resources, "shims_dir", lambda: None)
     assert integration.shim_sources() == []
+
+
+def test_only_fl_launch_built(xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    shims = tmp_path / "shims"
+    shims.mkdir()
+    (shims / "fl-launch.exe").write_bytes(b"MZ launch")
+    monkeypatch.setenv(resources.SHIMS_ENV, str(shims))
+    ctx = make_ctx()
+    integration.run_shims(ctx)
+    assert integration.verify_shims(ctx)
+    assert (ctx.paths.fork_linux_win_dir / "bin" / "fl-launch.exe").is_file()
+    assert not (ctx.paths.fork_linux_win_dir / "gitInstance").exists()
 
 
 # -- git_overlay ---------------------------------------------------------------------------------

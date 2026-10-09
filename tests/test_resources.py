@@ -91,3 +91,30 @@ def test_empty_overrides_are_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(resources.SHIMS_ENV, "")
     monkeypatch.setenv(resources.LIBEXEC_ENV, "")
     assert resources.libexec_dir() == REPO_ROOT / "libexec"
+
+
+def test_bridge_helper_and_build_script_installed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "usr"
+    _fake_module(monkeypatch, root / "share/fork-linux/fork_linux/resources.py")
+    assert resources.bridge_helper_path() == root / "lib/fork-linux/fl-bridge-helper"
+    assert resources.bridge_build_script() is None
+
+
+def test_bridge_helper_and_build_script_in_a_checkout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = tmp_path / "repo"
+    _fake_module(monkeypatch, repo / "src/fork_linux/resources.py")
+    (repo / "VERSION").write_text("0.1.0\n", encoding="utf-8")
+    # Not built yet: where scripts/build-bridge.sh puts it.
+    assert resources.bridge_helper_path() == repo / "build-bridge/bridge/fl-bridge-helper"
+    assert resources.bridge_build_script() is None
+    (repo / "scripts").mkdir()
+    (repo / "scripts/build-bridge.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    assert resources.bridge_build_script() == repo / "scripts/build-bridge.sh"
+    # build-bridge/ wins over other build directories; the helper sits next to the shims.
+    (repo / "build/bridge").mkdir(parents=True)
+    assert resources.bridge_helper_path() == repo / "build/bridge/fl-bridge-helper"
+    (repo / "build-bridge/bridge").mkdir(parents=True)
+    assert resources.shims_dir() == repo / "build-bridge/bridge"
+    assert resources.bridge_helper_path() == repo / "build-bridge/bridge/fl-bridge-helper"
+    monkeypatch.setenv(resources.LIBEXEC_ENV, str(tmp_path / "lx"))
+    assert resources.bridge_helper_path() == tmp_path / "lx/fl-bridge-helper"

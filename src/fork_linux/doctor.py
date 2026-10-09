@@ -39,6 +39,7 @@ from . import (
     fsutil,
     gitconfig,
     hostdeps,
+    launcher,
     procs,
     repos,
     resources,
@@ -1043,7 +1044,10 @@ def _settings_data(ctx: DoctorCtx) -> dict[str, Any] | None:
 def _dead_tools(ctx: DoctorCtx, data: Mapping[str, Any]) -> list[str]:
     """Fork tool settings that name ``fl-launch.exe`` while no bridge daemon will run."""
     active = bridge.host_actions_active(ctx)
-    return [key for key in fork_tools.TOOL_KEYS if fork_tools.is_dead(data.get(key), bridge_active=active)]
+    dead = [key for key in fork_tools.TOOL_KEYS if fork_tools.is_dead(data.get(key), bridge_active=active)]
+    if not active:
+        dead += [key for key in fork_tools.TOOL_LIST_KEYS if fork_tools.merged_list(data.get(key), None) is not None]
+    return dead
 
 
 def check_fork_tools(ctx: DoctorCtx) -> Result:
@@ -1077,7 +1081,12 @@ def fix_fork_tools(ctx: DoctorCtx) -> str:
     """Put the dead tool settings back to Fork's defaults (Fork must be closed)."""
     procs.require_closed(ctx.paths.prefix, proc_root=ctx.proc_root)
     data = _settings_data(ctx) or {}
-    wanted = {key: fork_tools.DEFAULTS[key] for key in _dead_tools(ctx, data)}
+    wanted: dict[str, Any] = {}
+    for key in _dead_tools(ctx, data):
+        if key in fork_tools.TOOL_LIST_KEYS:
+            wanted[key] = fork_tools.merged_list(data.get(key), None)
+        else:
+            wanted[key] = fork_tools.DEFAULTS[key]
     terminal = fork_tools.wanted(bridge_active=False, fl_launch=False, pathmap=ctx.pathmap)[fork_tools.SHELL_TOOL]
     if fork_tools.SHELL_TOOL in wanted and terminal is not None:
         wanted[fork_tools.SHELL_TOOL] = terminal
@@ -1139,7 +1148,15 @@ def check_integration(ctx: DoctorCtx) -> Result:
 
 # -- repositories ----------------------------------------------------------------------------------
 
-BRIDGE_HINT = "the native-git bridge (experimental, 'fork-linux git-bridge enable') runs them with Linux git"
+BRIDGE_HINT = (
+    "or enable the git bridge ('fork-linux git-bridge enable', experimental): Fork then runs them with Linux git"
+)
+BRIDGE_HANDLES = "the git bridge runs Fork's git with Linux git"
+
+
+def _bridge_ready(ctx: DoctorCtx) -> bool:
+    """The git bridge is on and the next Fork start will use it."""
+    return bridge.check(ctx).ready
 
 
 def _repo_reports(ctx: DoctorCtx) -> list[repos.RepoReport] | Result:
@@ -1156,11 +1173,13 @@ def _repo_reports(ctx: DoctorCtx) -> list[repos.RepoReport] | Result:
     return ctx._repos
 
 
-def _repo_result(ctx: DoctorCtx, attr: str, problem: str, hint: str) -> Result:
+def _repo_result(ctx: DoctorCtx, attr: str, problem: str, hint: str, *, bridge_fixes: bool = False) -> Result:
     reports = _repo_reports(ctx)
     if isinstance(reports, Result):
         return reports
     found = repos.describe(reports, attr)
+    if found and bridge_fixes and _bridge_ready(ctx):
+        return Result("ok", f"{len(reports)} repositories checked; {attr} in {len(found)} of them work: {BRIDGE_HANDLES}")
     if found:
         return Result("warn", f"{len(found)} of {len(reports)} repositories {problem}: {'; '.join(found)}", hint)
     return Result("ok", f"{len(reports)} repositories checked")
@@ -1172,7 +1191,8 @@ def check_repo_hooks(ctx: DoctorCtx) -> Result:
         ctx,
         "hooks",
         "have executable hooks that Fork's bundled git silently skips under Wine",
-        "commit and push from a Linux terminal in these repositories until hooks work; " + BRIDGE_HINT,
+        "commit and push from a Linux terminal in these repositories; " + BRIDGE_HINT,
+        bridge_fixes=True,
     )
 
 
@@ -1194,6 +1214,7 @@ def check_repo_submodules(ctx: DoctorCtx) -> Result:
         "submodules",
         "use submodules, which Fork's bundled git cannot update under Wine",
         "run 'git submodule update --init --recursive' in a Linux terminal; " + BRIDGE_HINT,
+        bridge_fixes=True,
     )
 
 
@@ -1402,12 +1423,25 @@ def check_git_selftest(ctx: DoctorCtx) -> Result:
 
 
 def check_bridge(ctx: DoctorCtx) -> Result:
-    """The experimental native-git bridge: enabled only when this installation ships it."""
-    info = bridge.status(ctx)
+    """The experimental native-git bridge: on, built, installed, a usable Linux git; the running daemon."""
+    info = bridge.status(ctx, launcher.read_session(ctx.paths))
     if info["enabled"] and not info["available"]:
         return Result("fail", info["reason"], "run 'fork-linux git-bridge disable'")
+    if info["enabled"] and not info["ready"]:
+        return Result(
+            "warn",
+            f"git bridge enabled but Fork falls back to its bundled git: {info['reason']}",
+            "run 'fork-linux setup' to install the shims, or 'fork-linux git-bridge disable'",
+        )
     if info["enabled"]:
-        return Result("ok", "native-git bridge enabled (experimental)")
+        daemon = info["daemon"]
+        running = f"daemon running (pid {daemon['pid']}, port {daemon['port']})" if daemon else "starts with Fork"
+        mode = "record mode: Fork's bundled git" if info["mode"] == bridge.MODE_RECORD else "Linux git"
+        detail = f"native-git bridge enabled (experimental): {mode} {info['git_version']}; {running}"
+        if not info["git_recommended"]:
+            wanted = ".".join(str(part) for part in bridge.RECOMMENDED_GIT)
+            return Result("warn", detail, f"git {wanted} or newer is recommended for Fork's features")
+        return Result("ok", detail)
     if info["reason"] and info["available"]:
         return Result("warn", info["reason"], "run 'fork-linux git-bridge disable' to reset the setting")
     return Result("info", "native-git bridge off; Fork uses its bundled git")
