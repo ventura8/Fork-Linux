@@ -457,15 +457,17 @@ static wchar_t *full_path_w(const wchar_t *path)
 /* Copy src into out (outsz bytes) with '\' -> '/'; 0 on success. */
 static int copy_slashed(char *out, size_t outsz, size_t at, const char *src)
 {
-    size_t n = strlen(src);
-    if (at + n + 1 > outsz) {
-        return -1;
+    /* One pass up to and including the terminator: every byte read is part of src. */
+    for (size_t i = 0;; i++) {
+        char c = src[i];
+        if (at + i >= outsz) {
+            return -1;
+        }
+        out[at + i] = c == '\\' ? '/' : c;
+        if (c == '\0') {
+            return 0;
+        }
     }
-    for (size_t i = 0; i < n; i++) {
-        out[at + i] = src[i] == '\\' ? '/' : src[i];
-    }
-    out[at + n] = '\0';
-    return 0;
 }
 
 /*

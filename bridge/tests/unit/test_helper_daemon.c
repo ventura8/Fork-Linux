@@ -8,7 +8,12 @@
  *
  * Built and run by meson (bridge/tests/meson.build, suite bridge-unit). Exit status 0
  * when every check passes. Children forked here leave through _exit().
+ *
+ * _FORTIFY_SOURCE would route poll / read / recv to the __*_chk variants, around the
+ * wraps. Distribution builds pass it as -Wp,-D_FORTIFY_SOURCE=3 (Fedora, Arch), which a
+ * later -U on the command line does not undo, so it is dropped here, before any header.
  */
+#undef _FORTIFY_SOURCE
 #define _GNU_SOURCE
 
 int fl_bridge_helper_main(int argc, char **argv);

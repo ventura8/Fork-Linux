@@ -547,7 +547,7 @@ static int best_anchor_entry(const char *path, const char *anchors, struct ancho
     const char *e = anchors;
     while (e != NULL && *e != '\0') {
         const char *end = strchr(e, ';');
-        struct anchor_entry a;
+        struct anchor_entry a = {NULL, 0, NULL, 0};
         if (end == NULL) {
             end = e + strlen(e);
         }
@@ -585,7 +585,7 @@ static size_t drive_c_len(const char *path, const char *wineprefix)
 int fl_unix_to_win(const char *path, const char *anchors, const char *wineprefix, char *out,
                    size_t outsz)
 {
-    struct anchor_entry best;
+    struct anchor_entry best = {NULL, 0, NULL, 0};
     int have_best;
     size_t dl;
     if (path == NULL || path[0] != '/' || out == NULL || outsz == 0) {

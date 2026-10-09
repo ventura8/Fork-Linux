@@ -1796,17 +1796,24 @@ struct daemon_state {
 /* 1 when the NUL-separated environment block env[0..len) holds the entry exactly. */
 static int environ_has(const char *env, size_t len, const char *entry)
 {
-    size_t elen = strlen(entry);
-    size_t i = 0;
-    while (i < len) {
-        const char *end = memchr(env + i, '\0', len - i);
-        size_t n = end != NULL ? (size_t)(end - (env + i)) : len - i;
-        if (n == elen && memcmp(env + i, entry, elen) == 0) {
-            return 1;
+    size_t k = 0;  /* bytes of entry matched so far in the current entry of env */
+    int match = 1; /* the current entry of env still equals entry[0..k) */
+    for (size_t i = 0; i < len; i++) {
+        char c = env[i];
+        if (c == '\0') {
+            if (match && entry[k] == '\0') {
+                return 1;
+            }
+            k = 0;
+            match = 1;
+        } else if (match && entry[k] == c) {
+            k++;
+        } else {
+            match = 0;
         }
-        i += n + 1;
     }
-    return 0;
+    /* A last entry cut short by the read cap has no terminator. */
+    return len > 0 && env[len - 1] != '\0' && match && entry[k] == '\0';
 }
 
 /* Up to cap bytes of <proc>/<name>/<file> into buf (only our own processes are readable); the length. */
@@ -1857,15 +1864,19 @@ static int proc_uses(const char *proc, const char *name, const char *a, const ch
 /* 1 when a process other than self, under proc ("/proc"), uses the watched prefix (proc_uses). */
 static int prefix_in_use(const char *proc, const char *a, const char *b, const char *exe_dir, pid_t self)
 {
-    struct dirent *e;
     int found = 0;
     DIR *dir = opendir(proc);
     if (dir == NULL) {
         return 0;
     }
-    while (!found && (e = readdir(dir)) != NULL) {
+    while (!found) {
+        const struct dirent *e = readdir(dir);
         char *end = NULL;
-        long pid = strtol(e->d_name, &end, 10);
+        long pid;
+        if (e == NULL) {
+            break;
+        }
+        pid = strtol(e->d_name, &end, 10);
         if (end != e->d_name && *end == '\0' && pid > 0 && pid != (long)self) {
             found = proc_uses(proc, e->d_name, a, b, exe_dir);
         }
