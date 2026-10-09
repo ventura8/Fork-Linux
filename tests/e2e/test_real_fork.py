@@ -18,13 +18,29 @@ from typing import Any
 
 import pytest
 
+from fork_linux import manifest, versions
+
 if os.environ.get("FL_E2E_FORK") != "1":
     pytest.skip(
         "requires FL_E2E_FORK=1 (real Wine + the official Fork download, ~2.5 GB disk, Xvfb and xdotool)",
         allow_module_level=True,
     )
 
-FORK_VERSION = "2.23.2"
+
+
+def _target_version() -> str:
+    """``FL_E2E_FORK_VERSION`` (upstream-watch: the version it just found), else the manifest default."""
+    wanted = os.environ.get("FL_E2E_FORK_VERSION", "").strip()
+    if not wanted:
+        return manifest.load().fork_default
+    if not versions.is_valid(wanted):
+        raise pytest.UsageError(f"FL_E2E_FORK_VERSION={wanted!r} is not a Fork version")
+    return wanted
+
+
+FORK_VERSION = _target_version()
+# Every setup call names the version, so a re-run sees the same inputs.
+SETUP = ("setup", "--accept-fork-eula", "--no-gui", "--fork-version", FORK_VERSION)
 WM_CLASS = "fork.exe"
 WELCOME_TITLE = "User information"
 MAIN_TITLE = "Fork"
@@ -33,7 +49,7 @@ SETUP_TIMEOUT = 3600.0
 WINDOW_TIMEOUT = 180.0
 NOOP_SETUP_SECONDS = 10.0
 FAST_PATH_SECONDS = 30.0
-# Offsets of the controls inside Fork 2.23.2's first-run dialogs (measured on 1600x1000).
+# Offsets of the controls inside Fork's first-run dialogs (measured with 2.23.2 on 1600x1000).
 WELCOME_NAME = (460, 138)
 WELCOME_EMAIL = (460, 194)
 WELCOME_FINISH = (523, 337)
@@ -196,13 +212,13 @@ def _make_repo(path: Path) -> Path:
 
 def test_01_setup_completes_and_resumes(e2e: Any) -> None:
     started = time.monotonic()
-    e2e.cli("setup", "--accept-fork-eula", "--no-gui", timeout=SETUP_TIMEOUT)
+    e2e.cli(*SETUP, timeout=SETUP_TIMEOUT)
     (e2e.logs / "timing-setup.txt").write_text(f"{time.monotonic() - started:.1f}\n", encoding="utf-8")
     listed = json.loads(e2e.cli("setup", "--list-steps", "--json").stdout)
     assert listed["complete"] is True
     assert {row["status"] for row in listed["steps"]} <= {"done", "always"}
     started = time.monotonic()
-    report = json.loads(e2e.cli("setup", "--accept-fork-eula", "--no-gui", "--json").stdout)
+    report = json.loads(e2e.cli(*SETUP, "--json").stdout)
     assert report["ran"] == ["preflight", "finalize"]
     assert time.monotonic() - started < NOOP_SETUP_SECONDS
 

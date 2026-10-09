@@ -173,6 +173,10 @@ def test_upstream_watch_flow() -> None:
     assert "actions/cache" not in UPSTREAM
     assert "upload-artifact" in UPSTREAM
     assert "path: logs/e2e-wine/" in UPSTREAM
+    # The E2E tests the version just found (tests/e2e/test_real_fork.py reads it).
+    assert "FL_E2E_FORK_VERSION: ${{ steps.check.outputs.version }}" in UPSTREAM
+    e2e_script = (ROOT / "scripts" / "ci-e2e-wine.sh").read_text(encoding="utf-8")
+    assert "-e FL_E2E_FORK_VERSION " in e2e_script
 
 
 @pytest.mark.parametrize("name", sorted(ALL))

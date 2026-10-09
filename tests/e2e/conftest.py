@@ -20,6 +20,9 @@ Environment:
   ``$XDG_CACHE_HOME/winetricks`` (dotnet48 and corefonts installers).
 * ``FL_E2E_DISPLAY``: the X display to use (default ``:98``); an Xvfb is
   started on it unless one already answers there.
+* ``FL_E2E_FORK_VERSION``: the Fork version to install and test (default: the
+  manifest's ``fork.default``); upstream-watch.yml sets it to the version it
+  just recorded.
 """
 
 from __future__ import annotations

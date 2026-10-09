@@ -51,6 +51,9 @@ jobs:
         id: e2e
         if: steps.check.outputs.new == 'true'
         continue-on-error: true
+        env:
+          # The E2E installs and tests the version just found, not the manifest default.
+          FL_E2E_FORK_VERSION: ${{ steps.check.outputs.version }}
         run: ./scripts/ci-e2e-wine.sh
 
       - name: Keep the E2E logs (text only)

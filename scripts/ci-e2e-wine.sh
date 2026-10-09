@@ -28,6 +28,7 @@ docker run --rm \
 	-e HOME=/tmp/fl-home \
 	-e FL_E2E_FORK=1 \
 	-e FL_E2E_ROOT=/e2e \
+	-e FL_E2E_FORK_VERSION \
 	-e PYTHONDONTWRITEBYTECODE=1 \
 	-v "${ROOT}:/src:ro" \
 	-v "${SCRATCH}:/e2e:rw" \
