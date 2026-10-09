@@ -26,6 +26,8 @@ status=0
 docker run --rm \
 	--user "$(id -u):$(id -g)" \
 	-e HOME=/tmp/fl-home \
+	-e USER="$(id -un)" \
+	-e LOGNAME="$(id -un)" \
 	-e FL_E2E_FORK=1 \
 	-e FL_E2E_ROOT=/e2e \
 	-e FL_E2E_FORK_VERSION \

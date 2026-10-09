@@ -38,12 +38,15 @@ PROJECT_KEY="ventura8_Fork-Linux"
 cd "${ROOT}"
 
 load_token() {
-	if [[ -z "${SONAR_TOKEN:-}" && -f "${ROOT}/.sonar-token" ]]; then
+	# A pasted secret often carries a trailing newline or spaces; the API rejects those.
+	SONAR_TOKEN="$(printf '%s' "${SONAR_TOKEN:-}" | tr -d '[:space:]')"
+	if [[ -z "${SONAR_TOKEN}" && -f "${ROOT}/.sonar-token" ]]; then
 		SONAR_TOKEN="$(tr -d '[:space:]' <"${ROOT}/.sonar-token")"
 		export SONAR_TOKEN
 		echo "==> SONAR_TOKEN loaded from .sonar-token"
 	fi
-	if [[ -z "${SONAR_TOKEN:-}" ]]; then
+	export SONAR_TOKEN
+	if [[ -z "${SONAR_TOKEN}" ]]; then
 		echo "error: SONAR_TOKEN is not set." >&2
 		echo "       Create a token at ${SONAR_HOST}/account/security and either" >&2
 		echo "       'export SONAR_TOKEN=...' or write it to ${ROOT}/.sonar-token" >&2
