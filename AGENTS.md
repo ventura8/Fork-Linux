@@ -245,7 +245,7 @@ v0.1.0 is built in phases; rows marked **(planned)** do not exist yet. When you 
 > [!IMPORTANT]
 > Do **not** pile new top-level files at the repo root. Use the existing folders (`src/`, `bin/`, `libexec/`, `bridge/`, `data/`, `packaging/`, `debian/`, `docker/`, `scripts/`, `tests/`, `docs/`, `logs/`, `.agents/`, `.github/`).
 
-* **Allowed root files** (complete list): `VERSION`, `meson.build`, `meson.options`, `meson_options.txt` (symlink → `meson.options`), `install.sh`, `uninstall.sh`, `pyproject.toml` (tool config only), `.clang-tidy`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `agent.md`, `skills.md`, `README.md`, `LICENSE`, `.gitignore`, `.dockerignore`.
+* **Allowed root files** (complete list): `VERSION`, `meson.build`, `meson.options`, `meson_options.txt` (symlink → `meson.options`), `install.sh`, `uninstall.sh`, `pyproject.toml` (tool config only), `.clang-tidy`, `sonar-project.properties` (the scanner only reads it from the root), `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `agent.md`, `skills.md`, `README.md`, `LICENSE`, `.gitignore`, `.dockerignore`.
 * **Docker assets** live under `docker/`; **scripts** under `scripts/`; **workflows** under `.github/workflows/`; **agent runbooks** under `.agents/skills/`.
 * When relocating or introducing paths: update agent docs first, then move/add files, then fix every script / workflow reference in the same change set. Leave no stale root copies.
 
@@ -286,6 +286,12 @@ v0.1.0 is built in phases; rows marked **(planned)** do not exist yet. When you 
 * **Local runners** (planned): `./scripts/ci-pipeline.sh` (fail-fast lint → coverage → bridge → compat → packaging), `./scripts/ci-matrix.sh` (parallel compat), `./scripts/ci-packaging-matrix.sh` (parallel packaging), `./scripts/ci-e2e-wine.sh`. Tee output under `logs/` (see [logs/README.md](logs/README.md)).
 * **Fix until green**: when running the gate, fix every failure and re-run until every stage and cell is green. Never ignore warnings, add suppressions, disable checks, raise thresholds, lower coverage floors or skip steps. Each stage keeps `set -euo pipefail` and warnings-as-errors.
 * **Packaging log scan**: after any packaging cell, **read** `logs/ci-packaging/<format>.log` for every format — exit 0 is not enough. Fix meaningful `ERROR` / `WARNING` / `error:` lines that indicate broken product behaviour and re-run the affected cells.
+
+* **SonarQube Cloud** (project `ventura8_Fork-Linux`, org `ventura8`), same model as Ubuntu-Hello:
+  - Settings: `sonar-project.properties` (root). Python coverage from `artifacts/coverage/coverage.xml` (Cobertura, written by the coverage stage); C bridge analysed from the native meson compile database `build-sonar/compile_commands.json`.
+  - Local: `./scripts/ci-sonar.sh` (pinned `sonarsource/sonar-scanner-cli:12.2.0.4256_8.1.0` in Docker; `FL_SONAR_COVERAGE=1` refreshes coverage first; `--check-token` only validates). Token from `SONAR_TOKEN` or the gitignored `.sonar-token`.
+  - CI: a **step inside the `coverage` job** (not its own job): `fetch-depth: 0`, `./scripts/ci-sonar.sh --check-token`, then `SonarSource/sonarqube-scan-action@v8.2.2` with the `SONAR_TOKEN` secret, skipped on fork PRs.
+  - Never `NOSONAR`. Rule ignores only as `sonar.issue.ignore.multicriteria` entries scoped to one rule **and** one path, each with a reason comment.
 
 ### 4.9 Packaging Rules (Mandatory)
 

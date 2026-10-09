@@ -31,7 +31,7 @@ IMAGE_MAGIC = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a")
 ALLOWED_ROOT_FILES = frozenset(
     {
         "VERSION", "meson.build", "meson.options", "meson_options.txt", "install.sh",
-        "uninstall.sh", "pyproject.toml", ".clang-tidy", "AGENTS.md", "CLAUDE.md",
+        "uninstall.sh", "pyproject.toml", ".clang-tidy", "sonar-project.properties", "AGENTS.md", "CLAUDE.md",
         "GEMINI.md", "agent.md", "skills.md", "README.md", "LICENSE", ".gitignore",
         ".dockerignore",
     }
