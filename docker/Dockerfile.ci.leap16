@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1.27.0
+# CI image for Fork for Linux (unofficial) — compat cell: openSUSE Leap 16.0
+# Image tag: fork-linux-ci-leap16:16.0
+# Runs (scripts/ci-docker.sh, FL_CI_STAGE=compat FL_CI_CELL=leap16): meson build + meson test,
+# py_compile and the pytest suite (no coverage floors), as an unprivileged user.
+# Source is bind-mounted at /src (no COPY).
+FROM opensuse/leap:16.0
+
+ENV LANG=C.UTF-8
+# Packages are locked by the pinned opensuse/leap:16.0 base and its release repositories.
+RUN zypper --non-interactive refresh \
+    && zypper --non-interactive install -y --no-recommends \
+    git python313 python313-pytest \
+    meson ninja gcc glibc-devel \
+    desktop-file-utils AppStream \
+    bash zsh fish file binutils xdg-utils curl which \
+    && zypper clean -a
+
+WORKDIR /src
+CMD ["./scripts/ci-docker.sh", "--inside"]

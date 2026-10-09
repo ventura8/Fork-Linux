@@ -748,6 +748,15 @@ def test_fork_integrity() -> None:
     result = run(ctx, "fork.integrity")
     assert result.status == "fail"
     assert "does not match" in result.detail
+    # Fork updated itself (fork-linux installed 2.23.1): Velopack's delta-rebuilt package differs (spike S9).
+    ctx.state.set("fork.version", "2.23.1")
+    result = run(ctx, "fork.integrity")
+    assert result.status == "info"
+    assert "rebuilt by Fork's own updater" in result.detail
+    ctx.state.set("fork.version", "2.23.2")
+    assert run(ctx, "fork.integrity").status == "fail"
+    ctx.state.set("fork.version", "not-a-version")
+    assert run(ctx, "fork.integrity").status == "fail"
     package = ctx.layout.packages_dir / "Fork-2.23.2-full.nupkg"
     sha = fsutil.sha256_file(package)
 

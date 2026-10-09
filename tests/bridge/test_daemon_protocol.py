@@ -1149,8 +1149,9 @@ def test_bad_token_file_is_refused(
         ["--daemon", "--parent-pid", "0"],
         ["--bogus"],
         ["--daemon", "--host-helper", "relative/path"],
+        ["--daemon", "--watch-prefix", "relative"],
     ],
-    ids=["no-daemon", "bad-port", "bad-pid", "unknown", "relative-helper"],
+    ids=["no-daemon", "bad-port", "bad-pid", "unknown", "relative-helper", "relative-prefix"],
 )
 def test_usage_errors(helper_bin: Path, tmp_path: Path, args: list[str]) -> None:
     """Bad command lines exit 2 without listening."""
@@ -1240,6 +1241,81 @@ def test_daemon_exits_with_its_parent(helper_bin: Path, tmp_path: Path) -> None:
     launcher.wait(timeout=10)
     wait_gone(pid, 3.0)
     assert "daemon exit reason=signal" in (tmp_path / "daemon.log").read_text()
+
+
+def test_watch_prefix_outlives_its_parent(helper_bin: Path, tmp_path: Path) -> None:
+    """--watch-prefix (spike S9): the daemon survives its parent while a program from
+    --watch-exe-dir carries WINEPREFIX=<dir> and FL_BRIDGE_PORT=<its port> (Fork restarted by
+    Velopack), then exits once the last one is gone; other programs with that environment
+    (Wine's services) do not keep it alive."""
+    prefix = tmp_path / "prefix"
+    prefix.mkdir()
+    token_file = tmp_path / "token"
+    fd = os.open(token_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(secrets.token_hex(32))
+    script = (
+        "import os,subprocess,sys\n"
+        "p = subprocess.Popen(sys.argv[1:] + ['--parent-pid', str(os.getpid())], stdout=subprocess.PIPE)\n"
+        "print(p.pid, p.stdout.readline().decode().strip(), flush=True)\n"
+        "sys.stdin.readline()\n"
+    )
+    argv = [str(helper_bin), "--daemon", "--token-file", str(token_file), "--watch-prefix", str(prefix)]
+    argv += ["--watch-exe-dir", "C:\\Fork\\"]
+    argv += ["--log", str(tmp_path / "daemon.log")]
+    launcher = subprocess.Popen(
+        [sys.executable, "-I", "-c", script, *argv],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        env=base_env(tmp_path),
+    )
+    assert launcher.stdout is not None
+    assert launcher.stdin is not None
+    pid_s, port_line = launcher.stdout.readline().decode().split()
+    pid = int(pid_s)
+    user_env = {**base_env(tmp_path), "WINEPREFIX": str(prefix), "FL_BRIDGE_PORT": port_line.split("=", 1)[1]}
+    sleep = shutil.which("sleep")
+    assert sleep is not None
+    user = subprocess.Popen(["c:\\fork\\current\\Fork.exe", "60"], executable=sleep, env=user_env)
+    service = subprocess.Popen(["C:\\windows\\system32\\services.exe", "60"], executable=sleep, env=user_env)
+    try:
+        time.sleep(2.5)  # one --watch-prefix check sees the user
+        launcher.stdin.close()
+        launcher.wait(timeout=10)
+        time.sleep(3.0)  # no PDEATHSIG, and --parent-pid no longer counts
+        assert pid_alive(pid)
+        user.kill()
+        user.wait()
+        wait_gone(pid, 12.0)
+    finally:
+        for proc in (user, service):
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+        if pid_alive(pid):
+            os.kill(pid, signal.SIGKILL)
+    log = (tmp_path / "daemon.log").read_text()
+    assert "watch-prefix=yes" in log
+    assert "daemon exit reason=prefix-idle" in log
+
+
+def test_watch_prefix_follows_the_parent_until_used(helper_bin: Path, tmp_path: Path) -> None:
+    """Until a process uses the prefix, --parent-pid still stops a watching daemon."""
+    sleeper = subprocess.Popen(["sleep", "60"])
+    d = start_daemon(
+        helper_bin,
+        tmp_path,
+        extra_args=["--parent-pid", str(sleeper.pid), "--watch-prefix", str(tmp_path / "unused")],
+    )
+    try:
+        sleeper.kill()
+        sleeper.wait()
+        d.proc.wait(timeout=6)
+        assert d.proc.returncode == 0
+    finally:
+        err = d.stop()
+    assert "reason=parent-gone" in d.log.read_text()
+    assert_clean_stderr(err)
 
 
 # --------------------------------------------------------------------------

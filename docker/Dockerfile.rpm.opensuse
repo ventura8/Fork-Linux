@@ -1,0 +1,22 @@
+# syntax=docker/dockerfile:1.27.0
+# openSUSE RPM packaging image for Fork for Linux (unofficial) — Leap 16.0
+# Image tag: fork-linux-ci-rpm-opensuse:16.0
+# Runs scripts/release-rpm.sh opensuse (rpmbuild + rpmlint, no filters) and the packaging
+# E2E (scripts/packaging-e2e-install.sh rpm-opensuse). Source is bind-mounted at /src.
+# Leap 16.0 ships the MinGW-w64 cross compiler (mingw64-cross-gcc); the meson option
+# -Dbridge_prebuilt_dir stays the fallback for a release without it.
+FROM opensuse/leap:16.0
+
+ENV LANG=C.UTF-8
+# Packages are locked by the pinned opensuse/leap:16.0 base and its release repositories.
+RUN zypper --non-interactive refresh \
+    && zypper --non-interactive install -y --no-recommends \
+    git rpm-build rpmlint python3 \
+    meson ninja gcc glibc-devel \
+    mingw64-cross-gcc mingw64-cross-binutils \
+    desktop-file-utils AppStream \
+    file binutils util-linux findutils tar gzip \
+    && zypper clean -a
+
+WORKDIR /src
+CMD ["./scripts/release-rpm.sh", "opensuse"]

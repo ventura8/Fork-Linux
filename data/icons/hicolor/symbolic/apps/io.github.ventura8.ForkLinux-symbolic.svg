@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Fork for Linux (unofficial) — symbolic placeholder (original artwork, MIT). -->
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- Fork for Linux (unofficial) — symbolic placeholder (original artwork, MIT). -->
   <g fill="none" stroke="#2e3436" stroke-width="1.6" stroke-linecap="round">
     <path d="M5 4 V12"/>
     <path d="M5 9.5 C5 7 11 7.5 11 4.5"/>

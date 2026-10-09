@@ -1,0 +1,27 @@
+# syntax=docker/dockerfile:1.27.0
+# Real end-to-end image for Fork for Linux (unofficial) — Ubuntu 26.04
+# Image tag: fork-linux-ci-e2e-wine:26.04
+# scripts/ci-e2e-wine.sh runs FL_E2E_FORK=1 tests/e2e in here as an unprivileged user: the
+# managed Wine runtime, winetricks (.NET + core fonts) and the official Fork installer are
+# downloaded at run time on the CI machine (never baked into the image or cached), under
+# Xvfb with xdotool. Only logs leave the container (no screenshots, no binaries).
+# Wine's host libraries come from the same table as `fork-linux doctor`
+# (fork_linux.hostdeps, Debian names); distro Wine is not installed.
+FROM ubuntu:26.04
+
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+# Apt packages are distro-locked by ubuntu:26.04 (no floating apt versions).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git python3 python3-pytest \
+    xvfb xauth xdotool x11-utils imagemagick \
+    cabextract unzip 7zip fontconfig \
+    libfreetype6 libfontconfig1 libgnutls30t64 libx11-6 libxext6 libxrender1 libxi6 \
+    libxrandr2 libxcursor1 libxcomposite1 libxinerama1 libxfixes3 libgl1 \
+    libvulkan1 libdbus-1-3 libasound2t64 libpulse0 libxkbcommon0 libwayland-client0 libegl1 \
+    procps
+
+WORKDIR /src
+CMD ["python3", "-m", "pytest", "-q", "tests/e2e"]

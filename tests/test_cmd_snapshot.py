@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -102,6 +103,17 @@ def test_rollback_to_the_previous_version_pins_it(capsys: pytest.CaptureFixture[
     assert state.get(updates.LAST_SEEN_VERSION) == "2.23.1"
     assert Config.load(paths(), {}).get("fork", "update_policy") == "pinned"
     assert not layout().packages_dir.joinpath("Fork-2.24.0-full.nupkg").exists()
+
+
+def test_rollback_turns_forks_own_update_check_off(capsys: pytest.CaptureFixture[str]) -> None:
+    """Pinning by rollback sets ApplicationUpdateType=2 at once, so Fork stops offering the newer version."""
+    _snapshot("2.23.1")
+    _snapshot("2.23.2")
+    write_settings(layout(), {"ApplicationUpdateType": 0, "Theme": 1})
+    assert run_cli(capsys, "rollback")[0] == 0
+    settings = json.loads(layout().settings_file.read_text(encoding="utf-8"))
+    assert settings == {"ApplicationUpdateType": 2, "Theme": 1}
+    assert State.load(paths().state_file).get(updates.SAVED_UPDATE_TYPE) == 0
 
 
 def test_rollback_by_id_version_and_options(capsys: pytest.CaptureFixture[str]) -> None:

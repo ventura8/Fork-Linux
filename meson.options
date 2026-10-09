@@ -7,8 +7,44 @@ option(
   description: 'Windows-side git bridge shims (fl-shim.exe, fl-launch.exe); needs x86_64-w64-mingw32-gcc',
 )
 option(
+  'bridge_prebuilt_dir',
+  type: 'string',
+  value: '',
+  description: 'Install fl-shim.exe / fl-launch.exe from this directory when MinGW-w64 is not available',
+)
+option(
   'tests',
   type: 'boolean',
   value: true,
   description: 'Build and register the native unit tests and the test-only Wine test driver',
+)
+option(
+  'python',
+  type: 'string',
+  value: '',
+  description: 'Interpreter for the launcher shebangs (default: the python3 found at configure time); portable builds use "/usr/bin/env -S python3"',
+)
+option(
+  'flavor',
+  type: 'string',
+  value: 'meson',
+  description: 'Packaging flavour baked into fork_linux/_build.py (deb, rpm, arch, tarball, appimage, flatpak, snap)',
+)
+option(
+  'fork_alias',
+  type: 'boolean',
+  value: true,
+  description: 'Install the "fork" command (a symlink to fork-linux; argv[0] dispatch)',
+)
+option(
+  'desktop',
+  type: 'boolean',
+  value: true,
+  description: 'Install the menu entry, AppStream metainfo and icons',
+)
+option(
+  'file_manager_actions',
+  type: 'boolean',
+  value: false,
+  description: 'Install system-wide "Open in Fork" actions (Nautilus, Nemo, Dolphin, FMA); off by default because fork-linux desktop install adds per-user ones',
 )

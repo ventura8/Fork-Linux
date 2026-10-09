@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Fork for Linux (unofficial) — original placeholder artwork (MIT, ventura8).
-     Deliberately NOT Fork's logo: a git branch graph on a warm tile. The real Fork
-     icon is extracted from the user's own Fork.exe at runtime and never committed. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- Fork for Linux (unofficial) — original placeholder artwork (MIT, ventura8).
+       Deliberately NOT Fork's logo: a git branch graph on a warm tile. The real Fork
+       icon is extracted from the user's own Fork.exe at runtime and never committed. -->
   <defs>
     <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#ffb347"/>

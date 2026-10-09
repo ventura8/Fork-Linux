@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1.27.0
+# Portable release image for Fork for Linux (unofficial) — Ubuntu 26.04
+# Image tag: fork-linux-ci-release:26.04
+# Builds the relocatable tarball, the AppImage and the Flatpak bundle
+# (scripts/release-portable.sh tarball|appimage|flatpak) and runs their packaging E2E
+# (scripts/packaging-e2e-install.sh). Snap builds use docker/Dockerfile.snap (core24 needs
+# Ubuntu 24.04). Source is bind-mounted at /src (no COPY).
+FROM ubuntu:26.04
+
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# Apt packages are distro-locked by ubuntu:26.04 (no floating apt versions).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git curl \
+    meson ninja-build gcc libc6-dev musl-tools python3 \
+    gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 \
+    desktop-file-utils appstream file binutils squashfs-tools zsync \
+    flatpak flatpak-builder elfutils librsvg2-common \
+    xdg-utils man-db bash-completion
+
+# appimagetool: an immutable upstream release, sha256-verified, unpacked with unsquashfs
+# (the AppImage itself is never executed during the image build).
+ARG APPIMAGETOOL_VERSION=1.9.1
+ARG APPIMAGETOOL_SHA256=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+RUN curl -fsSL --proto '=https' -o /tmp/appimagetool.AppImage \
+    "https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-x86_64.AppImage" \
+    && echo "${APPIMAGETOOL_SHA256}  /tmp/appimagetool.AppImage" | sha256sum -c - \
+    && offset="$(python3 -c 'import struct; h=open("/tmp/appimagetool.AppImage","rb").read(64); o,=struct.unpack_from("<Q",h,0x28); e,n=struct.unpack_from("<HH",h,0x3a); print(o+e*n)')" \
+    && unsquashfs -q -o "${offset}" -d /opt/appimagetool /tmp/appimagetool.AppImage \
+    && ln -s /opt/appimagetool/AppRun /usr/local/bin/appimagetool \
+    && rm -f /tmp/appimagetool.AppImage
+
+WORKDIR /src
+CMD ["./scripts/release-portable.sh", "tarball"]

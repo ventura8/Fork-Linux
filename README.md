@@ -60,7 +60,7 @@ All channels are **x86_64 only** and never depend on your distribution's `wine` 
 | Fedora 44 | `sudo dnf install ./fork-linux-<version>-1.fc44.x86_64.rpm` |
 | openSUSE Leap 16.0 | `sudo zypper install ./fork-linux-<version>-*.x86_64.rpm` |
 | Arch Linux / AUR | `yay -S fork-linux` (or `makepkg -si` with the release `PKGBUILD`) |
-| Flatpak | `flatpak install --user ./io.github.ventura8.ForkLinux.flatpak` (uses the `org.winehq.Wine` BaseApp) |
+| Flatpak | `flatpak install --user ./io.github.ventura8.ForkLinux-<version>-x86_64.flatpak` (uses the `org.winehq.Wine` BaseApp) |
 | AppImage | `chmod +x fork-linux-<version>-x86_64.AppImage && ./fork-linux-<version>-x86_64.AppImage --install-desktop` |
 | Snap (classic) | `sudo snap install fork-linux --classic` |
 | Tarball | `fork-linux-<version>-x86_64.tar.gz` — relocatable; `install.sh --from-tarball` installs it |
@@ -84,6 +84,14 @@ Plan for **about 2.5–3 GB of disk** and **10–20 minutes** (less on a fast co
 - `fork .` or `fork ~/src/myrepo` — open a repository (a path inside a repository opens its root). If Fork is already running, the repository opens in a new tab.
 - **Desktop launcher** — "Fork for Linux (unofficial)" in your app menu, with Fork's own icon extracted from your copy.
 - **Open in Fork** — a right-click action in Nautilus, Nemo, Caja, Dolphin and Thunar: `fork-linux desktop install --file-managers <list>`.
+
+## Updating
+
+**Fork updates itself, in the app.** When Fork says a new version is available (or after **File > Check for Updates...**), click **Restart and Update**: Fork's own updater downloads the new version, replaces its install and restarts Fork — this works under Wine, also with the git bridge on ([spike S9](docs/spikes/S9-fork-self-update.md)). Fork's update channel is its own setting (Preferences > Updates): *Develop* (Fork's default) gets every release; *Stable* lags well behind.
+
+- **Before every launch** fork-linux keeps a snapshot of the installed Fork (the newest two are kept), and the first start after an update tells you about it. If a new version misbehaves under Wine, close Fork and run `fork-linux rollback` (or `fork-linux rollback --to-version 2.23.2`). A rollback **pins** that version: fork-linux turns Fork's own update check off until you run `fork-linux config set fork.update_policy auto`, which turns it back on with your previous channel. `fork-linux snapshot list` shows what you can go back to.
+- `fork-linux update --check` shows the installed, tested and newest Fork versions and Fork's update channel; `fork-linux update --fork` reinstalls the tested version from Fork's CDN (`--latest` for the newest).
+- **fork-linux itself** (this wrapper) is updated by whatever installed it: your package manager (`apt`, `dnf`, `zypper`, `pacman`/AUR helper, `flatpak update`, `snap refresh`), re-running `install.sh` for a per-user install, or the AppImage's zsync update information (e.g. `appimageupdatetool`). `fork-linux update --wine` moves to the Wine runtime a new fork-linux release pins.
 
 ## CLI
 
@@ -133,9 +141,9 @@ What it changes, verified with Fork 2.23.2:
 - **Open in Shell / Console** and **Diff in Linux (fork-linux)** (Ctrl+D on a changed file) open your Linux terminal and diff tool (meld, kdiff3, Beyond Compare or VS Code), and Fork waits for the diff tool.
 - Each git call is much faster (about 13 ms against about 90 ms for bundled git).
 
-How it works: when Fork starts, fork-linux starts a small helper (`fl-bridge-helper`) outside Wine and points Fork at its own shims in `C:\fork-linux\gitInstance`. The helper lives exactly as long as that Fork. Only the `[git] bridge` setting and Fork's terminal / diff / merge tool entries change; your `~/.gitconfig` (and its credential helpers, signing and editors) is what git uses.
+How it works: when Fork starts, fork-linux starts a small helper (`fl-bridge-helper`) outside Wine and points Fork at its own shims in `C:\fork-linux\gitInstance`. The helper lives as long as Fork does — also across Fork's own "Restart and Update" — and stops a few seconds after Fork closes. Only the `[git] bridge` setting and Fork's terminal / diff / merge tool entries change; your `~/.gitconfig` (and its credential helpers, signing and editors) is what git uses.
 
-Limits: Fork's own **Local Changes** list still shows executable files and symlinks as modified (Fork computes it inside Wine; the diff is empty and nothing gets committed); if Fork restarts itself after an update, start it again with `fork` so the helper runs. Built from source, the bridge needs `scripts/build-bridge.sh` first (`git-bridge enable` offers to run it). Details: [bridge/README.md](bridge/README.md).
+Limits: Fork's own **Local Changes** list still shows executable files and symlinks as modified (Fork computes it inside Wine; the diff is empty and nothing gets committed). Built from source, the bridge needs `scripts/build-bridge.sh` first (`git-bridge enable` offers to run it). Details: [bridge/README.md](bridge/README.md).
 
 ## Compatibility
 

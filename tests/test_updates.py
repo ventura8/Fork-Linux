@@ -171,3 +171,68 @@ def test_enforce_pin_deletes_newer_staged_packages(layout: ForkLayout) -> None:
 def test_enforce_pin_rejects_invalid_versions(layout: ForkLayout, pinned: Any) -> None:
     with pytest.raises(UsageError, match="not a Fork version"):
         updates.enforce_pin(layout, pinned)
+
+
+# -- Fork's own update check (spike S9) ---------------------------------------------------
+
+
+def _settings(layout: ForkLayout) -> dict[str, Any]:
+    return json.loads(layout.settings_file.read_text(encoding="utf-8"))
+
+
+def _write(layout: ForkLayout, data: dict[str, Any]) -> None:
+    layout.settings_file.parent.mkdir(parents=True, exist_ok=True)
+    layout.settings_file.write_text(json.dumps(data), encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("data", "name"),
+    [({}, "develop"), ({"ApplicationUpdateType": 1}, "stable"), ({"ApplicationUpdateType": 2}, "off"),
+     ({"ApplicationUpdateType": 7}, "unknown"), ({"ApplicationUpdateType": True}, "unknown")],
+)
+def test_update_type_name(data: dict[str, Any], name: str) -> None:
+    assert updates.update_type_name(data) == name
+
+
+def test_sync_update_type_without_settings(layout: ForkLayout, state: State, tmp_path: Path) -> None:
+    assert updates.sync_update_type(layout, pinned=True, state=state, backup_dir=tmp_path / "b") is None
+    assert not layout.settings_file.exists()
+
+
+def test_sync_update_type_pins_and_restores(layout: ForkLayout, state: State, tmp_path: Path) -> None:
+    backups = tmp_path / "b"
+    _write(layout, {"ApplicationUpdateType": 1, "Other": "kept"})
+    note = updates.sync_update_type(layout, pinned=True, state=state, backup_dir=backups)
+    assert note == "Fork's own update check turned off while Fork is pinned"
+    assert _settings(layout) == {"ApplicationUpdateType": 2, "Other": "kept"}
+    assert state.get(updates.SAVED_UPDATE_TYPE) == 1
+    assert updates.sync_update_type(layout, pinned=True, state=state, backup_dir=backups) is None
+    note = updates.sync_update_type(layout, pinned=False, state=state, backup_dir=backups)
+    assert note == "Fork's own update check is back on (stable)"
+    assert _settings(layout)["ApplicationUpdateType"] == 1
+    assert state.get(updates.SAVED_UPDATE_TYPE) is None
+    # Nothing saved: auto leaves the setting alone (also a user's own "Off").
+    _write(layout, {"ApplicationUpdateType": 2})
+    assert updates.sync_update_type(layout, pinned=False, state=state, backup_dir=backups) is None
+    assert _settings(layout)["ApplicationUpdateType"] == 2
+
+
+def test_sync_update_type_unset_or_odd_values_restore_develop(
+    layout: ForkLayout, state: State, tmp_path: Path
+) -> None:
+    backups = tmp_path / "b"
+    _write(layout, {"ApplicationUpdateType": "weird"})
+    updates.sync_update_type(layout, pinned=True, state=state, backup_dir=backups)
+    assert state.get(updates.SAVED_UPDATE_TYPE) == 0
+    state.set(updates.SAVED_UPDATE_TYPE, "garbage")
+    note = updates.sync_update_type(layout, pinned=False, state=state, backup_dir=backups)
+    assert note == "Fork's own update check is back on (develop)"
+    assert _settings(layout)["ApplicationUpdateType"] == 0
+
+
+def test_sync_update_type_keeps_a_value_the_user_changed(layout: ForkLayout, state: State, tmp_path: Path) -> None:
+    _write(layout, {"ApplicationUpdateType": 1})
+    state.set(updates.SAVED_UPDATE_TYPE, 0)
+    assert updates.sync_update_type(layout, pinned=False, state=state, backup_dir=tmp_path / "b") is None
+    assert _settings(layout)["ApplicationUpdateType"] == 1
+    assert state.get(updates.SAVED_UPDATE_TYPE) is None

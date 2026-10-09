@@ -1,0 +1,60 @@
+# snapcraft.yaml - Fork for Linux (unofficial) as a classic snap (core24, amd64).
+#
+# Classic confinement: Fork needs the host's git, ssh, terminals, editors, diff tools and
+# repositories anywhere on disk; the store's classic approval is a separate request (strict
+# is the fallback). The snap ships the relocatable fork-linux tree only: it runs on the
+# host's Python >= 3.10 (usr/lib/fork-linux/find-python.sh) and never bundles Wine or Fork;
+# the CLI strips the snap environment before it starts Wine or host tools.
+# scripts/release-portable.sh snap writes fork-linux-src.tar.gz (the working tree as git
+# sees it) next to this file before `snapcraft pack`.
+---
+name: fork-linux
+base: core24
+adopt-info: fork-linux
+grade: stable
+confinement: classic
+platforms:
+  amd64:
+    build-on: [amd64]
+    build-for: [amd64]
+license: MIT
+website: https://github.com/ventura8/Fork-Linux
+issues: https://github.com/ventura8/Fork-Linux/issues
+title: Fork for Linux (unofficial)
+
+apps:
+  fork-linux:
+    command: usr/lib/fork-linux/snap-wrapper.sh fork-linux
+    common-id: io.github.ventura8.ForkLinux
+    desktop: usr/share/applications/io.github.ventura8.ForkLinux.desktop
+  fork:
+    command: usr/lib/fork-linux/snap-wrapper.sh fork
+
+parts:
+  fork-linux:
+    plugin: nil
+    source: fork-linux-src.tar.gz
+    parse-info: [usr/share/metainfo/io.github.ventura8.ForkLinux.metainfo.xml]
+    build-packages:
+      - meson
+      - ninja-build
+      - gcc
+      - libc6-dev
+      - musl-tools
+      - python3
+      - gcc-mingw-w64-x86-64
+      - binutils-mingw-w64-x86-64
+      - desktop-file-utils
+      - appstream
+    override-build: |
+      craftctl set version="$(head -n 1 VERSION)"
+      meson setup _build . --prefix=/usr --buildtype=release -Dbridge=enabled \
+        -Dflavor=snap "-Dpython=/usr/bin/env -S python3" -Dtests=false
+      meson compile -C _build
+      meson test -C _build --print-errorlogs
+      DESTDIR="${CRAFT_PART_INSTALL}" meson install -C _build --no-rebuild
+      # The portable, static (ET_EXEC) helper: classic snaps run on the host's libc.
+      install -m 0755 _build/bridge/fl-bridge-helper-static \
+        "${CRAFT_PART_INSTALL}/usr/lib/fork-linux/fl-bridge-helper"
+      install -m 0755 packaging/common/find-python.sh "${CRAFT_PART_INSTALL}/usr/lib/fork-linux/find-python.sh"
+      install -m 0755 packaging/snap/fork-linux-wrapper.sh "${CRAFT_PART_INSTALL}/usr/lib/fork-linux/snap-wrapper.sh"

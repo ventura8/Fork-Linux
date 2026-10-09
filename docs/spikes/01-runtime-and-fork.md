@@ -24,7 +24,7 @@ End-to-end setup ≈ 4 minutes on this host (dominated by dotnet48 161 s + coref
 
 ## Open (later spikes)
 
-Velopack in-app update/downgrade (S9); Wayland driver; `ApplicationUpdateType` mapping;
+Velopack in-app update (S9: done, [S9-fork-self-update.md](S9-fork-self-update.md); downgrade through Velopack still open); Wayland driver; `ApplicationUpdateType` mapping (S9: 0 Develop, 1 Stable, 2 Off);
 `LogPixels` vs `LayoutScaling`; license MachineGuid stability across Wine upgrades; system Wine 10.0 provider run.
 
 ### Resolved by the E2E run (2026-10-09, `tests/e2e/RESULTS.md`)

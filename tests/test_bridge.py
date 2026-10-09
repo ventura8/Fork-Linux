@@ -330,6 +330,8 @@ def test_start_daemon_success(kit: bridge_kit.Kit, monkeypatch: pytest.MonkeyPat
     assert isinstance(argv, list)
     assert argv[0] == "--daemon"
     assert argv[argv.index("--parent-pid") + 1] == str(os.getpid())
+    assert argv[argv.index("--watch-prefix") + 1] == str(ctx.paths.prefix)
+    assert argv[argv.index("--watch-exe-dir") + 1] == f"C:\\users\\{ctx.user}\\AppData\\Local\\Fork\\"
     assert argv[argv.index("--host-helper") + 1] == str(kit.libexec / resources.HOST_HELPER)
     assert argv[argv.index("--log") + 1] == str(daemon.log_file)
     token_file = Path(argv[argv.index("--token-file") + 1])

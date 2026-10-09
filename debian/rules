@@ -1,0 +1,19 @@
+#!/usr/bin/make -f
+# debian/rules - Fork for Linux (unofficial). debhelper 13 + meson; no maintainer scripts:
+# packages ship code only, every piece of Wine state is created per user at first run.
+
+export DH_VERBOSE = 1
+export PYTHONDONTWRITEBYTECODE = 1
+
+%:
+	dh $@ --buildsystem=meson
+
+# The bridge's C unit tests run in CI (lint / compat / coverage / bridge stages); dh_auto_test
+# runs the data checks (generated files current, desktop-file-validate, appstreamcli).
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		-Dbridge=enabled \
+		-Dflavor=deb \
+		-Dpython=/usr/bin/python3 \
+		-Dfork_alias=true \
+		-Dtests=false

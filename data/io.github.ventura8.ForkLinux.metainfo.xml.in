@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 ventura8 -->
+<!-- Template: scripts/gen-data.py metainfo fills @APP_ID@, @APP_NAME@ and the description
+     (credits.render_metainfo_paragraphs()). Add a <release> per version (AGENTS.md §4.7.2). -->
+<component type="desktop-application">
+  <id>@APP_ID@</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>@APP_NAME@</name>
+  <summary>Unofficial Wine wrapper for the Fork git client</summary>
+  <developer id="io.github.ventura8">
+    <name>ventura8</name>
+  </developer>
+  <description>
+    @DESCRIPTION@
+  </description>
+  <launchable type="desktop-id">@APP_ID@.desktop</launchable>
+  <url type="homepage">https://github.com/ventura8/Fork-Linux</url>
+  <url type="bugtracker">https://github.com/ventura8/Fork-Linux/issues</url>
+  <url type="help">https://github.com/ventura8/Fork-Linux#readme</url>
+  <categories>
+    <category>Development</category>
+    <category>RevisionControl</category>
+  </categories>
+  <keywords>
+    <keyword>git</keyword>
+    <keyword>wine</keyword>
+    <keyword>version control</keyword>
+  </keywords>
+  <provides>
+    <binary>fork-linux</binary>
+    <binary>fork</binary>
+  </provides>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-09">
+      <description>
+        <p>First public release: lazy, resumable setup of a pinned Wine runtime, .NET Framework and the official Fork installer; menu entry and fork command; update snapshots and rollback; health check; experimental native-git bridge.</p>
+      </description>
+    </release>
+  </releases>
+</component>

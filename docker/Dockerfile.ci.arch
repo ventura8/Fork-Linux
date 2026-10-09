@@ -1,0 +1,21 @@
+# syntax=docker/dockerfile:1.27.0
+# CI image for Fork for Linux (unofficial) — compat cell: Arch Linux (dated base snapshot)
+# Image tag: fork-linux-ci-arch:base-20260906.0.587075
+# Runs (scripts/ci-docker.sh, FL_CI_STAGE=compat FL_CI_CELL=arch): meson build + meson test,
+# py_compile and the pytest suite (no coverage floors), as an unprivileged user.
+# Source is bind-mounted at /src (no COPY).
+FROM archlinux:base-20260906.0.587075
+
+ENV LANG=C.UTF-8
+# The dated base tag pins the starting point; pacman -Syu brings it to the current repos
+# (Arch has no frozen release repositories).
+RUN pacman -Syu --noconfirm \
+    && pacman -S --noconfirm --needed \
+    git python python-pytest \
+    meson ninja gcc \
+    desktop-file-utils appstream \
+    bash zsh fish file binutils xdg-utils curl which \
+    && pacman -Scc --noconfirm
+
+WORKDIR /src
+CMD ["./scripts/ci-docker.sh", "--inside"]

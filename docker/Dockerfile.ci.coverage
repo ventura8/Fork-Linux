@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1.27.0
+# CI image for Fork for Linux (unofficial) — coverage stage (Ubuntu 26.04)
+# Image tag: fork-linux-ci-coverage:26.04
+# Runs (scripts/ci-docker.sh, FL_CI_STAGE=coverage): pytest with the coverage gates of
+# AGENTS.md §4.5 (90% overall, 100% branch on the critical modules) and writes
+# artifacts/coverage/coverage.xml for SonarQube Cloud. The C coverage report comes from
+# scripts/ci-c-coverage.sh in fork-linux-ci-bridge:26.04.
+# The tree is bind-mounted at its host path (coverage.xml paths must match the scanner's).
+FROM ubuntu:26.04
+
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+# Apt packages are distro-locked by ubuntu:26.04 (no floating apt versions).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git \
+    python3 python3-pip \
+    meson ninja-build gcc libc6-dev \
+    desktop-file-utils appstream \
+    bash zsh fish file binutils xdg-utils curl
+
+# Pip pins are exact (AGENTS.md §4.8).
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install --break-system-packages \
+    pytest==9.1.1 \
+    pytest-cov==7.1.0 \
+    coverage==7.16.1
+
+WORKDIR /src
+CMD ["./scripts/ci-docker.sh", "--inside"]

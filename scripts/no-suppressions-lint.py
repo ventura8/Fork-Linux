@@ -179,6 +179,15 @@ FILE_RULES: list[tuple[str, re.Pattern[str], str]] = [
     ),
 ]
 
+# An optional YAML list dash, then the key (one optional dash keeps the match linear).
+_ACTIONLINT_RULES: list[tuple[str, re.Pattern[str], str]] = [
+    (
+        "actionlint-config-ignore",
+        re.compile(r"^\s*(?:-\s*)?ignore\s*:"),
+        "actionlint config ignore: lists are forbidden — fix the workflow",
+    ),
+]
+
 # Extra content rules for tool config files, keyed by file name: their keys are generic
 # words (`disable=`, `ignore:`) that must only be flagged inside that tool's config.
 NAME_RULES: dict[str, list[tuple[str, re.Pattern[str], str]]] = {
@@ -189,20 +198,8 @@ NAME_RULES: dict[str, list[tuple[str, re.Pattern[str], str]]] = {
             ".shellcheckrc disable= is forbidden — fix the script",
         ),
     ],
-    "actionlint.yaml": [
-        (
-            "actionlint-config-ignore",
-            re.compile(r"^\s*-?\s*ignore\s*:"),
-            "actionlint config ignore: lists are forbidden — fix the workflow",
-        ),
-    ],
-    "actionlint.yml": [
-        (
-            "actionlint-config-ignore",
-            re.compile(r"^\s*-?\s*ignore\s*:"),
-            "actionlint config ignore: lists are forbidden — fix the workflow",
-        ),
-    ],
+    "actionlint.yaml": _ACTIONLINT_RULES,
+    "actionlint.yml": _ACTIONLINT_RULES,
 }
 
 CODE_SUFFIXES = frozenset(
@@ -388,13 +385,29 @@ def is_scanned_file(path: Path, repo: Path) -> bool:
         return True
     if not _in_scan_root(rel):
         return False
-    # Only debian/ top-level scripts (rules, *.sh, maintainer scripts); never dh build trees
-    # or data files such as control / changelog.
-    if rel.parts[0] == "debian":
-        if len(rel.parts) != 2 or (path.suffix and path.suffix not in DEBIAN_SUFFIXES):
-            return False
-        if path.suffix:
-            return True
+    debian = _debian_choice(path, rel)
+    if debian is not None:
+        return debian
+    return _scanned_kind(path, rel, mode)
+
+
+def _debian_choice(path: Path, rel: Path) -> bool | None:
+    """Whether a debian/ entry is scanned; None when that depends on its kind (or it is elsewhere).
+
+    Only debian/ top-level scripts (rules, *.sh, maintainer scripts); never dh build trees
+    or data files such as control / changelog.
+    """
+    if rel.parts[0] != "debian":
+        return None
+    if len(rel.parts) != 2 or (path.suffix and path.suffix not in DEBIAN_SUFFIXES):
+        return False
+    if path.suffix:
+        return True
+    return None
+
+
+def _scanned_kind(path: Path, rel: Path, mode: int) -> bool:
+    """True for code by suffix or name, Dockerfiles, completions, and executable or shebang files."""
     name = path.name
     if path.suffix.lower() in CODE_SUFFIXES or name in NAMED_FILES or name in NAME_RULES:
         return True
@@ -418,6 +431,21 @@ def _walk_onerror(err: OSError) -> None:
     print(f"no-suppressions-lint: warning: cannot walk path: {err}", file=sys.stderr)
 
 
+def _walk_root(repo: Path, root: Path) -> list[Path]:
+    """Every non-skipped file under the real directory ``root``, plus its symlinked subdirectories."""
+    files: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root, onerror=_walk_onerror):
+        parent = Path(dirpath).relative_to(repo).as_posix()
+        dirnames[:] = sorted(d for d in dirnames if not _skip_dir(parent, d))
+        names = list(filenames)
+        names.extend(d for d in dirnames if (Path(dirpath) / d).is_symlink())
+        for name in names:
+            path = Path(dirpath) / name
+            if not skip_path(path.relative_to(repo)):
+                files.append(path)
+    return files
+
+
 def iter_tree_files(repo: Path) -> list[Path]:
     """Return every non-skipped entry under the scan roots plus the root entrypoints.
 
@@ -429,18 +457,8 @@ def iter_tree_files(repo: Path) -> list[Path]:
         root = repo / root_name
         if root.is_symlink():
             files.append(root)
-            continue
-        if not root.is_dir():
-            continue
-        for dirpath, dirnames, filenames in os.walk(root, onerror=_walk_onerror):
-            parent = Path(dirpath).relative_to(repo).as_posix()
-            dirnames[:] = sorted(d for d in dirnames if not _skip_dir(parent, d))
-            names = list(filenames)
-            names.extend(d for d in dirnames if (Path(dirpath) / d).is_symlink())
-            for name in names:
-                path = Path(dirpath) / name
-                if not skip_path(path.relative_to(repo)):
-                    files.append(path)
+        elif root.is_dir():
+            files.extend(_walk_root(repo, root))
     for name in ROOT_FILES:
         path = repo / name
         if path.is_file():

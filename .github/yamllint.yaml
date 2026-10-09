@@ -1,0 +1,10 @@
+# yamllint configuration (lint stage: yamllint -c .github/yamllint.yaml). Kept under .github/
+# because the repository root only holds the files listed in AGENTS.md §4.7.1.
+extends: default
+rules:
+  line-length:
+    max: 140
+  truthy:
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1

@@ -17,7 +17,7 @@ from fork_linux.procrun import Completed, RecordingRunner
 from fork_linux.state import FORK_VERSION, WINE_BUILD
 
 from fixtures.cli_run import fork_running, isolate, layout, run_cli, run_json
-from fixtures.fork_tree import install_fork
+from fixtures.fork_tree import install_fork, write_settings
 from fixtures.setup_ctx import make_ctx
 
 
@@ -95,6 +95,21 @@ def test_check_with_a_feed(
     assert info["latest"] == "2.24.0"
     assert info["feed_error"] is None
     assert feed[1] == [False, True]
+    assert "File > Check for Updates" not in out
+
+
+def test_check_shows_forks_own_channel(capsys: pytest.CaptureFixture[str], feed: list[Any]) -> None:
+    """Fork's ApplicationUpdateType is reported; on develop the in-app route is offered (spike S9)."""
+    install_fork(layout(), "2.23.2")
+    code, out, _err = run_cli(capsys, "update", "--check")
+    assert "Channel:   develop (Fork's own updater)" in out
+    assert "File > Check for Updates..., then Restart and Update" in out
+    write_settings(layout(), {"ApplicationUpdateType": 1})
+    code, out, _err = run_cli(capsys, "update", "--check")
+    assert "Channel:   stable" in out
+    assert "File > Check for Updates" not in out
+    layout().settings_file.write_text("{broken", encoding="utf-8")
+    assert run_json(capsys, "update", "--check")["fork_channel"] == "unknown"
 
 
 def test_check_warns_about_known_bad(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:

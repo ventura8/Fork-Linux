@@ -1,0 +1,55 @@
+# Flatpak manifest of Fork for Linux (unofficial): io.github.ventura8.ForkLinux.
+#
+# Built on the org.winehq.Wine BaseApp (WoW64 build, freedesktop 25.08), so the Wine
+# provider inside the sandbox is "flatpak": the Wine from the BaseApp. Fork itself is never
+# bundled; it is downloaded from cdn.fork.dev at first run into the sandbox's data dir.
+# Every finish-arg carries a "# why:" comment (tests/test_packaging_release.py checks it and
+# keeps the list to an allowlist).
+#
+# scripts/release-portable.sh flatpak copies this file next to fork-linux-src.tar.gz (the
+# working tree as git sees it) and builds the bundle; a Flathub submission would replace the
+# archive source with the release tag's URL + sha256.
+---
+id: io.github.ventura8.ForkLinux
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.mingw-w64
+base: org.winehq.Wine
+base-version: wow64-25.08
+command: fork-linux
+finish-args:
+  # why: setup downloads Wine components, .NET and the Fork installer; Fork fetches and pushes
+  - --share=network
+  # why: Wine shows Fork's window through X11 (XWayland on Wayland desktops)
+  - --socket=x11
+  # why: Fork's and Wine's notification sounds
+  - --socket=pulseaudio
+  # why: hardware-accelerated rendering of Fork's WPF user interface through Wine
+  - --device=dri
+  # why: repositories live anywhere in the user's home directory
+  - --filesystem=home
+  # why: repositories on removable drives mounted under /media
+  - --filesystem=/media
+  # why: repositories on drives mounted under /mnt
+  - --filesystem=/mnt
+  # why: repositories on removable drives mounted under /run/media
+  - --filesystem=/run/media
+  # why: git over ssh with the keys held by the user's ssh-agent
+  - --socket=ssh-auth
+  # why: open the host terminal, file manager, editors and diff tools (flatpak-spawn --host)
+  - --talk-name=org.freedesktop.Flatpak
+modules:
+  - name: fork-linux
+    buildsystem: meson
+    config-opts:
+      - -Dbridge=enabled
+      - -Dflavor=flatpak
+      - -Dpython=/usr/bin/python3
+      - -Dtests=false
+    build-options:
+      append-path: /usr/lib/sdk/mingw-w64/bin
+    sources:
+      - type: archive
+        path: fork-linux-src.tar.gz

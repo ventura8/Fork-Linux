@@ -11,3 +11,12 @@ source = ["src/fork_linux"]
 
 [tool.coverage.report]
 show_missing = true
+
+# ruff (pinned in docker/Dockerfile.ci.lint), run by the lint stage. Python 3.10 target.
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+extend-exclude = ["build", "build-*", "builddir*", "obj-*", "artifacts", "logs", ".cache"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP"]

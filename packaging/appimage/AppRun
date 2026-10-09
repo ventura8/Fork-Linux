@@ -1,0 +1,39 @@
+#!/bin/sh
+# AppRun - entry point of the Fork for Linux (unofficial) AppImage.
+#
+# The AppImage carries the relocatable fork-linux tree under usr/ but no Python: it runs on
+# the host's Python >= 3.10 (usr/lib/fork-linux/find-python.sh). Dispatch:
+#   argv0 "fork" (a link named fork, or ARGV0 set by the AppImage runtime) -> usr/bin/fork
+#   --install-desktop   menu entry, icon, file-manager actions and ~/.local/bin/{fork,fork-linux}
+#                       links that start this AppImage (fork-linux desktop install --cli-alias)
+#   --remove-desktop    undo --install-desktop (fork-linux desktop remove)
+#   anything else       usr/bin/fork-linux with the arguments
+# FORK_LINUX_APPIMAGE tells fork-linux to point menu entries and links at the AppImage file.
+set -eu
+
+HERE=$(dirname "$(readlink -f "$0")")
+# shellcheck source=packaging/common/find-python.sh
+. "${HERE}/usr/lib/fork-linux/find-python.sh"
+PYTHON=$(fl_find_python) || exit 19
+
+if [ -n "${APPIMAGE:-}" ]; then
+	FORK_LINUX_APPIMAGE=${APPIMAGE}
+	export FORK_LINUX_APPIMAGE
+fi
+
+name=$(basename "${ARGV0:-$0}")
+case "${name}" in
+	fork) exec "${PYTHON}" -I "${HERE}/usr/bin/fork" "$@" ;;
+esac
+
+case "${1:-}" in
+	--install-desktop)
+		shift
+		exec "${PYTHON}" -I "${HERE}/usr/bin/fork-linux" desktop install --cli-alias "$@"
+		;;
+	--remove-desktop)
+		shift
+		exec "${PYTHON}" -I "${HERE}/usr/bin/fork-linux" desktop remove "$@"
+		;;
+esac
+exec "${PYTHON}" -I "${HERE}/usr/bin/fork-linux" "$@"

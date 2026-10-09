@@ -1,0 +1,86 @@
+---
+name: Upstream watch (new Fork release)
+
+# Weekly: read Fork's update feed (scripts/check-upstream-fork.py: HTTPS, allowlisted host,
+# strict version check). For a new version: record its installer's size + sha256 in the
+# runtime manifest, run the real E2E tier, then open a bot PR marking it known-good, or an
+# issue "Fork X fails under Wine" when the E2E fails. The installer is downloaded only from
+# cdn.fork.dev on the runner; it is never committed, cached or uploaded.
+on:
+  schedule:
+    - cron: '41 5 * * 3'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check Fork's update feed
+        id: check
+        run: python3 scripts/check-upstream-fork.py --github-output "${GITHUB_OUTPUT}"
+
+      - name: Record the new installer (size + sha256)
+        if: steps.check.outputs.new == 'true'
+        env:
+          FORK_VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          scratch="$(mktemp -d)"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "${scratch}/Fork.exe" \
+            "https://cdn.fork.dev/win/Fork-${FORK_VERSION}.exe"
+          python3 scripts/check-upstream-fork.py --add "${FORK_VERSION}" --installer "${scratch}/Fork.exe"
+          rm -rf "${scratch}"
+
+      - name: Real E2E with the new version
+        id: e2e
+        if: steps.check.outputs.new == 'true'
+        continue-on-error: true
+        run: ./scripts/ci-e2e-wine.sh
+
+      - name: Keep the E2E logs (text only)
+        if: steps.check.outputs.new == 'true'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: upstream-e2e-logs
+          path: logs/e2e-wine/
+          if-no-files-found: ignore
+
+      - name: Open the bot PR (E2E passed)
+        if: steps.check.outputs.new == 'true' && steps.e2e.outcome == 'success'
+        uses: peter-evans/create-pull-request@v8.1.0
+        with:
+          branch: bot/fork-${{ steps.check.outputs.version }}
+          commit-message: "feat(deps): mark Fork ${{ steps.check.outputs.version }} known-good"
+          title: "Mark Fork ${{ steps.check.outputs.version }} known-good"
+          body: |
+            Fork ${{ steps.check.outputs.version }} appeared in the official update feed. The
+            installer's size and sha256 are recorded in the runtime manifest and the real E2E
+            tier passed (logs: the upstream-e2e-logs artifact of this run).
+          add-paths: src/fork_linux/data/runtime-manifest.json
+
+      - name: Open an issue (E2E failed)
+        if: steps.check.outputs.new == 'true' && steps.e2e.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORK_VERSION: ${{ steps.check.outputs.version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create --repo "${GITHUB_REPOSITORY}" \
+            --title "Fork ${FORK_VERSION} fails under Wine" \
+            --body "The weekly upstream watch found Fork ${FORK_VERSION}; the real E2E tier failed: ${RUN_URL}"

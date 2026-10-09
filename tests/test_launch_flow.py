@@ -318,6 +318,26 @@ def test_pin_hook_warns_when_fork_already_updated_past_the_pin(ctx: bootstrap.Ct
     assert any("rollback --to-version 2.23.0" in str(item) for item in warnings)
 
 
+def test_update_check_hook_follows_the_policy(ctx: bootstrap.Ctx, not_running: list[bool]) -> None:
+    """Pinned turns Fork's own update check off; auto brings the user's channel back (spike S9)."""
+    write_settings(ctx.layout, {"ApplicationUpdateType": 1})
+    notes: list[str] = []
+    launcher._update_check(ctx, notes)
+    assert notes == []
+    ctx.config.set("fork", "update_policy", "pinned")
+    not_running[0] = True
+    launcher._update_check(ctx, notes)
+    assert notes == []
+    not_running[0] = False
+    launcher._update_check(ctx, notes)
+    assert notes == ["Fork's own update check turned off while Fork is pinned"]
+    assert json.loads(ctx.layout.settings_file.read_text(encoding="utf-8"))["ApplicationUpdateType"] == 2
+    ctx.config.set("fork", "update_policy", "auto")
+    launcher._update_check(ctx, notes)
+    assert notes[-1] == "Fork's own update check is back on (stable)"
+    assert json.loads(ctx.layout.settings_file.read_text(encoding="utf-8"))["ApplicationUpdateType"] == 1
+
+
 def test_settings_hook_skipped_while_fork_runs(ctx: bootstrap.Ctx, not_running: list[bool]) -> None:
     write_settings(ctx.layout, {"UpdateSubmodulesOnCheckout": True})
     not_running[0] = True
