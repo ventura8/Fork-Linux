@@ -42,7 +42,7 @@
     "versions": {
       "2.23.2": {
         "size": 76278256,
-        "sha256": "PENDING",
+        "sha256": "fee9b2bf84aca6297d7b7e10b29a09c624ac16a82486f2c04136f5ebaf8f079e",
         "full_nupkg_sha256": "B70E7BE92B73BAEAB9FEE700AD352AE9E261DAFCDED0D10E5C94133F639B1C1F",
         "status": "known-good",
         "tested_with": ["kron4ek-11.0-staging-wow64"]

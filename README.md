@@ -87,23 +87,23 @@ Plan for **about 2.5–3 GB of disk** and **10–20 minutes** (less on a fast co
 
 ## CLI
 
-`fork-linux [--json] [--prefix DIR] [--gui | --no-gui] [--offline] [-v | -q] <command>` — `fork-linux --help` and `man fork-linux` list every option.
+`fork-linux [--json] [--prefix DIR] [--gui | --no-gui] [--offline] [-v | -q] [--allow-root] <command>` — `fork-linux --help` and `man fork-linux` list every option.
 
 | Command | Purpose |
 |---|---|
-| `setup [--fork-version V \| --latest] [--wine managed\|system\|PATH] [--dotnet auto\|dotnet48\|dotnet472] [--accept-fork-eula] [--only/--from-step STEP] [--reset] [--no-launch]` | Idempotent, resumable bootstrap |
-| `run [PATHS]`, `open PATH [--from-file-manager]`, `fork [PATH]` | Launch Fork or open a repository |
-| `update [--check \| --fork \| --wine]` | Check for and apply Fork / Wine runtime updates |
-| `snapshot create \| list \| delete \| prune` | Manage snapshots of Fork's install |
+| `setup [--fork-version V \| --latest] [--allow-untested] [--wine managed\|system\|flatpak\|PATH] [--dotnet auto\|dotnet48\|dotnet472] [--accept-fork-eula] [--only STEP \| --from-step STEP] [--force] [--reset] [--no-launch] [--list-steps]` | Idempotent, resumable bootstrap |
+| `run [PATH …]`, `open PATH …`, `fork [PATH]` (`[--debug] [--wine-debug CHANNELS] [--x11 \| --wayland] [--no-setup] [--no-hooks]`) | Launch Fork or open repositories |
+| `update [--check \| --fork \| --wine] [--fork-version V \| --latest] [--allow-untested]` | Check for and apply Fork / Wine runtime updates |
+| `snapshot create [--reason R] \| list \| delete ID \| prune` | Manage snapshots of Fork's install |
 | `rollback [ID \| --to-version V] [--with-settings] [--no-pin]` | Restore a snapshot and pin that version |
-| `doctor [--fix] [--deep] [--network] [--json]` | ~40 health checks with fix hints |
-| `config get \| set \| unset \| list \| edit` | Fork for Linux settings (`~/.config/fork-linux/config.ini`) |
-| `settings show \| get \| set \| apply-defaults \| backup \| restore` | Fork's own `settings.json` (edited only while Fork is closed) |
-| `desktop install \| remove \| status [--file-managers …] [--cli-alias]` | Menu entry, icon, file-manager actions |
-| `ssh sync \| status` | Share your SSH keys and config with Fork |
-| `git-bridge enable \| disable \| status \| record \| repair` | Experimental native-git bridge (opt-in) |
-| `logs [--follow \| --bundle]` | Show logs or create a redacted bug-report bundle |
-| `uninstall [--purge]` | Remove integrations; `--purge` also removes the prefix and runtimes |
+| `doctor [--fix] [--deep] [--network] [--check ID …]` | 36 health checks with fix hints |
+| `config get \| set \| unset \| list \| path \| edit` | Fork for Linux settings (`~/.config/fork-linux/config.ini`) |
+| `settings show \| get \| set \| unset \| apply-defaults \| backup \| restore [FILE] \| path` | Fork's own `settings.json` (edited only while Fork is closed) |
+| `desktop install [--file-managers LIST] [--no-menu] [--no-icons] [--cli-alias] \| remove \| status` | Menu entry, icon, file-manager actions |
+| `ssh sync [--dry-run] [--mode link\|copy] [--no-config] \| status` | Share your SSH keys and config with Fork |
+| `git-bridge enable \| disable \| status` | Experimental native-git bridge (opt-in) |
+| `logs [--wine \| --fork \| --velopack \| --setup \| --all] [--follow \| --path \| --bundle]` | Show logs or create a redacted bug-report bundle |
+| `uninstall [--purge] [--keep-downloads] [--yes]` | Remove integrations; `--purge` also removes the prefix and runtimes |
 | `about` / `credits`, `version`, `status` | Credits, version, setup and Fork status |
 
 Exit codes are stable and documented in [AGENTS.md §5](AGENTS.md#5-standard-exit-code-mapping) (for example `10` not set up, `13` integrity check failed, `15` Fork is running).

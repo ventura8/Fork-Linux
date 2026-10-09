@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""Fake ``kreadconfig6``/``kreadconfig5`` for tests (owned by the wine task).
+
+Logs {"argv", "env"} to $FL_FAKE_LOG. ``--file F --group G --key K`` prints
+the value of "F/G/K" in the JSON object $FL_FAKE_KREADCONFIG; like the real
+tool, a missing key prints an empty line and exits 0.
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+
+def log_call() -> None:
+    path = os.environ.get("FL_FAKE_LOG")
+    if not path:
+        return
+    env = {key: value for key, value in os.environ.items() if key.startswith("XDG_")}
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"argv": [Path(sys.argv[0]).name, *sys.argv[1:]], "env": env}) + "\n")
+
+
+def option(args: list, name: str) -> str:
+    return args[args.index(name) + 1] if name in args[:-1] else ""
+
+
+def main() -> int:
+    log_call()
+    args = sys.argv[1:]
+    values = json.loads(os.environ.get("FL_FAKE_KREADCONFIG", "{}") or "{}")
+    key = f"{option(args, '--file')}/{option(args, '--group')}/{option(args, '--key')}"
+    print(values.get(key, ""))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

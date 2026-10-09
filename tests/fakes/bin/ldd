@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""Fake ``ldd`` for tests (owned by the wine task).
+
+Logs {"argv", "env"} to $FL_FAKE_LOG. Each argument is a text file listing
+the sonames it "needs", one per line; a leading ``!`` marks a library the
+host lacks (``=> not found``). With several files every block is headed by
+``<file>:`` like the real ldd. A missing file is reported on stderr and makes
+the exit status 1; the other files are still listed.
+"""
+
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+SONAME = re.compile(r"!?[A-Za-z0-9_.+-]+\.so[A-Za-z0-9_.]*")
+
+
+def log_call() -> None:
+    path = os.environ.get("FL_FAKE_LOG")
+    if not path:
+        return
+    env = {key: value for key, value in os.environ.items() if key.startswith("LD_")}
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"argv": [Path(sys.argv[0]).name, *sys.argv[1:]], "env": env}) + "\n")
+
+
+def main() -> int:
+    log_call()
+    files = sys.argv[1:]
+    status = 0
+    for name in files:
+        try:
+            text = Path(name).read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            print(f"ldd: {name}: No such file or directory", file=sys.stderr)
+            status = 1
+            continue
+        if len(files) > 1:
+            print(f"{name}:")
+        for line in text.split():
+            if not SONAME.fullmatch(line):
+                continue
+            if line.startswith("!"):
+                print(f"\t{line[1:]} => not found")
+            else:
+                print(f"\t{line} => /usr/lib/x86_64-linux-gnu/{line} (0x00007f0000000000)")
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main())

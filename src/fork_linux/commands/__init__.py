@@ -8,4 +8,20 @@ this order, which is also the order of ``fork-linux --help``.
 
 from __future__ import annotations
 
-COMMANDS: list[str] = ["version", "about", "status", "config"]
+COMMANDS: list[str] = [
+    "setup",
+    "run",
+    "update",
+    "snapshot",
+    "settings",
+    "desktop",
+    "ssh",
+    "gitbridge",
+    "logs",
+    "doctor",
+    "uninstall",
+    "status",
+    "version",
+    "about",
+    "config",
+]

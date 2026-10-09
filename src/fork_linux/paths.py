@@ -210,6 +210,11 @@ def _check_prefix(prefix: Path, home: Path, data_dir: Path, *, adopt: bool) -> N
         )
     if adopt and prefix.is_dir():
         return
+    if not os.path.lexists(prefix):
+        raise UsageError(
+            f"refusing to create the Wine prefix {prefix}: fork-linux creates new prefixes only under {data_dir}",
+            hint=f"use a path under {data_dir}, or create the directory and set {ADOPT_ENV}=1 to adopt it",
+        )
     raise UsageError(
         f"refusing to use {prefix} as the Wine prefix: it was not created by fork-linux",
         hint=f"use a path under {data_dir}, or set {ADOPT_ENV}=1 to adopt an existing prefix",

@@ -176,6 +176,14 @@ def test_foreign_prefix_is_refused_without_adoption(xdg: Path, tmp_path: Path) -
     assert "FORK_LINUX_ADOPT_PREFIX=1" in info.value.hint
 
 
+def test_missing_prefix_outside_data_dir_says_so(xdg: Path, tmp_path: Path) -> None:
+    # E2E: FORK_LINUX_PREFIX=<new path> was refused as "not created by fork-linux".
+    with pytest.raises(UsageError) as info:
+        Paths.from_env(prefix=tmp_path / "new-prefix")
+    assert "creates new prefixes only under" in info.value.message
+    assert "FORK_LINUX_ADOPT_PREFIX=1" in info.value.hint
+
+
 def test_adoption_accepts_existing_foreign_prefix(xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     foreign = tmp_path / "foreign"
     foreign.mkdir()

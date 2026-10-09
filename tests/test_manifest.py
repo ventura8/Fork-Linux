@@ -104,8 +104,18 @@ def test_winetricks_pin() -> None:
     )
 
 
-def test_fork_version_entry_with_pending_sha() -> None:
-    m = manifest.load()
+SHIPPED_INSTALLER_SHA = "fee9b2bf84aca6297d7b7e10b29a09c624ac16a82486f2c04136f5ebaf8f079e"
+
+
+def test_shipped_fork_entry_is_pinned() -> None:
+    entry = manifest.load().fork_version("2.23.2")
+    assert entry is not None
+    assert entry.sha256 == SHIPPED_INSTALLER_SHA
+
+
+def test_fork_version_entry_with_pending_sha(tmp_path: Path) -> None:
+    data = mutate(base_data(), ("fork", "versions", "2.23.2", "sha256"), "PENDING")
+    m = manifest.load(write(tmp_path, "m.json", data))
     entry = m.fork_version("2.23.2")
     assert entry is not None
     assert entry.sha256 is None
@@ -125,6 +135,13 @@ def test_installer_url_and_entry() -> None:
     assert entry.version == "2.23.2"
     assert entry.url == "https://cdn.fork.dev/win/Fork-2.23.2.exe"
     assert entry.size == 76278256
+    assert entry.sha256 == SHIPPED_INSTALLER_SHA
+    assert entry.requires_tofu is False
+
+
+def test_installer_entry_with_pending_sha_requires_tofu(tmp_path: Path) -> None:
+    data = mutate(base_data(), ("fork", "versions", "2.23.2", "sha256"), "PENDING")
+    entry = manifest.load(write(tmp_path, "m.json", data)).installer_entry()
     assert entry.sha256 is None
     assert entry.requires_tofu is True
 

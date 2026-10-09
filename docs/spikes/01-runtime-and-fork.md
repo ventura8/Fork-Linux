@@ -24,8 +24,26 @@ End-to-end setup ≈ 4 minutes on this host (dominated by dotnet48 161 s + coref
 
 ## Open (later spikes)
 
-S9 Velopack update/downgrade and hardlink snapshots; Wayland driver; `ApplicationUpdateType` mapping;
+Velopack in-app update/downgrade (S9); Wayland driver; `ApplicationUpdateType` mapping;
 `LogPixels` vs `LayoutScaling`; license MachineGuid stability across Wine upgrades; system Wine 10.0 provider run.
+
+### Resolved by the E2E run (2026-10-09, `tests/e2e/RESULTS.md`)
+
+- **`settings.json` preseed before the first launch: safe, adopted.** A seeded
+  `{"Guid": <uuid4>, "UpdateSubmodulesOnCheckout": false, "Theme": 1, "FollowSystemTheme": false}`
+  was kept by Fork, which added its own keys (99 in total). The "User information" welcome dialog
+  is skipped; Fork shows its one-time "update the Fork git instance" dialog (Start, then Close)
+  instead. user.name/email then come from the host `~/.gitconfig` through the git overlay.
+  `fork_settings.seed()` is used by the `fork` setup step and the launcher's pre-launch hook.
+- **Hardlink snapshots + rollback (part of S9):** `snapshot create` (hardlink) and
+  `rollback --to-version 2.23.2 --no-pin` work (0.19 s); Fork starts afterwards; rollback while
+  Fork runs is refused with exit 15. Velopack's own update/downgrade path is still open.
+- **Theme and scaling via `settings.json` from the pre-launch hook:** `Theme=1`,
+  `FollowSystemTheme=false`, `LayoutScaling=100` applied with Fork closed and persisted after
+  Alt+F4 (dark UI confirmed by screenshot brightness).
+- **New open item:** Fork's own status engine reads the repository's `.git/config`
+  (`filemode = true`), so exec-bit-only changes still show as modified despite the
+  `GIT_CONFIG_*` `core.filemode=false` override (needs a per-repo opt-in or the native-git bridge).
 
 ## Addendum — bundled git child spawning, staging vs upstream (2026-10-09)
 

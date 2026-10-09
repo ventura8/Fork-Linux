@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Fake zenity for tests, owned by the integration task (GTK dialogs and the --progress dialog).
+
+Appends {"argv", "env", "cwd"} as one JSON line to $FL_FAKE_LOG. Dialogs exit
+with $FL_FAKE_ZENITY_RC (default 0). With --progress, every stdin line is
+read and logged as "stdin" when the input ends (exit 0); when
+$FL_FAKE_ZENITY_CANCEL_AT is set, a percentage line at or above it makes
+the fake log what it read and exit 1, like a user pressing Cancel.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+ENV_KEYS = ("DISPLAY", "WAYLAND_DISPLAY", "HOME", "LD_LIBRARY_PATH", "WINEPREFIX", "WINEDEBUG", "WINESERVER")
+
+
+def log(**extra: object) -> None:
+    """Record this call in $FL_FAKE_LOG."""
+    path = os.environ.get("FL_FAKE_LOG")
+    if not path:
+        return
+    record = {
+        "argv": [Path(sys.argv[0]).name, *sys.argv[1:]],
+        "env": {key: os.environ[key] for key in ENV_KEYS if key in os.environ},
+        "cwd": os.getcwd(),
+        **extra,
+    }
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record) + "\n")
+
+
+def progress() -> int:
+    """Read the progress protocol from stdin until EOF or a simulated cancel."""
+    cancel_at = os.environ.get("FL_FAKE_ZENITY_CANCEL_AT", "")
+    lines = []
+    for raw in sys.stdin:
+        line = raw.rstrip("\n")
+        lines.append(line)
+        if cancel_at and line.isdigit() and int(line) >= int(cancel_at):
+            log(stdin=lines, cancelled=True)
+            return 1
+    log(stdin=lines)
+    return 0
+
+
+def main() -> int:
+    if "--progress" in sys.argv[1:]:
+        return progress()
+    log()
+    return int(os.environ.get("FL_FAKE_ZENITY_RC", "0"))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

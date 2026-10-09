@@ -59,8 +59,9 @@ def test_help_lists_every_command_and_the_credits(capsys: pytest.CaptureFixture[
     code, out, _err = run_cli(capsys, "--help")
     assert code == 0
     assert out.startswith("usage: fork-linux")
+    # Module names are command names, except gitbridge which registers 'git-bridge'.
     for name in commands.COMMANDS:
-        assert name in out
+        assert {"gitbridge": "git-bridge"}.get(name, name) in out
     assert "credits" in out
     assert credits.short_footer() in out
     assert "NOT affiliated" in out
