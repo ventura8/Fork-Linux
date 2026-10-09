@@ -1,0 +1,14 @@
+# meson.options - build options of Fork for Linux (unofficial).
+# meson_options.txt is a symlink to this file for meson < 1.1 (Ubuntu 22.04 ships 0.61).
+option(
+  'bridge',
+  type: 'feature',
+  value: 'auto',
+  description: 'Windows-side git bridge shims (fl-shim.exe, fl-launch.exe); needs x86_64-w64-mingw32-gcc',
+)
+option(
+  'tests',
+  type: 'boolean',
+  value: true,
+  description: 'Build and register the native unit tests and the test-only Wine test driver',
+)

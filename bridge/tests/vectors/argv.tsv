@@ -1,0 +1,124 @@
+# argv.tsv - fl_translate_argv() vectors (bridge/tests/unit/test_translate.c).
+# Fake drive map: C: -> /pfx/drive_c, Z: -> /; D: is unmapped. Personas: winexec /opt/fl/bin/fl-winexec,
+# askpass /opt/fl/bin/fl-askpass, ssh-askpass /opt/fl/bin/fl-ssh-askpass.
+# Columns (TAB-separated): name, args (argv[0] excluded), expected args, subcmd ("-" = none), plan, stderr_paths.
+# Lists separate items with " | "; "<empty>" is an empty item, "(none)" an empty list.
+plain-status	status | --porcelain=v2 | -z	status | --porcelain=v2 | -z	status	none	1
+dash-C-backslash	-C | C:\Users\me\repo | status	-C | /pfx/drive_c/Users/me/repo | status	status	none	1
+dash-C-forward-lowercase-drive	-C | c:/Users/me/repo | rev-parse | --show-toplevel	-C | /pfx/drive_c/Users/me/repo | rev-parse | --show-toplevel	rev-parse	paths	1
+dash-C-Z-drive	-C | Z:\home\u\repo | log | --oneline	-C | /home/u/repo | log | --oneline	log	none	1
+git-dir-work-tree-joined	--git-dir=C:\r\.git | --work-tree=C:\r | status	--git-dir=/pfx/drive_c/r/.git | --work-tree=/pfx/drive_c/r | status	status	none	1
+git-dir-work-tree-separate	--git-dir | C:\r\.git | --work-tree | C:\r | status	--git-dir | /pfx/drive_c/r/.git | --work-tree | /pfx/drive_c/r | status	status	none	1
+unmapped-drive-kept	-C | D:\repo | status	-C | D:\repo | status	status	none	1
+namespace-value-kept	--namespace | C:\x | log	--namespace | C:\x | log	log	none	1
+config-env-kept	--config-env=core.editor=MY_EDITOR | commit	--config-env=core.editor=MY_EDITOR | commit	commit	none	1
+global-flags	--no-pager | -c | color.ui=false | --literal-pathspecs | log | -1	--no-pager | -c | color.ui=false | --literal-pathspecs | log | -1	log	none	1
+exec-path-windows-dropped	--exec-path=C:/Program Files/Git/mingw64/libexec/git-core | version	version	version	none	0
+exec-path-query	--exec-path	--exec-path	-	paths	0
+version	--version	--version	version	none	0
+dash-v-version	-v	-v	version	none	0
+help-status	--help | status	--help | status	help	none	0
+dash-C-missing-value	-C	-C	-	none	0
+no-arguments	(none)	(none)	-	none	0
+subcommand-truncated-to-63	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx | C:\a	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx | /pfx/drive_c/a	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx	none	1
+head-colon-file	show | HEAD:src/main.c | HEAD:C:\x | a:b	show | HEAD:src/main.c | HEAD:C:\x | a:b	show	none	1
+refspecs	fetch | origin | +refs/heads/*:refs/remotes/origin/* | refs/tags/v1:refs/tags/v1	fetch | origin | +refs/heads/*:refs/remotes/origin/* | refs/tags/v1:refs/tags/v1	fetch	none	1
+format-colons	log | --format=%H:%s | --pretty=format:%h C:\x | -n | 5	log | --format=%H:%s | --pretty=format:%h C:\x | -n | 5	log	none	1
+format-separate-value	for-each-ref | --format | C:\%(refname) | refs/heads	for-each-ref | --format | C:\%(refname) | refs/heads	for-each-ref	none	1
+pathspec-magic	add | -- | :/ | :(top)docs | :!C:\x | C:\r\a.txt	add | -- | :/ | :(top)docs | :!C:\x | /pfx/drive_c/r/a.txt	add	none	1
+scp-like-url	clone | user@host:repo.git | C:\work\repo	clone | user@host:repo.git | /pfx/drive_c/work/repo	clone	none	1
+https-url	clone | --depth | 1 | https://example.com/r.git | C:\work\r	clone | --depth | 1 | https://example.com/r.git | /pfx/drive_c/work/r	clone	none	1
+file-urls	clone | file://C:/src/repo | file:///C:/src/other | file:///home/u/native	clone | file:///pfx/drive_c/src/repo | file:///pfx/drive_c/src/other | file:///home/u/native	clone	none	1
+not-absolute	add | C: | C:foo | \\server\share\x | sub\file.txt | 1:/x	add | C: | C:foo | \\server\share\x | sub\file.txt | 1:/x	add	none	1
+verbatim-prefixes	add | -- | \\?\C:\long\path | \\?\unix\home\u\x	add | -- | /pfx/drive_c/long/path | /home/u/x	add	none	1
+unicode-and-spaces	add | -- | C:\Users\Jürgen\My Repo\€uro.txt	add | -- | /pfx/drive_c/Users/Jürgen/My Repo/€uro.txt	add	none	1
+collapse-separators	-C | C:\\Users\\me//repo | status	-C | /pfx/drive_c/Users/me/repo | status	status	none	1
+trailing-separator	-C | C:\repo\ | status	-C | /pfx/drive_c/repo/ | status	status	none	1
+drive-root	-C | C:\ | status	-C | /pfx/drive_c/ | status	status	none	1
+empty-argument-kept	commit | -m | <empty> | --allow-empty-message	commit | -m | <empty> | --allow-empty-message	commit	none	1
+end-of-options	checkout | --end-of-options | C:\f | -m	checkout | --end-of-options | /pfx/drive_c/f | -m	checkout	none	1
+message-never-file-yes	commit | -m | C:\not\a\path | --message | C:\x | --message=C:\y | -F | C:\tmp\msg.txt	commit | -m | C:\not\a\path | --message | C:\x | --message=C:\y | -F | /pfx/drive_c/tmp/msg.txt	commit	none	1
+log-never-values	log | --author | C:\x | --grep | C:\y | -S | C:\z | -G | C:\w | --since | C:\d | -- | C:\r\f.c	log | --author | C:\x | --grep | C:\y | -S | C:\z | -G | C:\w | --since | C:\d | -- | /pfx/drive_c/r/f.c	log	none	1
+pretty-and-notes-take-no-separate-value	log | --pretty | C:\r\f.c | --notes | C:\r\g.c	log | --pretty | /pfx/drive_c/r/f.c | --notes | /pfx/drive_c/r/g.c	log	none	1
+commit-e-is-a-flag	commit | -e | -F | C:\msg.txt	commit | -e | -F | /pfx/drive_c/msg.txt	commit	none	1
+commit-S-is-a-flag	commit | -S | C:\r\f.c	commit | -S | /pfx/drive_c/r/f.c	commit	none	1
+grep-e-pattern	grep | -e | C:\pat | -- | C:\r\x.c	grep | -e | C:\pat | -- | /pfx/drive_c/r/x.c	grep	none	1
+merge-X-and-m	merge | -X | C:\theirs | -m | C:\msg | feature	merge | -X | C:\theirs | -m | C:\msg | feature	merge	none	1
+rebase-X	rebase | -X | C:\o | main	rebase | -X | C:\o | main	rebase	none	1
+stash-m	stash | push | -m | C:\x	stash | push | -m | C:\x	stash	none	1
+checkout-m-is-a-flag	checkout | -m | C:\r\f.txt	checkout | -m | /pfx/drive_c/r/f.txt	checkout	none	1
+diff-S-value	diff | -S | C:\x | -- | C:\r\a.c	diff | -S | C:\x | -- | /pfx/drive_c/r/a.c	diff	none	1
+commit-date-value	commit | --date | C:\x | --trailer | C:\y	commit | --date | C:\x | --trailer | C:\y	commit	none	1
+opt-eq-allowlist	format-patch | --output-directory=C:\out | -o | C:\out2 | --foo=C:\x | HEAD~2	format-patch | --output-directory=/pfx/drive_c/out | -o | /pfx/drive_c/out2 | --foo=C:\x | HEAD~2	format-patch	none	1
+blame-contents	blame | --contents=C:\tmp\f | --ignore-revs-file=C:\i | HEAD | -- | f.c	blame | --contents=/pfx/drive_c/tmp/f | --ignore-revs-file=/pfx/drive_c/i | HEAD | -- | f.c	blame	none	1
+pathspec-from-file	add | --pathspec-from-file=C:\list.txt | --pathspec-file-nul	add | --pathspec-from-file=/pfx/drive_c/list.txt | --pathspec-file-nul	add	none	1
+clone-paths	clone | --separate-git-dir=C:\g | --reference | C:\ref | --template=C:\t | https://h/r | C:\d	clone | --separate-git-dir=/pfx/drive_c/g | --reference | /pfx/drive_c/ref | --template=/pfx/drive_c/t | https://h/r | /pfx/drive_c/d	clone	none	1
+editor-double-quoted	-c | core.editor="C:/Program Files/Fork/Fork.RI.exe" | rebase | -i | HEAD~3	-c | core.editor='/opt/fl/bin/fl-winexec' 'C:/Program Files/Fork/Fork.RI.exe' | rebase | -i | HEAD~3	rebase	none	1
+editor-bare	-c | core.editor=C:/Users/me/AppData/Local/Fork/Fork.RI.exe | commit	-c | core.editor='/opt/fl/bin/fl-winexec' 'C:/Users/me/AppData/Local/Fork/Fork.RI.exe' | commit	commit	none	1
+sequence-editor-with-args	-c | sequence.editor="C:/x/Fork.RI.exe" --rebase | rebase | -i | --autosquash | main	-c | sequence.editor='/opt/fl/bin/fl-winexec' 'C:/x/Fork.RI.exe' --rebase | rebase | -i | --autosquash | main	rebase	none	1
+editor-backslashes-in-double-quotes	-c | core.editor="C:\Program Files\Fork\Fork.RI.exe" | commit	-c | core.editor='/opt/fl/bin/fl-winexec' 'C:\Program Files\Fork\Fork.RI.exe' | commit	commit	none	1
+editor-quote-in-path	-c | core.editor="C:/it's/ed.exe" | commit	-c | core.editor='/opt/fl/bin/fl-winexec' 'C:/it'\''s/ed.exe' | commit	commit	none	1
+editor-bare-exe-name	-c | core.editor=notepad.exe | commit	-c | core.editor='/opt/fl/bin/fl-winexec' 'notepad.exe' | commit	commit	none	1
+editor-native-kept	-c | core.editor=code --wait | -c | sequence.editor=vim | commit	-c | core.editor=code --wait | -c | sequence.editor=vim | commit	commit	none	1
+editor-dynamic-kept	-c | core.editor="$PROGRAMFILES/x.exe" | commit	-c | core.editor="$PROGRAMFILES/x.exe" | commit	commit	none	1
+credential-helper-reset-and-bang	-c | credential.helper= | -c | credential.helper=!"C:/Program Files/Git/mingw64/bin/git-credential-manager.exe" | fetch	-c | credential.helper= | -c | credential.helper=!'/opt/fl/bin/fl-winexec' 'C:/Program Files/Git/mingw64/bin/git-credential-manager.exe' | fetch	fetch	none	1
+credential-helper-absolute-escaped-space	-c | credential.helper=C:/Program\ Files/Git/mingw64/bin/git-credential-manager.exe | push	-c | credential.helper=!'/opt/fl/bin/fl-winexec' 'C:/Program Files/Git/mingw64/bin/git-credential-manager.exe' | push	push	none	1
+credential-helper-url-scoped	-c | credential.https://example.com.helper=!C:/x/helper.exe --flag | fetch	-c | credential.https://example.com.helper=!'/opt/fl/bin/fl-winexec' 'C:/x/helper.exe' --flag | fetch	fetch	none	1
+credential-helper-names-kept	-c | credential.helper=manager | -c | credential.helper=store --file ~/.creds | fetch	-c | credential.helper=manager | -c | credential.helper=store --file ~/.creds | fetch	fetch	none	1
+askpass-persona	-c | core.askPass=C:/Fork/Fork.RI.exe | -c | core.askpass=/usr/bin/ksshaskpass | fetch	-c | core.askPass=/opt/fl/bin/fl-askpass | -c | core.askpass=/usr/bin/ksshaskpass | fetch	fetch	none	1
+sshcommand-windows-openssh	-c | core.sshCommand="C:/Windows/System32/OpenSSH/ssh.exe" -i C:/Users/me/.ssh/id_ed25519 -o StrictHostKeyChecking=no | fetch	-c | core.sshCommand=ssh -i /pfx/drive_c/Users/me/.ssh/id_ed25519 -o StrictHostKeyChecking=no | fetch	fetch	none	1
+sshcommand-plink	-c | core.sshCommand="C:\Program Files\PuTTY\plink.exe" -batch -P 2222 | fetch	-c | core.sshCommand=ssh | fetch	fetch	none	1
+sshcommand-native-kept	-c | core.sshCommand=ssh -i ~/.ssh/k -p 2222 | fetch	-c | core.sshCommand=ssh -i ~/.ssh/k -p 2222 | fetch	fetch	none	1
+sshcommand-joined-o-and-spaces	-c | core.sshCommand=ssh -iC:/k/id -o IdentityFile=C:/k/id2 -oUserKnownHostsFile=C:/k/kh -F "C:/My Keys/cfg" | fetch	-c | core.sshCommand=ssh -i/pfx/drive_c/k/id -o IdentityFile=/pfx/drive_c/k/id2 -oUserKnownHostsFile=/pfx/drive_c/k/kh -F '/pfx/drive_c/My Keys/cfg' | fetch	fetch	none	1
+sshcommand-other-windows-program	-c | core.sshCommand="C:/tools/myssh.exe" --x | fetch	-c | core.sshCommand='/opt/fl/bin/fl-winexec' 'C:/tools/myssh.exe' --x | fetch	fetch	none	1
+sshcommand-windows-ssh-dynamic-arg	-c | core.sshCommand="C:/W/ssh.exe" -i $HOME/.ssh/id -F C:/k/cfg | fetch	-c | core.sshCommand=ssh -i $HOME/.ssh/id -F /pfx/drive_c/k/cfg | fetch	fetch	none	1
+sshcommand-control-operator-kept	-c | core.sshCommand=C:/ssh.exe -v; rm -rf x | fetch	-c | core.sshCommand=C:/ssh.exe -v; rm -rf x | fetch	fetch	none	1
+dropped-keys	-c | http.sslBackend=schannel | -c | core.fscache=true | -c | core.longpaths=true | -c | core.fsmonitor=true | -c | http.schannelCheckRevoke=false | -c | core.fsmonitor | -c | HTTP.https://h.example.SSLBACKEND=schannel | fetch	fetch	fetch	none	1
+fsmonitor-false-kept	-c | core.fsmonitor=false | -c | core.fsmonitor= | status	-c | core.fsmonitor=false | -c | core.fsmonitor= | status	status	none	1
+fsmonitor-windows-hook-dropped	-c | core.fsmonitor=C:/hooks/fsmon.exe | status	status	status	none	1
+sslcainfo-gitinstance-dropped	-c | http.sslCAInfo=C:/Users/me/AppData/Local/Fork/gitInstance/2.45.1/mingw64/etc/ssl/certs/ca-bundle.crt | -c | http.sslCAInfo=C:\certs\corp.pem | -c | http.sslcapath=C:\fork-linux\gitInstance\ssl | fetch	-c | http.sslCAInfo=/pfx/drive_c/certs/corp.pem | fetch	fetch	none	1
+gpg-windows-programs-dropped	-c | gpg.program=C:/Program Files (x86)/GnuPG/bin/gpg.exe | -c | gpg.ssh.program=C:/x/ssh-keygen.exe | -c | gpg.program=gpg2 | commit | -S | -m | x	-c | gpg.program=gpg2 | commit | -S | -m | x	commit	none	1
+path-typed-keys	-c | core.hooksPath=C:\hooks | -c | safe.directory=* | -c | include.path=~/x | -c | user.signingKey=C:/Users/me/.ssh/id.pub | -c | user.signingkey=ABCDEF | -c | init.templateDir=Z:\tpl | status	-c | core.hooksPath=/pfx/drive_c/hooks | -c | safe.directory=* | -c | include.path=~/x | -c | user.signingKey=/pfx/drive_c/Users/me/.ssh/id.pub | -c | user.signingkey=ABCDEF | -c | init.templateDir=/tpl | status	status	none	1
+other-keys	-c | remote.origin.url=C:\repos\upstream | -c | user.name=Me | -c | core.quotepath | -c | foo=C:\x | -c | color.ui=false | log	-c | remote.origin.url=/pfx/drive_c/repos/upstream | -c | user.name=Me | -c | core.quotepath | -c | foo=C:\x | -c | color.ui=false | log	log	none	1
+ssh-variant-plink-dropped	-c | ssh.variant=plink | -c | ssh.variant=ssh | fetch	-c | ssh.variant=ssh | fetch	fetch	none	1
+clone-config-sanitized	clone | -c | http.sslBackend=schannel | -c | core.autocrlf=false | --config=core.fscache=true | --config | core.hooksPath=C:\h | --config=core.sshCommand=C:/W/ssh.exe | https://h/r.git | C:\dst	clone | -c | core.autocrlf=false | --config | core.hooksPath=/pfx/drive_c/h | --config=core.sshCommand=ssh | https://h/r.git | /pfx/drive_c/dst	clone	none	1
+worktree-list	worktree | list | --porcelain | -z	worktree | list | --porcelain | -z	worktree	worktree	1
+worktree-add	worktree | add | C:\wt | -b | feat	worktree | add | /pfx/drive_c/wt | -b | feat	worktree	none	1
+remote-v	remote | -v	remote | -v	remote	remote	1
+remote-verbose	remote | --verbose	remote | --verbose	remote	remote	1
+remote-get-url	remote | get-url | --push | origin	remote | get-url | --push | origin	remote	remote	1
+remote-add	remote | add | up | C:\up	remote | add | up | /pfx/drive_c/up	remote	none	1
+remote-v-show	remote | -v | show	remote | -v | show	remote	none	1
+ls-remote-get-url	ls-remote | --get-url | origin	ls-remote | --get-url | origin	ls-remote	remote	1
+ls-remote-plain	ls-remote | origin	ls-remote | origin	ls-remote	none	1
+config-get-remote-url	config | --get | remote.origin.url	config | --get | remote.origin.url	config	remote	1
+config-implicit-get-pushurl	config | remote.origin.pushurl	config | remote.origin.pushurl	config	remote	1
+config-get-verb	config | get | REMOTE.Up.URL	config | get | REMOTE.Up.URL	config	remote	1
+config-show-origin	config | --show-origin | --list | -z	config | --show-origin | --list | -z	config	origin	1
+config-get-path-key	config | --get | core.hooksPath	config | --get | core.hooksPath	config	paths	1
+config-type-path-joined	config | --type=path | --get | my.dir	config | --type=path | --get | my.dir	config	paths	1
+config-type-path-separate	config | --type | path | --get | my.dir	config | --type | path | --get | my.dir	config	paths	1
+config-path-flag	config | --path | my.dir	config | --path | my.dir	config	paths	1
+config-get-plain	config | --get | user.name	config | --get | user.name	config	none	1
+config-list	config | --list	config | --list	config	remote	1
+config-list-verb	config | list | --name-only	config | list | --name-only	config	remote	1
+config-get-regexp-remote-url	config | --get-regexp | remote\..*\.url	config | --get-regexp | remote\..*\.url	config	remote	1
+config-get-regexp-other	config | --get-regexp | user\..*	config | --get-regexp | user\..*	config	none	1
+config-set	config | user.name | Me	config | user.name | Me	config	none	1
+config-unset	config | --unset | remote.origin.url	config | --unset | remote.origin.url	config	none	1
+config-file-get	config | --file | C:\r\.gitmodules | --get | submodule.x.path	config | --file | /pfx/drive_c/r/.gitmodules | --get | submodule.x.path	config	none	1
+config-includeif-path	config | --get | includeIf.gitdir:~/work/.path	config | --get | includeIf.gitdir:~/work/.path	config	paths	1
+for-each-ref-worktreepath	for-each-ref | --format=%(worktreepath)%09%(refname) | refs/heads	for-each-ref | --format=%(worktreepath)%09%(refname) | refs/heads	for-each-ref	worktree	1
+branch-format-separate-worktreepath	branch | --format | %(worktreepath)	branch | --format | %(worktreepath)	branch	worktree	1
+branch-format-worktreepath-not-first	branch | --format=%(refname) %(worktreepath)	branch | --format=%(refname) %(worktreepath)	branch	none	1
+rev-parse-paths	rev-parse | --show-toplevel | --git-dir	rev-parse | --show-toplevel | --git-dir	rev-parse	paths	1
+git-dir-unicode-rev-parse	--git-dir=C:\Users\Jürgen\r\.git | rev-parse | --absolute-git-dir	--git-dir=/pfx/drive_c/Users/Jürgen/r/.git | rev-parse | --absolute-git-dir	rev-parse	paths	1
+commit-am-cluster-message	commit | -am | C:\msg | -- | C:\r\f.c	commit | -am | C:\msg | -- | /pfx/drive_c/r/f.c	commit	none	1
+merge-cluster-m-and-tag	merge | --no-ff | -qm | C:\m | feature	merge | --no-ff | -qm | C:\m | feature	merge	none	1
+commit-cluster-without-value-letter	commit | -av | C:\r\f.c	commit | -av | /pfx/drive_c/r/f.c	commit	none	1
+log-cluster-S	log | -pS | C:\needle | -- | C:\r\f.c	log | -pS | C:\needle | -- | /pfx/drive_c/r/f.c	log	none	1
+fork-2.23.2-rebase-i	-c | core.commentChar=^ | -c | rebase.instructionFormat=#!_%H | -c | rebase.abbreviateCommands=true | -c | sequence.editor=C:/users/u/AppData/Local/Fork/current/Fork.RI.exe | -c | core.editor=C:/users/u/AppData/Local/Fork/current/Fork.RI.exe | rebase | -i | --autosquash | --update-refs | 16571d63f8fbcc53d89d7f0e775f34d70196de84	-c | core.commentChar=^ | -c | rebase.instructionFormat=#!_%H | -c | rebase.abbreviateCommands=true | -c | sequence.editor='/opt/fl/bin/fl-winexec' 'C:/users/u/AppData/Local/Fork/current/Fork.RI.exe' | -c | core.editor='/opt/fl/bin/fl-winexec' 'C:/users/u/AppData/Local/Fork/current/Fork.RI.exe' | rebase | -i | --autosquash | --update-refs | 16571d63f8fbcc53d89d7f0e775f34d70196de84	rebase	none	1
+fork-2.23.2-commit-file	commit | --file | Z:\home\u\repo\.git\COMMITMESSAGE	commit | --file | /home/u/repo/.git/COMMITMESSAGE	commit	none	1
+fork-2.23.2-diff	-c | core.quotepath=false | --no-pager | diff | --find-renames | --no-ext-diff | --no-color | --src-prefix=forkSrcPrefix/ | --dst-prefix=forkDstPrefix/ | --full-index | --submodule=short | --staged | --unified=3 | -- | link.sh	-c | core.quotepath=false | --no-pager | diff | --find-renames | --no-ext-diff | --no-color | --src-prefix=forkSrcPrefix/ | --dst-prefix=forkDstPrefix/ | --full-index | --submodule=short | --staged | --unified=3 | -- | link.sh	diff	none	1
+fork-2.23.2-config-system-origin	config | --list | --show-origin | --name-only | -z | --system	config | --list | --show-origin | --name-only | -z | --system	config	origin	1
+fork-2.23.2-config-commit-template	config | commit.template	config | commit.template	config	paths	1

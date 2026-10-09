@@ -2,9 +2,12 @@
 # CI image for Fork for Linux (unofficial) — bridge toolchain (Ubuntu 26.04)
 # Image tag: fork-linux-ci-bridge:26.04
 # Cross-compiles the Windows-side shims (MinGW-w64, x86_64) and the static
-# Linux helper (musl-gcc -static -no-pie). Used by bridge/spike/build.sh and,
-# later, by the meson bridge targets. Wine is NOT installed here: Windows
-# binaries are executed by the host (or the bridge test stage).
+# Linux helper (musl-gcc -static -no-pie). Used by bridge/spike/build.sh and
+# the meson bridge targets (scripts/build-bridge.sh). It also carries the
+# bridge Wine tier: distro Wine (wine64), Xvfb, git and pytest, so the CI
+# "bridge" stage runs FL_REAL_WINE=1 python3 -m pytest tests/bridge in here
+# (as an unprivileged user with a writable HOME it owns, e.g. -e HOME=/tmp/h and
+# --basetemp=/tmp/h/pt; isolated WINEPREFIX; never as root; no TMPDIR, see B5).
 # Source is bind-mounted at /src (no COPY).
 FROM ubuntu:26.04
 
@@ -20,7 +23,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 \
     musl-tools gcc libc6-dev \
     meson ninja-build \
-    python3 file
+    python3 python3-pytest file \
+    git \
+    wine wine64 xvfb xauth
 
 WORKDIR /src
 CMD ["bridge/spike/build.sh"]
