@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Fork bug that also happens on Windows
+    url: https://github.com/fork-dev/TrackerWin/issues
+    about: Report problems in Fork itself to its developers' Windows tracker — not wrapper/Wine issues.
+  - name: Fork for Mac / general Fork tracker
+    url: https://github.com/fork-dev/Tracker/issues
+    about: Fork's developers' tracker for the Mac app and general requests (the Linux request is Tracker#153).
+  - name: Security vulnerability in the wrapper
+    url: https://github.com/ventura8/Fork-Linux/blob/main/docs/SECURITY.md
+    about: Please read the security policy and report privately instead of opening a public issue.

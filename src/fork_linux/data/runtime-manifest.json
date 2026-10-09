@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "revision": "2026.10.1",
+  "bootstrap_revision": 1,
+  "wine": {
+    "default": "kron4ek-11.0-staging-wow64",
+    "min_system_version": "9.0",
+    "builds": {
+      "kron4ek-11.0-staging-wow64": {
+        "version": "11.0",
+        "flavor": "staging",
+        "arch": "x86_64",
+        "wow64": true,
+        "url": "https://github.com/Kron4ek/Wine-Builds/releases/download/11.0/wine-11.0-staging-amd64-wow64.tar.xz",
+        "sha256": "e6538a417dd2e7f738ad77addf74bfd9e45c9d970653674f93bde2df29055f2f",
+        "size": 74975524,
+        "strip_components": 1,
+        "min_glibc": "2.27",
+        "status": "known-good"
+      }
+    }
+  },
+  "winetricks": {
+    "version": "20260125",
+    "url": "https://raw.githubusercontent.com/Winetricks/winetricks/20260125/src/winetricks",
+    "sha256": "431f82fc74000e6c864409f1d8fb495d696c03928808e3e8acffc45179312a7b",
+    "size": 830687
+  },
+  "dotnet": {
+    "verbs": ["dotnet48", "dotnet472"],
+    "min_release": 461808
+  },
+  "fork": {
+    "default": "2.23.2",
+    "installer_url_template": "https://cdn.fork.dev/win/Fork-{version}.exe",
+    "feed_url": "https://git-fork.com/update/win/releases.win.json",
+    "legacy_feed_url": "https://git-fork.com/update/win/RELEASES",
+    "allowed_hosts": ["cdn.fork.dev", "git-fork.com", "fork.dev"],
+    "requires": {
+      "dotnet_framework": "4.7.2"
+    },
+    "versions": {
+      "2.23.2": {
+        "size": 76278256,
+        "sha256": "PENDING",
+        "full_nupkg_sha256": "B70E7BE92B73BAEAB9FEE700AD352AE9E261DAFCDED0D10E5C94133F639B1C1F",
+        "status": "known-good",
+        "tested_with": ["kron4ek-11.0-staging-wow64"]
+      }
+    },
+    "known_bad": {}
+  }
+}

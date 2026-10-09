@@ -1,0 +1,81 @@
+WINE REGISTRY Version 2
+;; All keys relative to REGISTRY\\User\\S-1-5-21-0-0-0-1000
+
+#arch=win64
+
+[Control Panel\\Desktop] 1791520885
+#time=1dd57a87157acb0
+"FontSmoothing"="2"
+"FontSmoothingGamma"=dword:00000578
+"FontSmoothingOrientation"=dword:00000001
+"FontSmoothingType"=dword:00000002
+"LogPixels"=dword:00000060
+"UserPreferencesMask"=hex:30,00,02,80,12,00,00,00
+
+[Control Panel\\Desktop\\WindowMetrics] 1791520885
+#time=1dd57a87157acb0
+"CaptionFont"=hex:0a,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,90,01,00,00,\
+  00,00,00,01,00,00,00,00,54,00,61,00,68,00,6f,00,6d,00,61,00,00,00,00,00,00,\
+  00,00
+"IconTitleWrap"="1"
+
+[Software\\Classes\\Folder\\shell\\open\\command] 1791520990
+#time=1dd57a8b46ca118
+@="C:\\fork-linux\\fl-launch.exe open \"%1\""
+
+[Software\\FLTest\\Escapes \[brackets\]] 1791520990
+#time=1dd57a8b46ca118
+#class="FLTestClass"
+"quoted"="say \"hi\"\tthen\\leave\n"
+"octal"="a\0b\101\1012"
+"hex"="\x5fae\x8f6f\x96c5\x9ed1 \xd83d\xde00 \xzz"
+"unknown escape"="\q"
+"Mixed Case Name"="kept"
+"multi"=str(7):"Noto Sans\0DejaVu Sans\0Liberation Sans\0"
+"multi hex"=hex(7):61,00,62,00,00,00,63,00,00,00,00,00
+"expand hex"=hex(2):25,00,55,00,53,00,45,00,52,00,50,00,52,00,4f,00,46,00,49,\
+  00,4c,00,45,00,25,00,00,00
+"sz hex"=hex(1):6f,00,6b,00,00,00
+"qword"=hex(b):00,00,00,00,02,00,00,00
+"dword be"=hex(5):00,00,01,00
+"short dword"=hex(4):01,00
+"none"=hex(0):
+"device"=hex(ffff0012):01,02
+"explicit sz"=str:"plain"
+
+[Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders] 1791520885
+#time=1dd57a87157acb0
+"AppData"=str(2):"%USERPROFILE%\\AppData\\Roaming"
+"Desktop"=str(2):"%USERPROFILE%\\Desktop"
+"Personal"=str(2):"%USERPROFILE%\\Documents"
+
+[Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize] 1791520916
+#time=1dd57a88362da88
+"AppsUseLightTheme"=dword:00000000
+"SystemUsesLightTheme"=dword:00000000
+
+[Software\\Wine\\AppDefaults\\Fork.exe] 1791520916
+#time=1dd57a88362da88
+"Version"="win7"
+
+[Software\\Wine\\Avalon.Graphics] 1791520916
+#time=1dd57a88362da88
+"DisableHWAcceleration"=dword:00000001
+
+[Software\\Wine\\Direct3D] 1791520916
+#time=1dd57a88362da88
+"renderer"="gdi"
+
+[Software\\Wine\\DllOverrides] 1791520916
+#time=1dd57a88362da88
+"*mscoree"="native"
+"winemenubuilder.exe"=""
+
+[Software\\Wine\\Fonts\\Replacements] 1791520916
+#time=1dd57a88362da88
+"Segoe UI"="Noto Sans"
+"\x5fae\x8f6f\x96c5\x9ed1"="Noto Sans CJK SC"
+
+[Software\\Wine\\WineDbg] 1791520916
+#time=1dd57a88362da88
+"ShowCrashDialog"=dword:00000000

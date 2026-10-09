@@ -7,19 +7,22 @@ __pycache__/
 *.so
 
 # Distribution / packaging
+# Anchored to the repo root (/name/): the template's bare `downloads/`, `lib/`,
+# `build/`, ... would also hide real source directories such as
+# src/fork_linux/downloads/ or bridge/**/lib/.
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
 .eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
@@ -29,8 +32,12 @@ MANIFEST
 # PyInstaller
 #   Usually these files are written by a python script from a template
 #   before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+# Anchored to the repo root (where PyInstaller writes them) so the real
+# packaging/rpm/**/*.spec RPM specs and bridge/**/*.manifest Windows application
+# manifests stay tracked. No `!` re-include is needed (and one would make
+# `git check-ignore -v` report those tracked files as pattern matches).
+/*.manifest
+/*.spec
 
 # Installer logs
 pip-log.txt
@@ -58,6 +65,8 @@ cover/
 
 # Django stuff:
 *.log
+# Captured Fork/Wine logs used as test fixtures (doctor crash signatures).
+!/tests/fixtures/**/*.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -218,3 +227,83 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---------------------------------------------------------------------------
+# Fork for Linux (unofficial) — project-specific rules (AGENTS.md §4.7.1, §4.8)
+# ---------------------------------------------------------------------------
+
+# Release/CI build output and local Meson / packaging / CI staging trees
+/artifacts/
+build-*/
+builddir*/
+obj-*/
+.flatpak-builder/
+squashfs-root/
+
+# Generated at build time by Meson (install prefix, version stamp)
+src/fork_linux/_build.py
+
+# Package outputs (never committed; published only as release assets)
+*.deb
+*.ddeb
+*.rpm
+*.pkg.tar.zst
+*.snap
+*.AppImage
+*.AppImage.zsync
+*.flatpak
+*.changes
+*.buildinfo
+
+# Windows binaries and Fork artwork: never committed (AGENTS.md §1 HARD RULES).
+# The shims are built from bridge/ sources; Fork's installer and icon are
+# downloaded/extracted on the user's machine only.
+*.exe
+*.dll
+*.msi
+*.nupkg
+*.ico
+
+# Wine prefixes and scratch homes from spikes / E2E runs (never ~/.wine)
+.wine*/
+wineprefix*/
+/.e2e-home/
+
+# Agent progress + local CI tee output (keep logs/README.md)
+/logs/*.log
+/logs/*/
+!/logs/README.md
+
+# Debian packaging build trees (keep control, rules, changelog, copyright, source/)
+debian/.debhelper/
+debian/tmp/
+debian/files
+debian/debhelper-build-stamp
+debian/*.substvars
+debian/*.debhelper.log
+debian/*.debhelper
+debian/fork-linux/
+
+# Snapcraft leftovers
+packaging/snap/parts/
+packaging/snap/stage/
+packaging/snap/prime/
+packaging/snap/overlay/
+packaging/snap/.craft/
+packaging/snap/*.tar.gz
+
+# makepkg trees and the rendered PKGBUILD (packaging/arch/PKGBUILD.in is the source)
+packaging/arch/src/
+packaging/arch/pkg/
+packaging/arch/*.tar.gz
+/packaging/arch/PKGBUILD
+/packaging/arch/.SRCINFO
+
+# SonarQube Cloud: local token + scanner work dir (never committed)
+.sonar-token
+.scannerwork/
+
+# Local AI-agent state (Claude Code worktrees, per-user permissions). The shared agent
+# guidance is AGENTS.md plus the committed adapters.
+/.claude/worktrees/
+/.claude/settings.local.json

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fork for Linux (unofficial) — original placeholder artwork (MIT, ventura8).
+     Deliberately NOT Fork's logo: a git branch graph on a warm tile. The real Fork
+     icon is extracted from the user's own Fork.exe at runtime and never committed. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffb347"/>
+      <stop offset="1" stop-color="#e8590c"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#tile)"/>
+  <rect x="8" y="8" width="112" height="56" rx="26" fill="url(#shine)"/>
+  <g fill="none" stroke="#2b1d0e" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M44 34 V94"/>
+    <path d="M44 72 C44 56 84 60 84 42"/>
+  </g>
+  <g fill="#fff8ec" stroke="#2b1d0e" stroke-width="6">
+    <circle cx="44" cy="34" r="10"/>
+    <circle cx="44" cy="94" r="10"/>
+    <circle cx="84" cy="38" r="10"/>
+  </g>
+</svg>

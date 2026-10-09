@@ -1,0 +1,18 @@
+---
+description: Fork for Linux (unofficial) — follow canonical AGENTS.md for all agent work
+alwaysApply: true
+---
+
+# Fork for Linux (unofficial) agent context
+
+Canonical rules: **AGENTS.md** (repository root), including the §1 HARD RULES. Do not duplicate long guidance here.
+
+Also use when relevant:
+
+- `docs/INSTRUCTIONS.md` (planned)
+- `docs/architecture/README.md` (planned)
+- `docs/SECURITY.md` (planned)
+- `docs/CREDITS.md`
+- `.agents/skills/*/SKILL.md` (planned)
+
+Progress: `logs/`. Lint and test new or changed code (AGENTS.md §4.5). Keep agent docs synchronized with code changes (see AGENTS.md §4.7). Language is portable across tools — follow project rules, not editor-specific habits.

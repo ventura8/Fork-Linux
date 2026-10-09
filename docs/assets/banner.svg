@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- README banner for Fork for Linux (unofficial). Original artwork (MIT); contains no Fork assets.
+     Rendered to .github/banner.png by scripts/render-banner.sh. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1f2430"/>
+      <stop offset="1" stop-color="#2d3446"/>
+    </linearGradient>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffb347"/>
+      <stop offset="1" stop-color="#e8590c"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="400" fill="url(#bg)"/>
+  <g opacity="0.08" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round">
+    <path d="M60 0 V400"/><path d="M60 250 C60 180 180 190 180 110 V0"/>
+    <path d="M1140 400 V120"/><path d="M1140 200 C1140 150 1040 160 1040 80 V0"/>
+  </g>
+  <g transform="translate(110 100)">
+    <rect width="200" height="200" rx="46" fill="url(#tile)"/>
+    <g fill="none" stroke="#2b1d0e" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M70 50 V150"/>
+      <path d="M70 115 C70 88 135 94 135 63"/>
+    </g>
+    <g fill="#fff8ec" stroke="#2b1d0e" stroke-width="10">
+      <circle cx="70" cy="50" r="16"/><circle cx="70" cy="150" r="16"/><circle cx="135" cy="57" r="16"/>
+    </g>
+  </g>
+  <g font-family="DejaVu Sans, Noto Sans, Liberation Sans, sans-serif" fill="#f5f2ea">
+    <text x="360" y="180" font-size="66" font-weight="bold">Fork for Linux</text>
+    <text x="362" y="228" font-size="30" fill="#ffb347">unofficial · runs the official Fork git client via Wine</text>
+    <text x="362" y="292" font-size="22" fill="#b8bfcf">Fork is made by Dan Pristupov &amp; Tanya Pristupova — git-fork.com</text>
+    <text x="362" y="326" font-size="22" fill="#b8bfcf">Not affiliated with Fork. Please buy a license if you use it.</text>
+  </g>
+</svg>

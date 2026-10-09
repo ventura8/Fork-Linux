@@ -1,0 +1,93 @@
+# Build context exclusions for docker/Dockerfile.* (CI bind-mounts the source
+# at /src; nothing here should ever reach an image layer). Docker matches a bare
+# pattern at the context root only, so `**/` repeats it for nested paths.
+.git
+.cache
+.pytest_cache
+.coverage
+.coverage.*
+coverage.xml
+htmlcov
+__pycache__
+**/__pycache__
+*.pyc
+**/*.pyc
+.venv
+venv
+.ruff_cache
+.mypy_cache
+# Local AI-agent state (worktrees are full repo copies)
+.claude
+
+# Local Meson / CI / packaging staging
+build
+build-*
+builddir*
+obj-*
+.flatpak-builder
+**/.flatpak-builder
+squashfs-root
+**/squashfs-root
+artifacts
+logs
+
+# Package outputs
+*.deb
+**/*.deb
+*.ddeb
+**/*.ddeb
+*.rpm
+**/*.rpm
+*.pkg.tar.zst
+**/*.pkg.tar.zst
+*.snap
+**/*.snap
+*.AppImage
+**/*.AppImage
+*.AppImage.zsync
+**/*.AppImage.zsync
+*.flatpak
+**/*.flatpak
+
+# Windows binaries / Fork artwork (never shipped in images)
+*.exe
+**/*.exe
+*.dll
+**/*.dll
+*.msi
+**/*.msi
+*.nupkg
+**/*.nupkg
+*.ico
+**/*.ico
+
+# Wine prefixes and E2E scratch homes
+.wine*
+**/.wine*
+wineprefix*
+**/wineprefix*
+.e2e-home
+
+# Debian build trees
+debian/tmp
+debian/.debhelper
+debian/fork-linux
+debian/files
+debian/*.substvars
+debian/*.debhelper
+debian/*.debhelper.log
+debian/debhelper-build-stamp
+
+# Snapcraft / makepkg leftovers
+packaging/snap/parts
+packaging/snap/stage
+packaging/snap/prime
+packaging/snap/overlay
+packaging/snap/.craft
+packaging/arch/src
+packaging/arch/pkg
+
+# Secrets and scanner state
+.sonar-token
+.scannerwork
+.env

@@ -1,0 +1,13 @@
+# Tool configuration only. Fork for Linux (unofficial) is not a pip package:
+# no [build-system], no [project] (Meson installs it; VERSION is the version).
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.coverage.run]
+branch = true
+source = ["src/fork_linux"]
+
+[tool.coverage.report]
+show_missing = true

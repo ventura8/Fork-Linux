@@ -1,0 +1,15 @@
+# syntax=docker/dockerfile:1.27.0
+# Compat cell: Ubuntu 22.04 (jammy) — the oldest supported baseline (Python 3.10).
+# Source is bind-mounted at /src; nothing is copied into the image.
+FROM ubuntu:22.04
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+       python3 python3-pytest python3-pytest-cov python3-tomli git ca-certificates \
+       meson ninja-build gcc libc6-dev desktop-file-utils appstream bash-completion \
+       xdg-utils file binutils
+WORKDIR /src
+CMD ["python3", "-m", "pytest", "-q"]
