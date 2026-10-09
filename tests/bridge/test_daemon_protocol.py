@@ -933,7 +933,17 @@ def test_environment_operations(daemon: Daemon) -> None:
     assert env["TMPDIR"] == root_env["TMPDIR"]
     assert env["LANG"] == root_env["LANG"]
     assert "FL_BRIDGE_TOKEN" not in env
-    assert "env-ignored=7 " in daemon.log.read_text()
+    assert _wait_for_log(daemon.log, "env-ignored=7 ")
+
+
+def _wait_for_log(log: Path, needle: str, timeout: float = 10.0) -> bool:
+    """True once ``needle`` is in ``log``: the forked session writes its line after replying."""
+    deadline = time.monotonic() + timeout
+    while needle not in log.read_text():
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.05)
+    return True
 
 
 def test_environment_unset_removes_daemon_variable(daemon: Daemon) -> None:
