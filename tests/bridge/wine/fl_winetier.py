@@ -364,6 +364,10 @@ class WineBridge:
             argv += ["--max-capture", str(max_capture)]
         argv += ["--", exe, *args]
         proc = self.wine_run(argv, env=wine_env)
+        if _wine_transport_glitch(proc):
+            # Wine's client lost its wineserver socket before the driver produced any output
+            # (seen once on a CI runner): the command never ran, so one retry is safe.
+            proc = self.wine_run(argv, env=wine_env)
         return parse_driver(proc)
 
     def bench(
@@ -376,6 +380,11 @@ class WineBridge:
         argv += ["--", exe, *args]
         proc = self.wine_run(argv, timeout=3600)
         return json.loads(last_json_line(proc))
+
+
+def _wine_transport_glitch(proc: subprocess.CompletedProcess[bytes]) -> bool:
+    """True when Wine itself failed to talk to wineserver and the driver printed nothing."""
+    return not proc.stdout and proc.stderr.startswith(b"wine client error:")
 
 
 def last_json_line(proc: subprocess.CompletedProcess[bytes]) -> str:
