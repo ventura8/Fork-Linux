@@ -504,15 +504,25 @@ def check_libs(ctx: DoctorCtx) -> Result:
     unresolved: list[str] = []
     if info is not None and info.provider == "managed":
         unresolved = hostdeps.ldd_missing(ctx.runner, info.root)
-    if required or unresolved:
+    # ldd reports every optional Wine module (OpenCL, scanners, cameras, smart cards, USB,
+    # GStreamer, Wayland, ...); a missing dependency there only disables that feature, so
+    # only the libraries Wine itself needs (REQUIRED_LIBS) fail the check.
+    blocking = [lib for lib in unresolved if lib in hostdeps.REQUIRED_LIBS and lib not in required]
+    if required or blocking:
         parts = []
         if required:
             parts.append(f"missing libraries: {', '.join(required)}")
-        if unresolved:
-            parts.append(f"the Wine runtime needs: {', '.join(unresolved)}")
-        return Result("fail", "; ".join(parts), _install_hint([], [*required, *unresolved]))
-    if optional:
-        return Result("info", f"optional libraries missing: {', '.join(optional)}", _install_hint([], optional))
+        if blocking:
+            parts.append(f"the Wine runtime needs: {', '.join(blocking)}")
+        return Result("fail", "; ".join(parts), _install_hint([], [*required, *blocking]))
+    extra = [lib for lib in unresolved if lib not in hostdeps.REQUIRED_LIBS]
+    if optional or extra:
+        parts = []
+        if optional:
+            parts.append(f"optional libraries missing: {', '.join(optional)}")
+        if extra:
+            parts.append(f"optional Wine features unavailable (not used by Fork): {', '.join(extra)}")
+        return Result("info", "; ".join(parts), _install_hint([], [*optional, *extra]))
     scanned = " (Wine runtime scanned with ldd)" if info is not None and info.provider == "managed" else ""
     return Result("ok", f"all {len(hostdeps.REQUIRED_LIBS)} required libraries load{scanned}")
 

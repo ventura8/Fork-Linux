@@ -368,12 +368,30 @@ def test_host_libs_scans_the_managed_runtime() -> None:
     ctx = make(runner, lib_loader=_loader(set()))
     ctx._wine = _managed_runtime(ctx)
     result = run(ctx, "host.libs")
-    assert result.status == "fail"
-    assert result.detail == "the Wine runtime needs: libfoo.so.1"
+    assert result.status == "info"
+    assert result.detail == "optional Wine features unavailable (not used by Fork): libfoo.so.1"
     assert runner.argvs[0][0] == "ldd"
     clean = make(RecordingRunner({"ldd": ""}), lib_loader=_loader(set()))
     clean._wine = _managed_runtime_existing(clean)
     assert "scanned with ldd" in run(clean, "host.libs").detail
+
+
+def test_host_libs_fails_when_ldd_misses_a_required_library() -> None:
+    runner = RecordingRunner({"ldd": "libGL.so.1 => not found\nlibOpenCL.so.1 => not found\n"})
+    ctx = make(runner, lib_loader=_loader(set()))
+    ctx._wine = _managed_runtime(ctx)
+    result = run(ctx, "host.libs")
+    assert result.status == "fail"
+    assert result.detail == "the Wine runtime needs: libGL.so.1"
+
+
+def test_host_libs_does_not_repeat_a_library_the_loader_already_misses() -> None:
+    runner = RecordingRunner({"ldd": "libGL.so.1 => not found\n"})
+    ctx = make(runner, lib_loader=_loader({"libGL.so.1"}))
+    ctx._wine = _managed_runtime(ctx)
+    result = run(ctx, "host.libs")
+    assert result.status == "fail"
+    assert result.detail == "missing libraries: libGL.so.1"
 
 
 def _managed_runtime_existing(ctx: DoctorCtx) -> WineInfo:
