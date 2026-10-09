@@ -37,6 +37,7 @@ def test_null_ui_logs_and_answers_defaults(caplog: pytest.LogCaptureFixture) -> 
     null = ui.NullUI()
     assert not null.interactive
     null.info("hello")
+    null.notify("updated")
     null.warn("careful")
     null.error("broken", "fix it")
     null.error("plain")
@@ -47,7 +48,7 @@ def test_null_ui_logs_and_answers_defaults(caplog: pytest.LogCaptureFixture) -> 
         progress.log("detail")
         assert progress.percent == 50
     messages = [record.getMessage() for record in caplog.records]
-    assert messages[:4] == ["hello", "careful", "broken (hint: fix it)", "plain"]
+    assert messages[:5] == ["hello", "updated", "careful", "broken (hint: fix it)", "plain"]
     assert "Working: detail" in messages
 
 
@@ -58,10 +59,11 @@ def test_terminal_messages_go_to_the_stream() -> None:
     out = io.StringIO()
     term = ui.TerminalUI(stream=out, interactive=False)
     term.info("hello")
+    term.notify("updated")
     term.warn("careful")
     term.error("broken", "fix it")
     term.error("plain")
-    assert out.getvalue() == "hello\nwarning: careful\nerror: broken\nhint: fix it\nerror: plain\n"
+    assert out.getvalue() == "hello\nupdated\nwarning: careful\nerror: broken\nhint: fix it\nerror: plain\n"
 
 
 def test_terminal_defaults_to_stderr(capsys: pytest.CaptureFixture[str]) -> None:
@@ -476,3 +478,65 @@ def test_zenity_progress_title_is_escaped(fake_bin: Path) -> None:
     with dialog.progress("Fork & <Wine>") as progress:
         progress.update(1.0)
     assert "--text=Fork &amp; &lt;Wine&gt;" in _calls(fake_bin)[-1]["argv"]
+
+
+# --- non-modal notifications ---------------------------------------------------------------
+
+
+def _notifier(
+    cls: type[ui.ZenityUI] | type[ui.KDialogUI], notify_send: str | None, error: OSError | None = None
+) -> tuple[ui.ZenityUI | ui.KDialogUI, RecordingRunner, list[dict[str, Any]]]:
+    seen: list[dict[str, Any]] = []
+
+    def popen(argv: list[str], **kwargs: Any) -> object:
+        seen.append({"argv": argv, **kwargs})
+        if error is not None:
+            raise error
+        return object()
+
+    runner = RecordingRunner(which_map={"notify-send": notify_send})
+    return cls(runner=runner, env={"PATH": "/usr/bin"}, popen=popen), runner, seen
+
+
+@pytest.mark.parametrize("cls", [ui.ZenityUI, ui.KDialogUI])
+def test_notify_uses_notify_send_in_the_background(cls: type[ui.ZenityUI] | type[ui.KDialogUI]) -> None:
+    dialog, runner, seen = _notifier(cls, "/usr/bin/notify-send")
+    dialog.notify("Fork updated 1 -> 2")
+    assert runner.argvs == []  # nothing is waited for
+    assert seen[0]["argv"] == [
+        "notify-send",
+        f"--app-name={APP_NAME}",
+        f"--icon={APP_ID}",
+        APP_NAME,
+        "Fork updated 1 -> 2",
+    ]
+    assert seen[0]["start_new_session"] is True
+    assert seen[0]["stdin"] == subprocess.DEVNULL
+
+
+@pytest.mark.parametrize(
+    ("cls", "argv"),
+    [
+        (ui.ZenityUI, ["zenity", "--notification", f"--text={APP_NAME}: hi"]),
+        (ui.KDialogUI, ["kdialog", "--title", APP_NAME, "--passivepopup", "hi", "10"]),
+    ],
+)
+def test_notify_falls_back_to_the_passive_popup(
+    cls: type[ui.ZenityUI] | type[ui.KDialogUI], argv: list[str]
+) -> None:
+    dialog, runner, seen = _notifier(cls, None)
+    dialog.notify("hi")
+    assert runner.argvs == []
+    assert seen[0]["argv"] == argv
+
+
+def test_notify_that_cannot_start_only_logs(caplog: pytest.LogCaptureFixture) -> None:
+    dialog, _runner, _seen = _notifier(ui.ZenityUI, None, FileNotFoundError(2, "No such file"))
+    dialog.notify("hi")
+    assert "cannot show a desktop notification" in caplog.text
+
+
+def test_dialog_base_has_no_passive_popup() -> None:
+    dialog = ui._DialogUI(runner=RecordingRunner(), env={})
+    with pytest.raises(NotImplementedError):
+        dialog._passive("x")

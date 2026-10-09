@@ -436,6 +436,81 @@ def test_restore_rolls_back_current_and_drops_staged(paths: Paths, layout: ForkL
     assert (snap.path / "current" / "Fork.exe").read_bytes() == original_exe
 
 
+def test_create_keeps_the_full_package(paths: Paths, layout: ForkLayout, clock: _Clock) -> None:
+    package = layout.full_package("2.23.2")
+    snap = snaps.create(paths, layout, method="hardlink")
+    kept = snap.path / snaps.PACKAGES / package.name
+    assert kept.read_bytes() == package.read_bytes()
+    assert os.stat(kept).st_ino == os.stat(package).st_ino
+    assert _meta(snap)["files"][f"packages/{package.name}"][0] == package.stat().st_size
+
+
+def test_restore_puts_back_the_package_velopack_deleted(paths: Paths, layout: ForkLayout, clock: _Clock) -> None:
+    package = layout.full_package("2.23.2")
+    original = package.read_bytes()
+    snap = snaps.create(paths, layout)
+    _upgrade(layout, "2.24.0")
+    package.unlink()  # Velopack removes the old full package after an update
+    snaps.restore(paths, layout, snap)
+    assert package.read_bytes() == original
+    assert sorted(p.name for p in layout.packages_dir.iterdir()) == [package.name]
+
+
+def test_restore_without_a_kept_package_or_packages_dir(paths: Paths, layout: ForkLayout, clock: _Clock) -> None:
+    layout.full_package("2.23.2").unlink()
+    snap = snaps.create(paths, layout)
+    assert not (snap.path / snaps.PACKAGES).exists()
+    snaps.restore(paths, layout, snap)
+    assert not layout.full_package("2.23.2").exists()
+    # A snapshot with the package, restored while packages\ itself is gone.
+    write_package = layout.full_package("2.23.2")
+    write_package.write_bytes(b"PK full")
+    with_package = snaps.create(paths, layout)
+    shutil.rmtree(layout.packages_dir)
+    snaps.restore(paths, layout, with_package)
+    assert not layout.packages_dir.exists()
+
+
+def test_restore_package_copy_that_does_not_match(
+    paths: Paths, layout: ForkLayout, clock: _Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = layout.full_package("2.23.2")
+    snap = snaps.create(paths, layout, method="copy")
+    package.unlink()
+
+    real_copy = shutil.copy2
+
+    def short_copy(src: Path, dst: Path, **kwargs: Any) -> object:
+        if str(dst).endswith(".fork-linux-new"):
+            Path(dst).write_bytes(b"P")
+            return dst
+        return real_copy(src, dst, **kwargs)
+
+    monkeypatch.setattr(snaps.shutil, "copy2", short_copy)
+    with pytest.raises(IntegrityFailed, match="does not match the snapshot"):
+        snaps.restore(paths, layout, snap)
+    assert sorted(p.name for p in layout.packages_dir.iterdir()) == []
+
+
+def test_restore_package_copy_that_fails_early(
+    paths: Paths, layout: ForkLayout, clock: _Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snap = snaps.create(paths, layout, method="copy")
+    layout.full_package("2.23.2").unlink()
+
+    real_copy = shutil.copy2
+
+    def no_space(src: Path, dst: Path, **kwargs: Any) -> object:
+        if str(dst).endswith(".fork-linux-new"):
+            raise OSError(28, "No space left on device")
+        return real_copy(src, dst, **kwargs)
+
+    monkeypatch.setattr(snaps.shutil, "copy2", no_space)
+    with pytest.raises(OSError, match="No space"):
+        snaps.restore(paths, layout, snap)
+    assert sorted(p.name for p in layout.packages_dir.iterdir()) == []
+
+
 def test_restore_with_settings(paths: Paths, layout: ForkLayout, clock: _Clock) -> None:
     snap = snaps.create(paths, layout, with_accounts=True)
     write_settings(layout, {"Theme": 0, "Changed": True})

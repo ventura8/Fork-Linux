@@ -53,9 +53,18 @@ def reg_value(ctx: Ctx, key: str, name: str) -> object | None:
         return None
 
 
+def reg_values(ctx: Ctx, wanted: Sequence[tuple[str, str]]) -> list[object | None]:
+    """:func:`reg_value` for every ``(key, name)``, each hive file read once (all None when unreadable)."""
+    try:
+        return registry.query_many(ctx.paths.prefix, [(*_hive_parts(key), name) for key, name in wanted])
+    except (ForkLinuxError, OSError, ValueError):
+        return [None] * len(wanted)
+
+
 def reg_matches(ctx: Ctx, expected: Sequence[tuple[str, str, object]]) -> bool:
     """True if every ``(key, name, value)`` is in the prefix's registry (names case-insensitive)."""
-    return all(reg_value(ctx, key, name) == value for key, name, value in expected)
+    found = reg_values(ctx, [(key, name) for key, name, _value in expected])
+    return all(value == want for value, (_key, _name, want) in zip(found, expected, strict=True))
 
 
 def import_batch(ctx: Ctx, batch: RegBatch, name: str) -> None:

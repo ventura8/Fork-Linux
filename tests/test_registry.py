@@ -665,6 +665,49 @@ def test_query_absent_values(prefix: Path, tmp_path: Path) -> None:
     assert query(empty, "HKCR", "Folder\\shell\\open\\command", "") is None
 
 
+_MANY = [
+    ("HKCU", "Software\\Wine\\Direct3D", "renderer"),
+    ("HKLM", "Software\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full", "Release"),
+    ("HKCR", "Folder\\shell\\open\\command", ""),
+    ("HKCR", "Folder\\shell\\explore\\command", ""),
+    ("HKCR", "Folder\\shell\\missing", ""),
+    ("HKCU", "Software\\Wine\\Direct3D", "missing"),
+]
+
+
+def test_query_many_matches_query(prefix: Path, tmp_path: Path) -> None:
+    assert registry.query_many(prefix, _MANY) == [query(prefix, *item) for item in _MANY]
+    assert registry.query_many(prefix, []) == []
+    empty = tmp_path / "empty-prefix"
+    empty.mkdir()
+    assert registry.query_many(empty, _MANY) == [None] * len(_MANY)
+
+
+def test_query_many_parses_each_hive_once(prefix: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    reads: list[str] = []
+    real = registry.read_hive
+
+    def counting(path: Path | str, *, keys: list[str] | None = None) -> registry.RegHive:
+        reads.append(Path(path).name)
+        return real(path, keys=keys)
+
+    monkeypatch.setattr(registry, "read_hive", counting)
+    registry.query_many(prefix, _MANY)
+    assert sorted(reads) == ["system.reg", "user.reg"]
+
+
+@pytest.mark.parametrize(
+    ("text", "decoded"),
+    [
+        ("[a\\\\b] 1", ("a\\b", 6)),  # only escaped backslashes: the fast path
+        ("[a\\]b] 1", ("a]b", 6)),  # an escaped terminator: the full decoder
+        ("[a\\\\\\]b] 1", ("a\\]b", 8)),
+    ],
+)
+def test_unescape_fast_path_keeps_escaped_terminators(text: str, decoded: tuple[str, int]) -> None:
+    assert registry._unescape(text, 1, "]") == decoded
+
+
 @pytest.mark.parametrize("hive", ["HKU", "HKEY_USERS", "HKCC", "bogus", ""])
 def test_query_rejects_hive(prefix: Path, hive: str) -> None:
     with pytest.raises(ValueError):

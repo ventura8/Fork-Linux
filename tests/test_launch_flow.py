@@ -255,7 +255,9 @@ def test_pre_launch_reports_update_and_known_bad(ctx: bootstrap.Ctx) -> None:
     notes = launcher.pre_launch(ctx)
     expected = "Fork updated 2.23.1 -> 2.23.2; 'fork-linux rollback' restores 2.23.1"
     assert expected in notes
-    assert _notes_kinds(ctx, "info") == [expected]
+    # A notification, never a modal dialog: Fork's start does not wait for the user.
+    assert _notes_kinds(ctx, "notify") == [expected]
+    assert _notes_kinds(ctx, "info") == []
     assert any("crashes on start" in msg for msg in _notes_kinds(ctx, "warn"))
     # Unchanged version: still warned about, from the installed version.
     ctx.ui.events.clear()

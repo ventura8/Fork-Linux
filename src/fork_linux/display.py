@@ -11,20 +11,31 @@ Scale sources, first match wins:
 
 The result is rounded to the nearest 25 % and clamped to 100..300; with no
 source it is 100. Every probe is a short command run through the runner
-(2 s timeout); a missing tool or a failure just means "no answer".
+(2 s timeout); a missing tool or a failure just means "no answer". Tools that
+talk to the D-Bus session bus (``xfconf-query``) are not started at all when
+the session has no bus: they would wait for D-Bus' own (25 s) timeout or try to
+autolaunch a bus.
 """
 
 from __future__ import annotations
 
+import logging
 import math
+import os
 import re
+import stat
 from collections.abc import Callable, Mapping, Sequence
 
 from . import sandbox
 from .errors import ForkLinuxError
 from .procrun import Runner
 
+log = logging.getLogger(__name__)
+
 PROBE_TIMEOUT = 2.0
+# Probe tools that need the D-Bus session bus.
+BUS_TOOLS = frozenset({"xfconf-query"})
+_UNIX_PATH = "unix:path="
 BASE_DPI = 96
 MIN_SCALE = 100
 MAX_SCALE = 300
@@ -36,12 +47,45 @@ _NUMBER = re.compile(r"[-+]?\d+(?:\.\d+)?", re.ASCII)
 _XFT_DPI = re.compile(r"^\s*Xft\.dpi\s*:\s*((?a:\d+(?:\.\d+)?))\s*$", re.MULTILINE)
 
 
+def _is_socket(path: str) -> bool:
+    try:
+        return stat.S_ISSOCK(os.stat(path).st_mode)
+    except OSError:
+        return False
+
+
+def session_bus_available(env: Mapping[str, str]) -> bool:
+    """True when ``env`` points at a D-Bus session bus that can be reached.
+
+    ``DBUS_SESSION_BUS_ADDRESS`` counts unless every address in it is a
+    ``unix:path=`` socket that does not exist; without it, the systemd user
+    bus ``$XDG_RUNTIME_DIR/bus`` must exist.
+    """
+    address = env.get("DBUS_SESSION_BUS_ADDRESS", "").strip()
+    if address:
+        for entry in address.split(";"):
+            if not entry.startswith(_UNIX_PATH):
+                return True
+            if _is_socket(entry[len(_UNIX_PATH):].split(",", 1)[0]):
+                return True
+        return False
+    runtime_dir = env.get("XDG_RUNTIME_DIR", "")
+    return os.path.isabs(runtime_dir) and _is_socket(os.path.join(runtime_dir, "bus"))
+
+
 def probe(runner: Runner, env: Mapping[str, str], argv: Sequence[str], timeout: float = PROBE_TIMEOUT) -> str:
-    """Stripped stdout of ``argv`` if it is installed and exits 0, else ``""`` (never raises)."""
+    """Stripped stdout of ``argv`` if it is installed and exits 0, else ``""`` (never raises).
+
+    The timeout is capped at :data:`PROBE_TIMEOUT`; a :data:`BUS_TOOLS` probe is
+    skipped when the session has no D-Bus session bus.
+    """
+    if argv[0] in BUS_TOOLS and not session_bus_available(env):
+        log.debug("no D-Bus session bus; skipping %s", argv[0])
+        return ""
     if runner.which(argv[0], path=env.get("PATH")) is None:
         return ""
     try:
-        completed = runner.run(list(argv), env=sandbox.clean_env(env), timeout=timeout)
+        completed = runner.run(list(argv), env=sandbox.clean_env(env), timeout=min(timeout, PROBE_TIMEOUT))
     except ForkLinuxError:
         return ""
     return completed.stdout.strip() if completed.ok else ""

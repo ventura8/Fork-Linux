@@ -101,14 +101,22 @@ without a process that outlives Fork.
 - `doctor fork.integrity`: *info* instead of *fail* for a package Velopack rebuilt from a delta.
 - README "Updating" section.
 
-## Open
+## Open (resolved)
 
-- The version-change notice is a modal zenity / kdialog info box that delays Fork until it is
-  dismissed; a desktop notification would be friendlier.
-- After a rollback `packages\` has no full package of the restored version (Velopack deleted
-  it during the update; rollback removes the newer one), so doctor `fork.integrity` warns
-  "missing; cannot verify" and Velopack's next update downloads the full package instead of
-  a delta. Snapshotting the version's full nupkg would fix both.
-- Launches in this isolated environment spent ~30 s in the desktop probes before setup's
-  `preflight` after the update (likely a D-Bus timeout of the fake session: Xvfb display with
-  the real session bus); not seen on a normal desktop session, not investigated further.
+- The version-change notice was a modal zenity / kdialog info box that delayed Fork until it was
+  dismissed. **Resolved**: `ui.notify` shows it as a background desktop notification
+  (`notify-send`, else `zenity --notification` / `kdialog --passivepopup`) or a terminal line;
+  Fork starts at once.
+- After a rollback `packages\` had no full package of the restored version (Velopack deleted
+  it during the update; rollback removes the newer one), so doctor `fork.integrity` warned
+  "missing; cannot verify" and Velopack's next update downloaded the full package instead of
+  a delta. **Resolved**: a snapshot keeps the version's `Fork-<v>-full.nupkg` (hard link) and
+  `rollback` puts it back when it is missing.
+- Launches in this isolated environment spent ~30 s before setup's `preflight` after the
+  update. **Cause**: not a desktop probe or D-Bus timeout (every probe answered in a few ms) but
+  the `host_integration` step's verification, which re-read and re-parsed the 7 MB
+  `system.reg` once for each of its 107 registry values (~0.26 s each). **Resolved**:
+  `registry.query_many` parses each hive once per check (and key lines with only escaped
+  backslashes skip the character-by-character decoder): every step's verification of that
+  prefix now takes 0.24 s in total. The desktop probes keep their 2 s cap, and the D-Bus probe
+  (`xfconf-query`) is no longer started when the session has no bus.

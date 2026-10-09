@@ -146,6 +146,10 @@ class ForkLayout:
         """``Fork\\packages``: installed and staged ``.nupkg`` files."""
         return self.local_dir / "packages"
 
+    def full_package(self, version: str) -> Path:
+        """``Fork\\packages\\Fork-<version>-full.nupkg``: Velopack's full package of ``version``."""
+        return self.packages_dir / f"Fork-{version}-full.nupkg"
+
     @property
     def settings_file(self) -> Path:
         """``Fork\\settings.json`` (written by Fork after its first completed launch)."""

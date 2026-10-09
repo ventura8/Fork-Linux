@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import socket
 import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from fork_linux import display
+from fork_linux import display, theme
 from fork_linux.errors import ForkLinuxError
 from fork_linux.procrun import Completed, RecordingRunner, Runner
 
@@ -21,6 +22,8 @@ XRDB = ("xrdb", "-query")
 KDE6 = ("kreadconfig6", "--file", "kcmfonts", "--group", "General", "--key", "forceFontDPI")
 KDE5 = ("kreadconfig5", "--file", "kcmfonts", "--group", "General", "--key", "forceFontDPI")
 XFCE = ("xfconf-query", "-c", "xsettings", "-p", "/Xft/DPI")
+# A session bus address (never connected to: the tools are fakes).
+BUS = {"DBUS_SESSION_BUS_ADDRESS": "tcp:host=127.0.0.1,port=9"}
 
 
 def _runner(outputs: dict[tuple[str, ...], Any], installed: tuple[str, ...] | None = None) -> RecordingRunner:
@@ -115,11 +118,11 @@ def test_kde_falls_back_to_kreadconfig5() -> None:
 
 def test_kde_unset_falls_through_to_xfce() -> None:
     runner = _runner({KDE6: "\n", KDE5: "\n", XFCE: "120\n"})
-    assert display.scale_percent({}, runner) == 125
+    assert display.scale_percent(BUS, runner) == 125
 
 
 def test_xfce_unset_means_default() -> None:
-    assert display.scale_percent({}, _runner({XFCE: "-1\n"})) == 100
+    assert display.scale_percent(BUS, _runner({XFCE: "-1\n"})) == 100
 
 
 def test_no_tools_means_default_and_nothing_runs() -> None:
@@ -187,6 +190,67 @@ def test_scale_with_fake_xrdb_kde_and_xfce(isolated_path: str, fake_bin: Path) -
     assert display.scale_percent({**base, "FL_FAKE_XRDB": "Xft.dpi:\t120\n"}, Runner()) == 125
     kde = {**base, "FL_FAKE_KREADCONFIG": json.dumps({"kcmfonts/General/forceFontDPI": "144"})}
     assert display.scale_percent(kde, Runner()) == 150
-    xfce = {**base, "FL_FAKE_XFCONF": json.dumps({"xsettings:/Xft/DPI": "192"})}
+    xfce = {**base, **BUS, "FL_FAKE_XFCONF": json.dumps({"xsettings:/Xft/DPI": "192"})}
     assert display.detect_dpi(xfce, Runner()) == 192
     assert display.scale_percent(base, Runner()) == 100
+
+
+# --------------------------------------------------------------------------- D-Bus and launch latency
+
+
+def _socket(path: Path) -> Path:
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(path))
+    server.close()  # the socket file stays: enough for a stat
+    return path
+
+
+def test_session_bus_available(tmp_path: Path) -> None:
+    bus = _socket(tmp_path / "bus")
+    assert display.session_bus_available({"DBUS_SESSION_BUS_ADDRESS": f"unix:path={bus},guid=1"})
+    assert display.session_bus_available({"DBUS_SESSION_BUS_ADDRESS": "unix:abstract=/tmp/dbus-x"})
+    gone = f"unix:path={tmp_path / 'gone'}"
+    assert not display.session_bus_available({"DBUS_SESSION_BUS_ADDRESS": gone})
+    assert display.session_bus_available({"DBUS_SESSION_BUS_ADDRESS": f"{gone};unix:path={bus}"})
+    (tmp_path / "file").write_text("")
+    assert not display.session_bus_available({"DBUS_SESSION_BUS_ADDRESS": f"unix:path={tmp_path / 'file'}"})
+    assert display.session_bus_available({"XDG_RUNTIME_DIR": str(tmp_path)})
+    assert not display.session_bus_available({"XDG_RUNTIME_DIR": str(tmp_path / "none")})
+    assert not display.session_bus_available({"XDG_RUNTIME_DIR": "relative"})
+    assert not display.session_bus_available({})
+
+
+def test_bus_probes_are_skipped_without_a_session_bus() -> None:
+    runner = _runner({XFCE: "192\n"})
+    assert display.probe(runner, {}, list(XFCE)) == ""
+    assert display.probe(runner, {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/nonexistent/bus"}, list(XFCE)) == ""
+    assert runner.calls == []
+    assert display.probe(runner, BUS, list(XFCE)) == "192"
+
+
+def test_probe_timeout_is_capped() -> None:
+    runner = _runner({XRDB: "Xft.dpi: 96\n"})
+    display.probe(runner, {}, list(XRDB), timeout=60)
+    assert runner.calls[0]["timeout"] == display.PROBE_TIMEOUT
+
+
+@pytest.mark.parametrize("env", [{}, BUS], ids=["no-bus", "bus"])
+def test_launch_path_probes_fail_fast(env: dict[str, str], tmp_path: Path) -> None:
+    """Every desktop probe a launch runs (scale + theme) has a timeout of at most 2 s.
+
+    Every probe hangs here until its timeout: the total is bounded by the probe
+    count times the cap, and no D-Bus tool runs without a session bus.
+    """
+
+    def hang(argv: list[str]) -> Completed:
+        raise ForkLinuxError(f"{argv[0]} timed out")
+
+    tools = {tool: f"/usr/bin/{tool}" for tool in (*TOOLS, "dconf")}
+    runner = RecordingRunner(hang, tools)
+    full = {**env, "XDG_CURRENT_DESKTOP": "XFCE"}
+    assert display.scale_percent(full, runner) == 100
+    assert theme.detect(full, runner, tmp_path) is None
+    assert runner.calls
+    assert all(call["timeout"] <= 2.0 for call in runner.calls)
+    asked_bus = any(argv[0] in display.BUS_TOOLS for argv in runner.argvs)
+    assert asked_bus == bool(env)

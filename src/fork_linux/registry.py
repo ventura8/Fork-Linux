@@ -8,6 +8,7 @@ as "is .NET 4.8 installed?" never have to start a Wine process.
 
 from __future__ import annotations
 
+import contextlib
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -298,8 +299,12 @@ def _unescape(text: str, start: int, end_char: str) -> tuple[str, int] | None:
     surrogate pairs written as two ``\\x`` escapes are recombined.
     """
     end = text.find(end_char, start)
-    if end != -1 and "\\" not in text[start:end]:
-        return text[start:end], end + 1
+    if end != -1:
+        segment = text[start:end]
+        # Fast path (nearly every key line: separators are written as "\\\\"): only
+        # escaped backslashes, so the terminator found is the real one.
+        if "\\" not in segment.replace("\\\\", ""):
+            return segment.replace("\\\\", "\\"), end + 1
     out: list[str] = []
     index = start
     while index < len(text):
@@ -505,6 +510,33 @@ def _query_targets(hive: str, key: str) -> list[tuple[str, str]]:
         classes = "Software\\Classes\\" + key
         return [("user.reg", classes), ("system.reg", classes)]
     raise ValueError(f"query supports HKCU, HKLM and HKCR, not {hive!r}")
+
+
+def query_many(prefix: Path | str, wanted: Iterable[tuple[str, str, str]]) -> list[object | None]:
+    """:func:`query` for several ``(hive, key, name)`` at once; each hive file is parsed once.
+
+    Returns the values in the order asked (None when absent).
+    """
+    items = [(_query_targets(hive, key), name) for hive, key, name in wanted]
+    keys_by_file: dict[str, list[str]] = {}
+    for targets, _name in items:
+        for filename, key_path in targets:
+            keys_by_file.setdefault(filename, []).append(key_path)
+    hives: dict[str, RegHive] = {}
+    for filename, keys in keys_by_file.items():
+        with contextlib.suppress(FileNotFoundError):
+            hives[filename] = read_hive(Path(prefix) / filename, keys=keys)
+    return [_first_value(hives, targets, name) for targets, name in items]
+
+
+def _first_value(hives: dict[str, RegHive], targets: list[tuple[str, str]], name: str) -> object | None:
+    """The data of value ``name`` under the first ``(hive file, key)`` target that has it, else None."""
+    for filename, key_path in targets:
+        regkey = hives[filename].get(key_path) if filename in hives else None
+        value = regkey.get(name) if regkey is not None else None
+        if value is not None:
+            return value.data
+    return None
 
 
 def query(prefix: Path | str, hive: str, key: str, name: str) -> object | None:

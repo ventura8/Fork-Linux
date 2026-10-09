@@ -31,6 +31,8 @@ def _kread(tool: str, group: str, key: str) -> tuple[str, ...]:
 
 
 XFCE_THEME = ("xfconf-query", "-c", "xsettings", "-p", "/Net/ThemeName")
+# A session bus address (never connected to: the tools are fakes).
+BUS = {"DBUS_SESSION_BUS_ADDRESS": "tcp:host=127.0.0.1,port=9"}
 
 
 def _runner(outputs: dict[tuple[str, ...], Any], installed: tuple[str, ...] = TOOLS) -> RecordingRunner:
@@ -166,7 +168,13 @@ def test_kde_without_anything_falls_back_to_gnome_then_settings_ini(home: Path) 
 
 def test_xfce(home: Path) -> None:
     runner = _runner({XFCE_THEME: "Adwaita-dark\n"})
-    assert theme.detect({"XDG_CURRENT_DESKTOP": "XFCE"}, runner, home) == "dark"
+    assert theme.detect({"XDG_CURRENT_DESKTOP": "XFCE", **BUS}, runner, home) == "dark"
+
+
+def test_xfce_without_a_session_bus_is_not_asked(home: Path) -> None:
+    runner = _runner({XFCE_THEME: "Adwaita-dark\n"})
+    assert theme.detect({"XDG_CURRENT_DESKTOP": "XFCE"}, runner, home) is None
+    assert all(argv[0] != "xfconf-query" for argv in runner.argvs)
 
 
 def test_xfce_unknown_falls_back(home: Path) -> None:
@@ -265,5 +273,5 @@ def test_detect_with_fake_kde_and_xfce_tools(isolated_path: str, fake_bin: Path,
     kde = {**base, "XDG_CURRENT_DESKTOP": "KDE", "FL_FAKE_KREADCONFIG": kde_values}
     assert theme.detect(kde, Runner(), home) == "dark"
     xfce_values = json.dumps({"xsettings:/Net/ThemeName": "Greybird"})
-    xfce = {**base, "XDG_CURRENT_DESKTOP": "XFCE", "FL_FAKE_XFCONF": xfce_values}
+    xfce = {**base, **BUS, "XDG_CURRENT_DESKTOP": "XFCE", "FL_FAKE_XFCONF": xfce_values}
     assert theme.detect(xfce, Runner(), home) == "light"

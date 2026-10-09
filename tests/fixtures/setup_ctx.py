@@ -60,6 +60,9 @@ class FakeUI(UI):
     def info(self, msg: str) -> None:
         self.events.append(("info", msg))
 
+    def notify(self, msg: str) -> None:
+        self.events.append(("notify", msg))
+
     def warn(self, msg: str) -> None:
         self.events.append(("warn", msg))
 

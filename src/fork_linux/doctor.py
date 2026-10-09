@@ -1151,7 +1151,8 @@ def check_integration(ctx: DoctorCtx) -> Result:
     if not _has_prefix(ctx):
         return _skip(NO_PREFIX)
     expected = integration_step.integration_expected(ctx.boot)
-    wrong = [key for key, name, value in expected if _reg(ctx, key, name) != value]
+    found = prefix_step.reg_values(ctx.boot, [(key, name) for key, name, _value in expected])
+    wrong = [key for (key, _name, value), have in zip(expected, found, strict=True) if have != value]
     if wrong:
         return Result(
             "warn",
@@ -1200,7 +1201,9 @@ def _repo_result(ctx: DoctorCtx, attr: str, problem: str, hint: str, *, bridge_f
         return reports
     found = repos.describe(reports, attr)
     if found and bridge_fixes and _bridge_ready(ctx):
-        return Result("ok", f"{len(reports)} repositories checked; {attr} in {len(found)} of them work: {BRIDGE_HANDLES}")
+        return Result(
+            "ok", f"{len(reports)} repositories checked; {attr} in {len(found)} of them work: {BRIDGE_HANDLES}"
+        )
     if found:
         return Result("warn", f"{len(found)} of {len(reports)} repositories {problem}: {'; '.join(found)}", hint)
     return Result("ok", f"{len(reports)} repositories checked")

@@ -176,8 +176,9 @@ def safe_extract(archive: Path, dest: Path, *, strip_components: int = 0) -> lis
     ``..`` components, NUL bytes, device/FIFO members, members whose type
     clashes with an earlier one (a file over a directory, anything below a
     file), symlinks or hard links that point outside ``dest`` and members
-    reached through an archive symlink all raise :class:`IntegrityFailed`. setuid/setgid/sticky and group/other write bits
-    are stripped and ownership is never restored. The first
+    reached through an archive symlink all raise :class:`IntegrityFailed`.
+    setuid/setgid/sticky and group/other write bits are stripped and
+    ownership is never restored. The first
     ``strip_components`` path components are removed (like GNU tar);
     shallower members are skipped. Extract into a fresh staging directory:
     after a failure part of the archive may already be on disk.
@@ -446,12 +447,12 @@ def _clone_dir(src: Path, dst: Path, method: str) -> bool:
                 target.mkdir()
                 copied = _clone_dir(Path(entry.path), target, method) or copied
             elif entry.is_file(follow_symlinks=False):
-                copied = _clone_file(entry.path, target, method) or copied
+                copied = clone_file(entry.path, target, method) or copied
     shutil.copystat(src, dst, follow_symlinks=False)
     return copied
 
 
-def _clone_file(src: str, dst: Path, method: str) -> bool:
+def clone_file(src: str | Path, dst: Path, method: str) -> bool:
     """Hard-link or copy one file; True if it was copied."""
     if method != "copy":
         try:

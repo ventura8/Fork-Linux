@@ -4,7 +4,8 @@
 zenity or kdialog dialog when started from the desktop, and :class:`NullUI`
 (log only, confirmations answer their default) when nobody can be asked.
 Every implementation offers the same small API (:class:`UI`): ``info``,
-``warn``, ``error``, ``confirm`` and a ``progress`` context manager.
+``notify`` (never waits for the user), ``warn``, ``error``, ``confirm`` and a
+``progress`` context manager.
 """
 
 from __future__ import annotations
@@ -85,6 +86,10 @@ class UI:
         """Tell the user something."""
         log.info("%s", msg)
 
+    def notify(self, msg: str) -> None:
+        """Tell the user something without waiting for them (no modal dialog)."""
+        log.info("%s", msg)
+
     def warn(self, msg: str) -> None:
         """Warn the user."""
         log.warning("%s", msg)
@@ -153,6 +158,9 @@ class TerminalUI(UI):
         out.flush()
 
     def info(self, msg: str) -> None:
+        self._write(msg)
+
+    def notify(self, msg: str) -> None:
         self._write(msg)
 
     def warn(self, msg: str) -> None:
@@ -339,11 +347,42 @@ class _DialogUI(UI):
         """Run the dialog program with ``args``; return its exit status."""
         return self.runner.run([self.program, *args], env=self.env).returncode
 
+    def _passive(self, msg: str) -> list[str]:
+        """The dialog program's own non-modal notification for ``msg``."""
+        raise NotImplementedError
+
+    def notify(self, msg: str) -> None:
+        """A desktop notification started in the background: never waits for it or for the user.
+
+        ``notify-send`` when installed, else the dialog program's own passive
+        notification; a program that cannot start leaves the message in the log only.
+        """
+        super().notify(msg)
+        if self.runner.which("notify-send", self.env.get("PATH")) is not None:
+            argv = ["notify-send", f"--app-name={APP_NAME}", f"--icon={APP_ID}", APP_NAME, msg]
+        else:
+            argv = self._passive(msg)
+        try:
+            self._popen(
+                argv,
+                env=self.env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                close_fds=True,
+            )
+        except OSError as exc:
+            log.warning("cannot show a desktop notification: %s", exc)
+
 
 class ZenityUI(_DialogUI):
     """GTK dialogs through ``zenity``."""
 
     program = "zenity"
+
+    def _passive(self, msg: str) -> list[str]:
+        return [self.program, "--notification", f"--text={APP_NAME}: {msg}"]
 
     def _message(self, kind: str, text: str) -> None:
         self._run(f"--{kind}", f"--title={APP_NAME}", f"--text={text}", "--no-markup", f"--width={DIALOG_WIDTH}")
@@ -409,6 +448,9 @@ class KDialogUI(_DialogUI):
     """KDE dialogs through ``kdialog``; progress through ``notify-send`` milestones."""
 
     program = "kdialog"
+
+    def _passive(self, msg: str) -> list[str]:
+        return [self.program, "--title", APP_NAME, "--passivepopup", msg, "10"]
 
     def info(self, msg: str) -> None:
         super().info(msg)

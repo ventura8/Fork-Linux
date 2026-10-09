@@ -257,7 +257,7 @@ def _note_version(ctx: bootstrap.Ctx, notes: list[str]) -> None:
     change = updates.observe_version(ctx.state, ctx.layout)
     if change is not None and change.old is not None:
         message = f"Fork updated {change.old} -> {change.new}; 'fork-linux rollback' restores {change.old}"
-        ctx.ui.info(message)
+        ctx.ui.notify(message)  # never blocks Fork's start
         notes.append(message)
     installed = change.new if change is not None else ctx.layout.installed_version()
     if installed is not None:
@@ -642,7 +642,7 @@ def _restore_output(saved: Sequence[int]) -> None:
     """Point stdout and stderr back at the descriptors :func:`_exec` saved (if any)."""
     sys.stdout.flush()
     sys.stderr.flush()
-    for target, fd in zip((1, 2), saved):
+    for target, fd in zip((1, 2), saved, strict=False):
         os.dup2(fd, target)
 
 

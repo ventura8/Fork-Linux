@@ -239,6 +239,9 @@ def test_reg_value_handles_missing_and_broken_hives(xdg: Path) -> None:
     ctx.paths.prefix.mkdir(parents=True)
     (ctx.paths.prefix / "user.reg").write_text("not a hive\n")
     assert prefix.reg_value(ctx, prefix.WINE_KEY, "Version") is None
+    wanted = [(prefix.WINE_KEY, "Version"), (prefix.DESKTOP_KEY, "LogPixels")]
+    assert prefix.reg_values(ctx, wanted) == [None, None]
+    assert not prefix.reg_matches(ctx, [(prefix.WINE_KEY, "Version", "win10")])
 
 
 def test_winver(xdg: Path) -> None:

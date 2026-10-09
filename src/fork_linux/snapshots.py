@@ -5,11 +5,15 @@ whole. Before a launch we keep a copy of ``current\\`` (hard links when
 possible: Velopack never edits those files in place, it swaps the directory)
 plus copies of ``settings.json``, ``custom-commands.json`` and a small
 ``ForkData\\`` (never hard links: Fork rewrites those files in place).
-``accounts.json`` is only included when explicitly asked for.
+``accounts.json`` is only included when explicitly asked for. The version's
+full package (``packages\\Fork-<v>-full.nupkg``) is kept too when present:
+Velopack deletes it during an update, and without it a rollback would leave
+``doctor`` unable to verify the restored version and Velopack's next update
+unable to apply a delta.
 
 Layout: ``<snapshots_dir>/<fork_version>-<UTC %Y%m%dT%H%M%SZ>/`` with
 ``meta.json`` (version, time, method and a ``{relpath: [size, mtime_ns]}``
-inventory), ``current/`` and ``data/``; directories are private (0700). A
+inventory), ``current/``, ``data/`` and (when Fork kept one) ``packages/``; directories are private (0700). A
 snapshot is built under ``.partial-<id>`` and renamed into place when complete.
 
 :func:`restore` always copies back (never hard links), so a later Velopack
@@ -44,6 +48,7 @@ SNAPSHOT_META = "meta.json"
 _LIST_HINT = "list them with 'fork-linux snapshot list'"
 CURRENT = "current"
 DATA = "data"
+PACKAGES = "packages"
 FORKDATA = "ForkData"
 METHODS = ("hardlink", "copy")
 FORKDATA_MAX_BYTES = 10 * 1024 * 1024
@@ -181,6 +186,11 @@ def create(
         fsutil.ensure_dir(staging, _PRIVATE)
         used = fsutil.clone_tree(layout.current_dir, staging / CURRENT, method)
         skipped = _copy_data(layout, staging / DATA, with_accounts=with_accounts)
+        package = layout.full_package(version)
+        if _is_regular(package):
+            # Velopack deletes a package, it never rewrites one: a hard link is safe.
+            fsutil.ensure_dir(staging / PACKAGES, _PRIVATE)
+            fsutil.clone_file(package, staging / PACKAGES / package.name, method)
         with_settings = _is_regular(staging / DATA / fork_settings.SETTINGS_NAME)
         meta: dict[str, Any] = {
             "schema": SCHEMA,
@@ -379,11 +389,11 @@ def ensure_current(paths: Paths, layout: ForkLayout, *, keep: int, method: str =
 
 
 def _safe_rel(rel: Any) -> bool:
-    """True for a relative POSIX path inside ``current/`` or ``data/`` without ``.``/``..``."""
+    """True for a relative POSIX path inside ``current/``, ``data/`` or ``packages/`` without ``.``/``..``."""
     if not isinstance(rel, str) or "\0" in rel or rel.startswith("/"):
         return False
     parts = rel.split("/")
-    return parts[0] in (CURRENT, DATA) and len(parts) > 1 and all(part not in ("", ".", "..") for part in parts)
+    return parts[0] in (CURRENT, DATA, PACKAGES) and len(parts) > 1 and all(p not in ("", ".", "..") for p in parts)
 
 
 def _valid_info(info: Any) -> bool:
@@ -499,8 +509,29 @@ def _restore_data(paths: Paths, layout: ForkLayout, directory: Path, sizes: dict
         )
 
 
+def _restore_package(layout: ForkLayout, directory: Path, sizes: dict[str, int], version: str) -> None:
+    """Put the snapshot's full package of ``version`` back into ``packages\\`` when it is missing there."""
+    target = layout.full_package(version)
+    rel = f"{PACKAGES}/{target.name}"
+    if rel not in sizes or os.path.lexists(target) or not _real_dir(layout.packages_dir):
+        return
+    partial = target.with_name(f".{target.name}.fork-linux-new")
+    try:
+        shutil.copy2(directory / rel, partial, follow_symlinks=False)
+        if partial.stat().st_size != sizes[rel]:
+            raise IntegrityFailed(
+                f"restoring {rel} into {layout.packages_dir} failed: the copy does not match the snapshot",
+                hint="check free disk space and run 'fork-linux rollback' again",
+            )
+        os.replace(partial, target)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            partial.unlink()
+        raise
+
+
 def restore(paths: Paths, layout: ForkLayout, snap: Snapshot, *, with_settings: bool = False) -> None:
-    """Put the snapshot's ``current\\`` back, drop newer staged packages, optionally restore data files.
+    """Put the snapshot's ``current\\`` (and full package) back, drop newer staged packages, optionally data files.
 
     Raises :class:`IntegrityFailed` (and changes nothing) when the snapshot
     does not match its ``meta.json`` or lies outside the snapshots directory.
@@ -527,5 +558,6 @@ def restore(paths: Paths, layout: ForkLayout, snap: Snapshot, *, with_settings: 
     for _version, package in layout.staged_packages(than=snap.fork_version):
         with contextlib.suppress(FileNotFoundError):
             package.unlink()
+    _restore_package(layout, directory, sizes, snap.fork_version)
     if with_settings:
         _restore_data(paths, layout, directory, sizes, stamp)
