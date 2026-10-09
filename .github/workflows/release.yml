@@ -1,0 +1,233 @@
+---
+name: Release
+
+# A v* tag publishes a release; workflow_dispatch with dry_run (the default) builds and
+# verifies everything without publishing anything (AGENTS.md hard rule 17).
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and verify every artifact, publish nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PPA: "ppa:ventura8/fork-linux"
+  MAINTAINER_NAME: "Sergiu Alexandrescu"
+  MAINTAINER_EMAIL: "alexandrescu.sergiu@gmail.com"
+  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+
+jobs:
+  # Tag == VERSION, debian/changelog top entry == VERSION, and both release-notes files exist,
+  # before anything is built.
+  verify:
+    runs-on: ubuntu-26.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify tag, VERSION, changelog and release notes
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "${EVENT_NAME}" = "push" ]; then
+            tag="${GITHUB_REF_NAME}"
+          else
+            tag="v$(python3 scripts/read-version.py)"
+          fi
+          ./scripts/release-verify-tag-version.sh "${tag}"
+          echo "version=${tag#v}" >> "${GITHUB_OUTPUT}"
+
+  # Signed source packages for jammy / noble / resolute (1.0.0+ppa1~ubuntuNN.NN.1). The
+  # upload runs only for a tag, with the GPG secrets present and vars.PPA_UPLOAD == 'true';
+  # otherwise the unsigned dry run proves the source packages build.
+  ppa:
+    needs: verify
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        series: [jammy, noble, resolute]
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the PPA image
+        run: docker build -f docker/Dockerfile.ppa -t fork-linux-ci-ppa:26.04 docker
+
+      - name: Source package (dry run)
+        if: env.DRY_RUN == 'true' || vars.PPA_UPLOAD != 'true'
+        run: |
+          docker run --rm -v "$PWD:/src:rw" -w /src fork-linux-ci-ppa:26.04 \
+            ./scripts/ppa-docker.sh --dry-run "${{ matrix.series }}"
+
+      - name: Signed source package + upload
+        if: env.DRY_RUN != 'true' && vars.PPA_UPLOAD == 'true'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          docker run --rm -e GPG_PRIVATE_KEY -e GPG_PASSPHRASE -e MAINTAINER_NAME -e MAINTAINER_EMAIL \
+            -e PPA -e UPLOAD_PPA=1 -v "$PWD:/src:rw" -w /src fork-linux-ci-ppa:26.04 \
+            ./scripts/ppa-docker.sh "${{ matrix.series }}"
+
+  # The same 9 packaging cells as check.yml: build + smoke verify + live install E2E.
+  build:
+    needs: verify
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        format: [deb, deb-jammy, rpm-fedora, rpm-opensuse, arch, snap, appimage, flatpak, tarball]
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Packaging cell ${{ matrix.format }} (build + smoke + E2E)
+        run: ./scripts/ci-packaging-cell.sh "${{ matrix.format }}"
+
+      # deb-jammy proves the package builds and installs on 22.04; the release ships the one
+      # .deb (its dependencies carry the t64 alternatives) and the PPA covers jammy.
+      - name: Upload ${{ matrix.format }} artifacts
+        if: matrix.format != 'deb-jammy'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-${{ matrix.format }}
+          path: |
+            artifacts/*.deb
+            artifacts/*.rpm
+            artifacts/*.pkg.tar.zst
+            artifacts/*.snap
+            artifacts/*.AppImage
+            artifacts/*.AppImage.zsync
+            artifacts/*.flatpak
+            artifacts/*.tar.gz
+          if-no-files-found: error
+
+  # The GitHub Release: every artifact + install.sh / uninstall.sh + SHA256SUMS (+ .asc when
+  # the GPG key is configured). On a dry run the checksums are computed and kept as a
+  # workflow artifact, and nothing is published.
+  github-release:
+    needs: [verify, build]
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the artifacts
+        uses: actions/download-artifact@v8.0.1
+        with:
+          path: release-artifacts
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Add the installer scripts
+        run: cp install.sh uninstall.sh release-artifacts/
+
+      - name: SHA256SUMS
+        run: |
+          cd release-artifacts
+          find . -maxdepth 1 -type f ! -name 'SHA256SUMS*' -printf '%f\n' | sort | xargs sha256sum -- > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Sign SHA256SUMS
+        if: env.DRY_RUN != 'true' && vars.SIGN_RELEASE == 'true'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          GNUPGHOME="$(mktemp -d)"
+          export GNUPGHOME
+          printf '%s\n' "${GPG_PRIVATE_KEY}" | sed 's/\\n/\n/g' | gpg --batch --import
+          gpg --batch --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE}" \
+            --armor --detach-sign --output release-artifacts/SHA256SUMS.asc release-artifacts/SHA256SUMS
+
+      - name: Keep the dry-run results
+        if: env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-dry-run
+          path: release-artifacts/SHA256SUMS
+          if-no-files-found: error
+
+      - name: Create the GitHub Release
+        if: env.DRY_RUN != 'true' && github.event_name == 'push'
+        uses: softprops/action-gh-release@v3.0.3
+        with:
+          name: v${{ needs.verify.outputs.version }}
+          tag_name: v${{ needs.verify.outputs.version }}
+          body_path: docs/releases/v${{ needs.verify.outputs.version }}_github_description.md
+          files: release-artifacts/*
+          draft: false
+          prerelease: false
+
+  # Optional store publishing, each gated by a repository variable and its secret.
+  snap-publish:
+    needs: [verify, github-release]
+    if: github.event_name == 'push' && vars.SNAP_PUBLISH == 'true'
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Download the snap
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-snap
+          path: snap
+
+      - name: Upload to the Snap Store (stable)
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: |
+          sudo snap install snapcraft --classic
+          snapcraft upload --release=stable snap/fork-linux_${{ needs.verify.outputs.version }}_amd64.snap
+
+  aur-publish:
+    needs: [verify, github-release]
+    if: github.event_name == 'push' && vars.AUR_PUBLISH == 'true'
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Render PKGBUILD + .SRCINFO from the tag archive
+        run: ./scripts/aur-render.sh --out aur
+
+      - name: Push to the AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          install -d -m 0700 ~/.ssh
+          printf '%s\n' "${AUR_SSH_PRIVATE_KEY}" > ~/.ssh/aur
+          chmod 0600 ~/.ssh/aur
+          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur"
+          git clone ssh://aur@aur.archlinux.org/fork-linux.git aur-repo
+          cp aur/PKGBUILD aur/.SRCINFO aur-repo/
+          cd aur-repo
+          git -c user.name="${MAINTAINER_NAME}" -c user.email="${MAINTAINER_EMAIL}" \
+            commit -am "Update to ${{ needs.verify.outputs.version }}"
+          git push

@@ -1,0 +1,42 @@
+# syntax=docker/dockerfile:1.27.0
+# CI image for Fork for Linux (unofficial) — lint stage (Ubuntu 26.04)
+# Image tag: fork-linux-ci-lint:26.04
+# Runs (scripts/ci-docker.sh, FL_CI_STAGE=lint): meson --werror build (native + MinGW PEs),
+# clang-tidy (.clang-tidy) and cppcheck on bridge/, Python syntax + ruff (pinned), the
+# no-suppressions lint, gen-data check, shellcheck on every discovered shell file,
+# actionlint, yamllint, hadolint, xmllint, desktop-file-validate, appstreamcli validate,
+# bash -n / zsh -n / fish -n on the completions.
+# Source is bind-mounted at /src by scripts/ci-docker.sh (no COPY of the tree).
+FROM rhysd/actionlint:1.7.12 AS actionlint
+FROM hadolint/hadolint:v2.14.0 AS hadolint
+
+FROM ubuntu:26.04
+
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+# Apt packages are distro-locked by ubuntu:26.04 (no floating apt versions).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git \
+    python3 \
+    meson ninja-build gcc libc6-dev musl-tools \
+    gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 \
+    clang-tidy cppcheck \
+    shellcheck \
+    desktop-file-utils appstream libxml2-utils \
+    python3-pip \
+    bash zsh fish
+
+# Pip pins are exact (AGENTS.md §4.8).
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install --break-system-packages \
+    ruff==0.16.9 \
+    yamllint==1.38.0
+
+# actionlint from its pinned upstream image (no curl | bash installers).
+COPY --from=actionlint /usr/local/bin/actionlint /usr/local/bin/actionlint
+COPY --from=hadolint /bin/hadolint /usr/local/bin/hadolint
+
+WORKDIR /src
+CMD ["./scripts/ci-docker.sh", "--inside"]

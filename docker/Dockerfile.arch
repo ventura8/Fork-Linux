@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1.27.0
+# Arch Linux packaging image for Fork for Linux (unofficial) — base-devel, dated snapshot tag
+# Image tag: fork-linux-ci-arch-pkg:base-devel-20260906.0.587075
+# Runs scripts/release-arch.sh (makepkg as the unprivileged "builder" user, .SRCINFO check)
+# and the packaging E2E (scripts/packaging-e2e-install.sh arch). Source bind-mounted at /src.
+FROM archlinux:base-devel-20260906.0.587075
+
+# The dated base tag pins the starting point; pacman -Syu brings it to the current repos
+# (Arch has no frozen release repositories).
+RUN pacman -Syu --noconfirm \
+    && pacman -S --noconfirm --needed \
+    git python meson ninja mingw-w64-gcc \
+    desktop-file-utils appstream file binutils \
+    && pacman -Scc --noconfirm \
+    && useradd -m builder
+
+WORKDIR /src
+CMD ["./scripts/release-arch.sh"]

@@ -1,0 +1,23 @@
+[Desktop Entry]
+Type=Application
+Version=1.4
+Name=@APP_NAME@
+GenericName=Git Client
+Comment=@COMMENT@
+Exec=@EXEC@ run %F
+TryExec=@TRYEXEC@
+Icon=@APP_ID@
+Terminal=false
+StartupNotify=true
+StartupWMClass=fork.exe
+Categories=Development;RevisionControl;
+Keywords=git;fork;vcs;version control;
+Actions=doctor;about;
+
+[Desktop Action doctor]
+Name=Check Setup
+Exec=@EXEC@ doctor --gui
+
+[Desktop Action about]
+Name=About and Credits
+Exec=@EXEC@ about --gui

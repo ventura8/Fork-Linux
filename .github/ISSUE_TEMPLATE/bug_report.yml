@@ -1,0 +1,121 @@
+name: Bug report
+description: Something in Fork for Linux (unofficial) — setup, launching, desktop integration, packaging — is not working.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! This tracker is for the **unofficial Linux wrapper** only.
+
+        > **If it also happens on Windows**, it is a Fork bug: please report it to
+        > https://github.com/fork-dev/TrackerWin instead. Do **not** send wrapper / Wine
+        > issues to Fork's developers or to support@fork.dev.
+
+        Please do not attach screenshots of Fork's window that show license or account details.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched the existing issues and this has not been reported yet.
+          required: true
+        - label: I checked whether the same problem happens with Fork on Windows (if you can).
+          required: false
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead. Include any error text.
+      placeholder: "1. Ran `fork ~/src/myrepo`\n2. ...\nExpected: ...\nActual: ..."
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`fork-linux doctor --json` output"
+      description: Run `fork-linux doctor --json` and paste the full output (secrets are redacted).
+      render: json
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution and version
+      placeholder: "Ubuntu 26.04, Fedora 44, Arch (2026-10-01), ..."
+    validations:
+      required: true
+  - type: dropdown
+    id: desktop
+    attributes:
+      label: Desktop environment
+      options:
+        - GNOME
+        - KDE Plasma
+        - XFCE
+        - Cinnamon
+        - MATE
+        - Budgie
+        - LXQt
+        - Other (say below)
+    validations:
+      required: true
+  - type: dropdown
+    id: session
+    attributes:
+      label: Session type
+      description: "`echo $XDG_SESSION_TYPE`"
+      options:
+        - Wayland
+        - X11
+        - Other / unknown
+    validations:
+      required: true
+  - type: dropdown
+    id: wine-provider
+    attributes:
+      label: Wine provider
+      description: Shown in the `fork-linux doctor` output.
+      options:
+        - managed (default, pinned Kron4ek build)
+        - system
+        - flatpak
+        - custom path
+    validations:
+      required: true
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install Fork for Linux?
+      options:
+        - install.sh
+        - PPA / .deb
+        - Fedora RPM
+        - openSUSE RPM
+        - Arch / AUR
+        - Flatpak
+        - AppImage
+        - Snap
+        - Tarball / from source
+    validations:
+      required: true
+  - type: input
+    id: fork-version
+    attributes:
+      label: Fork version
+      description: Shown by `fork-linux status` (e.g. 2.23.2).
+    validations:
+      required: true
+  - type: input
+    id: wrapper-version
+    attributes:
+      label: Fork for Linux version
+      description: "`fork-linux --version`"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (optional)
+      description: "`fork-linux logs --bundle` creates a redacted archive you can attach, or paste relevant lines here."
+      render: text

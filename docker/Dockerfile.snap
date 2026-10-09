@@ -1,0 +1,25 @@
+# syntax=docker/dockerfile:1.27.0
+# Snap packaging image for Fork for Linux (unofficial) — Ubuntu 24.04 (core24 builds need it)
+# Image tag: fork-linux-ci-snap:24.04
+#
+# snapd manages snap mounts through systemd, so this container boots systemd as PID 1
+# (CMD) and scripts/ci-snap-build.sh drives the build and the E2E with `docker exec` once
+# systemd is up. It needs --privileged and the host cgroup tree. The tree is bind-mounted
+# at /src; only the snapcraft pin and the entrypoint are copied in.
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+# Apt packages are distro-locked by ubuntu:24.04 (no floating apt versions).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    systemd dbus snapd ca-certificates fuse squashfs-tools python3 git sudo \
+    desktop-file-utils file binutils \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY packaging/snap/SNAPCRAFT_REVISION /etc/fork-linux/SNAPCRAFT_REVISION
+COPY docker/snap-entrypoint.sh /usr/local/bin/snap-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/snap-entrypoint.sh
+
+WORKDIR /src
+ENV container=docker
+STOPSIGNAL SIGRTMIN+3
+CMD ["/lib/systemd/systemd"]

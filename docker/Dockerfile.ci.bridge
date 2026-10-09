@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1.27.0
+# CI image for Fork for Linux (unofficial) — bridge toolchain (Ubuntu 26.04)
+# Image tag: fork-linux-ci-bridge:26.04
+# Cross-compiles the Windows-side shims (MinGW-w64, x86_64) and the static
+# Linux helper (musl-gcc -static -no-pie). Used by bridge/spike/build.sh and
+# the meson bridge targets (scripts/build-bridge.sh). It also carries the
+# bridge Wine tier: distro Wine (wine64), Xvfb, git and pytest, so the CI
+# "bridge" stage runs FL_REAL_WINE=1 python3 -m pytest tests/bridge in here
+# (as an unprivileged user with a writable HOME it owns, e.g. -e HOME=/tmp/h and
+# --basetemp=/tmp/h/pt; isolated WINEPREFIX; never as root; no TMPDIR, see B5).
+# Source is bind-mounted at /src (no COPY).
+FROM ubuntu:26.04
+
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+# Apt packages are distro-locked by ubuntu:26.04 (no floating apt versions).
+
+# Apt cache mounts keep package downloads across rebuilds (BuildKit).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 \
+    musl-tools gcc libc6-dev \
+    meson ninja-build \
+    python3 python3-pytest file \
+    git \
+    wine wine64 xvfb xauth
+
+WORKDIR /src
+CMD ["bridge/spike/build.sh"]

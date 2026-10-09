@@ -1,0 +1,71 @@
+Source: fork-linux
+Section: vcs
+Priority: optional
+Maintainer: Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ meson (>= 0.61),
+ ninja-build,
+ python3 (>= 3.10),
+ gcc-mingw-w64-x86-64,
+ binutils-mingw-w64-x86-64,
+ desktop-file-utils,
+ appstream,
+Standards-Version: 4.7.3
+Homepage: https://github.com/ventura8/Fork-Linux
+Vcs-Git: https://github.com/ventura8/Fork-Linux.git
+Vcs-Browser: https://github.com/ventura8/Fork-Linux
+
+Package: fork-linux
+Architecture: amd64
+Depends:
+ ${misc:Depends},
+ ${shlibs:Depends},
+ python3 (>= 3.10),
+ cabextract,
+ curl | wget,
+ unzip,
+ libfreetype6,
+ libfontconfig1,
+ libgnutls30t64 | libgnutls30,
+ libx11-6,
+ libxext6,
+ libxrender1,
+ libxi6,
+ libxrandr2,
+ libxcursor1,
+ libxcomposite1,
+ libxinerama1,
+ libxfixes3,
+ libgl1,
+Recommends:
+ zenity | kdialog,
+ git,
+ xdg-utils,
+ fontconfig,
+ 7zip | p7zip-full,
+ libvulkan1,
+ libdbus-1-3,
+ libasound2t64 | libasound2,
+ libpulse0,
+ libxkbcommon0,
+ libwayland-client0,
+ libegl1,
+Suggests:
+ xdotool,
+Description: Unofficial Wine wrapper for the Fork git client
+ Fork for Linux (unofficial) runs the official, unmodified Fork for Windows
+ git client under Wine, with a menu entry, a "fork" command for opening
+ repositories, update snapshots with rollback and a health check.
+ .
+ Fork is proprietary, paid software made by Dan Pristupov and Tanya
+ Pristupova (https://git-fork.com). The evaluation is free; please buy a
+ license at https://git-fork.com/buy if you keep using it.
+ .
+ This package is not affiliated with, endorsed by or supported by the Fork
+ developers. It contains only the wrapper: at first run it downloads a
+ pinned Wine runtime, Microsoft .NET Framework (under Microsoft's terms) and
+ the official Fork installer from cdn.fork.dev into the user's home
+ directory, and it never redistributes, patches or decompiles Fork. It does
+ not use the distribution's wine package and never touches ~/.wine.
+ Report wrapper problems at https://github.com/ventura8/Fork-Linux/issues.

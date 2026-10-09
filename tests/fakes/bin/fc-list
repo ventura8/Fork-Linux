@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""Fake ``fc-list`` for tests (owned by the wine task).
+
+Logs {"argv", "env"} to $FL_FAKE_LOG and prints $FL_FAKE_FC_LIST, or by default
+one family per line (the output of ``fc-list : family``) for a few common fonts.
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+DEFAULT = "Noto Sans\nNoto Sans Mono\nDejaVu Sans\nDejaVu Sans Mono\nLiberation Sans\nLiberation Mono\n"
+
+
+def log_call() -> None:
+    path = os.environ.get("FL_FAKE_LOG")
+    if not path:
+        return
+    env = {key: value for key, value in os.environ.items() if key.startswith("FONTCONFIG")}
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"argv": [Path(sys.argv[0]).name, *sys.argv[1:]], "env": env}) + "\n")
+
+
+def main() -> int:
+    log_call()
+    sys.stdout.write(os.environ.get("FL_FAKE_FC_LIST", DEFAULT))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

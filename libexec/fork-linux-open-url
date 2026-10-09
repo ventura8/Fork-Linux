@@ -1,0 +1,51 @@
+#!/bin/sh
+# fork-linux-open-url — open a URL or file clicked inside Fork with the desktop's default handler.
+#
+# Wine's winebrowser runs this for links and, through the ForkLinux.File file
+# association, for Fork's "Open" on a file (winebrowser turns the file into a
+# file:// URL). Processes started by Wine inherit the staging runtime's seccomp
+# filter and NoNewPrivs=1, which breaks setuid launchers (Snap's snap-confine:
+# Ubuntu's Firefox, Chromium, ...). So the URL is handed to a process OUTSIDE
+# Wine's tree: the XDG desktop portal over D-Bus for web links, a transient
+# systemd user unit for files (the portal's OpenURI refuses file:// URIs), and
+# plain xdg-open as last resort. Windows paths (Z:\..., C:\...) go to the host
+# helper, which maps them through $WINEPREFIX.
+set -u
+
+[ $# -ge 1 ] && [ -n "$1" ] || { echo "usage: fork-linux-open-url URL" >&2; exit 2; }
+url=$1
+
+case $url in
+	[A-Za-z]:\\* | [A-Za-z]:/*) exec "$(dirname -- "$0")/fork-linux-handoff" open "$url" ;;
+esac
+
+# Wine sets these for its own children; they must not leak into the browser.
+unset WINEPREFIX WINELOADER WINESERVER WINEDEBUG WINEDLLOVERRIDES WINEDLLPATH WINEHOME LD_PRELOAD
+
+case $url in
+	/*) url="file://$url" ;;
+esac
+
+case $url in
+	file:*) ;;
+	*)
+		if command -v gdbus >/dev/null 2>&1 &&
+			gdbus call --session --timeout 10 \
+				--dest org.freedesktop.portal.Desktop \
+				--object-path /org/freedesktop/portal/desktop \
+				--method org.freedesktop.portal.OpenURI.OpenURI \
+				"" "$url" "{}" >/dev/null 2>&1; then
+			exit 0
+		fi
+		;;
+esac
+
+if command -v systemd-run >/dev/null 2>&1 &&
+	systemd-run --user --quiet --collect --no-block --property=KillMode=process \
+		${DISPLAY:+"--setenv=DISPLAY=$DISPLAY"} \
+		${WAYLAND_DISPLAY:+"--setenv=WAYLAND_DISPLAY=$WAYLAND_DISPLAY"} \
+		-- xdg-open "$url" >/dev/null 2>&1; then
+	exit 0
+fi
+
+exec xdg-open "$url"

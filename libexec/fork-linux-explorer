@@ -1,0 +1,35 @@
+#!/bin/sh
+# fork-linux-explorer — "Show in File Explorer" / "Open In File Explorer" from Fork.
+#
+# Fork calls ShellExecute("explorer.exe", "/select, <file>") or
+# ShellExecute(<folder>); Wine's shell32 then looks up
+# HKLM\Software\Microsoft\Windows\CurrentVersion\App Paths\explorer(.exe),
+# which fork-linux points here (Wine's own "explorer /desktop" is started with
+# CreateProcess and never comes this way). Explorer's arguments are parsed and
+# the Linux file manager shows the item (FileManager1, selected) or opens the
+# folder, outside Wine's process tree (see fork-linux-handoff).
+set -u
+
+verb=open
+target=
+for arg in "$@"; do
+	case $arg in
+		/desktop | /desktop=*) exit 0 ;;
+		/select,* | /SELECT,* | /Select,*)
+			verb=reveal
+			rest=${arg#*,}
+			[ -n "$rest" ] && target=$rest
+			;;
+		/select | /SELECT | /Select) verb=reveal ;;
+		/e,* | /E,* | /root,* | /ROOT,* | /Root,*)
+			rest=${arg#*,}
+			[ -n "$rest" ] && target=$rest
+			;;
+		/*/*) target=$arg ;; # a Linux path
+		/*) ;;               # other explorer switches (/e, /n, /separate, ...)
+		*) target=$arg ;;
+	esac
+done
+
+[ -n "$target" ] || target=${HOME:-/}
+exec "$(dirname -- "$0")/fork-linux-handoff" "$verb" "$target"

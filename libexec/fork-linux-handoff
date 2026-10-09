@@ -1,0 +1,55 @@
+#!/bin/sh
+# fork-linux-handoff — run "fork-linux-host VERB ARG" outside Wine's process tree.
+#
+# Programs Wine starts inherit the staging runtime's seccomp filter and
+# NoNewPrivs=1, which breaks setuid launchers (Snap's snap-confine) and makes
+# terminals start with a crippled session. A transient systemd user unit runs
+# the host helper as a child of the user's service manager instead
+# (NoNewPrivs=0). The session variables the helper and the tools need are
+# passed along; KillMode=process keeps a detached tool (the terminal) alive
+# after the helper exits. Without systemd the helper runs directly.
+#
+# Usage: fork-linux-handoff terminal|reveal|open PATH
+# PATH may be a Windows path (Z:\..., C:\...); the helper maps it through
+# $WINEPREFIX, which Wine sets for the programs it starts.
+set -u
+
+[ $# -eq 2 ] && [ -n "$2" ] || { echo "usage: fork-linux-handoff terminal|reveal|open PATH" >&2; exit 2; }
+case $1 in
+	terminal | reveal | open) ;;
+	*) echo "fork-linux-handoff: unknown verb: $1" >&2; exit 2 ;;
+esac
+
+here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || exit 127
+if [ -x "$here/fork-linux-host" ]; then
+	set -- "$here/fork-linux-host" "$@"
+elif [ -f "$here/fork-linux-host.in" ]; then
+	# A source checkout: the template is plain Python apart from its first line.
+	set -- "${FORK_LINUX_PYTHON:-python3}" -I "$here/fork-linux-host.in" "$@"
+else
+	echo "fork-linux-handoff: fork-linux-host is not installed next to $0" >&2
+	exit 127
+fi
+
+# Wine's own variables must not reach the tools (WINEPREFIX stays: the helper maps paths with it).
+unset WINELOADER WINESERVER WINEDEBUG WINEDLLOVERRIDES WINEDLLPATH WINEHOME LD_PRELOAD
+
+if [ "${FORK_LINUX_HANDOFF:-systemd}" != direct ] && command -v systemd-run >/dev/null 2>&1; then
+	set -- -- "$@"
+	for name in WINEPREFIX DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS HOME PATH LANG \
+		XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_CURRENT_DESKTOP XDG_SESSION_TYPE \
+		FORK_LINUX_TERMINAL FORK_LINUX_LIBDIR FORK_LINUX_PYTHON TERMINAL; do
+		value=$(printenv "$name") || value=
+		if [ -n "$value" ]; then
+			set -- "--setenv=$name=$value" "$@"
+		fi
+	done
+	if systemd-run --user --quiet --collect --no-block --property=KillMode=process "$@" >/dev/null 2>&1; then
+		exit 0
+	fi
+	# Drop everything up to "--": the helper runs directly below.
+	while [ "$1" != -- ]; do shift; done
+	shift
+fi
+
+exec "$@"

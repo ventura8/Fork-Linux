@@ -1,0 +1,50 @@
+#!@PYTHON@ -I
+"""fork-linux / fork launcher: Fork for Linux (unofficial).
+
+Relocatable: the ``fork_linux`` package is found relative to this file
+(``<root>/share/fork-linux``), so the whole tree can live under /usr,
+~/.local, /opt or inside an AppImage. ``FORK_LINUX_LIBDIR`` overrides the
+package location. Only when no installed package exists is a source checkout
+(``<root>/src/fork_linux`` next to ``<root>/VERSION`` or ``meson.build``) used,
+so a stray ``src/fork_linux`` under the prefix can never shadow the installed
+package. Runs in isolated mode (``-I``): PYTHONPATH, the user site directory
+and the current directory are never searched.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+
+def _package_dir(root: Path) -> str:
+    """The directory holding this installation's ``fork_linux`` package."""
+    libdir = os.environ.get("FORK_LINUX_LIBDIR", "")
+    if libdir:
+        return libdir
+    installed = root / "share" / "fork-linux"
+    if (installed / "fork_linux").is_dir():
+        return str(installed)
+    checkout = root / "src"
+    is_checkout = (root / "VERSION").is_file() or (root / "meson.build").is_file()
+    if is_checkout and (checkout / "fork_linux").is_dir():
+        return str(checkout)
+    return str(installed)
+
+
+def _setup_path() -> None:
+    """Put the fork_linux package of this installation first on ``sys.path``."""
+    sys.path.insert(0, _package_dir(Path(__file__).resolve().parent.parent))
+
+
+def _main() -> int:
+    """Run fork-linux (or fork, chosen by the program name)."""
+    _setup_path()
+    from fork_linux.cli import main
+
+    return main(prog=sys.argv[0])
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

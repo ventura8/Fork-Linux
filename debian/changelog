@@ -1,0 +1,16 @@
+fork-linux (1.0.0) resolute; urgency=medium
+
+  * First public release of Fork for Linux (unofficial), an unofficial Wine
+    wrapper for the Fork git client by Dan Pristupov and Tanya Pristupova
+    (not affiliated with them; buy Fork at https://git-fork.com/buy).
+  * fork-linux CLI and fork command: lazy, resumable setup of a pinned Wine
+    runtime, Microsoft .NET Framework and the official Fork installer
+    (downloaded from cdn.fork.dev on the user's machine, never redistributed).
+  * Menu entry, AppStream metainfo, manual pages and shell completions;
+    "Open in Fork" file-manager actions per user.
+  * Update snapshots and rollback, health check (doctor), logs bundle,
+    reversible uninstall (never touches ~/.wine).
+  * Experimental native-git bridge (fl-shim.exe, fl-launch.exe,
+    fl-bridge-helper), off by default.
+
+ -- Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com>  Fri, 09 Oct 2026 12:00:00 +0000

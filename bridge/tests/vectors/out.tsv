@@ -1,0 +1,58 @@
+# out.tsv - fl_out_* vectors (bridge/tests/unit/test_translate.c). Each vector is fed whole and in chunks of
+# 1, 2, 3, 7 and 64 bytes; the output must not depend on the split. Fake to_win: /pfx/drive_c -> C:\, /nomap fails,
+# /unixns -> \\?\unix\ (treated as a failure), /verbatim -> \\?\Z:\, /lower -> z:\, anything else -> Z:\.
+# Columns (TAB-separated): name, plan (none|paths|worktree|remote|origin), nul_records (0|1), anchors ("unix=>win"
+# items, " | "-separated, or "(none)"), input, expected. input/expected use the escapes \n \r \t \0 \\ \xHH.
+paths-callback	paths	0	(none)	/home/u/repo\n	Z:/home/u/repo\n
+paths-drive-c	paths	0	(none)	/pfx/drive_c/users/me/repo\n	C:/users/me/repo\n
+paths-drive-c-root	paths	0	(none)	/pfx/drive_c\n/\n	C:/\nZ:/\n
+paths-anchor	paths	0	/home/u/Documents/repo=>C:\users\me\Documents\repo	/home/u/Documents/repo\n/home/u/Documents/repo/.git\n.git\nabc123\n	C:/users/me/Documents/repo\nC:/users/me/Documents/repo/.git\n.git\nabc123\n
+paths-longest-anchor-wins	paths	0	/home/u=>Z:\home\u | /home/u/Documents/repo=>C:\Repo	/home/u/Documents/repo/x\n/home/u/other\n	C:/Repo/x\nZ:/home/u/other\n
+paths-anchor-component-boundary	paths	0	/home/u/repo=>C:\R	/home/u/repo2\n/home/u/repo\n	Z:/home/u/repo2\nC:/R\n
+paths-anchor-drive-root	paths	0	/pfx/drive_c=>C:\\	/pfx/drive_c\n/pfx/drive_c/x\n	C:/\nC:/x\n
+paths-callback-fails-fallback	paths	0	(none)	/nomap/x\n/nomap\n	Z:/nomap/x\nZ:/nomap\n
+paths-unix-namespace-fallback	paths	0	(none)	/unixns/x\n	Z:/unixns/x\n
+paths-verbatim-callback	paths	0	(none)	/verbatim/x\n	Z:/verbatim/x\n
+paths-lowercase-drive-callback	paths	0	(none)	/lower/x\n	Z:/lower/x\n
+paths-passthrough-lines	paths	0	(none)	\n\nrel/path\nHEAD\n--git-dir\n	\n\nrel/path\nHEAD\n--git-dir\n
+paths-no-trailing-newline	paths	0	(none)	/home/u/r	Z:/home/u/r
+paths-crlf	paths	0	(none)	/home/u/a\r\n/home/u/b\r	Z:/home/u/a\r\nZ:/home/u/b\r
+paths-progress-cr	paths	0	(none)	Receiving objects:  50% (1/2)\rReceiving objects: 100% (2/2), done.\n	Receiving objects:  50% (1/2)\rReceiving objects: 100% (2/2), done.\n
+paths-stderr-quoted	paths	0	(none)	fatal: '/home/u/repo' does not appear to be a git repository\nerror: could not lock '/pfx/drive_c/r/.git/index' and '/home/x'\n	fatal: 'Z:/home/u/repo' does not appear to be a git repository\nerror: could not lock 'C:/r/.git/index' and 'Z:/home/x'\n
+paths-stderr-quoted-anchor	paths	0	/home/u/Documents/repo=>C:\users\me\Documents\repo	fatal: detected dubious ownership in repository at '/home/u/Documents/repo'\n	fatal: detected dubious ownership in repository at 'C:/users/me/Documents/repo'\n
+paths-stderr-unterminated-quote	paths	0	(none)	it's '/home/x\n	it's '/home/x\n
+paths-stderr-quote-not-a-path	paths	0	(none)	'abc' 'rel/x' '/home/q'\n	'abc' 'rel/x' 'Z:/home/q'\n
+paths-backslash-in-unix-name	paths	0	(none)	/home/u/we\\ird\n	Z:/home/u/we\\ird\n
+paths-unicode	paths	0	(none)	/home/u/Jürgen/€\n	Z:/home/u/Jürgen/€\n
+paths-unicode-anchor	paths	0	/home/u=>C:\Users\Jürgen	/home/u/r\n	C:/Users/Jürgen/r\n
+paths-nul-records	paths	1	(none)	/home/a\0/home/b\0rel\0	Z:/home/a\0Z:/home/b\0rel\0
+paths-nul-records-keep-newlines	paths	1	(none)	/home/a\nb\0	Z:/home/a\nb\0
+paths-embedded-nul-in-line	paths	0	(none)	/home/a\0b\n	/home/a\0b\n
+worktree-porcelain	worktree	0	/home/u/Documents/repo=>C:\users\me\Documents\repo	worktree /home/u/Documents/repo\nHEAD 1234abcd\nbranch refs/heads/main\n\nworktree /home/u/wt\nHEAD abcd1234\ndetached\n\nworktree /home/u/bare.git\nbare\n\n	worktree C:/users/me/Documents/repo\nHEAD 1234abcd\nbranch refs/heads/main\n\nworktree Z:/home/u/wt\nHEAD abcd1234\ndetached\n\nworktree Z:/home/u/bare.git\nbare\n\n
+worktree-porcelain-z	worktree	1	(none)	worktree /home/u/repo\0HEAD 1234\0branch refs/heads/main\0\0	worktree Z:/home/u/repo\0HEAD 1234\0branch refs/heads/main\0\0
+worktree-default	worktree	0	(none)	/home/u/repo     1234abc [main]\n/home/u/my wt    abcd123 (detached HEAD)\n/home/u/bare.git (bare)\n	Z:/home/u/repo     1234abc [main]\nZ:/home/u/my wt    abcd123 (detached HEAD)\nZ:/home/u/bare.git (bare)\n
+worktree-default-tricky-path	worktree	0	(none)	/home/u/x abcd [y]/wt  1234abc [main] locked\n	Z:/home/u/x abcd [y]/wt  1234abc [main] locked\n
+worktree-default-verbose	worktree	0	(none)	/home/u/wt  1234abc [feat]\n\tlocked: reason /x\n	Z:/home/u/wt  1234abc [feat]\n\tlocked: reason /x\n
+worktree-for-each-ref	worktree	0	(none)	/home/u/wt\trefs/heads/feat\n\trefs/heads/main\n	Z:/home/u/wt\trefs/heads/feat\n\trefs/heads/main\n
+worktree-whole-line	worktree	0	(none)	/home/u/wt\n	Z:/home/u/wt\n
+worktree-default-c-quoted	worktree	0	(none)	"/home/u/J\\303\\274rgen wt"  1234abc [main]\n"/home/u/a\"b" (bare)\n"/home/u/t\\tab"\tlocked\n	"Z:/home/u/J\\303\\274rgen wt"  1234abc [main]\n"Z:/home/u/a\"b" (bare)\n"Z:/home/u/t\\tab"\tlocked\n
+worktree-default-c-quoted-anchor	worktree	0	/home/u/r ü=>C:\Users\Jürgen\r ü	"/home/u/r \\303\\274/x"  1234abc [main]\n	"C:/Users/J\\303\\274rgen/r \\303\\274/x"  1234abc [main]\n
+worktree-default-c-quoted-raw-utf8	worktree	0	/home/u=>C:\Users\Jürgen	"/home/u/ü \"q\""  1234abc [main]\n	"C:/Users/Jürgen/ü \"q\""  1234abc [main]\n
+worktree-default-c-quoted-bad	worktree	0	(none)	"/home/u/\\9xx"  1234abc [main]\n"rel/x"  1234abc [main]\n"/home/u/x" trailing\n"/home/u/unterminated  1234abc [main]\n	"/home/u/\\9xx"  1234abc [main]\n"rel/x"  1234abc [main]\n"/home/u/x" trailing\n"/home/u/unterminated  1234abc [main]\n
+remote-v	remote	0	(none)	origin\t/home/u/upstream (fetch)\norigin\t/home/u/upstream (push)\n	origin\tZ:/home/u/upstream (fetch)\norigin\tZ:/home/u/upstream (push)\n
+remote-v-url-kinds	remote	0	(none)	gh\thttps://github.com/a/b.git (fetch)\nscp\tgit@host:a/b.git (push)\nf\tfile:///home/u/r (fetch)\nrel\t../r (fetch)\n	gh\thttps://github.com/a/b.git (fetch)\nscp\tgit@host:a/b.git (push)\nf\tfile:///Z:/home/u/r (fetch)\nrel\t../r (fetch)\n
+remote-v-filter-suffix	remote	0	(none)	origin\t/srv/r.git (fetch) [blob:none]\n	origin\tZ:/srv/r.git (fetch) [blob:none]\n
+remote-v-path-with-spaces	remote	0	(none)	o\t/home/u/my repo (fetch)\n	o\tZ:/home/u/my repo (fetch)\n
+remote-get-url	remote	0	(none)	/home/u/upstream\nhttps://x/y\n../rel\n	Z:/home/u/upstream\nhttps://x/y\n../rel\n
+remote-get-url-anchor	remote	0	/home/u/Documents/repo=>C:\users\me\Documents\repo	/home/u/Documents/repo\n	C:/users/me/Documents/repo\n
+remote-config-list	remote	0	(none)	user.name=Me\nremote.origin.url=/home/u/up\nremote.origin.fetch=+refs/heads/*:refs/remotes/origin/*\nREMOTE.Other.PushUrl=file:///srv/x\nremote.x.url=https://h/r\n	user.name=Me\nremote.origin.url=Z:/home/u/up\nremote.origin.fetch=+refs/heads/*:refs/remotes/origin/*\nREMOTE.Other.PushUrl=file:///Z:/srv/x\nremote.x.url=https://h/r\n
+remote-config-list-z	remote	1	(none)	remote.origin.url\n/home/u/up\0core.bare\nfalse\0	remote.origin.url\nZ:/home/u/up\0core.bare\nfalse\0
+remote-config-get-regexp	remote	0	(none)	remote.origin.url /home/u/up\nremote.origin.url https://h\n	remote.origin.url Z:/home/u/up\nremote.origin.url https://h\n
+origin-list	origin	0	(none)	file:/home/u/.gitconfig\tuser.name=Me\nfile:.git/config\tcore.bare=false\ncommand line:\tcolor.ui=auto\n	file:Z:/home/u/.gitconfig\tuser.name=Me\nfile:.git/config\tcore.bare=false\ncommand line:\tcolor.ui=auto\n
+origin-quoted-utf8	origin	0	(none)	file:"/home/u/J\\303\\274rgen/.gitconfig"\tuser.name=Me\n	file:"Z:/home/u/J\\303\\274rgen/.gitconfig"\tuser.name=Me\n
+origin-quoted-requoted-anchor	origin	0	/home/u=>C:\Users\Jürgen	file:"/home/u/a\"b/.gitconfig"\tk=v\n	file:"C:/Users/J\\303\\274rgen/a\"b/.gitconfig"\tk=v\n
+origin-quoted-bad-escape	origin	0	(none)	file:"/home/u/\\9xx"\tk\n	file:"/home/u/\\9xx"\tk\n
+origin-scope	origin	0	(none)	global\tfile:/home/u/.gitconfig\tuser.name=Me\nlocal\tfile:.git/config\tx=y\n	global\tfile:Z:/home/u/.gitconfig\tuser.name=Me\nlocal\tfile:.git/config\tx=y\n
+origin-z	origin	1	(none)	global\0file:/home/u/.gitconfig\0user.name\nMe\0	global\0file:Z:/home/u/.gitconfig\0user.name\nMe\0
+origin-blob	origin	0	(none)	blob:HEAD:.gitmodules\tx=y\nsubmodule\tblob:x\ty\n	blob:HEAD:.gitmodules\tx=y\nsubmodule\tblob:x\ty\n
+none-passthrough	none	0	/home/u/Documents/repo=>C:\users\me\Documents\repo	/home/u/Documents/repo\n'/home/x'\n	/home/u/Documents/repo\n'/home/x'\n

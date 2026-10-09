@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1.27.0
+# Debian packaging image for Fork for Linux (unofficial) — Ubuntu 22.04 (jammy), the oldest supported release
+# Image tag: fork-linux-ci-ppa-jammy:22.04
+# Runs scripts/release-deb.sh (dpkg-buildpackage + lintian --fail-on error),
+# scripts/ppa-docker.sh (signed or --dry-run PPA source packages) and the packaging E2E
+# (scripts/packaging-e2e-install.sh deb). Source is bind-mounted at /src (no COPY).
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+# Apt packages are distro-locked by ubuntu:22.04 (no floating apt versions).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git \
+    build-essential debhelper dpkg-dev devscripts fakeroot lintian dput gpg gpg-agent \
+    meson ninja-build python3 \
+    gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 \
+    desktop-file-utils appstream \
+    file binutils
+
+WORKDIR /src
+CMD ["./scripts/release-deb.sh"]

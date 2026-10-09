@@ -1,0 +1,81 @@
+# Maintainer: Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com>
+#
+# PKGBUILD template for Fork for Linux (unofficial). Rendered (AUR needs literal values) by
+# scripts/release-arch.sh (local package from the working tree) and scripts/aur-render.sh
+# (the AUR PKGBUILD + .SRCINFO from the release tag archive):
+#   @VERSION@  VERSION   @SOURCE@  source array entry   @SHA256@  its sha256
+#   @SRCDIR@   top-level directory of the source archive
+# Unofficial Wine wrapper for the Fork git client; not affiliated with Fork's developers
+# (Dan Pristupov and Tanya Pristupova). Buy Fork: https://git-fork.com/buy
+# No .install scriptlet: the package ships code only (AGENTS.md §4.9).
+pkgname=fork-linux
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="Unofficial Wine wrapper for the Fork git client (not affiliated with Fork's developers)"
+arch=('x86_64')
+url="https://github.com/ventura8/Fork-Linux"
+license=('MIT')
+# Wine's host libraries: the managed Wine runtime (downloaded per user at first run) loads
+# them; the wrapper links none of them. Never the distribution's wine package.
+depends=(
+	'python'
+	'cabextract'
+	'curl'
+	'unzip'
+	'freetype2'
+	'fontconfig'
+	'gnutls'
+	'libx11'
+	'libxext'
+	'libxrender'
+	'libxi'
+	'libxrandr'
+	'libxcursor'
+	'libxcomposite'
+	'libxinerama'
+	'libxfixes'
+	'libglvnd'
+)
+makedepends=(
+	'meson'
+	'ninja'
+	'gcc'
+	'mingw-w64-gcc'
+	'desktop-file-utils'
+	'appstream'
+)
+optdepends=(
+	'zenity: graphical setup and progress dialogs'
+	'kdialog: graphical setup and progress dialogs on KDE'
+	'git: the experimental native-git bridge and repository checks'
+	'xdg-utils: open links and files from Fork'
+	'7zip: extra archive formats for winetricks'
+	'vulkan-icd-loader: Vulkan rendering in Wine'
+	'dbus: desktop notifications and portals'
+	'alsa-lib: sound'
+	'libpulse: sound'
+	'libxkbcommon: keyboard handling'
+	'wayland: the Wine Wayland driver'
+	'xdotool: window checks in the end-to-end tests'
+)
+options=('!debug')
+source=("@SOURCE@")
+sha256sums=('@SHA256@')
+
+build() {
+	arch-meson "@SRCDIR@" build \
+		-Dbridge=enabled \
+		-Dflavor=arch \
+		-Dpython=/usr/bin/python3 \
+		-Dfork_alias=true
+	meson compile -C build
+}
+
+check() {
+	meson test -C build --print-errorlogs
+}
+
+package() {
+	meson install -C build --destdir "${pkgdir}"
+	install -Dm644 "@SRCDIR@/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

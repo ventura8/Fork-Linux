@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1.27.0
+# CI image for Fork for Linux (unofficial) — compat cell: Fedora 44
+# Image tag: fork-linux-ci-fedora44:44
+# Runs (scripts/ci-docker.sh, FL_CI_STAGE=compat FL_CI_CELL=fedora44): meson build + meson test,
+# py_compile and the pytest suite (no coverage floors), as an unprivileged user.
+# Source is bind-mounted at /src (no COPY).
+FROM fedora:44
+
+ENV LANG=C.UTF-8
+# Packages are locked by the pinned fedora:44 base and its release repositories.
+RUN --mount=type=cache,target=/var/cache/libdnf5,sharing=locked \
+    dnf -y --setopt=install_weak_deps=False install \
+    git python3 python3-pytest \
+    meson ninja-build gcc glibc-devel libasan libubsan \
+    desktop-file-utils appstream \
+    bash zsh fish file binutils xdg-utils curl which
+
+WORKDIR /src
+CMD ["./scripts/ci-docker.sh", "--inside"]

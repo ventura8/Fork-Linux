@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1.27.0
+# Fedora RPM packaging image for Fork for Linux (unofficial) — Fedora 44
+# Image tag: fork-linux-ci-rpm-fedora:44
+# Runs scripts/release-rpm.sh fedora (rpmbuild + rpmlint, no filters) and the packaging E2E
+# (scripts/packaging-e2e-install.sh rpm-fedora). Source is bind-mounted at /src (no COPY).
+FROM fedora:44
+
+ENV LANG=C.UTF-8
+# Packages are locked by the pinned fedora:44 base and its release repositories.
+RUN --mount=type=cache,target=/var/cache/libdnf5,sharing=locked \
+    dnf -y --setopt=install_weak_deps=False install \
+    git rpm-build rpmlint python3 \
+    meson ninja-build gcc glibc-devel \
+    mingw64-gcc mingw64-winpthreads-static \
+    desktop-file-utils appstream \
+    file binutils util-linux findutils
+
+WORKDIR /src
+CMD ["./scripts/release-rpm.sh", "fedora"]
