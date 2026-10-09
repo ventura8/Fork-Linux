@@ -249,6 +249,8 @@ src/fork_linux/_build.py
 *.rpm
 *.pkg.tar.zst
 *.snap
+# ...but never the snap build image definition (docker/Dockerfile.snap).
+!/docker/Dockerfile.snap
 *.AppImage
 *.AppImage.zsync
 *.flatpak
