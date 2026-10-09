@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from typing import Any
 
-from .. import launcher, procs, snapshots, updates, versions, winecmd
+from .. import fork_settings, launcher, procs, snapshots, updates, versions, winecmd
 from ..cli import AppContext
 from ..errors import NotFound, NotSetUpError, UsageError
 from ..fork_layout import ForkLayout
@@ -173,6 +173,13 @@ def run_rollback(args: argparse.Namespace, ctx: AppContext) -> int:
         if not args.no_pin:
             ctx.config.set("fork", "update_policy", PINNED)
             state.set(PINNED_VERSION, snap.fork_version)
+        # Fork's own update check follows the pin at once: Fork would otherwise offer the newer version again.
+        updates.sync_update_type(
+            layout,
+            pinned=ctx.config.get("fork", "update_policy") == PINNED,
+            state=state,
+            backup_dir=fork_settings.default_backup_dir(paths),
+        )
         state.save()
     result = {
         "restored": _as_dict(snap),

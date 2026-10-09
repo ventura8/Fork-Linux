@@ -33,7 +33,8 @@ The wire format is the frozen contract in `bridge/common/fl_proto.h`. Hashing co
 
 ```text
 fl-bridge-helper --daemon [--token-file FILE] [--port N] [--host-helper PATH]
-                 [--parent-pid PID] [--log FILE]
+                 [--parent-pid PID] [--watch-prefix DIR [--watch-exe-dir WINDIR]]
+                 [--log FILE]
 fl-bridge-helper --version | --help
 ```
 
@@ -45,7 +46,9 @@ Every option also accepts the `--opt=value` form.
 | `--token-file FILE` | Read the token, then unlink the file. The file must be a regular file owned by the current user with no group or other access (`0600`). It must hold exactly 64 hex characters, optionally followed by `\n` or `\r\n`. Without this option the token comes from `FL_BRIDGE_TOKEN`. |
 | `--port N` | Listen on `127.0.0.1:N`. The default is `0`, an ephemeral port. Only loopback is ever bound. |
 | `--host-helper PATH` | Absolute path of `fork-linux-host`. Requests with `FL_REQ_HOST_HELPER` run `[PATH, verb, args...]`. Without this option such requests fail with `SPAWN_ERR(ENOENT)`. |
-| `--parent-pid PID` | Exit once `PID` no longer exists. It is checked with `kill(pid, 0)` every 2 s. |
+| `--parent-pid PID` | Exit once `PID` no longer exists. It is checked with `kill(pid, 0)` every 2 s. With `--watch-prefix`, only until the first watched process was seen. |
+| `--watch-prefix DIR` | Outlive the parent (no PDEATHSIG) while a process of this user carries both `WINEPREFIX=DIR` and `FL_BRIDGE_PORT=<this daemon's port>` in its environment (`/proc/<pid>/environ`, every 2 s); exit 6 s after the last one is gone (`reason=prefix-idle`). Fork restarted by its own updater inherits both (spike S9). |
+| `--watch-exe-dir WINDIR` | With `--watch-prefix`: only processes whose `argv[0]` starts with `WINDIR` (ASCII case-insensitive; Wine shows the Windows path, e.g. `C:\users\<u>\AppData\Local\Fork\`) count, so Wine's own services that inherited the environment do not keep the daemon alive. |
 | `--log FILE` | Append one line per session (mode `0600`, `O_APPEND`, `O_NOFOLLOW`). The log never contains the token, arguments, environment values or stream data. |
 
 `FL_BRIDGE_TOKEN` is always scrubbed: the value is overwritten in place, which also blanks
@@ -56,7 +59,7 @@ Daemon exit codes:
 
 | Code | When |
 |---|---|
-| `0` | Stopped by SIGTERM, SIGINT or SIGHUP, by the parent's death, or because `--parent-pid` vanished |
+| `0` | Stopped by SIGTERM, SIGINT or SIGHUP, by the parent's death, because `--parent-pid` vanished, or because the `--watch-prefix` users are gone |
 | `1` | Start-up failure: token, host helper, log, bind, or the parent already gone |
 | `2` | Usage error |
 
@@ -72,7 +75,8 @@ Daemon exit codes:
 5. Bind `127.0.0.1:port` and `listen(128)`.
 6. Install the signal handlers through a self-pipe and call `setsid()`, so a terminal
    Ctrl+C does not reach the daemon.
-7. Call `prctl(PR_SET_PDEATHSIG, SIGTERM)`. If the parent already changed, exit 1.
+7. Call `prctl(PR_SET_PDEATHSIG, SIGTERM)` (not with `--watch-prefix`). If the parent
+   already changed, exit 1.
 8. Print **`FL_BRIDGE_PORT=<n>\n`** on stdout, then point stdin and stdout at `/dev/null`.
    The launcher reads one line and then gets EOF. stderr stays the launcher's and only
    carries start-up errors, but detached children (`FL_REQ_DETACH`) inherit it too: the
@@ -85,7 +89,9 @@ Daemon exit codes:
 SIGTERM, SIGINT and SIGHUP stop the daemon. So does the death of the process that started
 it (PDEATHSIG). PDEATHSIG fires when the *thread* that forked the daemon exits, so spawn it
 from the launcher's main thread. An `execve` of the launcher into Wine keeps the same thread
-and pid, so it is fine. `--parent-pid` disappearing also stops the daemon. The listening
+and pid, so it is fine. `--parent-pid` disappearing also stops the daemon. With
+`--watch-prefix` there is no PDEATHSIG: the daemon stops 6 s after the last watched process
+(see the option) is gone, and `--parent-pid` only counts until one was seen. The listening
 socket closes. Running sessions are **not** killed: each one lives until its shim's socket
 closes, as a Windows `git.exe` would.
 
@@ -167,7 +173,7 @@ The session calls `setsid()` and sets `TCP_NODELAY`, then runs these steps:
 ### Log lines
 
 ```text
-2026-10-09T11:00:00.123Z fl-bridge-helper[4242] daemon start port=40123 pid=4242 parent=4200 host-helper=yes
+2026-10-09T11:00:00.123Z fl-bridge-helper[4242] daemon start port=40123 pid=4242 parent=4200 host-helper=yes watch-prefix=yes
 2026-10-09T11:00:01.456Z fl-bridge-helper[4250] session peer=127.0.0.1:51234 argv0=git argc=4 flags=0x0 env-ignored=1 result=exit:0 ms=14
 ```
 
@@ -200,7 +206,8 @@ These are notes for the Python launcher.
 
    ```text
    fl-bridge-helper --daemon --token-file <file> --host-helper <libexec>/fork-linux-host \
-     --parent-pid <launcher pid> --log <logfile>
+     --parent-pid <launcher pid> --watch-prefix <WINEPREFIX> \
+     --watch-exe-dir 'C:\users\<u>\AppData\Local\Fork\' --log <logfile>
    ```
 
    Pass `stdin=DEVNULL` and `stdout=PIPE`, and start it from the main thread. Read one

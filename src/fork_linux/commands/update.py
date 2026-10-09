@@ -17,7 +17,18 @@ from __future__ import annotations
 import argparse
 from typing import Any
 
-from .. import bootstrap, feeds, fork_install, launcher, procs, snapshots, updates, winecmd, wine_provider
+from .. import (
+    bootstrap,
+    feeds,
+    fork_install,
+    fork_settings,
+    launcher,
+    procs,
+    snapshots,
+    updates,
+    wine_provider,
+    winecmd,
+)
 from .. import manifest as manifest_mod
 from ..cli import AppContext
 from ..errors import ForkLinuxError, IntegrityFailed, NotSetUpError, UsageError
@@ -85,11 +96,20 @@ def _check(ctx: AppContext) -> int:
     info: dict[str, Any] = dict(updates.check(manifest, layout, assets))
     info["feed_error"] = feed_error
     info["update_policy"] = ctx.config.get("fork", "update_policy")
+    info["fork_channel"] = _fork_channel(layout)
     if ctx.json:
         ctx.print_json(info)
     else:
         _print_check(info, feed_error)
     return 0
+
+
+def _fork_channel(layout: ForkLayout) -> str:
+    """Fork's own update channel (``ApplicationUpdateType``): develop, stable, off or unknown."""
+    try:
+        return updates.update_type_name(fork_settings.load(layout.settings_file))
+    except ForkLinuxError:
+        return "unknown"
 
 
 def _print_check(info: dict[str, Any], feed_error: str | None) -> None:
@@ -100,6 +120,7 @@ def _print_check(info: dict[str, Any], feed_error: str | None) -> None:
         ("Newest", info["latest"] or (f"unknown ({feed_error})" if feed_error else "unknown")),
         ("Staged", ", ".join(info["staged"]) or "none"),
         ("Updates", "pinned (Fork will not update itself)" if info["update_policy"] == PINNED else "automatic"),
+        ("Channel", f"{info['fork_channel']} (Fork's own updater)"),
     ]
     for label, value in rows:
         print(f"{label + ':':<10} {value}")
@@ -107,6 +128,8 @@ def _print_check(info: dict[str, Any], feed_error: str | None) -> None:
         print(f"warning: the installed version is known not to work well: {info['known_bad']}")
     if info["update_available"]:
         print(f"Fork {info['latest']} is available: 'fork-linux update --fork --latest' installs it")
+        if info["update_policy"] != PINNED and info["fork_channel"] == "develop":
+            print("or in Fork: File > Check for Updates..., then Restart and Update")
 
 
 def _install_fork(ctx: bootstrap.Ctx, args: argparse.Namespace) -> dict[str, Any]:

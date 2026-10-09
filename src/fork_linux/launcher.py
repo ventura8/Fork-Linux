@@ -10,8 +10,10 @@ with Wine (``os.execvpe``): the launcher never stays around as a parent.
 With ``[git] bridge = on`` the native-git bridge daemon is started first
 (:func:`bridge.start_daemon`, before the hooks so Fork's tool settings follow
 whether it really runs): its ``--parent-pid`` is this process, which the exec
-turns into the Wine process running Fork, so the daemon lives exactly as long
-as Fork. The fast path reuses the running daemon recorded in ``session.json``.
+turns into the Wine process running Fork, and its ``--watch-prefix`` keeps it
+alive while a process carries our prefix and its port, so it outlives Fork's
+self-update restart (spike S9) and stops a few seconds after Fork closes. The
+fast path reuses the running daemon recorded in ``session.json``.
 
 Wine's own output goes to ``<logs>/wine-last.log`` (or, with ``--debug``, a
 new ``wine-<UTC time>.log``; the newest :data:`DEBUG_LOGS_KEEP` are kept).
@@ -374,6 +376,20 @@ def _settings(ctx: bootstrap.Ctx, notes: list[str]) -> None:
         notes.append(f"Fork's default source folder set to {home}")
 
 
+def _update_check(ctx: bootstrap.Ctx, notes: list[str]) -> None:
+    """Fork's own update check follows ``[fork] update_policy`` (Fork closed only, :func:`updates.sync_update_type`)."""
+    if procs.fork_running(ctx.paths.prefix):
+        return
+    note = updates.sync_update_type(
+        ctx.layout,
+        pinned=ctx.config.get("fork", "update_policy") == PINNED,
+        state=ctx.state,
+        backup_dir=fork_settings.default_backup_dir(ctx.paths),
+    )
+    if note is not None:
+        notes.append(note)
+
+
 def _ssh(ctx: bootstrap.Ctx, notes: list[str]) -> None:
     """Re-share ``~/.ssh`` when it changed since the last sync (``[ssh] sync``)."""
     mode = ctx.config.get("ssh", "sync")
@@ -411,6 +427,7 @@ HOOKS: tuple[tuple[str, Callable[[bootstrap.Ctx, list[str]], None]], ...] = (
     ("snapshot", _snapshot),
     ("update pin", _pin),
     ("Fork settings", _settings),
+    ("Fork update check", _update_check),
     ("ssh sync", _ssh),
     ("git configuration", _git),
 )

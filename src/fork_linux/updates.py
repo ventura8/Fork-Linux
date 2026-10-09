@@ -1,10 +1,14 @@
 """Fork's own updates: notice version changes, report what is available, enforce a pin.
 
-Fork updates itself through Velopack: it downloads ``Fork-<v>-full.nupkg`` into
-``packages\\`` and swaps ``current\\`` on a later start. fork-linux never
-installs updates itself; it records the version it last saw (so the launcher
-can offer a rollback after a change) and, when the user pinned a version,
-deletes newer staged packages so Velopack has nothing to apply.
+Fork updates itself through Velopack (spike S9, verified under Wine): it
+downloads ``Fork-<v>-delta.nupkg`` (or the full package) into ``packages\\``,
+rebuilds ``Fork-<v>-full.nupkg`` and, on "Restart and Update", runs
+``Update.exe apply``, which replaces ``current\\`` and starts the new
+``Fork.exe`` with the old process's environment. fork-linux never installs
+updates itself; it records the version it last saw (so the launcher can offer
+a rollback after a change), and when the user pinned a version it deletes
+newer staged packages and turns Fork's own update check off
+(:func:`sync_update_type`).
 """
 
 from __future__ import annotations
@@ -15,13 +19,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from . import feeds, versions
+from . import feeds, fork_settings, versions
 from .errors import UsageError
 from .fork_layout import ForkLayout
 from .manifest import Manifest
 from .state import State
 
 LAST_SEEN_VERSION = "fork.last_seen_version"
+# Fork's ApplicationUpdateType before a pin turned it off (restored when updates are allowed again).
+SAVED_UPDATE_TYPE = "fork.update_type_before_pin"
+UPDATE_TYPE_DEVELOP = 0  # Fork's default: every release
+UPDATE_TYPE_STABLE = 1  # releases after a delay (its feed lags far behind)
+UPDATE_TYPE_OFF = 2
+UPDATE_TYPE_NAMES = {UPDATE_TYPE_DEVELOP: "develop", UPDATE_TYPE_STABLE: "stable", UPDATE_TYPE_OFF: "off"}
 
 
 @dataclass
@@ -96,3 +106,49 @@ def enforce_pin(layout: ForkLayout, pinned: str) -> list[Path]:
             package.unlink()
             deleted.append(package)
     return deleted
+
+
+def _update_type(value: Any) -> int | None:
+    """``value`` when it is one of Fork's ``ApplicationUpdateType`` values, else None."""
+    if isinstance(value, int) and not isinstance(value, bool) and value in UPDATE_TYPE_NAMES:
+        return value
+    return None
+
+
+def update_type_name(settings: dict[str, Any]) -> str:
+    """Fork's update channel from ``settings.json`` data: develop (also when unset), stable, off or unknown."""
+    value = fork_settings.get(settings, fork_settings.APPLICATION_UPDATE_TYPE, UPDATE_TYPE_DEVELOP)
+    known = _update_type(value)
+    return "unknown" if known is None else UPDATE_TYPE_NAMES[known]
+
+
+def sync_update_type(layout: ForkLayout, *, pinned: bool, state: State, backup_dir: Path) -> str | None:
+    """Make Fork's own update check follow ``[fork] update_policy``; return a note on what changed.
+
+    Pinned: ``ApplicationUpdateType`` becomes 2 (Off), so Fork neither offers
+    nor downloads updates, and the user's previous value is kept in ``state``.
+    Allowed again: that value comes back, unless the user changed the setting
+    meanwhile. A missing ``settings.json`` is left alone. The caller makes
+    sure Fork is closed and saves ``state``.
+    """
+    if not layout.settings_file.exists():
+        return None
+    key = fork_settings.APPLICATION_UPDATE_TYPE
+    current = fork_settings.get(fork_settings.load(layout.settings_file), key)
+    if pinned:
+        if current == UPDATE_TYPE_OFF:
+            return None
+        fork_settings.apply(layout, {key: UPDATE_TYPE_OFF}, backup_dir=backup_dir)
+        previous = _update_type(current)
+        state.set(SAVED_UPDATE_TYPE, UPDATE_TYPE_DEVELOP if previous is None else previous)
+        return "Fork's own update check turned off while Fork is pinned"
+    saved = state.get(SAVED_UPDATE_TYPE)
+    if saved is None:
+        return None
+    state.set(SAVED_UPDATE_TYPE, None)
+    if current != UPDATE_TYPE_OFF:
+        return None
+    value = _update_type(saved)
+    value = UPDATE_TYPE_DEVELOP if value is None else value
+    fork_settings.apply(layout, {key: value}, backup_dir=backup_dir)
+    return f"Fork's own update check is back on ({UPDATE_TYPE_NAMES[value]})"

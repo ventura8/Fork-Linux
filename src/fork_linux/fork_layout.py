@@ -208,9 +208,14 @@ class ForkLayout:
         )
 
     @property
+    def win_local_dir(self) -> str:
+        """Fork's install directory as Wine sees it, with a trailing backslash (``Update.exe`` lives here)."""
+        return f"C:\\users\\{self.user}\\AppData\\Local\\Fork\\"
+
+    @property
     def win_exe(self) -> str:
         """``Fork.exe`` as Wine sees it: ``C:\\users\\<u>\\AppData\\Local\\Fork\\current\\Fork.exe``."""
-        return f"C:\\users\\{self.user}\\AppData\\Local\\Fork\\current\\Fork.exe"
+        return f"{self.win_local_dir}current\\Fork.exe"
 
     # -- probes ----------------------------------------------------------------
 

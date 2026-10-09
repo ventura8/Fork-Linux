@@ -13,8 +13,13 @@ module follows.
 * :func:`start_daemon` starts ``fl-bridge-helper --daemon`` from the
   launcher's main thread before it execs Wine (token in a fresh ``0600`` file,
   ``--parent-pid`` = the launcher, which becomes the Wine process running
-  Fork), reads its ``FL_BRIDGE_PORT=<n>`` line and returns a :class:`Daemon`.
-  Any failure is a warning: Fork then starts with its bundled git.
+  Fork, and ``--watch-prefix`` = our prefix), reads its ``FL_BRIDGE_PORT=<n>``
+  line and returns a :class:`Daemon`. Any failure is a warning: Fork then
+  starts with its bundled git. ``--watch-prefix`` keeps the daemon alive while
+  a program from Fork's directory (``--watch-exe-dir``: ``Fork.exe``,
+  ``Update.exe``) carries our ``WINEPREFIX`` and its ``FL_BRIDGE_PORT``: when
+  Fork's own updater (Velopack) restarts Fork, the new Fork.exe inherits both
+  from ``Update.exe`` and keeps using the same daemon (spike S9).
 * :func:`launch_env` is what Fork's environment gets (``FORKGITINSTANCE``,
   ``FL_BRIDGE_*``, ``FL_WINE``, ``WINEPREFIX``); :func:`session_record` /
   :func:`session_env` let a second ``fork`` while Fork runs reuse the running
@@ -45,6 +50,7 @@ from typing import IO, Any
 
 from . import fsutil, gitconfig, resources, winecmd
 from .errors import ForkLinuxError, UsageError
+from .fork_layout import ForkLayout
 from .paths import Paths
 
 log = logging.getLogger(__name__)
@@ -464,6 +470,8 @@ def _start(ctx: Any, *, debug: bool) -> Daemon:
     token_file, token = write_token(paths)
     try:
         argv = [str(helper), "--daemon", "--token-file", str(token_file), "--parent-pid", str(os.getpid())]
+        fork_dir = ForkLayout(paths, ctx.user).win_local_dir
+        argv += ["--watch-prefix", str(paths.prefix), "--watch-exe-dir", fork_dir]
         host = host_helper(paths)
         if host is not None:
             argv += ["--host-helper", str(host)]
@@ -496,8 +504,9 @@ def start_daemon(ctx: Any, *, debug: bool = False) -> Daemon | None:
     """Start the bridge daemon for a launch when ``[git] bridge`` is on and everything is there.
 
     Must run on the launcher's main thread right before it execs Wine
-    (``--parent-pid`` and the daemon's ``PDEATHSIG`` then track the Wine
-    process that runs Fork). Returns None, after a warning when the bridge is
+    (``--parent-pid`` then tracks the Wine process that runs Fork until a
+    process carrying our prefix and the daemon's port appears; from then on
+    ``--watch-prefix`` keeps it alive across Fork's self-update restart). Returns None, after a warning when the bridge is
     on, if the bridge is off or cannot start: Fork then uses its bundled git.
     The outcome is recorded in ``ctx.cache`` for :func:`host_actions_active`.
     """

@@ -807,6 +807,10 @@ static void test_options(void)
     char *missing_token[] = { "x", "--token-file", NULL };
     char *relative_helper[] = { "x", "--host-helper", "rel", NULL };
     char *bad_pid[] = { "x", "--parent-pid=0", NULL };
+    char *watch[] = { "x", "--daemon", "--watch-prefix", "/p", NULL };
+    char *bad_watch[] = { "x", "--watch-prefix=rel", NULL };
+    char *exe_dir[] = { "x", "--daemon", "--watch-exe-dir", "C:\\F\\", NULL };
+    char *bad_exe_dir[] = { "x", "--watch-exe-dir=", NULL };
     char *unknown[] = { "x", "--portx", NULL };
     char *help[] = { "x", "-h", NULL };
     char *help2[] = { "x", "--help", NULL };
@@ -819,6 +823,10 @@ static void test_options(void)
     CHECK(parse(2, missing_token, &o) == 2);
     CHECK(parse(3, relative_helper, &o) == 2);
     CHECK(parse(2, bad_pid, &o) == 2);
+    CHECK(parse(4, watch, &o) == 0 && strcmp(o.watch_prefix, "/p") == 0);
+    CHECK(parse(2, bad_watch, &o) == 2);
+    CHECK(parse(4, exe_dir, &o) == 0 && strcmp(o.watch_exe_dir, "C:\\F\\") == 0);
+    CHECK(parse(2, bad_exe_dir, &o) == 2);
     CHECK(parse(2, unknown, &o) == 2);
     CHECK(parse(2, help, &o) == 1);
     CHECK(parse(2, help2, &o) == 1);
@@ -938,6 +946,117 @@ static void test_accept_loop(void)
     unquiet(2, saved);
 }
 
+/* Write <g_tmp>/<dir>/<file> with len bytes of data, creating dir. */
+static void put_proc_file(const char *dir, const char *file, const char *data, size_t len)
+{
+    char path[512];
+    int fd;
+    snprintf(path, sizeof(path), "%s/%s", g_tmp, dir);
+    (void)mkdir(path, 0700);
+    snprintf(path, sizeof(path), "%s/%s/%s", g_tmp, dir, file);
+    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    CHECK(fd >= 0 && __real_write(fd, data, len) == (ssize_t)len);
+    close(fd);
+}
+
+static void put_environ(const char *dir, const char *data, size_t len)
+{
+    put_proc_file(dir, "environ", data, len);
+}
+
+/* --watch-prefix: environment matching, the /proc scan and the lifetime decision. */
+static void test_watch(void)
+{
+    static const char users[] = "A=1\0WINEPREFIX=/p\0FL_BRIDGE_PORT=7\0";
+    static const char half[] = "WINEPREFIX=/p\0FL_BRIDGE_PORT=70";
+    static const char *const want_p = "WINEPREFIX=/p";
+    static const char *const want_port = "FL_BRIDGE_PORT=7";
+    struct daemon_state d;
+    char proc_a[300];
+    char proc_b[300];
+    char self[320];
+    char *long_dir = malloc(PATH_MAX + 32);
+    int saved = quiet(2);
+
+    CHECK(environ_has(users, sizeof(users) - 1, want_p));
+    CHECK(environ_has(users, sizeof(users) - 1, want_port));
+    CHECK(!environ_has(half, sizeof(half) - 1, want_port)); /* no prefix match, no trailing NUL */
+    CHECK(environ_has(half, sizeof(half) - 1, "FL_BRIDGE_PORT=70"));
+    CHECK(!environ_has("", 0, want_p));
+
+    /* proc_a: a non-matching process, ourselves, a process without environ, non-pids */
+    snprintf(proc_a, sizeof(proc_a), "%s/proc-a", g_tmp);
+    snprintf(proc_b, sizeof(proc_b), "%s/proc-b", g_tmp);
+    CHECK(mkdir(proc_a, 0700) == 0 && mkdir(proc_b, 0700) == 0);
+    put_environ("proc-a/101", half, sizeof(half) - 1);
+    snprintf(self, sizeof(self), "proc-a/%ld", (long)getpid());
+    put_environ(self, users, sizeof(users) - 1);
+    snprintf(self, sizeof(self), "%s/proc-a/102", g_tmp);
+    CHECK(mkdir(self, 0700) == 0);
+    put_environ("proc-a/0", users, sizeof(users) - 1);
+    put_environ("proc-a/12x", users, sizeof(users) - 1);
+    put_environ("proc-b/100", users, sizeof(users) - 1);
+    CHECK(prefix_in_use(proc_a, want_p, want_port, NULL, getpid()) == 0);
+    CHECK(prefix_in_use(proc_b, want_p, want_port, NULL, getpid()) == 1);
+    fl_sys_fail(FL_SYS_READ, 1, EINTR); /* retried */
+    CHECK(prefix_in_use(proc_b, want_p, want_port, NULL, getpid()) == 1);
+    fl_sys_fail(FL_SYS_OPENDIR, 1, EMFILE);
+    CHECK(prefix_in_use(proc_b, want_p, want_port, NULL, getpid()) == 0);
+    /* --watch-exe-dir: only programs from Fork's directory count (case-insensitive) */
+    CHECK(prefix_in_use(proc_b, want_p, want_port, "C:\\Fork\\", getpid()) == 0); /* no cmdline */
+    put_proc_file("proc-b/100", "cmdline", "C:\\windows\\system32\\services.exe", 33);
+    CHECK(prefix_in_use(proc_b, want_p, want_port, "C:\\Fork\\", getpid()) == 0);
+    put_proc_file("proc-b/100", "cmdline", "c:\\fork\\current\\Fork.exe\0Z:\\repo", 33);
+    CHECK(prefix_in_use(proc_b, want_p, want_port, "C:\\Fork\\", getpid()) == 1);
+    put_proc_file("proc-b/100", "cmdline", "C:", 2); /* shorter than the directory */
+    CHECK(prefix_in_use(proc_b, want_p, want_port, "C:\\Fork\\", getpid()) == 0);
+    CHECK(long_dir != NULL);
+    if (long_dir != NULL) {
+        memset(long_dir, 'a', PATH_MAX + 8);
+        long_dir[0] = '/';
+        long_dir[PATH_MAX + 8] = '\0';
+        CHECK(proc_uses(long_dir, "1", want_p, want_port, NULL) == 0);
+        memset(&d, 0, sizeof(d));
+        CHECK(watch_init(&d, long_dir, 7) == -1);
+    }
+
+    /* parent_check() with a watched prefix */
+    memset(&d, 0, sizeof(d));
+    CHECK(watch_init(&d, "/p", 7) == 0 && strcmp(d.want_port, want_port) == 0);
+    d.proc_root = proc_a; /* nobody uses it yet: --parent-pid decides */
+    d.parent_pid = getpid();
+    CHECK(parent_check(&d) == 0 && !d.watch_seen);
+    d.next_parent_check = 0;
+    d.parent_pid = (int32_t)dead_pid();
+    CHECK(parent_check(&d) == 1);
+    d.next_parent_check = 0;
+    d.proc_root = proc_b; /* a user appears: the parent no longer matters */
+    CHECK(parent_check(&d) == 0 && d.watch_seen);
+    CHECK(parent_check(&d) == 0); /* not due yet */
+    d.next_parent_check = 0;
+    d.proc_root = proc_a; /* the users are gone, within the grace period */
+    CHECK(parent_check(&d) == 0);
+    d.next_parent_check = 0;
+    d.watch_last = now_ms() - WATCH_GRACE_MS;
+    CHECK(parent_check(&d) == 2);
+
+    /* daemon_step() logs why it stops */
+    g_log_fd = open("/dev/null", O_WRONLY | O_CLOEXEC);
+    d.lst = -1;
+    d.next_parent_check = 0;
+    CHECK(daemon_step(&d) == 0);
+    memset(&d, 0, sizeof(d));
+    d.lst = -1;
+    d.watch_prefix = "/p";
+    d.proc_root = proc_a;
+    d.next_parent_check = now_ms() + 20;
+    CHECK(daemon_step(&d) == 1); /* poll times out, check not due */
+    close(g_log_fd);
+    g_log_fd = -1;
+    free(long_dir);
+    unquiet(2, saved);
+}
+
 /* run_daemon() and the start-up steps that change the process, in children. */
 static void test_run_daemon(void)
 {
@@ -971,7 +1090,7 @@ static void test_run_daemon(void)
     if (pid == 0) {
         (void)quiet(2);
         fl_sys_fail(FL_SYS_SETSID, 1, EINVAL);
-        _exit(daemon_signals(1) == -1 ? 0 : 1); /* "parent exited during start-up" */
+        _exit(daemon_signals(1, 1) == -1 ? 0 : 1); /* "parent exited during start-up" */
     }
     CHECK(wait_status(pid) == 0);
 
@@ -982,6 +1101,34 @@ static void test_run_daemon(void)
         fl_sys_fail(FL_SYS_WRITE, 1, EIO);
         _exit(publish_port(1234) == -1 && publish_port(1234) == 0 ? 0 : 1);
     }
+    CHECK(wait_status(pid) == 0);
+
+    /* --watch-prefix too long for the environment entry */
+    pid = __real_fork();
+    if (pid == 0) {
+        static char too_long[PATH_MAX + 32];
+        (void)quiet(1);
+        (void)quiet(2);
+        setenv("FL_BRIDGE_TOKEN", hex, 1);
+        memset(too_long, 'a', PATH_MAX + 8);
+        too_long[0] = '/';
+        o.watch_prefix = too_long;
+        _exit(run_daemon(&o));
+    }
+    CHECK(wait_status(pid) == 1);
+
+    /* a watching daemon (no PDEATHSIG) that exits on SIGTERM */
+    pid = __real_fork();
+    if (pid == 0) {
+        (void)quiet(1);
+        (void)quiet(2);
+        setenv("FL_BRIDGE_TOKEN", hex, 1);
+        o.watch_prefix = "/nonexistent/prefix";
+        o.parent_pid = getppid();
+        _exit(run_daemon(&o));
+    }
+    poll(NULL, 0, 500);
+    kill(pid, SIGTERM);
     CHECK(wait_status(pid) == 0);
 
     /* a daemon that exits on SIGTERM */
@@ -1109,9 +1256,16 @@ static void test_personas(void)
 
 static void cleanup_tmp(void)
 {
-    static const char *const files[] = { "bin/prog", "bin/bad", "token", "COMMIT_EDITMSG", NULL };
-    static const char *const dirs[] = { "bin", "empty", NULL };
+    static const char *const files[] = { "bin/prog", "bin/bad", "token", "COMMIT_EDITMSG",
+                                         "proc-a/101/environ", "proc-a/0/environ", "proc-a/12x/environ",
+                                         "proc-b/100/environ", "proc-b/100/cmdline", NULL };
+    static const char *const dirs[] = { "bin", "empty", "proc-a/101", "proc-a/102", "proc-a/0", "proc-a/12x",
+                                        "proc-b/100", "proc-a", "proc-b", NULL };
     char path[400];
+    snprintf(path, sizeof(path), "%s/proc-a/%ld/environ", g_tmp, (long)getpid());
+    (void)unlink(path);
+    snprintf(path, sizeof(path), "%s/proc-a/%ld", g_tmp, (long)getpid());
+    (void)rmdir(path);
     for (size_t i = 0; files[i] != NULL; i++) {
         snprintf(path, sizeof(path), "%s/%s", g_tmp, files[i]);
         (void)unlink(path);
@@ -1152,6 +1306,7 @@ int main(void)
     test_prepare();
     test_listener();
     test_accept_loop();
+    test_watch();
     test_run_daemon();
     test_winexec_arg();
     test_personas();

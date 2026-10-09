@@ -63,7 +63,7 @@ from .manifest import Manifest
 from .pathmap import PathMap
 from .paths import Paths
 from .procrun import Runner, tail
-from .state import State
+from .state import FORK_VERSION, State
 from .steps import display as display_step
 from .steps import dotnet as dotnet_step
 from .steps import fonts as fonts_step
@@ -921,11 +921,27 @@ def check_fork_integrity(ctx: DoctorCtx) -> Result:
         return Result("warn", f"{package.name} is missing; cannot verify Fork {installed}")
     if _verify_nupkg(ctx.layout, installed, entry.full_nupkg_sha256):
         return Result("ok", f"{package.name} matches the manifest's sha256")
+    if _self_updated(ctx, installed):
+        # Spike S9: Velopack rebuilds the full package from a delta, which gives other zip bytes.
+        return Result(
+            "info",
+            f"{package.name} was rebuilt by Fork's own updater from a delta package, so its bytes "
+            "differ from the published package the manifest pins (Velopack checked the download "
+            "against Fork's feed)",
+        )
     return Result(
         "fail",
         f"{package.name} does not match the sha256 pinned in the manifest",
         "reinstall Fork: 'fork-linux update --fork' (or 'fork-linux setup --reset')",
     )
+
+
+def _self_updated(ctx: DoctorCtx, installed: str) -> bool:
+    """True when Fork updated itself to ``installed``: fork-linux installed (or restored) another version."""
+    ours = ctx.state.get(FORK_VERSION)
+    if not isinstance(ours, str) or not versions.is_valid(ours):
+        return False
+    return versions.Version(ours) != versions.Version(installed)
 
 
 def _verify_nupkg(layout: ForkLayout, version: str, sha256: str) -> bool:

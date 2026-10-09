@@ -250,6 +250,8 @@ export `FORKGITINSTANCE`, log the reason, and show it in `doctor`.
            "--token-file", token_file,
            "--host-helper", host_helper_path,   # fork-linux-host (absolute)
            "--parent-pid", str(os.getpid()),
+           "--watch-prefix", WINEPREFIX,        # outlive Fork's self-update restart (spike S9)
+           "--watch-exe-dir", "C:\\users\\<u>\\AppData\\Local\\Fork\\",
            "--log", daemon_log]                 # e.g. ~/.local/state/fork-linux/logs/bridge-<ts>.log
    proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                            stderr=log_fh,       # a file: detached children inherit it
@@ -269,12 +271,23 @@ export `FORKGITINSTANCE`, log the reason, and show it in `doctor`.
    (`FL_BRIDGE_PORT`, `FL_BRIDGE_TOKEN`, `FL_BRIDGE_WINEXEC`, `FL_BRIDGE_ASKPASS`,
    `FL_BRIDGE_SSH_ASKPASS`, `FL_WINE`, `WINEPREFIX`, `FORKGITINSTANCE`, optionally
    `FL_BRIDGE_LOG`), then `os.execve` Wine as usual. The exec keeps the pid and the main
-   thread, so `--parent-pid` and PDEATHSIG now track the Wine process that runs Fork.
-6. **Stop.** Nothing to do in the normal case: when the Wine process exits, PDEATHSIG
-   (SIGTERM) or `--parent-pid` (polled every 2 s) stops the daemon. If the launcher gives up
-   before the exec, send `SIGTERM` and `wait()`. A stopped daemon closes its listening
-   socket but **does not kill running sessions**; each lives until its shim disconnects,
-   like a real `git.exe` would.
+   thread, so `--parent-pid` now tracks the Wine process that runs Fork.
+6. **Stop.** Nothing to do in the normal case. With `--watch-prefix` (as built) the daemon
+   sets no PDEATHSIG; every 2 s it scans `/proc` for a process of this user whose `argv[0]`
+   (a Windows path under Wine) starts with `--watch-exe-dir` and whose environment holds
+   both `WINEPREFIX=<prefix>` and `FL_BRIDGE_PORT=<its port>`. Once it has seen one, it
+   exits 6 s after the last one is gone (`reason=prefix-idle`, typically ~4 s after Fork
+   closes); before that, `--parent-pid` vanishing stops it. Why: Fork's own updater
+   (Velopack) quits Fork and `Update.exe apply` starts a **new** `Fork.exe` that inherits
+   the old environment (`FL_BRIDGE_PORT`, `FL_BRIDGE_TOKEN`, `FORKGITINSTANCE`, …) but has
+   another pid; a daemon tied to the first pid died with it and every git call of the
+   restarted Fork failed with "cannot connect to the bridge daemon" (spike S9). Wine's own
+   services (`services.exe`, `winedevice.exe`, …) also inherit that environment and can
+   outlive Fork, so only programs from Fork's directory count. Without `--watch-prefix`,
+   PDEATHSIG (SIGTERM) or `--parent-pid` stops the daemon when the Wine process exits. If
+   the launcher gives up before the exec, send `SIGTERM` and `wait()`. A stopped daemon
+   closes its listening socket but **does not kill running sessions**; each lives until its
+   shim disconnects, like a real `git.exe` would.
 7. **Second launch while Fork runs.** Fork's single-instance pipe forwards the paths to the
    running Fork, which keeps using the *first* launch's daemon. The second launcher may skip
    starting a daemon; if it starts one, it simply dies with that short-lived Wine process.

@@ -4,7 +4,8 @@
  * One multi-call binary, persona chosen by basename(argv[0]):
  *
  *   fl-bridge-helper --daemon [--token-file FILE] [--port N] [--host-helper PATH]
- *                    [--parent-pid PID] [--log FILE]
+ *                    [--parent-pid PID] [--watch-prefix DIR [--watch-exe-dir WINDIR]]
+ *                    [--log FILE]
  *       The launcher-started daemon (outside Wine: wine-staging's seccomp filter
  *       makes Wine-spawned Linux helpers unusable, docs/spikes/B2-rendezvous.md).
  *       Binds 127.0.0.1:N (0 = ephemeral), prints "FL_BRIDGE_PORT=<n>\n" on stdout
@@ -14,7 +15,13 @@
  *         REQ -> SPAWN_OK | SPAWN_ERR, then the STDIN / STDOUT / STDERR / SIGNAL relay
  *         and a final EXIT followed by a lingering close.
  *       Exits on SIGTERM / SIGINT / SIGHUP, when its parent dies (PR_SET_PDEATHSIG)
- *       or when --parent-pid disappears (checked every 2 s).
+ *       or when --parent-pid disappears (checked every 2 s). With --watch-prefix the
+ *       daemon instead outlives its parent (no PDEATHSIG) while any process of this
+ *       user carries both WINEPREFIX=DIR and FL_BRIDGE_PORT=<its port> in its
+ *       environment (Fork restarted by its own updater inherits both) and, with
+ *       --watch-exe-dir, runs a program from WINDIR (Fork's install directory, so Wine's
+ *       own services do not count); it exits WATCH_GRACE_MS after the last one is gone.
+ *       Until it has seen one, --parent-pid still applies.
  *
  *   fl-winexec <WinExe> [args...]       re-enter Wine: wine <WinExe> <args as Windows paths>
  *   fl-askpass <prompt>                 wine $FL_ASKPASS_TARGET <prompt>
@@ -39,6 +46,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/prctl.h>
 #include <sys/random.h>
 #include <sys/socket.h>
@@ -65,6 +73,8 @@ extern char **environ;
 #define DRAIN_GRACE_MS 2000
 #define LINGER_MS 2000
 #define PARENT_POLL_MS 2000
+#define WATCH_GRACE_MS 6000
+#define ENVIRON_CAP (256u * 1024u)
 #define MAX_SESSIONS 256
 #define STDIN_CAP (1024u * 1024u)
 #define RX_CAP (4u * (HDR_LEN + FL_MAX_CHUNK))
@@ -1427,6 +1437,8 @@ struct opts {
     const char *log;
     uint16_t port;
     int32_t parent_pid;
+    const char *watch_prefix;
+    const char *watch_exe_dir;
 };
 
 /* Read the token file (regular, ours, mode 0600 or stricter), then unlink it. */
@@ -1491,7 +1503,8 @@ static void usage(int fd)
 {
     static const char text[] =
         "usage: fl-bridge-helper --daemon [--token-file FILE] [--port N] [--host-helper PATH]\n"
-        "                        [--parent-pid PID] [--log FILE]\n"
+        "                        [--parent-pid PID] [--watch-prefix DIR [--watch-exe-dir WINDIR]]\n"
+        "                        [--log FILE]\n"
         "       fl-bridge-helper --version | --help\n"
         "personas (by argv[0]): fl-winexec <WinExe> [args...], fl-askpass <prompt>,\n"
         "                       fl-ssh-askpass <prompt>\n"
@@ -1552,6 +1565,24 @@ static int set_parent_pid(struct opts *o, const char *v)
     return v == NULL || fl_parse_pid(v, &o->parent_pid) != 0 ? -1 : 0;
 }
 
+static int set_watch_prefix(struct opts *o, const char *v)
+{
+    if (v == NULL || v[0] != '/') {
+        return -1;
+    }
+    o->watch_prefix = v;
+    return 0;
+}
+
+static int set_watch_exe_dir(struct opts *o, const char *v)
+{
+    if (v == NULL || v[0] == '\0') {
+        return -1;
+    }
+    o->watch_exe_dir = v;
+    return 0;
+}
+
 static int set_log(struct opts *o, const char *v)
 {
     if (v == NULL || v[0] == '\0') {
@@ -1573,6 +1604,8 @@ static const struct opt_def k_opt_defs[] = {
     { "--port", set_port, "--port needs a number 0..65535" },
     { "--host-helper", set_host_helper, "--host-helper needs an absolute path" },
     { "--parent-pid", set_parent_pid, "--parent-pid needs a positive pid" },
+    { "--watch-prefix", set_watch_prefix, "--watch-prefix needs an absolute path" },
+    { "--watch-exe-dir", set_watch_exe_dir, "--watch-exe-dir needs a directory" },
     { "--log", set_log, "--log needs a path" },
 };
 
@@ -1699,8 +1732,9 @@ static int open_listener(uint16_t port, struct sockaddr_in *a)
     return lst;
 }
 
-/* Self-pipe, handlers, own session, PDEATHSIG; 0 ok (the caller closes lst on error). */
-static int daemon_signals(pid_t orig_ppid)
+/* Self-pipe, handlers, own session, PDEATHSIG (unless pdeathsig is 0); 0 ok (the caller
+ * closes lst on error). */
+static int daemon_signals(pid_t orig_ppid, int pdeathsig)
 {
     if (new_sigpipe() != 0) {
         msg2("pipe: ", strerror(errno));
@@ -1714,7 +1748,9 @@ static int daemon_signals(pid_t orig_ppid)
     if (setsid() < 0 && errno != EPERM) {
         msg2("setsid: ", strerror(errno));
     }
-    prctl(PR_SET_PDEATHSIG, SIGTERM);
+    if (pdeathsig) {
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+    }
     if (getppid() != orig_ppid) {
         msg("parent exited during start-up");
         return -1;
@@ -1747,19 +1783,133 @@ struct daemon_state {
     int nsessions;
     int32_t parent_pid;
     int64_t next_parent_check;
+    /* --watch-prefix: the two environment entries a user of this daemon carries. */
+    const char *watch_prefix;
+    const char *exe_dir;
+    const char *proc_root;
+    char want_prefix[PATH_MAX + 16];
+    char want_port[32];
+    int watch_seen;
+    int64_t watch_last;
 };
 
-/* 1 when the --parent-pid check is due and the parent is gone. */
-static int parent_check(struct daemon_state *d)
+/* 1 when the NUL-separated environment block env[0..len) holds the entry exactly. */
+static int environ_has(const char *env, size_t len, const char *entry)
 {
-    if (d->parent_pid <= 0 || now_ms() < d->next_parent_check) {
+    size_t elen = strlen(entry);
+    size_t i = 0;
+    while (i < len) {
+        const char *end = memchr(env + i, '\0', len - i);
+        size_t n = end != NULL ? (size_t)(end - (env + i)) : len - i;
+        if (n == elen && memcmp(env + i, entry, elen) == 0) {
+            return 1;
+        }
+        i += n + 1;
+    }
+    return 0;
+}
+
+/* Up to cap bytes of <proc>/<name>/<file> into buf (only our own processes are readable); the length. */
+static size_t read_proc_file(const char *proc, const char *name, const char *file, char *buf, size_t cap)
+{
+    char path[PATH_MAX];
+    size_t len = 0;
+    ssize_t n;
+    int fd;
+    if (snprintf(path, sizeof(path), "%s/%s/%s", proc, name, file) >= (int)sizeof(path)) {
         return 0;
     }
-    if (parent_gone(d->parent_pid)) {
-        return 1;
+    fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NOCTTY);
+    if (fd < 0) {
+        return 0;
     }
-    d->next_parent_check = now_ms() + PARENT_POLL_MS;
+    do {
+        n = read(fd, buf + len, cap - len);
+        if (n > 0) {
+            len += (size_t)n;
+        }
+    } while ((n > 0 && len < cap) || (n < 0 && errno == EINTR));
+    close(fd);
+    return len;
+}
+
+/*
+ * 1 when process <name> uses the watched prefix: its environment holds both entries a and b
+ * and, with exe_dir, its argv[0] (a Windows path under Wine) starts with exe_dir, compared
+ * ASCII case-insensitively, so Wine's own services started from Fork's environment
+ * (services.exe, winedevice.exe, ...) do not count.
+ */
+static int proc_uses(const char *proc, const char *name, const char *a, const char *b, const char *exe_dir)
+{
+    static char buf[ENVIRON_CAP];
+    size_t len;
+    if (exe_dir != NULL) {
+        size_t want = strlen(exe_dir);
+        len = read_proc_file(proc, name, "cmdline", buf, PATH_MAX);
+        if (len < want || strncasecmp(buf, exe_dir, want) != 0) {
+            return 0;
+        }
+    }
+    len = read_proc_file(proc, name, "environ", buf, sizeof(buf));
+    return environ_has(buf, len, a) && environ_has(buf, len, b);
+}
+
+/* 1 when a process other than self, under proc ("/proc"), uses the watched prefix (proc_uses). */
+static int prefix_in_use(const char *proc, const char *a, const char *b, const char *exe_dir, pid_t self)
+{
+    struct dirent *e;
+    int found = 0;
+    DIR *dir = opendir(proc);
+    if (dir == NULL) {
+        return 0;
+    }
+    while (!found && (e = readdir(dir)) != NULL) {
+        char *end = NULL;
+        long pid = strtol(e->d_name, &end, 10);
+        if (end != e->d_name && *end == '\0' && pid > 0 && pid != (long)self) {
+            found = proc_uses(proc, e->d_name, a, b, exe_dir);
+        }
+    }
+    closedir(dir);
+    return found;
+}
+
+/* Arm --watch-prefix for the daemon listening on port; -1 when DIR is too long. */
+static int watch_init(struct daemon_state *d, const char *dir, unsigned port)
+{
+    d->watch_prefix = dir;
+    d->proc_root = "/proc";
+    snprintf(d->want_port, sizeof(d->want_port), "FL_BRIDGE_PORT=%u", port);
+    if (snprintf(d->want_prefix, sizeof(d->want_prefix), "WINEPREFIX=%s", dir) >= (int)sizeof(d->want_prefix)) {
+        msg("--watch-prefix is too long");
+        return -1;
+    }
     return 0;
+}
+
+/*
+ * The periodic lifetime check (every PARENT_POLL_MS): 0 keep running, 1 the
+ * --parent-pid process is gone, 2 --watch-prefix saw users before and none for
+ * WATCH_GRACE_MS. Once a watched user was seen, --parent-pid no longer matters.
+ */
+static int parent_check(struct daemon_state *d)
+{
+    int64_t now = now_ms();
+    if ((d->parent_pid <= 0 && d->watch_prefix == NULL) || now < d->next_parent_check) {
+        return 0;
+    }
+    d->next_parent_check = now + PARENT_POLL_MS;
+    if (d->watch_prefix != NULL) {
+        if (prefix_in_use(d->proc_root, d->want_prefix, d->want_port, d->exe_dir, getpid())) {
+            d->watch_seen = 1;
+            d->watch_last = now;
+            return 0;
+        }
+        if (d->watch_seen) {
+            return now - d->watch_last >= WATCH_GRACE_MS ? 2 : 0;
+        }
+    }
+    return parent_gone(d->parent_pid) ? 1 : 0;
 }
 
 /* The self-pipe fired: reap finished sessions; 1 when a termination signal arrived. */
@@ -1832,7 +1982,8 @@ static int daemon_step(struct daemon_state *d)
                            { .fd = g_sigpipe[0], .events = POLLIN, .revents = 0 } };
     int timeout = -1;
     int r;
-    if (d->parent_pid > 0) {
+    int gone;
+    if (d->parent_pid > 0 || d->watch_prefix != NULL) {
         int64_t left = d->next_parent_check - now_ms();
         timeout = left > 0 ? (int)left : 0;
     }
@@ -1841,8 +1992,9 @@ static int daemon_step(struct daemon_state *d)
         log_num("daemon exit reason=poll-error errno=", (long)errno);
         return 0;
     }
-    if (parent_check(d)) {
-        log_text("daemon exit reason=parent-gone");
+    gone = parent_check(d);
+    if (gone != 0) {
+        log_text(gone == 1 ? "daemon exit reason=parent-gone" : "daemon exit reason=prefix-idle");
         return 0;
     }
     if (r > 0 && p[1].revents != 0 && daemon_reap(d)) {
@@ -1874,13 +2026,15 @@ static int run_daemon(const struct opts *o)
     if (d.lst < 0) {
         return 1;
     }
-    if (daemon_signals(orig_ppid) != 0 || publish_port((unsigned)ntohs(a.sin_port)) != 0) {
+    d.exe_dir = o->watch_exe_dir;
+    if ((o->watch_prefix != NULL && watch_init(&d, o->watch_prefix, (unsigned)ntohs(a.sin_port)) != 0) ||
+        daemon_signals(orig_ppid, o->watch_prefix == NULL) != 0 || publish_port((unsigned)ntohs(a.sin_port)) != 0) {
         close(d.lst);
         return 1;
     }
-    snprintf(line, sizeof(line), "daemon start port=%u pid=%ld parent=%ld host-helper=%s",
+    snprintf(line, sizeof(line), "daemon start port=%u pid=%ld parent=%ld host-helper=%s watch-prefix=%s",
              (unsigned)ntohs(a.sin_port), (long)getpid(), (long)(o->parent_pid ? o->parent_pid : orig_ppid),
-             g_have_host_helper ? "yes" : "no");
+             g_have_host_helper ? "yes" : "no", o->watch_prefix != NULL ? "yes" : "no");
     log_text(line);
 
     d.next_parent_check = now_ms() + PARENT_POLL_MS;
