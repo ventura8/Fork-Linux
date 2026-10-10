@@ -446,7 +446,9 @@ def test_desired_tool_lists_add_and_remove_only_our_entry(tmp_path: Path) -> Non
         (["C:\\users\\tester", "D:\\src"], False),
         ([5], False),
         ("C:\\users\\tester", False),
-        (None, False),
+        # Unset (a fresh settings.json): set it, so Fork's very first session already offers the home.
+        (None, True),
+        ([], False),
     ],
 )
 def test_desired_source_directories(tmp_path: Path, dirs: Any, replaced: bool) -> None:
@@ -455,6 +457,13 @@ def test_desired_source_directories(tmp_path: Path, dirs: Any, replaced: bool) -
     wanted = _desired(config, home_win="Z:\\home\\tester", current=current)
     assert wanted == ({"RepositoryManager.SourceDirectories": ["Z:\\home\\tester"]} if replaced else {})
     assert _desired(config, home_win=None, current=current) == {}
+
+
+def test_desired_source_directories_without_repository_manager(tmp_path: Path) -> None:
+    config = _config(tmp_path, fork__enforce_settings="", display__theme="off", display__dpi="0")
+    for current in ({}, {"RepositoryManager": {"Other": 1}}):
+        wanted = _desired(config, home_win="Z:\\home\\tester", current=current)
+        assert wanted == {"RepositoryManager.SourceDirectories": ["Z:\\home\\tester"]}
 
 
 # -- apply ---------------------------------------------------------------------------------

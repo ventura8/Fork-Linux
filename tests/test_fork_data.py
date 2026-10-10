@@ -112,7 +112,9 @@ def test_ensure_source_dirs_creates_a_missing_file(tmp_path: Path) -> None:
     backups = tmp_path / "backups"
     assert fork_data.ensure_source_dirs(forkdata, user="tester", home_win=HOME, backup_dir=backups)
     file = fork_data.path(forkdata)
-    assert file.read_text(encoding="utf-8") == f"source_dirs = ['{HOME}']\n"
+    # Exactly what Fork 2.23.2 writes: it rejects a file without any of the four keys.
+    expected = f"source_dirs = ['{HOME}']\nscan_depth = 5\nignore = []\nrepository = []\n"
+    assert file.read_text(encoding="utf-8") == expected
     assert stat.S_IMODE(file.stat().st_mode) == fork_data.FILE_MODE
     assert not backups.exists()
     # Already ours: nothing to do.
@@ -136,13 +138,67 @@ def test_ensure_source_dirs_replaces_only_the_default(tmp_path: Path, monkeypatc
     assert saved[0].read_bytes().startswith(b"source_dirs = ['C:\\users\\tester\\']")
     assert stat.S_IMODE(saved[0].stat().st_mode) == fork_data.BACKUP_MODE
     # A folder the user chose is kept.
-    file.write_text("source_dirs = ['D:\\src']\n", encoding="utf-8")
+    chosen = fork_data.new_file("D:\\src")
+    file.write_text(chosen, encoding="utf-8")
+    assert not fork_data.ensure_source_dirs(forkdata, user="tester", home_win=HOME, backup_dir=backups)
+    assert file.read_text(encoding="utf-8") == chosen
+    file.write_text(REAL.replace("'C:\\users\\tester\\'", "'D:\\src'"), encoding="utf-8")
     assert not fork_data.ensure_source_dirs(forkdata, user="tester", home_win=HOME, backup_dir=backups)
     # Backups rotate.
     for _ in range(4):
         file.write_text(REAL, encoding="utf-8")
         fork_data.ensure_source_dirs(forkdata, user="tester", home_win=HOME, backup_dir=backups)
     assert len(fork_data.list_backups(backups)) == fork_data.DEFAULT_KEEP
+
+
+def test_new_file_matches_forks_own_layout() -> None:
+    assert fork_data.new_file("Z:\\home\\it's") == (
+        'source_dirs = ["Z:\\\\home\\\\it\'s"]\nscan_depth = 5\nignore = []\nrepository = []\n'
+    )
+    assert fork_data.KEYS == ("source_dirs", "scan_depth", "ignore", "repository")
+    text = fork_data.new_file(HOME)
+    assert fork_data.source_dirs(text) == [HOME]
+    assert fork_data.repositories(text) == []
+
+
+@pytest.mark.parametrize(
+    ("legacy", "folder"),
+    [
+        # The one-line file fork-linux 1.0.0 wrote over Fork's default: the home goes in.
+        ("source_dirs = ['C:\\users\\tester\\']\n", HOME),
+        # ... or with a folder already chosen: the folder is kept.
+        ("source_dirs = ['Z:\\home\\tester']\n", HOME),
+        ("source_dirs = ['D:\\src']\n", "D:\\src"),
+    ],
+)
+def test_ensure_source_dirs_completes_the_file_fork_linux_1_0_0_wrote(
+    tmp_path: Path, legacy: str, folder: str
+) -> None:
+    forkdata = tmp_path / "ForkData"
+    forkdata.mkdir()
+    file = fork_data.path(forkdata)
+    file.write_text(legacy, encoding="utf-8")
+    backups = tmp_path / "backups"
+    assert fork_data.ensure_source_dirs(forkdata, user="tester", home_win=HOME, backup_dir=backups)
+    assert file.read_text(encoding="utf-8") == fork_data.new_file(folder)
+    [saved] = fork_data.list_backups(backups)
+    assert saved.read_text(encoding="utf-8") == legacy
+    assert not fork_data.ensure_source_dirs(forkdata, user="tester", home_win=HOME, backup_dir=backups)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "source_dirs = ['a', 'b']\n",
+        "source_dirs = []\n",
+        "source_dirs = ['D:\\src']\n\n",
+        "source_dirs = [ 'D:\\src' ]\n",
+        "source_dirs = ['D:\\src']",
+        "scan_depth = 5\n",
+    ],
+)
+def test_only_the_exact_one_line_file_counts_as_legacy(text: str) -> None:
+    assert fork_data._legacy(text) is None
 
 
 def test_list_backups_of_a_missing_dir(tmp_path: Path) -> None:
