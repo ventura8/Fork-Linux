@@ -196,3 +196,40 @@ def test_apprun_and_helpers_list_the_same_helpers() -> None:
     plain = [name for name in helpers.NAMES if name != "fork-linux-host"]
     assert f"\t\t\t{' | '.join(plain)}) ;;\n" in text
     assert "\t\t\tfork-linux-host)\n" in text
+
+
+# --------------------------------------------------------------------- snap
+
+
+@pytest.fixture
+def snap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    """/snap/fork-linux/x2 (the running revision) with current -> x2, under tmp_path."""
+    root = tmp_path / "snap"
+    revision = root / "fork-linux" / "x2"
+    libexec = revision / "usr" / "lib" / "fork-linux"
+    libexec.mkdir(parents=True)
+    (libexec / "fork-linux-terminal").write_text("#!/bin/sh\n", encoding="utf-8")
+    (root / "fork-linux" / "current").symlink_to("x2")
+    monkeypatch.setattr(helpers, "SNAP_ROOT", root)
+    monkeypatch.setattr(resources, "libexec_dir", lambda: libexec)
+    return {"SNAP": str(revision), "SNAP_NAME": "fork-linux"}
+
+
+def test_a10_snap_helpers_go_through_the_current_link(snap: dict[str, str]) -> None:
+    """A snap refresh changes the revision directory; the stored paths name 'current' and stay valid."""
+    terminal = helpers.path("fork-linux-terminal", env=snap)
+    current = helpers.SNAP_ROOT / "fork-linux" / "current"
+    assert terminal == current / "usr" / "lib" / "fork-linux" / "fork-linux-terminal"
+    assert terminal.is_file()
+
+
+def test_snap_current_leaves_other_paths_alone(snap: dict[str, str], tmp_path: Path) -> None:
+    installed = resources.libexec_dir() / "fork-linux-terminal"
+    assert helpers.snap_current(installed, {}) == installed
+    assert helpers.snap_current(installed, {**snap, "SNAP_NAME": "a/b"}) == installed
+    assert helpers.snap_current(installed, {**snap, "SNAP": "relative"}) == installed
+    elsewhere = tmp_path / "usr" / "lib" / "fork-linux-terminal"
+    assert helpers.snap_current(elsewhere, snap) == elsewhere
+    (helpers.SNAP_ROOT / "fork-linux" / "current").unlink()
+    (helpers.SNAP_ROOT / "fork-linux" / "current").symlink_to("x3")  # refreshed while this one runs
+    assert helpers.snap_current(installed, snap) == installed

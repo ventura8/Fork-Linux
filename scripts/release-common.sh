@@ -79,9 +79,9 @@ fl_source_files() {
 		git -c safe.directory='*' -C "${FL_REPO_ROOT}" ls-files -z -co --exclude-standard
 	else
 		# A linked worktree's .git is a file pointing at the main repository: never ship it,
-		# nor Python's byte-code caches.
+		# nor Python's byte-code caches. Symbolic links are part of the tree (meson_options.txt).
 		(cd "${FL_REPO_ROOT}" && find . \( -path ./.git -o -name __pycache__ \) -prune -o \
-			-type f -not -name '*.pyc' -printf '%P\0')
+			\( -type f -o -type l \) -not -name '*.pyc' -printf '%P\0')
 	fi
 }
 

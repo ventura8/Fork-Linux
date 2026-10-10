@@ -54,9 +54,15 @@ fi
 docker exec -w /src -e "FL_ARTIFACTS_DIR=${ART_IN}" "${CONTAINER}" \
 	/usr/local/bin/snap-entrypoint.sh ./scripts/release-portable.sh snap
 
-# The smoke verify always runs; FL_SNAP_E2E=0 only skips the live install E2E.
+# The smoke verify always runs; FL_SNAP_E2E=0 only skips the live install E2E (and the
+# previous release it upgrades from, FL_PACKAGING_PREVIOUS, built by ci-packaging-cell.sh's rules).
 ./scripts/packaging-smoke-verify.sh snap
 if [[ "${FL_SNAP_E2E:-1}" == "1" ]]; then
+	previous="${FL_PACKAGING_PREVIOUS:-0.9.9}"
+	rm -rf "${FL_ARTIFACTS_DIR:?}/previous"
 	docker exec -w /src -e "FL_ARTIFACTS_DIR=${ART_IN}" "${CONTAINER}" \
+		/usr/local/bin/snap-entrypoint.sh ./scripts/build-version-variant.sh "${previous}" "${ART_IN}/previous" snap
+	docker exec -w /src -e "FL_ARTIFACTS_DIR=${ART_IN}" -e "FL_PREVIOUS_ARTIFACTS_DIR=${ART_IN}/previous" \
+		-e "FL_PREVIOUS_VERSION=${previous}" "${CONTAINER}" \
 		/usr/local/bin/snap-entrypoint.sh ./scripts/packaging-e2e-install.sh snap
 fi

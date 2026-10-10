@@ -9,7 +9,9 @@ and stop working once that instance ends, for example when Fork's own updater re
 Fork. Inside an AppImage the helpers are therefore reached through small launchers in
 ``<data_dir>/helpers/`` that run ``<AppImage> --libexec NAME``; a launcher is rewritten
 when the AppImage file moves, so the stored paths never change (scenario A9 of
-docs/qa/UPDATE-SCENARIOS.md).
+docs/qa/UPDATE-SCENARIOS.md). A snap runs from ``/snap/<name>/<revision>``, which every
+refresh changes and snapd later deletes: its helpers are named through the
+``/snap/<name>/current`` link instead (scenario A10).
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ HELPERS_DIR = "helpers"
 NAMES = ("fork-linux-terminal", "fork-linux-explorer", "fork-linux-open-url", "fork-linux-host")
 # The launchers tell fork-linux-handoff where the stable fork-linux-host is.
 HELPER_DIR_ENV = "FORK_LINUX_HELPER_DIR"
+SNAP_ROOT = Path("/snap")
 _LAUNCHER = (
     "#!/bin/sh\n"
     "# Written by fork-linux: runs {name} from the AppImage, wherever it was mounted.\n"
@@ -49,6 +52,20 @@ def appimage(env: Mapping[str, str] | None = None) -> Path | None:
     return Path(image) if here == mount or mount in here.parents else None
 
 
+def snap_current(installed: Path, env: Mapping[str, str] | None = None) -> Path:
+    """``installed`` through ``/snap/<name>/current`` when it lies in this snap's revision, else unchanged."""
+    environ: Mapping[str, str] = os.environ if env is None else env
+    snap, name = environ.get("SNAP", ""), environ.get("SNAP_NAME", "")
+    if not (os.path.isabs(snap) and name) or os.sep in name:
+        return installed
+    try:
+        relative = Path(os.path.realpath(installed)).relative_to(os.path.realpath(snap))
+    except ValueError:
+        return installed
+    current = SNAP_ROOT / name / "current" / relative
+    return current if os.path.realpath(current) == os.path.realpath(installed) else installed
+
+
 def launcher_text(name: str, image: Path, directory: Path) -> str:
     """The launcher script of helper ``name`` for the AppImage ``image``."""
     return _LAUNCHER.format(
@@ -68,7 +85,7 @@ def path(name: str, *, paths: Paths | None = None, env: Mapping[str, str] | None
     installed = resources.libexec_dir() / name
     image = appimage(env)
     if image is None or name not in NAMES or not installed.is_file():
-        return installed
+        return snap_current(installed, env)
     where = paths if paths is not None else Paths.from_env(env)
     directory = fsutil.ensure_dir(where.data_dir / HELPERS_DIR)
     launcher = directory / name

@@ -19,7 +19,9 @@ platforms:
     build-for: [amd64]
 license: MIT
 website: https://github.com/ventura8/Fork-Linux
+source-code: https://github.com/ventura8/Fork-Linux
 issues: https://github.com/ventura8/Fork-Linux/issues
+contact: https://github.com/ventura8/Fork-Linux/issues
 title: Fork for Linux (unofficial)
 
 apps:

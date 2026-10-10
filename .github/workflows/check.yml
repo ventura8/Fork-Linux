@@ -165,5 +165,6 @@ jobs:
           path: |
             artifacts/*
             !artifacts/.flatpak-work
+            !artifacts/previous
           if-no-files-found: error
           retention-days: 7

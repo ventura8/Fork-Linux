@@ -2,11 +2,14 @@
 # packaging-e2e-install.sh - live install E2E of one built package of Fork for Linux (unofficial).
 #
 # Runs as root inside the format's packaging image (the snap cell: inside the systemd
-# container of scripts/ci-snap-build.sh) against artifacts/. Cycle (AGENTS.md §4.9):
-#   install -> assert -> upgrade (install again) -> assert -> remove -> assert removed ->
-#   reinstall -> assert
+# container of scripts/ci-snap-build.sh) against artifacts/ and the previous release in
+# $FL_PREVIOUS_ARTIFACTS_DIR (version $FL_PREVIOUS_VERSION, built by ci-packaging-cell.sh with
+# scripts/build-version-variant.sh). Cycle (AGENTS.md §4.9, docs/qa/UPDATE-SCENARIOS.md A2/A8):
+#   install N-1 -> assert -> upgrade to N -> assert -> downgrade to N-1 -> assert ->
+#   upgrade to N -> assert -> upgrade in place (install N again) -> assert -> remove ->
+#   assert removed -> reinstall -> assert
 # The program is always run as the unprivileged user "tester" (hard rule 9). Asserts:
-#   * fork-linux --version and fork --version print VERSION
+#   * fork-linux --version and fork --version print the version just installed
 #   * fork-linux doctor --offline --json works with no Wine present (JSON, exit 0 or 17)
 #   * the shims (win64/fl-shim.exe, fl-launch.exe) are PE32+ x86-64
 #   * fl-bridge-helper is an x86-64 ELF: ET_EXEC (static musl) for the portable channels
@@ -27,6 +30,11 @@ FORMAT="${1:?usage: packaging-e2e-install.sh <format>}"
 VERSION="$(fl_read_version)"
 APP_ID="$(fl_app_id)"
 ART="${FL_ARTIFACTS_DIR}"
+PREV_ART="${FL_PREVIOUS_ARTIFACTS_DIR:?set FL_PREVIOUS_ARTIFACTS_DIR to the previous release (ci-packaging-cell.sh does)}"
+PREV_VERSION="${FL_PREVIOUS_VERSION:?set FL_PREVIOUS_VERSION}"
+# The release the install functions use and the asserts expect (use_release).
+REL_ART="${ART}"
+REL_VERSION="${VERSION}"
 TESTER="tester"
 TESTER_HOME="/home/${TESTER}"
 MARKER="${TESTER_HOME}/.local/share/fork-linux/E2E_MARKER"
@@ -146,7 +154,7 @@ assert_installed() {
 	echo "==> assert installed (${FORMAT})"
 	local out
 	out="$(as_tester "${cmd[@]}" --version)" || fail "fork-linux --version failed"
-	[[ "${out}" == *"fork-linux ${VERSION}"* ]] || fail "fork-linux --version printed '${out}', expected ${VERSION}"
+	[[ "${out}" == *"fork-linux ${REL_VERSION} "* ]] || fail "fork-linux --version printed '${out}', expected ${REL_VERSION}"
 	echo "ok  ${out}"
 	check_doctor_json "${cmd[@]}"
 	check_binaries "${root}" "${helper_kind}"
@@ -182,20 +190,53 @@ assert_removed() {
 
 artifact() {
 	local pattern="$1" match
-	match="$(compgen -G "${ART}/${pattern}" | head -n 1 || true)"
-	[[ -n "${match}" ]] || fail "no artifact ${ART}/${pattern}"
+	match="$(compgen -G "${REL_ART}/${pattern}" | head -n 1 || true)"
+	[[ -n "${match}" ]] || fail "no artifact ${REL_ART}/${pattern}"
 	readlink -f "${match}"
 }
 
+# use_release DIR VERSION: the artifacts the install functions take and the version the asserts expect.
+use_release() {
+	REL_ART="$1"
+	REL_VERSION="$2"
+}
+
 # ---------------------------------------------------------------------- formats
+
+# upgrade_from_previous INSTALL ASSERT: N-1 installed, then N installed over it with the
+# format's own upgrade (scenario A2): --version changes, the markers survive, the menu entry
+# and the commands start the new install.
+upgrade_from_previous() {
+	local install_fn="$1" assert_fn="$2"
+	echo "==> E2E install N-1 (${FORMAT} ${PREV_VERSION})"
+	use_release "${PREV_ART}" "${PREV_VERSION}"
+	"${install_fn}"
+	"${assert_fn}"
+	echo "==> E2E upgrade N-1 -> N (${FORMAT} ${PREV_VERSION} -> ${VERSION})"
+	use_release "${ART}" "${VERSION}"
+	"${install_fn}"
+	"${assert_fn}"
+}
+
+# downgrade_to_previous INSTALL ASSERT: back from N to N-1 and up to N again (scenario A8).
+downgrade_to_previous() {
+	local install_fn="$1" assert_fn="$2"
+	echo "==> E2E downgrade N -> N-1 (${FORMAT} ${VERSION} -> ${PREV_VERSION})"
+	use_release "${PREV_ART}" "${PREV_VERSION}"
+	"${install_fn}"
+	"${assert_fn}"
+	echo "==> E2E upgrade N-1 -> N again (${FORMAT})"
+	use_release "${ART}" "${VERSION}"
+	"${install_fn}"
+	"${assert_fn}"
+}
 
 # cycle INSTALL REMOVE ASSERT ROOT...: the E2E cycle; ROOTs are checked after the remove.
 cycle() {
 	local install_fn="$1" remove_fn="$2" assert_fn="$3"
 	shift 3
-	echo "==> E2E install (${FORMAT})"
-	"${install_fn}"
-	"${assert_fn}"
+	upgrade_from_previous "${install_fn}" "${assert_fn}"
+	downgrade_to_previous "${install_fn}" "${assert_fn}"
 	echo "==> E2E upgrade in place (${FORMAT})"
 	"${install_fn}"
 	"${assert_fn}"
@@ -212,39 +253,67 @@ system_assert() {
 	assert_installed /usr "${helper_kind}" "/usr/share/applications/${APP_ID}.desktop" fork-linux
 	local out
 	out="$(as_tester fork --version)" || fail "fork --version failed"
-	[[ "${out}" == *"${VERSION}"* ]] || fail "fork --version printed '${out}'"
+	[[ "${out}" == *"${REL_VERSION}"* ]] || fail "fork --version printed '${out}'"
 }
 dyn_assert() { system_assert dyn; }
 
+# installed_version: the version the package manager has installed (empty when none).
+installed_version() {
+	local status=""
+	case "${FORMAT}" in
+		deb | deb-jammy)
+			status="$(dpkg-query -W -f='${Status} ${Version}' fork-linux 2>/dev/null || true)"
+			if [[ "${status}" == "install ok installed "* ]]; then
+				printf '%s\n' "${status##* }"
+			fi
+			;;
+		rpm-fedora | rpm-opensuse)
+			# rpm -q prints "package ... is not installed" on stdout: ask for the version only when it is.
+			if rpm -q fork-linux >/dev/null 2>&1; then
+				rpm -q --qf '%{VERSION}' fork-linux
+			fi
+			;;
+	esac
+}
+
 deb_install() {
 	local deb
-	deb="$(artifact "fork-linux_${VERSION}_amd64.deb")"
+	deb="$(artifact "fork-linux_${REL_VERSION}_amd64.deb")"
 	cp "${deb}" "${STAGE}/"
 	apt-get update -qq
-	if dpkg -s fork-linux >/dev/null 2>&1; then
+	if [[ "$(installed_version)" == "${REL_VERSION}" ]]; then
 		apt-get install -y --reinstall "${STAGE}/$(basename "${deb}")"
 	else
-		apt-get install -y "${STAGE}/$(basename "${deb}")"
+		# A newer .deb upgrades; --allow-downgrades lets the downgrade step go back to N-1.
+		apt-get install -y --allow-downgrades "${STAGE}/$(basename "${deb}")"
 	fi
 }
 deb_remove() { apt-get purge -y fork-linux; }
 
 fedora_install() {
-	local rpm
-	rpm="$(artifact "fork-linux-${VERSION}-*.fc*.x86_64.rpm")"
-	if rpm -q fork-linux >/dev/null 2>&1; then
-		dnf reinstall -y --nogpgcheck "${rpm}"
-	else
+	local rpm installed
+	rpm="$(artifact "fork-linux-${REL_VERSION}-*.fc*.x86_64.rpm")"
+	installed="$(installed_version)"
+	if [[ -z "${installed}" ]]; then
 		dnf install -y --nogpgcheck "${rpm}"
+	elif [[ "${installed}" == "${REL_VERSION}" ]]; then
+		dnf reinstall -y --nogpgcheck "${rpm}"
+	elif [[ "${REL_VERSION}" == "${PREV_VERSION}" ]]; then
+		dnf downgrade -y --nogpgcheck "${rpm}"
+	else
+		dnf upgrade -y --nogpgcheck "${rpm}"
 	fi
 }
 fedora_remove() { dnf remove -y fork-linux; }
 
 opensuse_install() {
-	local rpm
-	rpm="$(artifact "fork-linux-${VERSION}-*.lp*.x86_64.rpm")"
-	if rpm -q fork-linux >/dev/null 2>&1; then
+	local rpm installed
+	rpm="$(artifact "fork-linux-${REL_VERSION}-*.lp*.x86_64.rpm")"
+	installed="$(installed_version)"
+	if [[ "${installed}" == "${REL_VERSION}" ]]; then
 		zypper --non-interactive --no-gpg-checks install --force --allow-unsigned-rpm "${rpm}"
+	elif [[ -n "${installed}" && "${REL_VERSION}" == "${PREV_VERSION}" ]]; then
+		zypper --non-interactive --no-gpg-checks install --oldpackage --allow-unsigned-rpm "${rpm}"
 	else
 		zypper --non-interactive --no-gpg-checks install --allow-unsigned-rpm "${rpm}"
 	fi
@@ -253,7 +322,7 @@ opensuse_remove() { zypper --non-interactive remove fork-linux; }
 
 arch_install() {
 	local pkg
-	pkg="$(artifact "fork-linux-${VERSION}-*-x86_64.pkg.tar.zst")"
+	pkg="$(artifact "fork-linux-${REL_VERSION}-*-x86_64.pkg.tar.zst")"
 	pacman -Sy --noconfirm
 	pacman -U --noconfirm "${pkg}"
 }
@@ -261,7 +330,7 @@ arch_remove() { pacman -Rns --noconfirm fork-linux; }
 
 tarball_install() {
 	local tarball
-	tarball="$(artifact "fork-linux-${VERSION}-x86_64.tar.gz")"
+	tarball="$(artifact "fork-linux-${REL_VERSION}-x86_64.tar.gz")"
 	cp "${tarball}" "${STAGE}/"
 	(cd "${STAGE}" && sha256sum "$(basename "${tarball}")" >SHA256SUMS)
 	cp install.sh uninstall.sh "${STAGE}/"
@@ -275,14 +344,14 @@ tarball_assert() {
 		"${TESTER_HOME}/.local/share/applications/${APP_ID}.desktop" "${TESTER_HOME}/.local/bin/fork-linux"
 	local out
 	out="$(as_tester "${TESTER_HOME}/.local/bin/fork" --version)" || fail "fork --version failed"
-	[[ "${out}" == *"${VERSION}"* ]] || fail "fork --version printed '${out}'"
+	[[ "${out}" == *"${REL_VERSION}"* ]] || fail "fork --version printed '${out}'"
 	[[ -f "${TESTER_HOME}/.local/share/man/man1/fork-linux.1" ]] || fail "per-user man page missing"
 }
 
 APPIMAGE_ROOT="${STAGE}/appimage-root"
 appimage_install() {
 	local image offset
-	image="$(artifact "fork-linux-${VERSION}-x86_64.AppImage")"
+	image="$(artifact "fork-linux-${REL_VERSION}-x86_64.AppImage")"
 	install -d -o "${TESTER}" "${TESTER_HOME}/Applications"
 	install -m 0755 -o "${TESTER}" "${image}" "${TESTER_HOME}/Applications/fork-linux.AppImage"
 	as_tester env APPIMAGE="${TESTER_HOME}/Applications/fork-linux.AppImage" \
@@ -333,7 +402,7 @@ EOF
 }
 
 appimage_assert() {
-	check_appimage_update_info "$(artifact "fork-linux-${VERSION}-x86_64.AppImage")"
+	check_appimage_update_info "$(artifact "fork-linux-${REL_VERSION}-x86_64.AppImage")"
 	# The stable helper launchers fork-linux writes for Wine and Fork run helpers through this.
 	local helper_out
 	helper_out="$(as_tester "${TESTER_HOME}/Applications/fork-linux.AppImage" --libexec fork-linux-host --help)" ||
@@ -349,13 +418,13 @@ appimage_assert() {
 		fail "the AppImage menu entry does not start the AppImage"
 	local out
 	out="$(as_tester "${TESTER_HOME}/.local/bin/fork" --version)" || fail "fork --version (link to the AppImage) failed"
-	[[ "${out}" == *"${VERSION}"* ]] || fail "fork --version printed '${out}'"
+	[[ "${out}" == *"${REL_VERSION}"* ]] || fail "fork --version printed '${out}'"
 }
 
 FLATPAK_ROOT="/var/lib/flatpak/app/${APP_ID}/current/active/files"
 flatpak_install() {
 	local bundle
-	bundle="$(artifact "${APP_ID}-${VERSION}-x86_64.flatpak")"
+	bundle="$(artifact "${APP_ID}-${REL_VERSION}-x86_64.flatpak")"
 	flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 	flatpak install --system -y --noninteractive --reinstall "${bundle}"
 }
@@ -365,13 +434,13 @@ flatpak_assert() {
 		flatpak run "${APP_ID}"
 	local out
 	out="$(as_tester flatpak run --command=fork "${APP_ID}" --version)" || fail "flatpak fork --version failed"
-	[[ "${out}" == *"${VERSION}"* ]] || fail "fork --version printed '${out}'"
+	[[ "${out}" == *"${REL_VERSION}"* ]] || fail "fork --version printed '${out}'"
 }
 
 SNAP_ROOT="/snap/fork-linux/current/usr"
 snap_install() {
 	local snap_file
-	snap_file="$(artifact "fork-linux_${VERSION}_amd64.snap")"
+	snap_file="$(artifact "fork-linux_${REL_VERSION}_amd64.snap")"
 	snap install --dangerous --classic "${snap_file}"
 }
 snap_remove() { snap remove --purge fork-linux; }
@@ -380,7 +449,7 @@ snap_assert() {
 		/snap/bin/fork-linux
 	local out
 	out="$(as_tester /snap/bin/fork-linux.fork --version)" || fail "fork-linux.fork --version failed"
-	[[ "${out}" == *"${VERSION}"* ]] || fail "fork --version printed '${out}'"
+	[[ "${out}" == *"${REL_VERSION}"* ]] || fail "fork --version printed '${out}'"
 }
 
 # Container base images drop documentation at install time (dpkg path-exclude, dnf
@@ -413,4 +482,4 @@ case "${FORMAT}" in
 	*) fail "unknown format ${FORMAT}" ;;
 esac
 assert_markers
-echo "==> packaging E2E OK: ${FORMAT} ${VERSION} (install, upgrade, remove, reinstall)"
+echo "==> packaging E2E OK: ${FORMAT} ${PREV_VERSION} -> ${VERSION} (upgrade, downgrade, upgrade in place, remove, reinstall)"

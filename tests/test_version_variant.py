@@ -365,6 +365,7 @@ def test_build_tree_only_writes_a_variant_tree_and_cleans_up(tmp_path: Path) -> 
     assert (variant / "VERSION").read_text(encoding="utf-8") == "0.9.9\n"
     assert (variant / "docs/releases/v0.9.9.md").is_file()
     assert (variant / "meson.build").is_file()
+    assert (variant / "meson_options.txt").is_symlink(), "links are copied as links"
     assert not (variant / ".git").exists()
     assert not list(variant.rglob("__pycache__"))
     assert not (variant / "artifacts").exists()

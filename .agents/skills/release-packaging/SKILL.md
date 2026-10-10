@@ -10,7 +10,9 @@ Local multi-format builds: deb, rpm, arch, snap, AppImage, Flatpak, tarball (+ P
 Canonical rules: [AGENTS.md](../../../AGENTS.md).
 
 - One format: `./scripts/ci-packaging-cell.sh <deb|deb-jammy|rpm-fedora|rpm-opensuse|arch|snap|appimage|flatpak|tarball>`
-  (build → `packaging-smoke-verify.sh` → `packaging-e2e-install.sh`). All: `./scripts/ci-packaging-matrix.sh`.
+  (build → `packaging-smoke-verify.sh` → N-1 build (`build-version-variant.sh`, `FL_PACKAGING_PREVIOUS`, default 0.9.9) →
+  `packaging-e2e-install.sh`: N-1 → N upgrade, downgrade and back, upgrade in place, remove, reinstall). All:
+  `./scripts/ci-packaging-matrix.sh`; read every `logs/ci-packaging/<format>.log`.
 - PPA: `docker run --rm -v "$PWD:/src" -w /src fork-linux-ci-ppa:26.04 ./scripts/ppa-docker.sh --dry-run`
   → `artifacts/ppa/<series>/fork-linux_X+ppa1~ubuntuNN.NN.1*`.
 - AUR: `./scripts/aur-render.sh [--tarball FILE]` → `artifacts/aur/{PKGBUILD,.SRCINFO}`.

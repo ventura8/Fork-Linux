@@ -141,6 +141,9 @@ def test_snap_rules() -> None:
     assert "hooks" not in text
     assert f"common-id: {APP_ID}" in text
     assert "fl-bridge-helper-static" in text
+    # snapcraft's metadata lint: every store link is set (the packaging log stays free of lint warnings).
+    for key in ("website", "source-code", "issues", "contact"):
+        assert re.search(rf"^{key}: https://github\.com/ventura8/Fork-Linux", text, re.MULTILINE), key
 
 
 def test_flatpak_rules() -> None:
@@ -228,8 +231,29 @@ def test_e2e_asserts_what_agents_md_requires() -> None:
         'echo "==> E2E remove',
         'echo "==> E2E reinstall',
         'runuser -u "${TESTER}"',
+        'echo "==> E2E upgrade N-1 -> N',
+        'echo "==> E2E downgrade N -> N-1',
+        'PREV_ART="${FL_PREVIOUS_ARTIFACTS_DIR:?',
+        "upgrade_from_previous() {",
+        "downgrade_to_previous() {",
     ):
         assert needle in e2e, needle
+
+
+def test_a2_every_cell_upgrades_from_the_previous_version() -> None:
+    """Each cell builds N-1 with build-version-variant.sh and the E2E upgrades from it and back."""
+    cell = _text(ROOT / "scripts" / "ci-packaging-cell.sh")
+    assert 'export FL_PACKAGING_PREVIOUS="${FL_PACKAGING_PREVIOUS:-0.9.9}"' in cell
+    assert './scripts/build-version-variant.sh "${FL_PACKAGING_PREVIOUS}" "${FL_PREVIOUS_IN}" "${FORMAT}"' in cell
+    assert 'FL_PREVIOUS_ARTIFACTS_DIR="${FL_PREVIOUS_IN}"' in cell
+    snap = _text(ROOT / "scripts" / "ci-snap-build.sh")
+    assert './scripts/build-version-variant.sh "${previous}" "${ART_IN}/previous" snap' in snap
+    assert '-e "FL_PREVIOUS_ARTIFACTS_DIR=${ART_IN}/previous"' in snap
+    e2e = _text(ROOT / "scripts" / "packaging-e2e-install.sh")
+    cycle = e2e[e2e.index("cycle() {"):]
+    assert cycle.index("upgrade_from_previous") < cycle.index("downgrade_to_previous") < cycle.index("upgrade in place")
+    assert not re.search(r'artifact "[^"]*\$\{VERSION\}', e2e), "install functions take REL_VERSION"
+    assert "!artifacts/previous" in _text(ROOT / ".github" / "workflows" / "check.yml")
 
 
 @pytest.mark.parametrize("name", SCRIPTS)
@@ -365,11 +389,14 @@ def test_source_tarball_without_git_skips_the_git_pointer_and_byte_code(tmp_path
     (tree / "src" / "pkg" / "mod.py").write_text("x = 1\n", encoding="utf-8")
     (tree / "src" / "pkg" / "__pycache__" / "mod.cpython-310.pyc").write_bytes(b"\0")
     (tree / "src" / "pkg" / "stray.pyc").write_bytes(b"\0")
+    (tree / "meson_options.txt").symlink_to("VERSION")  # links are part of the tree (meson 0.61 reads this one)
     out = tmp_path / "src.tar.gz"
     result = _common(tree, f'fl_create_source_tarball 0.0.0 "{out}"', tmp_path)
     assert result.returncode == 0, result.stderr
     files = sorted(entry for entry in _tar_listing(out) if not entry.endswith("/"))
-    assert files == ["fork-linux-0.0.0/VERSION", "fork-linux-0.0.0/src/pkg/mod.py"]
+    assert files == [
+        "fork-linux-0.0.0/VERSION", "fork-linux-0.0.0/meson_options.txt", "fork-linux-0.0.0/src/pkg/mod.py"
+    ]
     assert sorted(p.name for p in tmp_path.iterdir()) == ["src.tar.gz", "tree"], "temporary files were left behind"
 
 
