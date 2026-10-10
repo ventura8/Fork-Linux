@@ -19,6 +19,8 @@ META_DIR = ".fork-linux"
 CREATED_BY = "created-by"
 PREFIX_ENV = "FORK_LINUX_PREFIX"
 ADOPT_ENV = "FORK_LINUX_ADOPT_PREFIX"
+# The default prefix: <data dir>/prefix.
+DEFAULT_PREFIX_NAME = "prefix"
 # Subdirectories of data_dir that fork-linux manages (and deletes from) itself.
 RESERVED_STORES = ("runtimes", "snapshots")
 
@@ -150,7 +152,7 @@ class Paths:
         elif environ.get(PREFIX_ENV):
             chosen = _absolute(Path(environ[PREFIX_ENV]), home)
         else:
-            chosen = data_dir / "prefix"
+            chosen = data_dir / DEFAULT_PREFIX_NAME
         _check_prefix(chosen, home, data_dir, adopt=environ.get(ADOPT_ENV) == "1")
         return cls(
             config_dir=config_dir,

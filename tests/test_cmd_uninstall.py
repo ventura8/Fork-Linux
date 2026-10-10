@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import io
 import os
 from pathlib import Path
@@ -157,6 +158,32 @@ def test_purge_needs_fork_closed_and_the_lock(
     assert ours.prefix.is_dir()
     # Nothing at all is removed while Fork runs, not even the desktop integration.
     assert removed == []
+
+
+def test_purge_of_another_prefix_needs_fork_closed_in_the_default_one(
+    capsys: pytest.CaptureFixture[str], removed: list[int], ours: Paths, monkeypatch: pytest.MonkeyPatch, xdg: Path
+) -> None:
+    second = xdg / "prefix2"
+    second.mkdir(mode=0o700)
+    (second / ".fork-linux").mkdir()
+    (second / ".fork-linux" / "created-by").write_text("fork-linux\n", encoding="utf-8")
+    monkeypatch.setenv("FORK_LINUX_PREFIX", str(second))
+    monkeypatch.setenv("FORK_LINUX_ADOPT_PREFIX", "1")
+    # Fork runs in the default prefix only: the purge would delete it with the data directory.
+    monkeypatch.setattr(procs, "fork_pids", lambda prefix, **_kw: [4242] if prefix == ours.prefix else [])
+    code, _out, err = run_cli(capsys, "uninstall", "--purge", "--yes")
+    assert code == 15
+    assert str(ours.prefix) in err
+    assert ours.prefix.is_dir() and second.is_dir()
+    assert removed == []
+
+
+def test_purged_prefixes() -> None:
+    where = paths()
+    assert uninstall._purged_prefixes(where) == [where.prefix]
+    other = where.data_dir.parent / "elsewhere"
+    moved = dataclasses.replace(where, prefix=other)
+    assert uninstall._purged_prefixes(moved) == [other, where.data_dir / "prefix"]
 
 
 def _ctx(where: Paths, home: Path, runner: RecordingRunner | None = None) -> AppContext:

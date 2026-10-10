@@ -20,7 +20,7 @@ from .. import APP_NAME, desktop_integration, fsutil, procs, wine_provider
 from ..cli import AppContext
 from ..errors import Declined
 from ..locking import FileLock
-from ..paths import Paths
+from ..paths import DEFAULT_PREFIX_NAME, Paths
 
 CONFIRM_WORD = "purge"
 KILL_TIMEOUT = 60.0
@@ -141,11 +141,23 @@ def _purge_cache_keeping_downloads(paths: Paths, removed: list[str], kept: list[
     kept.extend(str(directory) for directory in downloads if os.path.lexists(directory))
 
 
+def _purged_prefixes(paths: Paths) -> list[Path]:
+    """The prefixes a purge deletes: the selected one and, with the data directory, the default one."""
+    default = paths.data_dir / DEFAULT_PREFIX_NAME
+    return [paths.prefix] if paths.prefix == default else [paths.prefix, default]
+
+
+def _require_closed(paths: Paths) -> None:
+    """Raise :class:`ForkRunning` when Fork runs in a prefix the purge would delete."""
+    for prefix in _purged_prefixes(paths):
+        procs.require_closed(prefix)
+
+
 def _purge(ctx: AppContext, args: argparse.Namespace) -> dict[str, Any]:
     """Delete everything we created (Fork must be closed); return what was removed and kept."""
     paths = ctx.paths
     home = Path(ctx.env.get("HOME") or Path.home())
-    procs.require_closed(paths.prefix)
+    _require_closed(paths)
     removed: list[str] = []
     kept: list[str] = []
     with FileLock(paths.lock_file, "uninstall"):
@@ -166,8 +178,9 @@ def run(args: argparse.Namespace, ctx: AppContext) -> int:
     """Remove the integration, then (``--purge``) everything else."""
     if args.purge:
         _confirm(args)
-        # Checked before anything is removed, so a running Fork leaves the installation untouched.
-        procs.require_closed(ctx.paths.prefix)
+        # Checked before anything is removed, so a running Fork leaves the installation untouched. A
+        # purge with another prefix selected still deletes the data directory with the default prefix.
+        _require_closed(ctx.paths)
     integration = desktop_integration.remove(ctx.paths, ctx.env, runner=ctx.runner)
     result: dict[str, Any] = {"integration_removed": [str(path) for path in integration], "purged": args.purge}
     if args.purge:
