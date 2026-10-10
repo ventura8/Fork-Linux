@@ -22,11 +22,11 @@ wins over everything. Unlike the original, nothing runs as another user
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import Mapping
 from pathlib import Path
 
 from . import display
+from .display import desktop
 from .procrun import Runner
 
 DARK = "dark"
@@ -37,28 +37,8 @@ SCHEMA_MATE = "org.mate.interface"
 GTK_SETTINGS_DIRS = ("gtk-4.0", "gtk-3.0")
 LXQT_FILES = ("lxqt.conf", "session.conf")
 
-# (desktop, names that identify it in XDG_CURRENT_DESKTOP / DESKTOP_SESSION), checked in order.
-_DESKTOPS = (
-    ("kde", ("kde", "plasma")),
-    ("xfce", ("xfce", "xubuntu")),
-    ("cinnamon", ("cinnamon",)),
-    ("mate", ("mate",)),
-    ("budgie", ("budgie",)),
-    ("lxqt", ("lxqt", "lubuntu")),
-    ("gnome", ("gnome", "ubuntu", "unity", "pop")),
-)
 _GNOME_LIKE = ("gnome", "budgie", "unknown")
 _TRUE = ("1", "true", "yes")
-
-
-def desktop(env: Mapping[str, str]) -> str:
-    """``kde``, ``xfce``, ``cinnamon``, ``mate``, ``budgie``, ``lxqt``, ``gnome`` or ``unknown``."""
-    raw = (env.get("XDG_CURRENT_DESKTOP") or env.get("DESKTOP_SESSION") or "").lower()
-    joined = " ".join(token for token in re.split(r"[:\s;,]+", raw) if token)
-    for name, markers in _DESKTOPS:
-        if any(marker in joined for marker in markers):
-            return name
-    return "unknown"
 
 
 def _query(runner: Runner, env: Mapping[str, str], argv: list[str]) -> str:

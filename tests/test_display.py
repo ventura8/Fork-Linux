@@ -22,6 +22,8 @@ XRDB = ("xrdb", "-query")
 KDE6 = ("kreadconfig6", "--file", "kcmfonts", "--group", "General", "--key", "forceFontDPI")
 KDE5 = ("kreadconfig5", "--file", "kcmfonts", "--group", "General", "--key", "forceFontDPI")
 XFCE = ("xfconf-query", "-c", "xsettings", "-p", "/Xft/DPI")
+XFCE_FACTOR = ("xfconf-query", "-c", "xsettings", "-p", "/Gdk/WindowScalingFactor")
+XFCE_SESSION = {"XDG_CURRENT_DESKTOP": "XFCE", **{"DBUS_SESSION_BUS_ADDRESS": "tcp:host=127.0.0.1,port=9"}}
 # A session bus address (never connected to: the tools are fakes).
 BUS = {"DBUS_SESSION_BUS_ADDRESS": "tcp:host=127.0.0.1,port=9"}
 
@@ -125,6 +127,47 @@ def test_xfce_unset_means_default() -> None:
     assert display.scale_percent(BUS, _runner({XFCE: "-1\n"})) == 100
 
 
+@pytest.mark.parametrize(
+    ("outputs", "expected"),
+    [
+        # Settings > Appearance > Window Scaling 2x: xfsettingsd keeps Xft.dpi at 96.
+        ({XFCE_FACTOR: "2\n", XFCE: "96\n", XRDB: "Xft.dpi:\t96\n"}, 200),
+        # Custom DPI 144 with 1x windows.
+        ({XFCE_FACTOR: "1\n", XFCE: "144\n", XRDB: "Xft.dpi:\t144\n"}, 150),
+        # No custom DPI: the published Xft.dpi (the X server's) is the base of the window scaling.
+        ({XFCE_FACTOR: "2\n", XFCE: "-1\n", XRDB: "Xft.dpi:\t120\n"}, 250),
+        ({XFCE_FACTOR: "2\n", XRDB: "Xft.antialias:\t1\n"}, 200),
+        # Nothing set on XFCE's side: the generic chain (xrdb) answers.
+        ({XFCE: "-1\n", XRDB: "Xft.dpi:\t192\n"}, 200),
+    ],
+    ids=["window-scaling-2", "custom-dpi-144", "scaling-on-server-dpi", "scaling-without-xft-dpi", "unset"],
+)
+def test_xfce_asks_its_own_settings_before_xrdb(outputs: dict[tuple[str, ...], str], expected: int) -> None:
+    runner = _runner(outputs)
+    assert display.scale_percent(XFCE_SESSION, runner) == expected
+    assert runner.argvs[0] == list(XFCE_FACTOR)
+
+
+def test_xfce_probe_is_last_on_other_desktops() -> None:
+    runner = _runner({XFCE_FACTOR: "2\n", XFCE: "96\n", XRDB: "Xft.dpi:\t96\n"})
+    assert display.scale_percent({**BUS, "XDG_CURRENT_DESKTOP": "GNOME"}, runner) == 100
+    assert XFCE_FACTOR not in [tuple(argv) for argv in runner.argvs]
+
+
+@pytest.mark.parametrize(
+    ("env", "expected"),
+    [
+        ({"XDG_CURRENT_DESKTOP": "XFCE"}, "xfce"),
+        ({"DESKTOP_SESSION": "xubuntu"}, "xfce"),
+        ({"XDG_CURRENT_DESKTOP": "ubuntu:GNOME"}, "gnome"),
+        ({"XDG_CURRENT_DESKTOP": "KDE"}, "kde"),
+        ({}, "unknown"),
+    ],
+)
+def test_desktop(env: dict[str, str], expected: str) -> None:
+    assert display.desktop(env) == expected
+
+
 def test_no_tools_means_default_and_nothing_runs() -> None:
     runner = _runner({}, installed=())
     assert display.scale_percent({}, runner) == 100
@@ -192,6 +235,11 @@ def test_scale_with_fake_xrdb_kde_and_xfce(isolated_path: str, fake_bin: Path) -
     assert display.scale_percent(kde, Runner()) == 150
     xfce = {**base, **BUS, "FL_FAKE_XFCONF": json.dumps({"xsettings:/Xft/DPI": "192"})}
     assert display.detect_dpi(xfce, Runner()) == 192
+    scaled = {
+        **base, **XFCE_SESSION, "FL_FAKE_XRDB": "Xft.dpi:\t96\n",
+        "FL_FAKE_XFCONF": json.dumps({"xsettings:/Gdk/WindowScalingFactor": "2", "xsettings:/Xft/DPI": "96"}),
+    }
+    assert display.scale_percent(scaled, Runner()) == 200
     assert display.scale_percent(base, Runner()) == 100
 
 

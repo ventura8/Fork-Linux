@@ -7,7 +7,12 @@ Scale sources, first match wins:
    (only when not both at their defaults);
 3. ``xrdb -query`` ``Xft.dpi`` / 96 (GNOME and most X11 desktops publish it);
 4. KDE ``kcmfonts`` ``forceFontDPI`` (kreadconfig6, then kreadconfig5);
-5. XFCE ``xsettings`` ``/Xft/DPI``.
+5. XFCE ``xsettings`` ``/Gdk/WindowScalingFactor`` x ``/Xft/DPI`` (no custom DPI: the
+   published ``Xft.dpi``).
+
+The desktop's own probe (:data:`DESKTOP_PROBES`, by :func:`desktop`) runs right after
+the environment: XFCE's window scaling (Settings > Appearance > Window Scaling) leaves
+``Xft.dpi`` at 96, so asking ``xrdb`` first would miss it.
 
 The result is rounded to the nearest 25 % and clamped to 100..300; with no
 source it is 100. Every probe is a short command run through the runner
@@ -41,6 +46,18 @@ MIN_SCALE = 100
 MAX_SCALE = 300
 SCALE_STEP = 25
 GNOME_INTERFACE = "org.gnome.desktop.interface"
+XFCE_SETTINGS = ("xfconf-query", "-c", "xsettings", "-p")
+
+# (desktop, names that identify it in XDG_CURRENT_DESKTOP / DESKTOP_SESSION), checked in order.
+_DESKTOPS = (
+    ("kde", ("kde", "plasma")),
+    ("xfce", ("xfce", "xubuntu")),
+    ("cinnamon", ("cinnamon",)),
+    ("mate", ("mate",)),
+    ("budgie", ("budgie",)),
+    ("lxqt", ("lxqt", "lubuntu")),
+    ("gnome", ("gnome", "ubuntu", "unity", "pop")),
+)
 
 _NUMBER = re.compile(r"[-+]?\d+(?:\.\d+)?", re.ASCII)
 # (?a:...) keeps the digits ASCII-only while \s keeps its Unicode meaning.
@@ -89,6 +106,16 @@ def probe(runner: Runner, env: Mapping[str, str], argv: Sequence[str], timeout: 
     except ForkLinuxError:
         return ""
     return completed.stdout.strip() if completed.ok else ""
+
+
+def desktop(env: Mapping[str, str]) -> str:
+    """``kde``, ``xfce``, ``cinnamon``, ``mate``, ``budgie``, ``lxqt``, ``gnome`` or ``unknown``."""
+    raw = (env.get("XDG_CURRENT_DESKTOP") or env.get("DESKTOP_SESSION") or "").lower()
+    joined = " ".join(token for token in re.split(r"[:\s;,]+", raw) if token)
+    for name, markers in _DESKTOPS:
+        if any(marker in joined for marker in markers):
+            return name
+    return "unknown"
 
 
 def session_type(env: Mapping[str, str]) -> str:
@@ -151,18 +178,31 @@ def _from_kde(env: Mapping[str, str], runner: Runner) -> float | None:
 
 
 def _from_xfce(env: Mapping[str, str], runner: Runner) -> float | None:
-    """XFCE's ``/Xft/DPI`` xsettings value (-1 or missing means unset)."""
-    dpi = _positive(probe(runner, env, ["xfconf-query", "-c", "xsettings", "-p", "/Xft/DPI"]))
-    return None if dpi is None else dpi * 100 / BASE_DPI
+    """XFCE's window scaling factor x its font DPI, unless both are unset.
+
+    ``/Xft/DPI`` is the custom DPI (-1 or missing: none, then the ``Xft.dpi``
+    xfsettingsd published, else 96); ``/Gdk/WindowScalingFactor`` is the integer
+    window scaling (missing: 1).
+    """
+    factor = _positive(probe(runner, env, [*XFCE_SETTINGS, "/Gdk/WindowScalingFactor"])) or 1.0
+    dpi = _positive(probe(runner, env, [*XFCE_SETTINGS, "/Xft/DPI"]))
+    if dpi is None:
+        if math.isclose(factor, 1.0):
+            return None
+        dpi = (_from_xrdb(env, runner) or 100.0) * BASE_DPI / 100
+    return factor * dpi * 100 / BASE_DPI
 
 
-PROBES: tuple[Callable[[Mapping[str, str], Runner], float | None], ...] = (
+Probe = Callable[[Mapping[str, str], Runner], float | None]
+PROBES: tuple[Probe, ...] = (
     _from_env,
     _from_gnome,
     _from_xrdb,
     _from_kde,
     _from_xfce,
 )
+# Desktop (:func:`desktop`) -> its own probe, asked right after the environment.
+DESKTOP_PROBES: dict[str, Probe] = {"xfce": _from_xfce}
 
 
 def normalize(percent: float) -> int:
@@ -173,7 +213,9 @@ def normalize(percent: float) -> int:
 
 def scale_percent(env: Mapping[str, str], runner: Runner) -> int:
     """The desktop's UI scale in percent (100, 125, ... 300); 100 when nothing says otherwise."""
-    for source in PROBES:
+    own = DESKTOP_PROBES.get(desktop(env))
+    ordered = PROBES if own is None else (PROBES[0], own, *(other for other in PROBES[1:] if other is not own))
+    for source in ordered:
         percent = source(env, runner)
         if percent is not None:
             return normalize(percent)
