@@ -1,0 +1,400 @@
+AWAVAUATUSH
+T$XdH+
+h[]A\A]A^A_
+T$XdH+
+[]A\A]A^A_
+AWAVATUSH
+[]A\A^A_
+D$XdH+
+AVAUATA
+[]A\A]A^A_
+AWAVAUATUSH
+[]A\A]A^A_
+[]A\A]A^A_
+AUATUSH
+[]A\A]
+AUATUS1
+([]A\A]
+[]A\A]A^A_
+[]A\A^
+[]A\A^
+AWAVAUI
+L$(Hit$ 
+T$8dH+
+H[]A\A]A^A_
+[]A\A]A^A_
+AVAUATUSH
+[]A\A]A^
+D$(dH+
+AWAVAUATUSH
+D$(dH+
+8[]A\A]A^A_
+[]A\A]A^A_
+AWAVAUATUSH
+[]A\A]A^A_
+HcL$ I
+AWAVAUATUSH
+IcL$$H
+[]A\A]A^A_
+t,H)D$ 
+?TMPDt*
+?HOMEt
+T$XdH+
+?FLB1u!f
+D$XdH+
+AUATUH
+[]A\A]A^A_
+[]A\A]A^A_
+AWAVAUATI
+FL_BRIDGf
+[]A\A]A^A_
+GE_TOKENI9G
+FL_BRIDGI9
+GE_TOKENI9F
+[]A\A]A^A_
+AUATUS1
+[]A\A]
+[]A\A]
+ []A\A]A^
+AWAVAUATUSH
+u@L9|$
+H[]A\A]A^A_
+[]A\A]A^A_
+[]A\A^
+[]A\A]A^A_
+[]A\A]A^A_
+AWAVAUATUSH
+D$xdH+
+[]A\A]A^A_
+l$hL9d$
+l$hL9d$
+l$hL9d$
+L9|$(ubH
+AWAVAUATUSH
+[]A\A]A^A_
+AUATUH
+[]A\A]
+[]A\A]A^A_
+[]A\A]
+AWAVAUATUSH
+[]A\A]A^A_
+[]A\A]A^A_
+[A\A]]
+[A\A]]
+AWAVAUATSH
+[A\A]A^A_]
+A\A]A^A_]
+<7=t?I
+[A\A]A^]
+AUATSH
+[A\A]]
+[A\A]]
+AWAVAUL
+8[A\A]A^A_]
+8[A\A]A^A_]
+AWAVAUATSH
+[A\A]A^A_]
+[A\A]A^A_]
+AWAVAUATSH
+[A\A]A^A_]
+[A\A]A^]
+AWAVAUATA
+[A\A]A^A_]
+AVARASWH
+AWAVAUI
+[A\A]A^A_]
+AWAVAUATSH
+[A\A]A^A_]
+AUATLc
+X[A\A]]
+[A\A]]
+<$I)T$
+[A\A]A^]
+[A\A]A^]
+[A\A]A^]
+[A\A]A^]
+AVAUATI
+[A\A]]
+AWAVAUATSH
+[A\A]A^A_]
+;/u/L9
+[A\A]A^]
+AWAVAUI
+[A\A]A^A_]
+AWAVAUATSH
+[A\A]A^A_]
+AWAVATSH
+[A\A^A_]
+AWAVATSH
+[A\A^A_]
+AVAUATLc
+[A\A]A^]
+AWAVAUATSH
+[A\A]A^A_]
+[A\A]A^A_]
+[A\A]A^A_]
+AUATSH
+[A\A]]
+AWAVSH
+([A^A_]
+AWAVSH
+[A^A_]
+AVAUATA
+[A\A]A^A_]
+G8H9G(t
+[A\A]A^A_]
+C8H9C(t
+/usr/local/bin:/usr/bin:/bin
+%s/%s/%s
+fl-askpass
+FL_ASKPASS_TARGET
+fl-ssh-askpass
+FL_SSH_ASKPASS_TARGET
+WINEPREFIX
+FL_BRIDGE_ANCHORS
+fl-winexec
+ is not set
+WINEDLLOVERRIDES
+WINEDEBUG
+out of memory
+ (FL_WINE): 
+cannot run 
+FL_WINE
+%Y-%m-%dT%H:%M:%S
+.%03ldZ %s[%ld] 
+cannot run '%s': %s
+cannot start '%s': %s
+spawn-error:%d
+poll-error
+protocol-error
+peer-closed
+no-entropy
+send-failed
+no-auth
+bad-hello
+bad-mac
+no-hello
+bad-auth
+/dev/null
+/proc/self/fd
+FL_BRIDGE_TOKEN
+cannot open token file 
+ is not an executable file: 
+host helper 
+cannot open log 
+ does not exist
+parent pid 
+chdir /: 
+socket: 
+cannot listen on 127.0.0.1:
+FL_BRIDGE_PORT=%u
+WINEPREFIX=%s
+--watch-prefix is too long
+pipe: 
+setsid: 
+FL_BRIDGE_PORT=%u
+parent exited during start-up
+environ
+cmdline
+daemon exit reason=signal
+daemon accept failed errno=
+bad-request
+detached:%ld
+exit-encode-failed
+daemon fork failed errno=
+auth-failed:%s
+--daemon
+--help
+--version
+unknown argument: 
+--token-file
+--token-file needs a path
+--port
+--host-helper
+--parent-pid
+--watch-prefix
+--watch-exe-dir
+--log needs a path
+fl-bridge-helper
+TMPDIR
+%x:%x:%x:%x:%x:%x:%x:%x
+%x:%x:%x:%x:%x:%x:%d.%d.%d.%d
+/usr/local/bin:/bin:/usr/bin
+__vdso_clock_gettime
+LINUX_2.6
+%m/%d/%y
+%Y-%m-%d
+%+.4ld
+%0*lld
+/proc/self/fd/
+-0X+0X 0X-0x+0x 0x
+-+   0X0x
+(null)
+/etc/localtime
+usage: fl-winexec <WinExe> [args...]
+WINEPREFIX is not set to an absolute path; cannot run 
+cannot prepare the Wine environment
+cannot run wine (FL_WINE is not set and wine is not on PATH): 
+session peer=%s argv0=%s argc=%zu flags=0x%x env-ignored=%zu result=%s ms=%lld
+cannot change to directory '%s': %s
+daemon exit reason=parent-gone
+daemon exit reason=prefix-idle
+FL_BRIDGE_TOKEN is not a 64-character hex token
+no token: pass --token-file FILE or set FL_BRIDGE_TOKEN
+ must be a regular file owned by the current user
+ must not be accessible by group or others (chmod 600)
+ does not hold a 64-character hex token
+cannot write the port to stdout
+daemon start port=%u pid=%ld parent=%ld host-helper=%s watch-prefix=%s
+daemon exit reason=poll-error errno=
+session refused: %d sessions running
+--port needs a number 0..65535
+--host-helper needs an absolute path
+--parent-pid needs a positive pid
+--watch-prefix needs an absolute path
+--watch-exe-dir needs a directory
+usage: fl-bridge-helper --daemon [--token-file FILE] [--port N] [--host-helper PATH]
+                        [--parent-pid PID] [--watch-prefix DIR [--watch-exe-dir WINDIR]]
+                        [--log FILE]
+       fl-bridge-helper --version | --help
+personas (by argv[0]): fl-winexec <WinExe> [args...], fl-askpass <prompt>,
+                       fl-ssh-askpass <prompt>
+The token (64 hex chars) comes from --token-file (read, then unlinked) or
+FL_BRIDGE_TOKEN (scrubbed after reading). See bridge/unix/README.md.
+fl-bridge-helper 1.0.0 (Fork for Linux (unofficial) git bridge, protocol FLB1 v1)
+winemenubuilder
+winemenubuilder.exe=d
+/drive_c
+fl-bridge-v1|client|
+fl-bridge-v1|daemon|
+0123456789abcdef
+No error information
+Illegal byte sequence
+Domain error
+Result not representable
+Not a tty
+Permission denied
+Operation not permitted
+No such file or directory
+No such process
+File exists
+Value too large for data type
+No space left on device
+Out of memory
+Resource busy
+Interrupted system call
+Resource temporarily unavailable
+Invalid seek
+Cross-device link
+Read-only file system
+Directory not empty
+Connection reset by peer
+Operation timed out
+Connection refused
+Host is down
+Host is unreachable
+Address in use
+Broken pipe
+I/O error
+No such device or address
+Block device required
+No such device
+Not a directory
+Is a directory
+Text file busy
+Exec format error
+Invalid argument
+Argument list too long
+Symbolic link loop
+Filename too long
+Too many open files in system
+No file descriptors available
+Bad file descriptor
+No child process
+Bad address
+File too large
+Too many links
+No locks available
+Resource deadlock would occur
+State not recoverable
+Previous owner died
+Operation canceled
+Function not implemented
+No message of desired type
+Identifier removed
+Device not a stream
+No data available
+Device timeout
+Out of streams resources
+Link has been severed
+Protocol error
+Bad message
+File descriptor in bad state
+Not a socket
+Destination address required
+Message too large
+Protocol wrong type for socket
+Protocol not available
+Protocol not supported
+Socket type not supported
+Not supported
+Protocol family not supported
+Address family not supported by protocol
+Address not available
+Network is down
+Network unreachable
+Connection reset by network
+Connection aborted
+No buffer space available
+Socket is connected
+Socket not connected
+Cannot send after socket shutdown
+Operation already in progress
+Operation in progress
+Stale file handle
+Remote I/O error
+Quota exceeded
+No medium found
+Wrong medium type
+Multihop attempted
+Required key not available
+Key has expired
+Key has been revoked
+Key was rejected by service
+Sunday
+Monday
+Tuesday
+Wednesday
+Thursday
+Friday
+Saturday
+January
+February
+August
+September
+October
+November
+December
+%a %b %e %T %Y
+%m/%d/%y
+%H:%M:%S
+%I:%M:%S %p
+%m/%d/%y
+0123456789
+%a %b %e %T %Y
+%H:%M:%S
+0123456789ABCDEF
+0000000000000000
+/usr/share/zoneinfo/
+/share/zoneinfo/
+/etc/zoneinfo/
+GCC: (Ubuntu 15.2.0-13ubuntu3) 15.2.0
+GCC: (Ubuntu 15.2.0-16ubuntu1) 15.2.0
+.shstrtab
+.rodata
+.eh_frame
+.init_array
+.fini_array
+.data.rel.ro
+.got.plt
+.comment

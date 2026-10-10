@@ -309,7 +309,14 @@ def _tool_values(tools: Mapping[str, Any], current: Mapping[str, Any]) -> dict[s
 
 
 def _default_source_dirs(value: Any, user: str) -> bool:
-    """True if ``value`` is Fork's default ``["C:\\users\\<user>"]``."""
+    """True if ``value`` is unset or Fork's default ``["C:\\users\\<user>"]``.
+
+    Unset matters on a fresh ``settings.json``: Fork rebuilds a
+    ``repositories.toml`` it cannot read from this key, and falls back to the
+    prefix folder when the key is missing.
+    """
+    if value is None:
+        return True
     if not isinstance(value, list) or len(value) != 1 or not isinstance(value[0], str):
         return False
     return value[0].rstrip("\\").lower() == f"c:\\users\\{user}".lower()
@@ -335,7 +342,8 @@ def desired(
       a tool the user picked; our tools without a replacement go back to Fork's default;
       in ``ExternalDiffTools`` / ``ExternalMergeTools`` only our own entry is added
       or removed, the user's entries stay;
-    * ``home_win`` replaces the default repository source directory ``C:\\users\\<user>``;
+    * ``home_win`` replaces the default repository source directory ``C:\\users\\<user>``
+      (or sets it when ``settings.json`` has none yet, so even the first session is right);
     * ``reset_scaling``: a ``LayoutScaling`` holding this old value goes back to 100
       (scaling is Wine's ``LogPixels`` alone now).
     """

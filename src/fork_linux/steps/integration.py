@@ -258,9 +258,13 @@ def desktop_inputs(ctx: Ctx) -> dict[str, Any]:
 
 
 def run_desktop(ctx: Ctx) -> None:
-    """Install the personal menu entry (skipped by the module when a package installed one)."""
+    """Install the personal menu entry (skipped by the module when a package installed one).
+
+    Without a packaged icon the placeholder goes into the user's icon theme
+    too, unless Fork's own icon (step ``icon``) is already there.
+    """
     desktop_integration.install(
-        ctx.paths, ctx.env, menu=True, icons=False, file_managers=(), runner=ctx.runner
+        ctx.paths, ctx.env, menu=True, icons=True, file_managers=(), runner=ctx.runner
     )
 
 
@@ -315,7 +319,7 @@ SSH_SYNC = Step(
 ICON = Step(
     id="icon",
     title="Adding Fork's icon",
-    rev=1,
+    rev=2,
     weight=1,
     run=run_icon,
     verify=verify_icon,

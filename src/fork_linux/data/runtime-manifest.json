@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "revision": "2026.10.1",
+  "revision": "2026.10.2",
   "bootstrap_revision": 1,
   "wine": {
     "default": "kron4ek-11.0-staging-wow64",
@@ -29,6 +29,22 @@
   "dotnet": {
     "verbs": ["dotnet48", "dotnet472"],
     "min_release": 461808
+  },
+  "ui_font": {
+    "_comment": "Selawik: Microsoft's SIL OFL 1.1 fallback for Segoe UI with matching metrics; Fork's interface font under Wine (spike S10).",
+    "family": "Selawik",
+    "version": "1.01",
+    "license": "OFL-1.1",
+    "url": "https://github.com/microsoft/Selawik/releases/download/1.01/Selawik_Release.zip",
+    "sha256": "3f62c51e05e3b5a1e6241cf92a371f0be2ea1183aa87b30718bbd40832a8d423",
+    "size": 530652,
+    "faces": {
+      "selawk.ttf": "Selawik",
+      "selawkb.ttf": "Selawik Bold",
+      "selawkl.ttf": "Selawik Light",
+      "selawksb.ttf": "Selawik Semibold",
+      "selawksl.ttf": "Selawik Semilight"
+    }
   },
   "fork": {
     "default": "2.23.2",

@@ -1,7 +1,7 @@
 """The setup steps, in the order :mod:`fork_linux.bootstrap` runs them.
 
 preflight -> consent -> wine_runtime -> winetricks -> prefix_init ->
-shell_folders -> registry -> dotnet -> winver -> fonts -> font_replacements ->
+shell_folders -> registry -> dotnet -> winver -> fonts -> ui_font -> font_replacements ->
 display_dpi -> fork_download -> fork_install -> fork_settings -> host_shims ->
 host_integration -> git_overlay -> ssh_sync -> icon -> desktop_entry -> finalize
 """
@@ -13,7 +13,7 @@ from .consent import CONSENT
 from .display import DISPLAY_DPI
 from .dotnet import DOTNET
 from .finalize import FINALIZE
-from .fonts import FONT_REPLACEMENTS, FONTS
+from .fonts import FONT_REPLACEMENTS, FONTS, UI_FONT
 from .fork import FORK_DOWNLOAD, FORK_INSTALL, FORK_SETTINGS
 from .integration import DESKTOP_ENTRY, GIT_OVERLAY, HOST_INTEGRATION, HOST_SHIMS, ICON, SSH_SYNC
 from .prefix import PREFIX_INIT, REGISTRY, SHELL_FOLDERS, WINVER
@@ -31,6 +31,7 @@ STEPS: tuple[Step, ...] = (
     DOTNET,
     WINVER,
     FONTS,
+    UI_FONT,
     FONT_REPLACEMENTS,
     DISPLAY_DPI,
     FORK_DOWNLOAD,

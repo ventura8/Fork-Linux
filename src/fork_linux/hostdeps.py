@@ -26,7 +26,9 @@ LDD_TIMEOUT = 60.0
 REQUIRED_TOOLS = ("cabextract", "unzip")
 # winetricks downloads .NET and the core fonts itself and needs one of these.
 DOWNLOADERS = ("curl", "wget", "aria2c")
-OPTIONAL_TOOLS = ("7z", "zenity", "kdialog", "xdg-open", "git", "xdotool", "fc-list")
+OPTIONAL_TOOLS = ("7z", "xdg-open", "git", "xdotool", "fc-list")
+# Setup's progress and question dialogs: either one is enough (zenity is preferred, as in ui.py).
+DIALOG_TOOLS = ("zenity", "kdialog")
 
 REQUIRED_LIBS = (
     "libfreetype.so.6",
@@ -178,6 +180,19 @@ def distro(os_release: Path = OS_RELEASE) -> DistroInfo:
 def missing_tools(runner: Runner, names: Iterable[str]) -> list[str]:
     """The tools in ``names`` that are not on ``PATH``, in order."""
     return [name for name in names if runner.which(name) is None]
+
+
+def dialog_tool(desktop: str) -> str:
+    """The dialog tool to suggest when neither is installed: kdialog on KDE (``$XDG_CURRENT_DESKTOP``), else zenity."""
+    return DIALOG_TOOLS[1] if "kde" in desktop.lower().split(":") else DIALOG_TOOLS[0]
+
+
+def missing_optional_tools(runner: Runner, desktop: str = "") -> list[str]:
+    """Missing :data:`OPTIONAL_TOOLS`, plus one dialog tool when none of :data:`DIALOG_TOOLS` is present."""
+    missing = missing_tools(runner, OPTIONAL_TOOLS)
+    if all(runner.which(name) is None for name in DIALOG_TOOLS):
+        missing.append(dialog_tool(desktop))
+    return missing
 
 
 def missing_required_tools(runner: Runner) -> list[str]:

@@ -1,4 +1,4 @@
-"""The pinned runtime manifest: Wine builds, winetricks, .NET verbs and Fork versions.
+"""The pinned runtime manifest: Wine builds, winetricks, .NET verbs, the interface font and Fork versions.
 
 The manifest ships with the package (``data/runtime-manifest.json``); there is no
 remote manifest. An optional user override file is applied on top of it as an
@@ -51,6 +51,9 @@ _BUILD_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 _TOKEN = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
 _VERB = re.compile(r"dotnet\d{2,3}", re.ASCII)
 _WINETRICKS_VERSION = re.compile(r"\d{8}", re.ASCII)
+_FONT_FILE = re.compile(r"[a-z0-9_-]{1,64}\.ttf", re.ASCII)
+_FONT_FACE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ]{0,62}", re.ASCII)
+_LICENSE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+-]{0,63}", re.ASCII)
 _HOSTNAME = re.compile(r"(?=.{1,253}\Z)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*")
 
 
@@ -79,6 +82,24 @@ class Winetricks:
     url: str
     sha256: str
     size: int
+
+
+@dataclass(frozen=True)
+class UiFont:
+    """The pinned font that stands in for Segoe UI: a zip of TrueType faces."""
+
+    family: str
+    version: str
+    license: str
+    url: str
+    sha256: str
+    size: int
+    faces: tuple[tuple[str, str], ...]
+
+    @property
+    def archive_name(self) -> str:
+        """The download cache file name (``selawik-1.01.zip``)."""
+        return f"{self.family.lower().replace(' ', '-')}-{self.version}.zip"
 
 
 @dataclass(frozen=True)
@@ -248,7 +269,9 @@ class Manifest:
 
     def __init__(self, data: Any, *, overridden: bool = False) -> None:
         top = _obj(
-            data, "manifest", ("schema", "revision", "bootstrap_revision", "wine", "winetricks", "dotnet", "fork")
+            data,
+            "manifest",
+            ("schema", "revision", "bootstrap_revision", "wine", "winetricks", "dotnet", "ui_font", "fork"),
         )
         schema = _int(top["schema"], "schema", 1)
         if schema != SCHEMA:
@@ -260,6 +283,7 @@ class Manifest:
         self._load_wine(top["wine"])
         self._load_winetricks(top["winetricks"])
         self._load_dotnet(top["dotnet"])
+        self._load_ui_font(top["ui_font"])
         self._load_fork(top["fork"])
 
     def _load_wine(self, value: Any) -> None:
@@ -289,6 +313,29 @@ class Manifest:
         dotnet = _obj(value, "dotnet", ("verbs", "min_release"))
         self.dotnet_verbs = _str_list(dotnet["verbs"], "dotnet.verbs", _VERB)
         self.dotnet_min_release = _int(dotnet["min_release"], "dotnet.min_release", 1)
+
+    def _load_ui_font(self, value: Any) -> None:
+        font = _obj(value, "ui_font", ("family", "version", "license", "url", "sha256", "size", "faces"))
+        family = _str(font["family"], "ui_font.family", _FONT_FACE)
+        raw_faces = _entries(font["faces"], "ui_font.faces")
+        faces = tuple(
+            (_str(name, "ui_font.faces", _FONT_FILE), _str(face, f"ui_font.faces.{name}", _FONT_FACE))
+            for name, face in raw_faces.items()
+        )
+        names = [face for _name, face in faces]
+        if len(set(names)) != len(names):
+            raise _fail("ui_font.faces", "contains duplicate face names")
+        if family not in names:
+            raise _fail("ui_font.faces", f"must include the regular face {family!r}")
+        self.ui_font = UiFont(
+            family=family,
+            version=_version(font["version"], "ui_font.version"),
+            license=_str(font["license"], "ui_font.license", _LICENSE),
+            url=_https(font["url"], "ui_font.url"),
+            sha256=_str(font["sha256"], "ui_font.sha256", _SHA256),
+            size=_int(font["size"], "ui_font.size", 1),
+            faces=faces,
+        )
 
     def _load_fork(self, value: Any) -> None:
         fork = _obj(
