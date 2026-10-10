@@ -22,6 +22,7 @@ from .. import (
     feeds,
     fork_install,
     fork_settings,
+    fork_userdata,
     launcher,
     procs,
     snapshots,
@@ -164,10 +165,14 @@ def _install_fork(ctx: bootstrap.Ctx, args: argparse.Namespace) -> dict[str, Any
     snap = snapshots.create(paths, layout, method="copy" if method == "auto" else method, reason="before update")
     info = ctx.wine()
     try:
-        fork_install.run_installer(
-            ctx.runner, ctx.wine_env(), info.wine, installer, ctx.pathmap, log_file=ctx.log_file
-        )
+        # The installer deletes Fork's whole directory, user data included, before it installs.
+        with fork_userdata.kept(layout):
+            fork_install.run_installer(
+                ctx.runner, ctx.wine_env(), info.wine, installer, ctx.pathmap, log_file=ctx.log_file
+            )
         version = fork_install.finish_install(layout, plan)
+    except fork_userdata.UserDataError:
+        raise
     except ForkLinuxError as exc:
         where = "" if ctx.log_file is None else f"see {ctx.log_file}; "
         back = f"'fork-linux rollback --to-version {installed}' restores Fork {installed} (snapshot {snap.id})"

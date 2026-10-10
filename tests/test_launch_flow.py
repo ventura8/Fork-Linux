@@ -311,6 +311,29 @@ def test_pin_hook(ctx: bootstrap.Ctx) -> None:
     assert newer.exists()
 
 
+def test_f6_pin_hook_puts_back_the_installed_package_velopack_deleted(ctx: bootstrap.Ctx) -> None:
+    """E2E F6: staging 2.24.0 made Velopack delete 2.23.2's package; dropping the staged one brings it back."""
+    package = ctx.layout.full_package("2.23.2")
+    original = package.read_bytes()
+    snapshots.create(ctx.paths, ctx.layout)
+    package.unlink()
+    newer = _stage(ctx.layout, "2.24.0")
+    ctx.config.set("fork", "update_policy", "pinned")
+    notes: list[str] = []
+    launcher._pin(ctx, notes)
+    assert not newer.exists()
+    assert package.read_bytes() == original
+    assert notes == [
+        "removed staged update Fork-2.24.0-full.nupkg (Fork is pinned to 2.23.2)",
+        "put Fork-2.23.2-full.nupkg back from its snapshot",
+    ]
+    # Nothing staged: the pin does not touch packages\ (a missing package stays a doctor finding).
+    package.unlink()
+    launcher._pin(ctx, notes)
+    assert not package.exists()
+    assert len(notes) == 2
+
+
 def test_pin_hook_warns_when_fork_already_updated_past_the_pin(ctx: bootstrap.Ctx) -> None:
     ctx.config.set("fork", "update_policy", "pinned")
     ctx.state.set(launcher.PINNED_VERSION, "2.23.0")

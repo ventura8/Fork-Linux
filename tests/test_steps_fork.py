@@ -11,10 +11,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fixtures.fork_tree import install_fork, write_settings
+from fixtures.fork_tree import install_fork, run_velopack_setup, write_settings
 from fixtures.setup_ctx import make_ctx
 
-from fork_linux import bootstrap, launcher, resources, updates
+from fork_linux import bootstrap, fork_userdata, launcher, resources, updates
 from fork_linux import fork_settings as fork_settings_mod
 from fork_linux.bootstrap import Ctx
 from fork_linux.errors import (
@@ -96,7 +96,7 @@ def _installer_runner(ctx: Ctx, *, rc: int = 0) -> RecordingRunner:
     def wine(argv: list[str]) -> int:
         if argv[-1] == "--silent" and rc == 0:
             version = Path(argv[1].replace("\\", "/")).stem.split("-", 1)[1]
-            install_fork(ctx.layout, version)
+            run_velopack_setup(ctx.layout, version)
             ctx.layout.desktop_lnk.parent.mkdir(parents=True, exist_ok=True)
             ctx.layout.desktop_lnk.write_bytes(b"lnk")
         return rc
@@ -436,6 +436,26 @@ def test_f20_missing_current_is_reinstalled_and_reported(
     launcher._note_version(ctx, notes)
     assert notes == []
     assert ctx.ui.kinds("notify") == []
+
+
+def test_f20_reinstall_keeps_the_users_files(xdg: Path, downloads: list[InstallPlan], feeds: dict[str, Any]) -> None:
+    """The official installer wipes AppData\\Local\\Fork: a reinstall puts the user's files back unchanged."""
+    ctx = make_ctx()
+    _drives(ctx)
+    ctx.runner = _installer_runner(ctx)
+    bootstrap.init_prefix_meta(ctx)
+    bootstrap.run_step(ctx, fork_steps.FORK_DOWNLOAD)
+    bootstrap.run_step(ctx, fork_steps.FORK_INSTALL)
+    write_settings(ctx.layout, {"Theme": 1, "Guid": "kept"})
+    ctx.layout.accounts_file.write_bytes(b'{"accounts": ["secret"]}')
+    ctx.layout.fork_log.write_bytes(b"the user's log\n")
+    before = {path: path.read_bytes() for path in (ctx.layout.settings_file, ctx.layout.accounts_file)}
+    shutil.rmtree(ctx.layout.current_dir)
+    bootstrap.run_step(ctx, fork_steps.FORK_INSTALL)
+    assert ctx.layout.installed_version() == "2.23.2"
+    assert {path: path.read_bytes() for path in before} == before
+    assert ctx.layout.fork_log.read_bytes() == b"the user's log\n"
+    assert not fork_userdata.stash_dir(ctx.paths).exists()
 
 
 def test_bootstrap_resumes_install_from_the_recorded_plan(

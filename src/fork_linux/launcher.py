@@ -39,6 +39,7 @@ from . import (
     fork_data,
     fork_settings,
     fork_tools,
+    fork_userdata,
     fsutil,
     gitconfig,
     procs,
@@ -286,6 +287,15 @@ def _note_version(ctx: bootstrap.Ctx, notes: list[str]) -> None:
             notes.append(message)
 
 
+def _user_data(ctx: bootstrap.Ctx, notes: list[str]) -> None:
+    """Put back Fork's user data an interrupted Fork install left aside (:mod:`fork_userdata`; Fork closed)."""
+    if procs.fork_running(ctx.paths.prefix):
+        return
+    names = fork_userdata.restore(ctx.layout)
+    if names:
+        notes.append(f"Fork's own files put back after an interrupted install: {', '.join(names)}")
+
+
 def _snapshot(ctx: bootstrap.Ctx, notes: list[str]) -> None:
     """Keep a snapshot of the installed version for rollback."""
     keep = ctx.config.getint("snapshots", "keep")
@@ -303,9 +313,13 @@ def _pin(ctx: bootstrap.Ctx, notes: list[str]) -> None:
         pinned = ctx.layout.installed_version()
     if pinned is None:
         return
-    for package in updates.enforce_pin(ctx.layout, pinned):
+    dropped = updates.enforce_pin(ctx.layout, pinned)
+    for package in dropped:
         notes.append(f"removed staged update {package.name} (Fork is pinned to {pinned})")
     installed = ctx.layout.installed_version()
+    if dropped and installed is not None and snapshots.put_back_package(ctx.paths, ctx.layout, installed):
+        # Velopack deleted the installed version's package when it staged the update.
+        notes.append(f"put {ctx.layout.full_package(installed).name} back from its snapshot")
     if installed is not None and versions.Version(installed) > versions.Version(pinned):
         # Fork applied an update it had already downloaded while it ran; the pin cannot undo that by itself.
         message = f"Fork {installed} is installed although Fork is pinned to {pinned}"
@@ -443,6 +457,7 @@ def _git(ctx: bootstrap.Ctx, notes: list[str]) -> None:
 HOOKS: tuple[tuple[str, Callable[[bootstrap.Ctx, list[str]], None]], ...] = (
     ("fork-linux downgrade check", _note_downgrade),
     ("version check", _note_version),
+    ("Fork user data", _user_data),
     ("snapshot", _snapshot),
     ("update pin", _pin),
     ("Fork settings", _settings),

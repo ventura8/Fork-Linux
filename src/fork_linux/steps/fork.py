@@ -25,6 +25,7 @@ from .. import (
     fork_install,
     fork_settings,
     fork_tools,
+    fork_userdata,
     fsutil,
     resources,
     theme,
@@ -226,8 +227,10 @@ def run_install(ctx: Ctx) -> None:
         installer = fork_install.download_installer(chosen, ctx.manifest, ctx.paths, offline=ctx.offline)
         info = ctx.wine()
         env = ctx.wine_env()
-        fork_install.run_installer(ctx.runner, env, info.wine, installer, ctx.pathmap, log_file=ctx.log_file)
-        winecmd.wineserver(ctx.runner, env, info, "-w")
+        # The installer deletes Fork's whole directory, user data included, before it installs.
+        with fork_userdata.kept(ctx.layout):
+            fork_install.run_installer(ctx.runner, env, info.wine, installer, ctx.pathmap, log_file=ctx.log_file)
+            winecmd.wineserver(ctx.runner, env, info, "-w")
         fork_install.finish_install(ctx.layout, chosen)
         if chosen.tofu:
             _verify_tofu(ctx, chosen)

@@ -533,6 +533,31 @@ def _restore_package(layout: ForkLayout, directory: Path, sizes: dict[str, int],
         raise
 
 
+def put_back_package(paths: Paths, layout: ForkLayout, version: str) -> bool:
+    """Put ``version``'s full package back into ``packages\\`` from its newest snapshot holding one.
+
+    Velopack deletes the installed version's full package as soon as it has staged a
+    newer one (E2E, F6); when the pin then drops that staged package, nothing would be
+    left to verify the installed Fork with (``doctor fork.integrity``) or to build the
+    next delta update from. Returns True when the package was put back; a package that
+    is there already, or no snapshot holding one, changes nothing. A damaged snapshot
+    raises :class:`IntegrityFailed`.
+    """
+    target = layout.full_package(version)
+    if os.path.lexists(target) or not versions.is_valid(version):
+        return False
+    wanted = versions.Version(version)
+    for snap in list_snapshots(paths):
+        if versions.Version(snap.fork_version) != wanted:
+            continue
+        directory = Path(snap.path)
+        sizes = _verified_sizes(directory)
+        if f"{PACKAGES}/{target.name}" in sizes:
+            _restore_package(layout, directory, sizes, version)
+            return os.path.lexists(target)
+    return False
+
+
 def restore(paths: Paths, layout: ForkLayout, snap: Snapshot, *, with_settings: bool = False) -> None:
     """Put the snapshot's ``current\\`` (and full package) back, drop newer staged packages, optionally data files.
 

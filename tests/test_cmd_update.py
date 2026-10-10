@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from fork_linux import bootstrap, feeds, fork_install, snapshots, updates, wine_provider
+from fork_linux import bootstrap, feeds, fork_install, fork_userdata, snapshots, updates, wine_provider
 from fork_linux.commands import update as update_cmd
 from fork_linux.errors import DownloadFailed, ForkLinuxError, SetupFailed
 from fork_linux.locking import FileLock
@@ -18,7 +18,7 @@ from fork_linux.procrun import Completed, RecordingRunner
 from fork_linux.state import FORK_VERSION, WINE_BUILD
 
 from fixtures.cli_run import fork_running, isolate, layout, run_cli, run_json
-from fixtures.fork_tree import install_fork, write_settings
+from fixtures.fork_tree import install_fork, run_velopack_setup, write_settings
 from fixtures.setup_ctx import make_ctx
 
 
@@ -173,7 +173,7 @@ def installer(boot: bootstrap.Ctx, monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     def run_installer(runner: Any, env: Any, wine: Path, path: Path, pathmap: Any, **_kw: Any) -> None:
         version = planned["plan"].version
         installed.append(version)
-        install_fork(boot.layout, version)
+        run_velopack_setup(boot.layout, version)
 
     monkeypatch.setattr(fork_install, "download_installer", download)
     monkeypatch.setattr(fork_install, "run_installer", run_installer)
@@ -342,6 +342,30 @@ def test_f2_update_fork_keeps_user_data(
     assert snap.fork_version == "2.23.1"
     assert snap.method == "copy"  # the installer may rewrite current\ in place: never hard links here
     assert not (Path(snap.path) / "data" / "accounts.json").exists()
+
+
+def test_f2_user_data_that_cannot_be_moved_aside_stops_the_update(
+    capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, installer: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The installer would delete the user's files: when they cannot be kept, nothing is installed."""
+    _prefix(boot)
+    install_fork(boot.layout, "2.23.1")
+    boot.layout.accounts_file.write_text('{"accounts": ["secret"]}', encoding="utf-8")
+    real_rename = os.rename
+
+    def rename(source: Any, target: Any) -> None:
+        if Path(target).parent.name == fork_userdata.STASH:
+            raise OSError(18, "Invalid cross-device link")
+        real_rename(source, target)
+
+    monkeypatch.setattr(os, "rename", rename)
+    code, _out, err = run_cli(capsys, "update", "--fork")
+    assert code == 1
+    assert "cannot move Fork's user data aside before installing" in err
+    assert "rollback" not in err
+    assert installer == []
+    assert boot.layout.installed_version() == "2.23.1"
+    assert boot.layout.accounts_file.read_text(encoding="utf-8") == '{"accounts": ["secret"]}'
 
 
 def test_f8_update_fork_offline_changes_nothing(

@@ -456,6 +456,38 @@ def test_restore_puts_back_the_package_velopack_deleted(paths: Paths, layout: Fo
     assert sorted(p.name for p in layout.packages_dir.iterdir()) == [package.name]
 
 
+def test_f6_put_back_package_after_velopack_deleted_it(paths: Paths, layout: ForkLayout, clock: _Clock) -> None:
+    """Velopack deletes the installed version's package when it stages an update; the pin puts it back."""
+    package = layout.full_package("2.23.2")
+    original = package.read_bytes()
+    assert snaps.put_back_package(paths, layout, "2.23.2") is False  # there already
+    snaps.create(paths, layout)
+    package.unlink()
+    snaps.create(paths, layout)  # the newest snapshot of 2.23.2 holds no package: the older one does
+    assert snaps.put_back_package(paths, layout, "2.24.0") is False
+    assert snaps.put_back_package(paths, layout, "garbage") is False
+    assert snaps.put_back_package(paths, layout, "2.23.2") is True
+    assert package.read_bytes() == original
+
+
+def test_put_back_package_needs_a_snapshot_holding_it(paths: Paths, layout: ForkLayout, clock: _Clock) -> None:
+    layout.full_package("2.23.2").unlink()
+    snaps.create(paths, layout)
+    assert snaps.put_back_package(paths, layout, "2.23.2") is False
+    assert not layout.full_package("2.23.2").exists()
+
+
+def test_put_back_package_refuses_a_damaged_snapshot(paths: Paths, layout: ForkLayout, clock: _Clock) -> None:
+    package = layout.full_package("2.23.2")
+    snap = snaps.create(paths, layout, method="copy")
+    package.unlink()
+    kept = Path(snap.path) / snaps.PACKAGES / package.name
+    kept.write_bytes(b"PK rewritten")
+    with pytest.raises(IntegrityFailed, match="has changed since the snapshot was taken"):
+        snaps.put_back_package(paths, layout, "2.23.2")
+    assert not package.exists()
+
+
 def test_restore_without_a_kept_package_or_packages_dir(paths: Paths, layout: ForkLayout, clock: _Clock) -> None:
     layout.full_package("2.23.2").unlink()
     snap = snaps.create(paths, layout)
