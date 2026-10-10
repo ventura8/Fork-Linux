@@ -165,7 +165,7 @@ EOF
 		tarball="$(cd "$(dirname "${opt_tarball}")" && pwd)/$(basename "${opt_tarball}")"
 		sums="$(dirname "${tarball}")/SHA256SUMS"
 		if [[ -f "${sums}" ]]; then
-			fl_verify "${tarball}" "${sums}"
+			fl_verify "${tarball}" "${sums}" yours
 		else
 			warn "no SHA256SUMS next to ${tarball}: not verified"
 		fi
@@ -342,13 +342,18 @@ fl_download() {
 	fl_verify "${tarball}" "${sums}"
 }
 
+# fl_verify FILE SUMS [yours]: check FILE against its SHA256SUMS line. A mismatching download
+# is deleted; a file the user passed (--from-tarball, third argument "yours") is left in place.
 fl_verify() {
-	local file="$1" list="$2" name want got
+	local file="$1" list="$2" owner="${3:-download}" name want got
 	name="$(basename "${file}")"
 	want="$(awk -v n="${name}" '{f=$2; sub(/^\*/, "", f); if (f == n) {print $1; exit}}' "${list}")"
 	[[ -n "${want}" ]] || die "$(basename "${list}") has no entry for ${name}"
 	got="$(sha256sum "${file}" | awk '{print $1}')"
 	if [[ "${got}" != "${want}" ]]; then
+		if [[ "${owner}" == "yours" ]]; then
+			die "sha256 mismatch for ${name}: expected ${want}, got ${got} (nothing installed; ${file} was left in place)"
+		fi
 		rm -f "${file}"
 		die "sha256 mismatch for ${name}: expected ${want}, got ${got} (download deleted)"
 	fi

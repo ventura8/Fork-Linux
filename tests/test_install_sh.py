@@ -253,7 +253,10 @@ def test_from_tarball_verifies_against_local_sums(tmp_path: Path, home: Path) ->
     bad = _run(INSTALL, home, "--no-deps", "--from-tarball", str(tmp_path / name))
     assert bad.returncode != 0
     assert "sha256 mismatch" in bad.stderr
-    (tmp_path / name).write_bytes(_tarball())
+    # The user's own file is never deleted, only a download is.
+    assert f"{tmp_path / name} was left in place" in bad.stderr
+    assert (tmp_path / name).read_bytes() == _tarball()
+    assert not (home / ".local" / "opt").exists()
     (tmp_path / "SHA256SUMS").write_bytes(_sums(name, _tarball()))
     good = _run(INSTALL, home, "--no-deps", "--no-desktop", "--from-tarball", str(tmp_path / name))
     assert good.returncode == 0, good.stderr
