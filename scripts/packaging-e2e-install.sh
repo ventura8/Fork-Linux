@@ -16,7 +16,17 @@
 #     (tarball, AppImage, snap); the distro packages and the Flatpak ship the glibc PIE
 #     build (bridge/README.md "Install layout"), so ET_DYN is accepted there
 #   * the desktop entry validates; metainfo, man pages and completions are installed
+#   * the menu entry's command starts the version just installed
 #   * tester's ~/.local/share/fork-linux/E2E_MARKER and ~/.wine/E2E_SENTINEL survive every step
+#   * the next launch re-runs only what changed: N-1 leaves a simulated, completed setup in
+#     tester's home (scripts/packaging-e2e-state.py: our prefix marker, a placeholder Fork,
+#     the managed runtime's marker with stand-in wine scripts, state.json with N-1's own step
+#     markers); after every operation 'fork-linux setup --list-steps --json' of the installed
+#     release must report nothing to re-run under N-1 and only host_shims (the shims carry the
+#     release's version) under N, never a step that downloads; no Wine runs and the simulated
+#     setup is never changed (scenario A2) - except by the remove of a per-user install
+#     (tarball: uninstall.sh, AppImage: --remove-desktop), which clears exactly the icon and
+#     desktop_entry markers, so the reinstalled release re-runs those two as well (A11)
 #
 # Usage: ./scripts/packaging-e2e-install.sh <format>
 # Formats: deb deb-jammy rpm-fedora rpm-opensuse arch snap appimage flatpak tarball
@@ -41,6 +51,14 @@ MARKER="${TESTER_HOME}/.local/share/fork-linux/E2E_MARKER"
 SENTINEL="${TESTER_HOME}/.wine/E2E_SENTINEL"
 MARK_VALUE="fork-linux-e2e-${FORMAT}-$$-${RANDOM}"
 STAGE="/tmp/fl-e2e-${FORMAT}"
+# The simulated setup (seed_setup_state): the release that wrote it and the digest of its files.
+STATE_TOOL="${STAGE}/packaging-e2e-state.py"
+SEED_VERSION=""
+SEED_DIGEST=""
+SEED_MARKERS=""
+# The setup markers the remove of this format clears (set per format) and those it did clear.
+REMOVE_FORGETS=""
+FORGOTTEN=""
 
 fail() {
 	echo "E2E FAIL (${FORMAT}): $*" >&2
@@ -60,6 +78,8 @@ setup_tester() {
 	printf '%s\n' "${MARK_VALUE}" | runuser -u "${TESTER}" -- tee "${MARKER}" "${SENTINEL}" >/dev/null
 	rm -rf "${STAGE}"
 	install -d -m 0755 "${STAGE}"
+	install -m 0644 scripts/packaging-e2e-state.py "${STATE_TOOL}"
+	install -m 0644 src/fork_linux/data/runtime-manifest.json "${STAGE}/runtime-manifest.json"
 	# A session-like runtime directory (flatpak run allocates its instance there).
 	install -d -o "${TESTER}" -m 0700 "/tmp/fl-e2e-runtime-${TESTER}"
 }
@@ -76,6 +96,91 @@ as_tester() {
 assert_markers() {
 	[[ "$(cat "${MARKER}" 2>/dev/null)" == "${MARK_VALUE}" ]] || fail "${MARKER} was changed or removed"
 	[[ "$(cat "${SENTINEL}" 2>/dev/null)" == "${MARK_VALUE}" ]] || fail "${SENTINEL} was changed or removed (~/.wine must never be touched)"
+}
+
+# ---------------------------------------------------------------------- the next launch (A2)
+
+state_tool() {
+	as_tester python3 -I "${STATE_TOOL}" "$@"
+}
+
+# seed_setup_state CMD...: a completed setup as the release just installed (N-1) records it.
+seed_setup_state() {
+	echo "==> simulated setup of fork-linux ${REL_VERSION} in ${TESTER_HOME}"
+	as_tester "$@" status --json >"${STAGE}/status.json" || fail "fork-linux status --json failed"
+	state_tool prepare "${STAGE}/status.json" "${STAGE}/runtime-manifest.json" || fail "preparing the simulated setup failed"
+	as_tester "$@" setup --list-steps --json >"${STAGE}/steps-seed.json" || fail "fork-linux setup --list-steps --json failed"
+	state_tool record "${STAGE}/status.json" "${STAGE}/steps-seed.json" || fail "recording the setup markers failed"
+	SEED_VERSION="${REL_VERSION}"
+	SEED_DIGEST="$(state_tool digest "${STAGE}/status.json")" || fail "reading the simulated setup failed"
+	SEED_MARKERS="$(state_tool markers "${STAGE}/status.json")" || fail "reading the setup markers failed"
+}
+
+# assert_seeded: the simulated setup is unchanged and no Wine ran.
+assert_seeded() {
+	[[ -n "${SEED_DIGEST}" ]] || return 0
+	local now
+	now="$(state_tool digest "${STAGE}/status.json")" || fail "the simulated setup in ${TESTER_HOME} is broken"
+	[[ "${now}" == "${SEED_DIGEST}" ]] || fail "the simulated setup in ${TESTER_HOME} was changed (${SEED_DIGEST} -> ${now})"
+	echo "ok  simulated setup unchanged, no Wine ran"
+}
+
+# assert_remove_cleared: the remove cleared exactly the markers of REMOVE_FORGETS (then the
+# simulated setup is compared with what is left).
+assert_remove_cleared() {
+	[[ -n "${SEED_DIGEST}" ]] || return 0
+	local cleared
+	cleared="$(state_tool missing "${STAGE}/status.json" "${SEED_MARKERS}")" || fail "reading the setup markers failed"
+	[[ "${cleared}" == "${REMOVE_FORGETS}" ]] ||
+		fail "the remove cleared the setup markers '${cleared}', expected '${REMOVE_FORGETS}'"
+	if [[ -n "${cleared}" ]]; then
+		FORGOTTEN="${cleared}"
+		SEED_DIGEST="$(state_tool digest "${STAGE}/status.json")" || fail "reading the simulated setup failed"
+		echo "ok  the remove cleared the ${cleared} markers (the next launch restores them)"
+	fi
+	assert_seeded
+}
+
+# check_next_launch CMD...: what the installed release's next launch would re-run.
+check_next_launch() {
+	[[ -n "${SEED_VERSION}" ]] || seed_setup_state "$@"
+	local changed="${FORGOTTEN}"
+	# fl-shim.exe and fl-launch.exe carry the release's version (VERSIONINFO), so another
+	# release than the one that set up copies its shims again; every other step stays done.
+	[[ "${REL_VERSION}" == "${SEED_VERSION}" ]] || changed="${changed:+${changed},}host_shims"
+	if ! as_tester "$@" setup --list-steps --json >"${STAGE}/steps.json" 2>"${STAGE}/steps.err"; then
+		cat "${STAGE}/steps.err" >&2
+		fail "fork-linux setup --list-steps --json failed"
+	fi
+	state_tool check "${STAGE}/steps.json" "${changed}" || fail "the next launch of ${REL_VERSION} would re-run the wrong steps"
+	assert_seeded
+}
+
+# check_menu_command DESKTOP: the menu entry's command (Exec without its file arguments) runs this release.
+check_menu_command() {
+	local desktop="$1" out
+	local -a argv
+	mapfile -t argv < <(python3 - "${desktop}" <<'EOF'
+import shlex
+import sys
+
+exec_line = ""
+with open(sys.argv[1], encoding="utf-8") as handle:
+    for line in handle:
+        if line.startswith("[") and line.strip() != "[Desktop Entry]":
+            break
+        if line.startswith("Exec="):
+            exec_line = line[len("Exec="):].strip()
+words = [word for word in shlex.split(exec_line) if word not in ("@@", "@@u") and not (len(word) == 2 and word[0] == "%")]
+if words and words[-1] == "run":
+    words.pop()
+print("\n".join(words))
+EOF
+	)
+	((${#argv[@]} > 0)) || fail "no Exec command in ${desktop}"
+	out="$(as_tester "${argv[@]}" --version)" || fail "the menu entry's command '${argv[*]}' failed"
+	[[ "${out}" == *"${REL_VERSION}"* ]] || fail "the menu entry's command '${argv[*]}' printed '${out}', expected ${REL_VERSION}"
+	echo "ok  menu entry starts fork-linux ${REL_VERSION} (${argv[*]})"
 }
 
 # ---------------------------------------------------------------------- binary checks
@@ -161,6 +266,7 @@ assert_installed() {
 	[[ -f "${desktop}" ]] || fail "desktop entry missing: ${desktop}"
 	desktop-file-validate "${desktop}" || fail "desktop-file-validate ${desktop}"
 	echo "ok  desktop entry ${desktop}"
+	check_menu_command "${desktop}"
 	local f
 	for f in "share/metainfo/${APP_ID}.metainfo.xml" \
 		share/bash-completion/completions/fork-linux \
@@ -174,6 +280,7 @@ assert_installed() {
 	echo "ok  metainfo, man pages, completions"
 	assert_markers
 	echo "ok  E2E_MARKER and ~/.wine/E2E_SENTINEL intact"
+	check_next_launch "${cmd[@]}"
 }
 
 # assert_removed ROOT...: no ROOT/bin/fork-linux is left (file or link).
@@ -185,6 +292,7 @@ assert_removed() {
 			fail "${root}/bin/fork-linux still exists after remove"
 	done
 	assert_markers
+	assert_remove_cleared
 	echo "ok  removed; markers intact"
 }
 
@@ -475,11 +583,16 @@ case "${FORMAT}" in
 	rpm-fedora) cycle fedora_install fedora_remove dyn_assert /usr ;;
 	rpm-opensuse) cycle opensuse_install opensuse_remove dyn_assert /usr ;;
 	arch) cycle arch_install arch_remove dyn_assert /usr ;;
-	tarball) cycle tarball_install tarball_remove tarball_assert "${TESTER_HOME}/.local/opt/fork-linux" "${TESTER_HOME}/.local" ;;
-	appimage) cycle appimage_install appimage_remove appimage_assert "${TESTER_HOME}/.local" ;;
+	tarball)
+		REMOVE_FORGETS="desktop_entry,icon"
+		cycle tarball_install tarball_remove tarball_assert "${TESTER_HOME}/.local/opt/fork-linux" "${TESTER_HOME}/.local" ;;
+	appimage)
+		REMOVE_FORGETS="desktop_entry,icon"
+		cycle appimage_install appimage_remove appimage_assert "${TESTER_HOME}/.local" ;;
 	flatpak) cycle flatpak_install flatpak_remove flatpak_assert "${FLATPAK_ROOT}" ;;
 	snap) cycle snap_install snap_remove snap_assert "${SNAP_ROOT}" ;;
 	*) fail "unknown format ${FORMAT}" ;;
 esac
 assert_markers
+assert_seeded
 echo "==> packaging E2E OK: ${FORMAT} ${PREV_VERSION} -> ${VERSION} (upgrade, downgrade, upgrade in place, remove, reinstall)"

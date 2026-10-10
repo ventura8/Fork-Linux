@@ -14,6 +14,7 @@ from fixtures.setup_ctx import USER, FakeUI, FakeWine, seed_ui_font
 
 from fork_linux import bootstrap, cli, manifest
 from fork_linux import ui as ui_mod
+from fork_linux.config import Config
 from fork_linux import winetricks as winetricks_mod
 from fork_linux.commands import setup as setup_cmd
 from fork_linux.errors import Declined, IntegrityFailed, UsageError, WineUnavailable
@@ -190,6 +191,31 @@ def test_list_steps(harness: Harness, capsys: pytest.CaptureFixture[str]) -> Non
     assert statuses["dotnet"] == "done"
     assert statuses["finalize"] == "always"
     assert {row["id"]: row["needs_network"] for row in listed["steps"]}["fork_download"] is True
+
+
+def test_list_steps_json_tells_what_the_next_launch_reruns(
+    harness: Harness, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``recorded`` / ``needs_setup``: what a launch after an upgrade or a changed input runs again (A3)."""
+    harness.run("--accept-fork-eula", "--wine", str(harness.wine_root))
+    capsys.readouterr()
+    assert harness.run("--list-steps", "--json") == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert listed["needs_setup"] is False
+    loaded = manifest.load(override=harness.paths.manifest_override)
+    assert listed["revisions"] == {"bootstrap": loaded.bootstrap_revision, "manifest": loaded.revision}
+    rows = {row["id"]: row for row in listed["steps"]}
+    assert rows["finalize"]["recorded"] is None
+    assert rows["finalize"]["inputs_hash"] is None
+    markers = harness.state().data["steps"]
+    for step_id, marker in markers.items():
+        assert rows[step_id]["recorded"] is True
+        assert (rows[step_id]["rev"], rows[step_id]["inputs_hash"]) == (marker["rev"], marker["inputs_hash"])
+    Config.load(harness.paths, harness.env).set("display", "dpi", "144")
+    assert harness.run("--list-steps", "--json") == 0
+    changed = json.loads(capsys.readouterr().out)
+    assert changed["needs_setup"] is True
+    assert [row["id"] for row in changed["steps"] if row["recorded"] is False] == ["display_dpi", "fork_settings"]
 
 
 def test_non_interactive_without_consent_is_declined(harness: Harness) -> None:
