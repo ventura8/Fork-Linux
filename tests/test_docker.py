@@ -51,6 +51,8 @@ SCRIPTS = [
     "scripts/ci-packaging-matrix.sh",
     "scripts/ci-snap-build.sh",
     "scripts/ci-e2e-wine.sh",
+    "scripts/lib-e2e-docker.sh",
+    "scripts/e2e-docker.sh",
     "scripts/build-bridge.sh",
 ]
 
