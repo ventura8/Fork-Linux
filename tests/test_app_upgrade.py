@@ -13,13 +13,14 @@ from pathlib import Path
 
 import pytest
 
-from fork_linux import bootstrap, launcher, resources, updates, wine_provider
+from fork_linux import bootstrap, desktop_integration, launcher, resources, updates, wine_provider
+from fork_linux.procrun import RecordingRunner
 from fork_linux import version as version_mod
 from fork_linux.bootstrap import Ctx
 from fork_linux.errors import SetupFailed
 from fork_linux.locking import FileLock
 from fork_linux.state import WRITTEN_BY, State
-from fork_linux.steps import prefix
+from fork_linux.steps import integration, prefix
 
 from fixtures.cli_run import fork_running, isolate, run_cli
 from fixtures.fork_tree import install_fork
@@ -345,3 +346,33 @@ def test_a22_step_failing_on_new_modules_is_resumed_by_the_new_release(xdg: Path
     fixed = dataclasses.replace(step, run=lambda _c: attempts.append("n"))
     assert bootstrap.run_steps(make_ctx(), [fixed]) == ["fonts"]
     assert attempts == ["n-1", "n"]
+
+
+# -- A9: the AppImage file is moved ----------------------------------------------------------
+
+
+def test_a9_moved_appimage_repoints_the_menu_entry_links_and_actions(xdg: Path, tmp_path: Path) -> None:
+    """desktop_entry's input is the command; when the AppImage moves, everything recorded follows it."""
+    old_image = tmp_path / "Downloads" / "fork-linux.AppImage"
+    new_image = tmp_path / "Applications" / "Fork Linux.AppImage"
+    for image in (old_image, new_image):
+        image.parent.mkdir(parents=True)
+        image.write_text("#!/bin/sh\n", encoding="utf-8")
+        image.chmod(0o755)
+    env = {**os.environ, "PATH": str(tmp_path / "empty-path"), desktop_integration.APPIMAGE_ENV: str(old_image)}
+    runner = RecordingRunner(which_map={"update-desktop-database": None, "gtk-update-icon-cache": None})
+    ctx = make_ctx(runner, env=env)
+    desktop_integration.install(ctx.paths, env, file_managers="nautilus,dolphin", cli_alias=True, runner=runner)
+    dirs = desktop_integration._Dirs.from_env(env)
+    actions = [dirs.kind_path(desktop_integration.NAUTILUS_SCRIPT), dirs.kind_path(desktop_integration.DOLPHIN)]
+    before = integration.desktop_inputs(ctx)
+    moved = {**env, desktop_integration.APPIMAGE_ENV: str(new_image)}
+    ctx = make_ctx(runner, env=moved)
+    assert integration.desktop_inputs(ctx) != before, "the step re-runs after the move"
+    integration.run_desktop(ctx)
+    for path in [dirs.menu_file, *actions]:
+        text = path.read_text(encoding="utf-8")
+        assert str(old_image) not in text, path
+        assert "Fork Linux.AppImage" in text, path
+    for name in desktop_integration.CLI_ALIASES:
+        assert os.readlink(dirs.bin / name) == str(new_image)

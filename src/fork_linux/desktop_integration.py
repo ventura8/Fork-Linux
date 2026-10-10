@@ -718,6 +718,7 @@ def install(
     cli_alias: bool = False,
     system_desktop_present: bool | None = None,
     runner: Runner | None = None,
+    refresh_recorded: bool = False,
 ) -> list[Path]:
     """Install the per-user integration; return every path that is now ours.
 
@@ -726,7 +727,9 @@ def install(
     manager that is gone are removed), ``all``, ``none``, or names from
     :data:`FILE_MANAGERS` (comma separated or a list). Files that exist but
     were not written by us (or were changed by the user) are left alone with
-    a warning.
+    a warning. ``refresh_recorded`` also rewrites every file-manager action
+    and ``fork`` / ``fork-linux`` link installed earlier, for the current
+    command (an AppImage that was moved, scenario A9).
     """
     environ: Mapping[str, str] = os.environ if env is None else env
     dirs = _Dirs.from_env(environ)
@@ -734,6 +737,10 @@ def install(
     names = _names(file_managers)
     kinds = _kinds(names, lambda: installed_file_managers(environ))
     registry = _Registry.load(paths.integrations_file)
+    if refresh_recorded:
+        recorded = {entry["kind"] for entry in registry.entries.values()}
+        kinds.extend(sorted((recorded & _FILE_MANAGER_KINDS) - set(kinds)))
+        cli_alias = cli_alias or CLI_ALIAS in recorded
     installed: list[Path] = []
     menu_changed = menu and _install_menu(dirs, cmd, registry, system_desktop_present, installed)
     icons_changed = False

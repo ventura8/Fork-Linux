@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from .. import procs, registry, resources, wine_provider, winecmd, winetricks
+from .. import helpers, procs, registry, wine_provider, winecmd, winetricks
 from ..bootstrap import Ctx, Step
 from ..errors import ForkLinuxError, SetupFailed
 from ..registry import RegBatch
@@ -206,7 +206,7 @@ URL_HANDLER = "fork-linux-open-url"
 
 def url_handler() -> Path | None:
     """Our link opener (escapes Wine's seccomp/NoNewPrivs via the desktop portal), if installed."""
-    handler = resources.libexec_dir() / URL_HANDLER
+    handler = helpers.path(URL_HANDLER)
     return handler if handler.is_file() and os.access(handler, os.X_OK) else None
 
 

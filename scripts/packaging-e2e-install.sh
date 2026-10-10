@@ -334,6 +334,15 @@ EOF
 
 appimage_assert() {
 	check_appimage_update_info "$(artifact "fork-linux-${VERSION}-x86_64.AppImage")"
+	# The stable helper launchers fork-linux writes for Wine and Fork run helpers through this.
+	local helper_out
+	helper_out="$(as_tester "${TESTER_HOME}/Applications/fork-linux.AppImage" --libexec fork-linux-host --help)" ||
+		fail "AppImage --libexec fork-linux-host --help failed"
+	[[ "${helper_out}" == *"usage: fork-linux-host"* ]] || fail "AppImage --libexec printed '${helper_out}'"
+	if as_tester "${TESTER_HOME}/Applications/fork-linux.AppImage" --libexec fork-linux-handoff >/dev/null 2>&1; then
+		fail "AppImage --libexec ran a helper that is not on its list"
+	fi
+	echo "ok  AppImage --libexec runs the shipped helpers (and only those)"
 	assert_installed "${APPIMAGE_ROOT}/usr" static \
 		"${TESTER_HOME}/.local/share/applications/${APP_ID}.desktop" "${TESTER_HOME}/.local/bin/fork-linux"
 	grep -q "^Exec=.*fork-linux.AppImage" "${TESTER_HOME}/.local/share/applications/${APP_ID}.desktop" ||

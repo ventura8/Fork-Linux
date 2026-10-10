@@ -84,6 +84,21 @@ def test_handoff_runs_the_helper_in_a_systemd_unit(box: dict[str, Path]) -> None
     assert argv[argv.index("--") + 1 :] == [str(box["libexec"] / "fork-linux-host"), "terminal", "Z:\\home\\ada\\src"]
 
 
+def test_handoff_prefers_the_stable_helper_launcher(box: dict[str, Path], tmp_path: Path) -> None:
+    """From an AppImage the systemd unit must not name the mount, which ends before the unit starts."""
+    _stub(box["libexec"], "fork-linux-host")
+    stable = tmp_path / "helpers"
+    stable.mkdir()
+    _stub(stable, "fork-linux-host")
+    _stub(box["stubs"], "systemd-run")
+    code, calls = _run(box, "fork-linux-handoff", "open", "/x", FORK_LINUX_HELPER_DIR=str(stable))
+    assert code == 0
+    assert calls[0][calls[0].index("--") + 1 :] == [str(stable / "fork-linux-host"), "open", "/x"]
+    box["log"].unlink()
+    code, calls = _run(box, "fork-linux-handoff", "open", "/x", FORK_LINUX_HELPER_DIR=str(tmp_path / "none"))
+    assert calls[0][calls[0].index("--") + 1 :] == [str(box["libexec"] / "fork-linux-host"), "open", "/x"]
+
+
 def test_handoff_falls_back_to_running_the_helper(box: dict[str, Path]) -> None:
     _stub(box["libexec"], "fork-linux-host")
     _stub(box["stubs"], "systemd-run", code=1)
