@@ -22,7 +22,7 @@ Four setup steps, in this order (`src/fork_linux/steps/fonts.py`, `src/fork_linu
 | `fonts` | `winetricks corefonts` (Arial & co.) for documents and fallbacks; one retry | Arial present and `corefonts` in `winetricks.log` |
 | `ui_font` (rev 1) | Downloads **Selawik 1.01** — Microsoft's open-source stand-in for Segoe UI with matching metrics, SIL OFL 1.1 — from its GitHub release (pinned URL, size and sha256 in `runtime-manifest.json` → `ui_font`; host `github.com` only), copies exactly the face files the manifest lists into the prefix's `C:\windows\Fonts` (0644) and registers each face under `HKLM\Software\Microsoft\Windows NT\CurrentVersion\Fonts` (`Selawik Bold (TrueType)` = `selawkb.ttf`, ...) | every face file is a regular, non-empty file and every registry value is present |
 | `font_replacements` (rev 2) | `HKCU\Software\Wine\Fonts\Replacements` plus the system fonts in `HKCU\Control Panel\Desktop\WindowMetrics` | every replacement and every system font face |
-| `font_fallback` (rev 2) | A marked block of `FontFamilyMap`s naming installed Linux fonts at the top of every `FamilyMaps` section of WPF's `GlobalUserInterface.CompositeFont`, in every 64-bit copy (`WPF\`, `WPF\Fonts\`); see Finding 7 | every copy holds exactly the block the installed fonts call for (a missing or damaged copy is only warned about) |
+| `font_fallback` (rev 2) | A marked block of `FontFamilyMap`s naming installed Linux fonts at the top of every `FamilyMaps` section of WPF's `GlobalUserInterface.CompositeFont`, in every 64-bit copy (`WPF\`, `WPF\Fonts\`); see Finding 7 | every sound copy holds exactly the block the installed fonts call for (no copy at all, or a damaged one, is only warned about) |
 
 Replacements written by `font_replacements`:
 
@@ -97,8 +97,10 @@ zh-HK before its parent zh-Hant) and a generic map with the JP variant first, as
   prefixes (sha256 above).
 * Safe: every copy is read (`O_NOFOLLOW`, ≤ 8 MiB, regular file, no symlink anywhere below
   `drive_c`), checked (no DTD, well-formed before and after, one `FamilyMaps` tag line per
-  section) and patched before any is written; one damaged or missing copy means nothing is
-  written and setup only warns. Writes are atomic and keep the BOM, CRLF and mode.
+  section) and patched before it is written; a damaged copy is never written and setup only
+  warns about it, while a sound copy is still patched (the copies are independent files, and a
+  damaged `WPF\Fonts\` copy, which 4.8 never reads, must not cost 4.8 its fallback). With no
+  copy at all setup only warns. Writes are atomic and keep the BOM, CRLF and mode.
 * Inputs: the maps (they follow the installed fonts), so installing Noto later re-runs the step.
 * rev 2: the lost pre-release rev 1 patched only `WPF\`, which left a 4.7.2 prefix unpatched.
 

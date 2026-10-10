@@ -268,14 +268,34 @@ def test_missing_composite_font_only_warns(xdg: Path) -> None:
     assert ff.verify(ctx)
 
 
-def test_one_damaged_copy_means_no_writes(xdg: Path) -> None:
+@pytest.mark.parametrize("damaged_sub", ["", "Fonts"])
+def test_a_damaged_copy_is_never_written_and_the_sound_one_is_patched(xdg: Path, damaged_sub: str) -> None:
+    # 4.8 reads only WPF\ and never WPF\Fonts\: a damaged copy must not cost the other its fallback.
     ctx = _ctx()
-    good = write_composite_font(ctx.paths.prefix)
-    bad = write_composite_font(ctx.paths.prefix, "Fonts", text="<FontFamilyCollection>\n")
+    good = write_composite_font(ctx.paths.prefix, "Fonts" if damaged_sub == "" else "")
+    bad = write_composite_font(ctx.paths.prefix, damaged_sub, text="<FontFamilyCollection>\n")
+    broken = bad.read_bytes()
+    assert not ff.verify(ctx)
     ff.run(ctx)
-    assert good.read_bytes() == _original()
-    assert "is damaged (not well-formed XML" in _warnings(ctx)[0]
-    assert str(bad) in _warnings(ctx)[0]
+    assert bad.read_bytes() == broken
+    assert good.read_bytes().count(ff.BEGIN.encode()) == 2
+    warnings = _warnings(ctx)
+    assert len(warnings) == 1
+    assert "is damaged (not well-formed XML" in warnings[0]
+    assert str(bad) in warnings[0]
+    assert ff.verify(ctx)
+    copies = ff.patched_composite_fonts(ctx)
+    assert [patch.path for patch in copies.patches] == [good]
+    assert copies.stale == ()
+    assert [str(bad) in problem.message for problem in copies.damaged] == [True]
+
+
+def test_every_copy_damaged_means_no_writes(xdg: Path) -> None:
+    ctx = _ctx()
+    paths = [write_composite_font(ctx.paths.prefix, sub, text="<broken\n") for sub in ("", "Fonts")]
+    ff.run(ctx)
+    assert all(path.read_bytes() == BOM + b"<broken\r\n" for path in paths)
+    assert len(_warnings(ctx)) == 2
     assert ff.verify(ctx)
 
 
@@ -301,10 +321,9 @@ def test_damaged_files_are_refused(xdg: Path, text: str, problem: str | None) ->
         ff.run(ctx)
         assert path.read_bytes().count(ff.BEGIN.encode()) == 2
         return
-    with pytest.raises(ff.Unpatchable) as caught:
-        ff.patched_composite_fonts(ctx)
-    assert f"({problem})" in caught.value.message
-    assert "setup --reset" in caught.value.hint
+    (damaged,) = ff.patched_composite_fonts(ctx).damaged
+    assert f"({problem})" in damaged.message
+    assert "setup --reset" in damaged.hint
     ff.run(ctx)
     assert path.read_bytes() == before
 
@@ -314,11 +333,12 @@ def test_not_utf8_and_too_large(xdg: Path, monkeypatch: pytest.MonkeyPatch) -> N
     path = write_composite_font(ctx.paths.prefix)
     path.write_bytes(BOM + b"<a>\xff</a>")
     with pytest.raises(ff.Unpatchable, match="not UTF-8"):
-        ff.patched_composite_fonts(ctx)
+        ff.patch_file(path, [])
     path.write_bytes(_original())
     monkeypatch.setattr(ff, "MAX_BYTES", 100)
     with pytest.raises(ff.Unpatchable, match="not a regular file of at most 100 bytes"):
-        ff.patched_composite_fonts(ctx)
+        ff.patch_file(path, [])
+    assert "at most 100 bytes" in ff.patched_composite_fonts(ctx).damaged[0].message
 
 
 def test_reading_never_follows_a_symlink_or_reads_a_directory(xdg: Path, tmp_path: Path) -> None:
@@ -336,8 +356,8 @@ def test_a_result_that_is_not_xml_is_never_written(xdg: Path) -> None:
     ctx = _ctx()
     path = write_composite_font(ctx.paths.prefix)
     broken = [ff.FamilyMap("Greek", "0370-03FF", ("A<B",))]
-    with pytest.raises(ff.Unpatchable, match="not well-formed XML"):
-        ff.patched_composite_fonts(ctx, broken)
+    (damaged,) = ff.patched_composite_fonts(ctx, broken).damaged
+    assert "not well-formed XML" in damaged.message
     assert path.read_bytes() == _original()
 
 
@@ -364,6 +384,33 @@ def test_after_the_dotnet_fallback_the_fonts_copy_is_patched(xdg: Path, verb: st
     fake = FakeWine(ctx.paths.prefix)
     fake.winetricks(["winetricks", "-q", verb])
     ff.run(ctx)
-    patches = ff.patched_composite_fonts(ctx)
-    assert [patch.folder for patch in patches] == folders
-    assert all(ff.BEGIN.encode() in patch.current and not patch.stale for patch in patches)
+    copies = ff.patched_composite_fonts(ctx)
+    assert [patch.folder for patch in copies.patches] == folders
+    assert copies.damaged == ()
+    assert all(ff.BEGIN.encode() in patch.current and not patch.stale for patch in copies.patches)
+
+
+def test_upgrading_an_already_patched_prefix_rebuilds_the_block(xdg: Path) -> None:
+    """A 4.8 prefix patched by an older step (other begin text, other maps, a rev 1 marker) is upgraded."""
+    ctx = _ctx()
+    copies = [write_composite_font(ctx.paths.prefix, sub) for sub in ("", "Fonts")]
+    old_block = (
+        f"        {ff.BEGIN}: an older fork-linux wrote this -->\r\n"
+        '        <FontFamilyMap Unicode="0400-04FF" Target="DejaVu Sans" />\r\n'
+        f"        {ff.END}\r\n"
+    )
+    for path in copies:
+        text = path.read_bytes().decode("utf-8")
+        tag = "<FontFamily.FamilyMaps>\r\n"
+        path.write_bytes(text.replace(tag, tag + old_block).encode())
+    ctx.state.set_step_marker(ff.FONT_FALLBACK.id, 1, bootstrap.inputs_hash(ff.FONT_FALLBACK, ctx))
+    assert not bootstrap.is_done(ff.FONT_FALLBACK, ctx, cheap=True)  # a new rev re-runs at the next launch
+    bootstrap.run_step(ctx, ff.FONT_FALLBACK)
+    assert bootstrap.is_done(ff.FONT_FALLBACK, ctx)
+    original = composite_font_text().replace("\n", "\r\n")
+    expected = BOM + ff.patch_text(original, ff.wanted_maps(ctx), copies[0]).encode("utf-8")
+    for path in copies:
+        data = path.read_bytes()
+        assert data == expected  # the BOM is kept, the old block is gone, one fresh block per section
+        assert b"older fork-linux" not in data
+        assert data.count(ff.BEGIN.encode()) == 2

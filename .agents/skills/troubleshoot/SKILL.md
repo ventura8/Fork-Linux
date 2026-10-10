@@ -17,8 +17,9 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
   `fork-linux doctor --check prefix.font_fallback`. It names the patched folders of WPF's composite font
   (`WPF\` on .NET 4.8, `WPF\Fonts\` on the 4.7.2 fallback) and warns when no Linux font covers Greek,
   Cyrillic, Hangul or Han (install the Noto fonts, e.g. `fonts-noto-core fonts-noto-cjk`), when a copy is not
-  patched (`fork-linux setup --only font_fallback`) or is missing / damaged (setup only warned and wrote
-  nothing; `fork-linux setup --reset` rebuilds the prefix). Design: S10 Finding 7.
+  patched (`fork-linux setup --only font_fallback`), when both copies are missing or when one is damaged
+  (setup only warned and never wrote that copy, but still patched a sound one, named after `patched:`;
+  `fork-linux setup --reset` rebuilds the prefix). Design: S10 Finding 7.
 - Downloads: `~/.cache/fork-linux/downloads` (ours), `~/.cache/fork-linux/winetricks` (winetricks' `W_CACHE`);
   `~/.cache/winetricks` is only read.
 - Locks: `$XDG_RUNTIME_DIR/fork-linux/setup.lock`. Logs: `~/.local/state/fork-linux/logs/`.

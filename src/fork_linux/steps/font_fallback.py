@@ -26,11 +26,12 @@ exists. Each entry names only Linux fonts that ``fc-list`` reports, so a
 script without an installed font keeps Microsoft's maps. The block is
 rebuilt from scratch on every run (idempotent; removing it gives back
 Microsoft's file byte for byte), and with no suitable font installed the file
-is restored. Every copy is read, patched and checked as XML before anything is
-written; when any copy is damaged nothing is written and setup only warns
-(the doctor check ``prefix.font_fallback`` reports it). Files are written
-atomically, keep their byte-order mark, line endings and mode, and are never
-reached through a symlink.
+is restored. Each copy is read, patched and checked as XML before it is
+written; a damaged copy is never written and setup only warns about it (the
+doctor check ``prefix.font_fallback`` reports it), while the sound copies are
+still patched: the copies are independent files, and 4.8 never reads its
+``WPF\\Fonts\\`` copy. Files are written atomically, keep their byte-order
+mark, line endings and mode, and are never reached through a symlink.
 """
 
 from __future__ import annotations
@@ -143,14 +144,14 @@ SCRIPTS: tuple[Script, ...] = (
 # Scripts whose missing font the doctor reports (the others are rarer in repository names).
 KEY_SCRIPTS = ("Greek", "Cyrillic", HANGUL, HAN)
 FONTS_HINT = (
-    "install the Noto fonts (Debian / Ubuntu: fonts-noto-core fonts-noto-cjk; Fedora: "
-    "google-noto-sans-fonts google-noto-sans-cjk-fonts; openSUSE: noto-sans-fonts noto-sans-cjk-fonts; "
-    "Arch: noto-fonts noto-fonts-cjk), then run 'fork-linux doctor --fix'"
+    "install the Noto fonts (Debian / Ubuntu: fonts-noto-core fonts-noto-cjk; Fedora / openSUSE: "
+    "google-noto-sans-fonts google-noto-sans-cjk-fonts; Arch: noto-fonts noto-fonts-cjk), "
+    "then run 'fork-linux doctor --fix'"
 )
 
 
 class Unpatchable(ForkLinuxError):
-    """A composite font copy is missing or damaged: nothing is written."""
+    """No composite font copy exists, or one copy is damaged: that copy is never written."""
 
 
 @dataclass(frozen=True)
@@ -182,6 +183,19 @@ class Patch:
     def stale(self) -> bool:
         """True when the copy must be rewritten."""
         return self.current != self.updated
+
+
+@dataclass(frozen=True)
+class Copies:
+    """Every copy found: the sound ones with their ``patches``, and why the ``damaged`` ones cannot be patched."""
+
+    patches: tuple[Patch, ...]
+    damaged: tuple[Unpatchable, ...]
+
+    @property
+    def stale(self) -> tuple[Patch, ...]:
+        """The sound copies that must be rewritten."""
+        return tuple(patch for patch in self.patches if patch.stale)
 
 
 # -- the maps --------------------------------------------------------------------------------------
@@ -378,17 +392,28 @@ def patch_file(path: Path, maps: list[FamilyMap], folder: str = "") -> Patch:
     return Patch(path, folder, data, (BOM if bom else b"") + patched, mode)
 
 
-def patched_composite_fonts(ctx: Ctx, maps: list[FamilyMap] | None = None) -> list[Patch]:
-    """Every copy with its patched bytes; :class:`Unpatchable` when none exists or any is damaged."""
-    copies = composite_fonts(ctx)
-    if not copies:
+def _patch_or_problem(path: Path, maps: list[FamilyMap], folder: str) -> Patch | Unpatchable:
+    try:
+        return patch_file(path, maps, folder)
+    except Unpatchable as exc:
+        return exc
+
+
+def patched_composite_fonts(ctx: Ctx, maps: list[FamilyMap] | None = None) -> Copies:
+    """Every copy with its patched bytes, or why it is damaged; :class:`Unpatchable` when none exists."""
+    found = composite_fonts(ctx)
+    if not found:
         wanted = " and ".join(composite_font_wins())
         raise Unpatchable(
             f"WPF's composite font is missing ({wanted} do not exist)",
             hint=REPAIR_HINT,
         )
     chosen = wanted_maps(ctx) if maps is None else maps
-    return [patch_file(path, chosen, folder) for folder, path in copies]
+    results = [_patch_or_problem(path, chosen, folder) for folder, path in found]
+    return Copies(
+        tuple(item for item in results if isinstance(item, Patch)),
+        tuple(item for item in results if isinstance(item, Unpatchable)),
+    )
 
 
 def write_patch(patch: Patch) -> None:
@@ -404,27 +429,32 @@ def inputs(ctx: Ctx) -> dict[str, Any]:
     return {"maps": [[item.script, item.language, item.unicode, list(item.targets)] for item in wanted_maps(ctx)]}
 
 
+def _warn(ctx: Ctx, problem: Unpatchable) -> None:
+    log.warning("font_fallback: %s", problem.message)
+    ctx.ui.warn(f"non-Latin text may not show in Fork: {problem.message}")
+
+
 def run(ctx: Ctx) -> None:
-    """Patch every stale copy, or warn and write nothing when a copy is missing or damaged."""
+    """Patch every stale sound copy; only warn about a missing composite font or a damaged copy."""
     try:
-        patches = patched_composite_fonts(ctx)
+        copies = patched_composite_fonts(ctx)
     except Unpatchable as exc:
-        log.warning("font_fallback: %s", exc.message)
-        ctx.ui.warn(f"non-Latin text may not show in Fork: {exc.message}")
+        _warn(ctx, exc)
         return
-    for patch in patches:
-        if patch.stale:
-            log.info("font_fallback: patching %s", patch.path)
-            write_patch(patch)
+    for problem in copies.damaged:
+        _warn(ctx, problem)
+    for patch in copies.stale:
+        log.info("font_fallback: patching %s", patch.path)
+        write_patch(patch)
 
 
 def verify(ctx: Ctx) -> bool:
-    """Every copy is current; a missing or damaged composite font was only warned about."""
+    """Every sound copy is current; a missing composite font or a damaged copy was only warned about."""
     try:
-        patches = patched_composite_fonts(ctx)
+        copies = patched_composite_fonts(ctx)
     except Unpatchable:
         return True
-    return not any(patch.stale for patch in patches)
+    return not copies.stale
 
 
 FONT_FALLBACK = Step(

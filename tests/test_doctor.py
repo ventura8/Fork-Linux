@@ -669,6 +669,19 @@ def test_prefix_font_fallback_missing_and_damaged() -> None:
     result = run(ctx, "prefix.font_fallback")
     assert result.status == "warn"
     assert "is damaged (not well-formed XML" in result.detail
+    assert "patched" not in result.detail
+    assert "setup --reset" in result.hint
+    # A sound WPF\ copy (the one .NET 4.8 reads) is still patched, and named.
+    write_composite_font(pfx)
+    assert run(ctx, "prefix.font_fallback").detail == (
+        "WPF's composite font is not patched for the installed Linux fonts (WPF\\)"
+    )
+    fallback_step.run(ctx.boot)
+    result = run(ctx, "prefix.font_fallback")
+    assert result.status == "warn"
+    assert "Fonts" in result.detail and "is damaged (not well-formed XML" in result.detail
+    assert result.detail.endswith("; patched: WPF\\")
+    assert "setup --reset" in result.hint
     assert doctor.get("prefix.font_fallback").fix_steps == ("font_fallback",)
 
 
@@ -710,6 +723,9 @@ def test_prefix_font_fallback_without_cjk_fonts() -> None:
     assert result.status == "warn"
     assert result.detail == "no Linux font for Hangul, Han text in Fork's interface (WPF\\)"
     assert "fonts-noto-cjk" in result.hint
+    # Package names checked in the distributions' repositories (Fedora 44, openSUSE Leap 16.0, Arch).
+    assert "Fedora / openSUSE: google-noto-sans-fonts google-noto-sans-cjk-fonts;" in result.hint
+    assert "Arch: noto-fonts noto-fonts-cjk" in result.hint
 
 
 def test_prefix_font_smoothing() -> None:

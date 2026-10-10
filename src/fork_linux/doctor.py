@@ -793,13 +793,17 @@ def check_font_fallback(ctx: DoctorCtx) -> Result:
         return _skip(NO_PREFIX)
     maps = fallback_step.wanted_maps(ctx.boot)
     try:
-        patches = fallback_step.patched_composite_fonts(ctx.boot, maps)
+        copies = fallback_step.patched_composite_fonts(ctx.boot, maps)
     except fallback_step.Unpatchable as exc:
         return Result("warn", exc.message, exc.hint)
-    folders = ", ".join(patch.folder for patch in patches)
-    stale = ", ".join(patch.folder for patch in patches if patch.stale)
+    folders = ", ".join(patch.folder for patch in copies.patches)
+    stale = ", ".join(patch.folder for patch in copies.stale)
     if stale:
         return Result("warn", f"WPF's composite font is not patched for the installed Linux fonts ({stale})", _RUN_FIX)
+    if copies.damaged:
+        patched = f"; patched: {folders}" if folders else ""
+        detail = "; ".join(problem.message for problem in copies.damaged)
+        return Result("warn", detail + patched, fallback_step.REPAIR_HINT)
     unmapped = fallback_step.unmapped_key_scripts(maps)
     if unmapped:
         return Result(
