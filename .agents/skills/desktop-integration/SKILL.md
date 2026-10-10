@@ -20,3 +20,5 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
   with `auto`, recorded actions of a file manager that is gone are removed. Tests pin `XDG_CONFIG_DIRS` and `PATH`.
 - Thunar: a missing `~/.config/Thunar/uca.xml` is seeded from the first `Thunar/uca.xml` in `$XDG_CONFIG_DIRS`
   (registry fields `seed`, `seed_sha256`); removal deletes it only when it is back to that seed.
+  It is written only when its content changes; Thunar reads it only when it starts, so a change while a
+  Thunar process runs logs `THUNAR_RESTART` ("run 'thunar -q'"); `procs.running` finds the process.

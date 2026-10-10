@@ -10,6 +10,7 @@ Entries that vanish or cannot be read while scanning are skipped.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from pathlib import Path
 
 from .errors import ForkRunning
@@ -17,6 +18,8 @@ from .errors import ForkRunning
 PROC = Path("/proc")
 # /proc/<pid>/environ and cmdline are bounded by ARG_MAX in practice; never read more.
 MAX_BYTES = 4 * 1024 * 1024
+# The kernel keeps the first 15 bytes of a program name in /proc/<pid>/comm.
+COMM_LENGTH = 15
 _WINEPREFIX = b"WINEPREFIX="
 
 
@@ -105,3 +108,18 @@ def require_closed(prefix: Path, *, proc_root: Path = PROC) -> None:
             f"Fork is running in {prefix} (pid {listed})",
             hint="close Fork first, then run the command again",
         )
+
+
+def running(names: Iterable[str], *, proc_root: Path = PROC) -> list[int]:
+    """PIDs of the current user's processes whose program name (``comm``) is one of ``names``.
+
+    Names compare case-insensitively (``Thunar`` and ``thunar``) and as the kernel
+    stores them, cut to :data:`COMM_LENGTH` bytes.
+    """
+    wanted = {name.lower()[:COMM_LENGTH] for name in names}
+    found = []
+    for pid in _own_pids(proc_root):
+        comm = _read(proc_root / str(pid) / "comm")
+        if comm is not None and os.fsdecode(comm).strip().lower() in wanted:
+            found.append(pid)
+    return found

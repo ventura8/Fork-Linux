@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import logging
 import os
 import shutil
 import stat
@@ -599,8 +600,13 @@ def test_thunar_created_file_is_removed_with_its_backup(
 ) -> None:
     dirs = _dirs(env)
     _install(paths, env, runner, menu=False, file_managers="thunar")
+    first = dirs.thunar_uca.stat()
     _install(paths, env, runner, menu=False, file_managers="thunar")
     backup = dirs.thunar_uca.with_name(di.THUNAR_BACKUP)
+    # Unchanged: not rewritten, no backup.
+    assert (dirs.thunar_uca.stat().st_ino, dirs.thunar_uca.stat().st_mtime_ns) == (first.st_ino, first.st_mtime_ns)
+    assert not backup.exists()
+    _install(paths, env, runner, menu=False, file_managers="thunar", exec_cmd=["/opt/other/fork-linux"])
     assert backup.exists()
     assert _registry(paths)[str(dirs.thunar_uca)]["created"] is True
     assert di.remove(paths, env, runner=runner) == [dirs.thunar_uca]
@@ -1243,3 +1249,34 @@ def test_cli_aliases_keep_the_mode_of_an_existing_bin_dir(
     _install(paths, env, runner, menu=False, file_managers="none", cli_alias=True, exec_cmd=[str(target)])
     assert os.readlink(dirs.bin / "fork") == str(target)
     assert stat.S_IMODE(dirs.bin.stat().st_mode) == 0o700
+
+
+@pytest.mark.parametrize("thunar_running", [True, False], ids=["thunar-running", "no-thunar"])
+def test_running_thunar_is_told_to_restart_when_uca_changes(
+    paths: Paths,
+    env: dict[str, str],
+    runner: RecordingRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    thunar_running: bool,
+) -> None:
+    asked: list[tuple[str, ...]] = []
+
+    def running(names: Any) -> list[int]:
+        asked.append(tuple(names))
+        return [4242] if thunar_running else []
+
+    monkeypatch.setattr(di.procs, "running", running)
+    caplog.set_level(logging.WARNING, logger=di.__name__)
+
+    def restarts() -> int:
+        return sum(record.getMessage() == di.THUNAR_RESTART for record in caplog.records)
+
+    _install(paths, env, runner, menu=False, file_managers="thunar")
+    assert restarts() == int(thunar_running)
+    # Unchanged: no write, no notice.
+    _install(paths, env, runner, menu=False, file_managers="thunar")
+    assert restarts() == int(thunar_running)
+    assert di.remove(paths, env, runner=runner) == [_dirs(env).thunar_uca]
+    assert restarts() == 2 * int(thunar_running)
+    assert asked == [di.THUNAR_PROGRAMS] * 2

@@ -123,3 +123,14 @@ def test_read_is_capped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     path.write_bytes(b"A" * 100)
     monkeypatch.setattr(procs, "MAX_BYTES", 10)
     assert procs._read(path) == b"A" * 10
+
+
+def test_running_matches_program_names(proc: Path) -> None:
+    (_process(proc, 301, env=None, cmdline=None) / "comm").write_bytes(b"Thunar\n")
+    (_process(proc, 302, env=None, cmdline=None) / "comm").write_bytes(b"thunar-volman\n")
+    (_process(proc, 303, env=None, cmdline=None) / "comm").write_bytes(b"gnome-terminal-\n")
+    _process(proc, 304, env=None, cmdline=None)  # no comm: vanished or unreadable
+    assert procs.running(["thunar"], proc_root=proc) == [301]
+    # Program names longer than the kernel keeps still match.
+    assert procs.running(["gnome-terminal-server"], proc_root=proc) == [303]
+    assert procs.running([], proc_root=proc) == []

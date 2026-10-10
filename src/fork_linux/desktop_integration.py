@@ -10,6 +10,8 @@ one shared ``uca.xml``: only our ``<action>`` element is added or removed.
 Thunar reads only the first ``Thunar/uca.xml`` of ``$XDG_CONFIG_HOME`` and
 ``$XDG_CONFIG_DIRS``, so a missing user file is first seeded from the
 desktop's own file (Xubuntu's "Open Terminal Here", ...), never created empty.
+``uca.xml`` is written only when its content changes; a running Thunar reads it only
+when it starts, so a change then comes with a warning to restart Thunar.
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape as xml_escape
 
-from . import APP_ID, APP_NAME, credits, fsutil, icon_extract, resources, sandbox
+from . import APP_ID, APP_NAME, credits, fsutil, icon_extract, procs, resources, sandbox
 from .errors import ForkLinuxError, UsageError
 from .paths import Paths
 from .procrun import Runner
@@ -48,6 +50,11 @@ TEMPLATE_DIR = "templates"
 REGISTRY_SCHEMA = 1
 THUNAR_BACKUP = "uca.xml.fork-linux-backup"
 THUNAR_UCA = ("Thunar", "uca.xml")
+THUNAR_PROGRAMS = ("thunar",)
+THUNAR_RESTART = (
+    "Thunar is running and reads its custom actions only when it starts: run 'thunar -q' "
+    "(it starts again when needed) to see the change to 'Open in Fork'"
+)
 # Our neutral placeholder icon, relative to a data directory (share/).
 SCALABLE_ICON = ("icons", "hicolor", "scalable", "apps", f"{APP_ID}.svg")
 DEFAULT_DATA_DIRS = "/usr/local/share:/usr/share"
@@ -397,14 +404,25 @@ def _uca_bytes(root: ET.Element) -> bytes:
     return ('<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="unicode") + "\n").encode("utf-8")
 
 
+def _thunar_changed() -> None:
+    """Tell the user to restart a running Thunar: it would keep showing the old actions."""
+    if procs.running(THUNAR_PROGRAMS):
+        log.warning(THUNAR_RESTART)
+
+
 def _write_uca(path: Path, root: ET.Element) -> None:
-    """Back up ``uca.xml``, then write ``root`` to it atomically (keeping its mode)."""
+    """Back up ``uca.xml``, then write ``root`` to it atomically (keeping its mode); nothing when unchanged."""
+    content = _uca_bytes(root)
     mode = 0o644
     if path.exists():
+        current = path.read_bytes()
+        if current == content:
+            return
         mode = path.stat().st_mode & 0o777
-        fsutil.atomic_write(path.with_name(THUNAR_BACKUP), path.read_bytes(), mode=mode)
+        fsutil.atomic_write(path.with_name(THUNAR_BACKUP), current, mode=mode)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fsutil.atomic_write(path, _uca_bytes(root), mode=mode)
+    fsutil.atomic_write(path, content, mode=mode)
+    _thunar_changed()
 
 
 def _drop_ours(root: ET.Element) -> int:
@@ -489,6 +507,7 @@ def _remove_thunar(path: Path, entry: Mapping[str, Any]) -> bool:
         backup = path.with_name(THUNAR_BACKUP)
         if backup.exists():
             backup.unlink()
+        _thunar_changed()
         return True
     _write_uca(path, root)
     return True
