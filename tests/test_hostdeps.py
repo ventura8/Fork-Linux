@@ -90,6 +90,24 @@ def test_missing_tools() -> None:
     assert hostdeps.missing_tools(runner, []) == []
 
 
+@pytest.mark.parametrize(
+    ("desktop", "tool"),
+    [("", "zenity"), ("GNOME", "zenity"), ("KDE", "kdialog"), ("kde", "kdialog"), ("ubuntu:KDE", "kdialog"),
+     ("KDE-like", "zenity"), ("XFCE", "zenity")],
+)
+def test_dialog_tool_follows_the_desktop(desktop: str, tool: str) -> None:
+    assert hostdeps.dialog_tool(desktop) == tool
+
+
+def test_missing_optional_tools_needs_only_one_dialog_tool() -> None:
+    present = {name: f"/usr/bin/{name}" for name in hostdeps.OPTIONAL_TOOLS}
+    for dialogs in ({"zenity": "/usr/bin/zenity", "kdialog": None}, {"zenity": None, "kdialog": "/usr/bin/kdialog"}):
+        assert hostdeps.missing_optional_tools(RecordingRunner(which_map={**present, **dialogs})) == []
+    neither = RecordingRunner(which_map={**present, "git": None, "zenity": None, "kdialog": None})
+    assert hostdeps.missing_optional_tools(neither) == ["git", "zenity"]
+    assert hostdeps.missing_optional_tools(neither, "KDE") == ["git", "kdialog"]
+
+
 def test_missing_libs_with_loader() -> None:
     loaded = []
 
@@ -115,7 +133,7 @@ def test_missing_libs_with_ctypes() -> None:
 def test_every_family_maps_every_known_name() -> None:
     names = {
         *hostdeps.REQUIRED_TOOLS, *hostdeps.OPTIONAL_TOOLS, *hostdeps.REQUIRED_LIBS, *hostdeps.OPTIONAL_LIBS,
-        hostdeps.DOWNLOADERS[0],
+        *hostdeps.DIALOG_TOOLS, hostdeps.DOWNLOADERS[0],
     }
     assert set(hostdeps.PACKAGES) == set(hostdeps.INSTALL_COMMANDS) == set(hostdeps.FAMILIES) - {"unknown"}
     for family, table in hostdeps.PACKAGES.items():

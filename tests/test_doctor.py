@@ -320,13 +320,32 @@ def test_host_tools() -> None:
         for name in ("cabextract", "unzip", "7z", "zenity", "kdialog", "xdg-open", "git", "xdotool", "fc-list")
     }
     assert run(make(RecordingRunner(which_map=have)), "host.tools").status == "ok"
-    missing_optional = dict(have, kdialog=None)
+    # zenity and kdialog are alternatives: one of them is enough.
+    for dialog in ("zenity", "kdialog"):
+        result = run(make(RecordingRunner(which_map=dict(have, **{dialog: None}))), "host.tools")
+        assert result == Result("ok", "all required and optional tools are present")
+    missing_optional = dict(have, git=None)
     result = run(make(RecordingRunner(which_map=missing_optional)), "host.tools")
     assert result.status == "info"
-    assert "kdialog" in result.detail
+    assert result.detail == "required tools present; optional tools missing: git"
     result = run(make(RecordingRunner(which_map=dict(have, cabextract=None))), "host.tools")
     assert result.status == "fail"
     assert result.detail == "missing: cabextract"
+
+
+@pytest.mark.parametrize(
+    ("desktop", "suggested"),
+    [("", "zenity (or kdialog)"), ("GNOME", "zenity (or kdialog)"), ("KDE", "kdialog (or zenity)"),
+     ("ubuntu:KDE", "kdialog (or zenity)"), ("XFCE", "zenity (or kdialog)")],
+)
+def test_host_tools_suggest_one_dialog_tool(desktop: str, suggested: str) -> None:
+    have = {name: f"/usr/bin/{name}" for name in ("cabextract", "unzip", "curl", "7z", "xdg-open", "git", "xdotool",
+                                                   "fc-list")}
+    have.update(zenity=None, kdialog=None)
+    result = run(make(RecordingRunner(which_map=have), env={"XDG_CURRENT_DESKTOP": desktop}), "host.tools")
+    assert result.status == "info"
+    assert result.detail == f"required tools present; optional tools missing: {suggested}"
+    assert suggested.split()[0] in result.hint
 
 
 def _loader(missing: set[str]) -> Any:

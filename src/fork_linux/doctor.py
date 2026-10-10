@@ -484,16 +484,23 @@ def check_disk(ctx: DoctorCtx) -> Result:
 # -- host ------------------------------------------------------------------------------------------
 
 
+def _other_dialog(name: str) -> str:
+    """The dialog tool that can stand in for ``name``."""
+    return next(other for other in hostdeps.DIALOG_TOOLS if other != name)
+
+
 def check_tools(ctx: DoctorCtx) -> Result:
     """Required (and useful optional) host tools on PATH."""
     required = hostdeps.missing_required_tools(ctx.runner)
-    optional = hostdeps.missing_tools(ctx.runner, hostdeps.OPTIONAL_TOOLS)
+    optional = hostdeps.missing_optional_tools(ctx.runner, ctx.env.get("XDG_CURRENT_DESKTOP", ""))
     if required:
         return Result("fail", f"missing: {', '.join(required)}", _install_hint(required, []))
     if optional:
+        # zenity and kdialog are alternatives: only one is ever suggested, and only when both are missing.
+        names = [f"{name} (or {_other_dialog(name)})" if name in hostdeps.DIALOG_TOOLS else name for name in optional]
         return Result(
             "info",
-            f"required tools present; optional tools missing: {', '.join(optional)}",
+            f"required tools present; optional tools missing: {', '.join(names)}",
             _install_hint(optional, []),
         )
     return Result("ok", "all required and optional tools are present")
