@@ -56,10 +56,10 @@ FAST_PATH_SECONDS = 30.0
 WELCOME_NAME = (460, 138)
 WELCOME_EMAIL = (460, 194)
 WELCOME_FINISH = (523, 337)
-GIT_INSTANCE_START_HEIGHT = 374
-GIT_INSTANCE_START = (339, 333)
-GIT_INSTANCE_DONE_HEIGHT = 336
-GIT_INSTANCE_CLOSE = (339, 294)
+# The git-instance dialog ("Fork", 680 wide) changes height with its state and the UI font
+# (Selawik: 382 to start, 446 while updating, 340 when done), but its one button, Start
+# (disabled while updating) or Close, stays centred 41 px above the bottom edge.
+GIT_INSTANCE_BUTTON_FROM_BOTTOM = 41
 MIN_STDDEV = 0.02
 DARK_MEAN = 0.35
 
@@ -111,12 +111,11 @@ def _wait_main_window(e2e: Any, *, first_run: bool = False, timeout: float = WIN
                 _click(e2e, window, WELCOME_EMAIL)
                 _xdotool(e2e, "type", "--delay", "30", "e2e@example.invalid", check=True)
                 _click(e2e, window, WELCOME_FINISH)
-            elif window["title"] == MAIN_TITLE and window["height"] == GIT_INSTANCE_START_HEIGHT:
-                _click(e2e, window, GIT_INSTANCE_START)
-            elif window["title"] == MAIN_TITLE and window["height"] == GIT_INSTANCE_DONE_HEIGHT:
-                _click(e2e, window, GIT_INSTANCE_CLOSE)
+            elif window["title"] == MAIN_TITLE:
+                _click(e2e, window, (window["width"] // 2 - 1, window["height"] - GIT_INSTANCE_BUTTON_FROM_BOTTOM))
         time.sleep(1)
-    pytest.fail(f"no Fork main window within {timeout:.0f} s; windows: {_windows(e2e)}")
+    _screenshot(e2e, "no-main-window")
+    pytest.fail(f"no Fork main window within {timeout:.0f} s; windows: {_windows(e2e)} (screen: no-main-window.png)")
 
 
 def _screenshot(e2e: Any, name: str, window: dict[str, Any] | None = None) -> Path:

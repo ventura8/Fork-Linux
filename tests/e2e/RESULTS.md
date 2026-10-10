@@ -75,6 +75,9 @@ Before the first launch of a new prefix, this `settings.json` was written:
   update the Fork git instance to 2.50.1" with a **Start** button (680x374). Clicking Start
   unpacked PortableGit in about 5.5 s, then showed "Done. Enjoy using Fork!" with **Close**
   (680x336). After that the main window opened on the repository.
+  With the Selawik interface font (2026-10-10) the same dialog is 680x382 to start, 680x446
+  while it updates and 680x340 when done; its one button stays centred 41 px above the bottom
+  edge, which is how test_03 finds it now.
 - Fork **kept** the seeded Guid and values and added its own keys, 99 in total.
 - The welcome dialog is the only place where Fork asks for user.name and user.email. With
   seeding, the identity comes from the host `~/.gitconfig` through our git overlay instead.
