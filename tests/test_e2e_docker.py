@@ -591,7 +591,7 @@ def test_e2e_image_carries_the_exploration_tools() -> None:
 
 
 def test_both_runners_share_the_library() -> None:
-    for rel in ("scripts/e2e-docker.sh", "scripts/ci-e2e-wine.sh"):
+    for rel in ("scripts/e2e-docker.sh", "scripts/ci-e2e-wine.sh", "scripts/ci-e2e-de.sh"):
         text = (REPO / rel).read_text(encoding="utf-8")
         assert '. "${ROOT}/scripts/lib-e2e-docker.sh"' in text, rel
         assert "fl_e2e_check_dir" in text and "fl_e2e_acquire_slot" in text and "fl_e2e_copy_logs" in text

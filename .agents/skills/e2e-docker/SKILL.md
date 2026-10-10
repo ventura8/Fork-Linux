@@ -55,6 +55,12 @@ At most `FL_E2E_SLOTS` (default 3) of these containers run host-wide: each run t
 `/var/tmp/fork-linux-e2e/locks/slot-<n>` without blocking, then waits on one ("all N E2E slots
 are busy"). Do not raise it to get around a busy host.
 
+## Desktop tier
+
+`scripts/ci-e2e-de.sh <desktop> [--fork]` runs `tests/e2e_de` (fork-linux from the release tarball in a
+real desktop session) in `docker/Dockerfile.e2e.de.<desktop>` with the same library, mounts, refusals and
+(for `--fork`) slots and seed as this runner; logs in `logs/e2e-de/`. See `docs/qa/DE-E2E.md`.
+
 ## Never
 
 - `FL_E2E_FORK=1 python3 -m pytest …` or `FL_REAL_WINE=1 …` on the host (no override exists).

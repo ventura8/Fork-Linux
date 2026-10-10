@@ -1,7 +1,8 @@
 # shellcheck shell=bash
-# lib-e2e-docker.sh - shared by scripts/e2e-docker.sh (local real-Fork / Wine runs) and
-# scripts/ci-e2e-wine.sh (the CI tier): scratch-root safety checks, host-wide slots, the E2E
-# image build and the logs-only copy. Sourced, never executed.
+# lib-e2e-docker.sh - shared by scripts/e2e-docker.sh (local real-Fork / Wine runs),
+# scripts/ci-e2e-wine.sh (the CI tier) and scripts/ci-e2e-de.sh (the desktop tier): scratch-root
+# safety checks, host-wide slots, the E2E image builds and the logs-only copy. Sourced, never
+# executed.
 #
 # Why this exists: on 2026-10-10 a developer's whole home directory was recursively deleted
 # while agents ran real-Fork tests on the host (cause never found). Real-Fork / Wine work
@@ -182,19 +183,30 @@ fl_e2e_acquire_slot() {
 	echo "==> holding E2E slot ${FL_E2E_SLOT}/${slots}"
 }
 
-# fl_e2e_build_image ROOT IMAGE: build the E2E image from docker/Dockerfile.e2e.wine unless the
-# image already carries this Dockerfile's digest (FL_CI_FORCE_BUILD=1 always rebuilds).
+# fl_e2e_build_image ROOT IMAGE [DOCKERFILE]: build IMAGE from DOCKERFILE (relative to ROOT;
+# default docker/Dockerfile.e2e.wine) unless the image already carries that Dockerfile's digest
+# (FL_CI_FORCE_BUILD=1 always rebuilds). The build uses the docker driver's 'default' builder
+# unless BUILDX_BUILDER names another: a docker-container builder would leave the image in its
+# own cache instead of the local image store.
 fl_e2e_build_image() {
-	local root="$1" image="$2" digest current
-	digest="$(sha256sum "${root}/${FL_E2E_DOCKERFILE}" | cut -d' ' -f1)"
+	local root="$1" image="$2" dockerfile="${3:-${FL_E2E_DOCKERFILE}}" digest current
+	digest="$(sha256sum "${root}/${dockerfile}" | cut -d' ' -f1)"
 	current="$(docker image inspect "${image}" --format "{{index .Config.Labels \"${FL_E2E_DIGEST_LABEL}\"}}" 2>/dev/null 8>&- 9>&- || true)"
 	if [[ "${FL_CI_FORCE_BUILD:-0}" != "1" && "${current}" == "${digest}" ]]; then
 		echo "==> reusing ${image} (Dockerfile digest ${digest:0:12} unchanged)"
 		return 0
 	fi
-	echo "==> docker build ${image} from ${FL_E2E_DOCKERFILE}"
-	DOCKER_BUILDKIT=1 docker build -f "${root}/${FL_E2E_DOCKERFILE}" -t "${image}" \
+	echo "==> docker build ${image} from ${dockerfile}"
+	BUILDX_BUILDER="${BUILDX_BUILDER:-default}" DOCKER_BUILDKIT=1 docker build -f "${root}/${dockerfile}" -t "${image}" \
 		--label "${FL_E2E_DIGEST_LABEL}=${digest}" "${root}/docker" 9>&- 8>&-
+}
+
+# fl_e2e_image_tag ROOT DOCKERFILE: the tag DOCKERFILE declares in its '# Image tag:' header.
+fl_e2e_image_tag() {
+	local tag
+	tag="$(sed -n 's/^# Image tag: \([^ ]*\)$/\1/p' "$1/$2" | head -n 1)"
+	[[ -n "${tag}" ]] || fl_e2e_die "$2 declares no '# Image tag:'"
+	printf '%s\n' "${tag}"
 }
 
 # fl_e2e_copy_logs SCRATCH DEST: text logs only (*.log *.json *.txt under 20 MB), never from a

@@ -25,6 +25,20 @@ user) passed in a container of that distribution; it does not start Fork. The re
 |---|---|---|
 | jammy (22.04, Python 3.10), resolute (26.04), noble (24.04), Debian 13, Fedora 44, openSUSE Leap 16.0, Arch | ✅ | `./scripts/ci-matrix.sh`, 2026-10-09 |
 
+## Desktops (desktop E2E tier)
+
+fork-linux installed from the release tarball inside a real desktop session in a container
+(`scripts/ci-e2e-de.sh`, [docs/qa/DE-E2E.md](qa/DE-E2E.md)): menu entry, file-manager action,
+theme and scale detection, terminal, reveal, default applications; the real-Fork column sets up
+the official Fork 2.23.2 and drives it under the desktop's window manager.
+
+| Desktop (container) | Integration | Real Fork | Evidence |
+|---|---|---|---|
+| Xubuntu 26.04, XFCE 4.20 (xfwm4, Thunar, xfce4-terminal) | ✅ 13/13 | ✅ 9/9 | local `scripts/ci-e2e-de.sh xfce [--fork]`, 2026-10-11 |
+
+Known desktop behaviour (not a fork-linux bug): on Xubuntu, XFCE's own Ctrl+Alt+T shortcut
+shadows Fork's "Open In Shell" key; Fork's Repository menu and Shell button work.
+
 ## Real Fork under Wine
 
 Not yet recorded by CI for v1.0.0; see `tests/e2e/RESULTS.md` for the manual runs.

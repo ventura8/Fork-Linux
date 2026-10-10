@@ -80,6 +80,11 @@ Logs land in `logs/e2e-docker/<NAME>/`; screenshots stay in `<scratch>/root/shot
 never commit them). At most `FL_E2E_SLOTS` (default 3) such containers run at once on the host.
 Runbook: [`.agents/skills/e2e-docker/SKILL.md`](../.agents/skills/e2e-docker/SKILL.md).
 
+Desktop E2E tier (fork-linux from the release tarball inside a real desktop session in a
+container; also containers only): `./scripts/ci-e2e-de.sh xfce` (integration, no Wine),
+`./scripts/ci-e2e-de.sh xfce --fork` (real Fork under the desktop's window manager),
+`./scripts/ci-e2e-de-matrix.sh [--fork]` (every desktop). See [docs/qa/DE-E2E.md](qa/DE-E2E.md).
+
 Read every `logs/ci-packaging/<format>.log` after a packaging run (exit 0 is not enough).
 
 ## 4. Packaging
