@@ -21,10 +21,11 @@ Environment:
   must be absolute and symlink-free, and must not be ``/`` or be, contain or lie
   inside a home directory; a non-empty root without the tier's marker is refused.
 * ``FL_E2E_SEED``: a directory whose files (``wine-*.tar.xz``,
-  ``Fork-*.exe``, ``winetricks-*``) are copied into the download cache; our
+  ``Fork-*.exe``, ``winetricks-*``, ``selawik-*.zip``) are copied into the download cache; our
   code re-verifies every one of them by size and sha256.
 * ``FL_E2E_WINETRICKS_CACHE``: a winetricks cache to copy to
-  ``$XDG_CACHE_HOME/winetricks`` (dotnet48 and corefonts installers).
+  ``$XDG_CACHE_HOME/winetricks`` (dotnet48 and corefonts installers); setup only reads
+  that legacy folder and seeds ``$XDG_CACHE_HOME/fork-linux/winetricks`` (``W_CACHE``) from it.
 * ``FL_E2E_DISPLAY``: the X display to use (default ``:98``); an Xvfb is
   started on it unless one already answers there.
 * ``FL_E2E_FORK_VERSION``: the Fork version to install and test (default: the
@@ -65,7 +66,7 @@ REPO = Path(__file__).resolve().parents[2]
 SRC = REPO / "src"
 ROOT_MARKER = ".fl-e2e-root"
 TOOLS = ("Xvfb", "xdotool", "magick", "git")
-SEED_PATTERNS = ("wine-*.tar.xz", "Fork-*.exe", "winetricks-*")
+SEED_PATTERNS = ("wine-*.tar.xz", "Fork-*.exe", "winetricks-*", "selawik-*.zip")
 SCREEN = "1600x1000x24"
 # Host variables that would point the tier at the real session or another Wine.
 DROPPED = ("WAYLAND_DISPLAY", "XAUTHORITY", "GNOME_SETUP_DISPLAY", "PYTHONPATH", "FORK_LINUX_LIBDIR")
