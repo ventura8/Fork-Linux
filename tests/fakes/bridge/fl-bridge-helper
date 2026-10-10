@@ -50,6 +50,9 @@ def main() -> int:
     if mode == "fail":
         print("fl-bridge-helper: cannot bind", file=sys.stderr)
         return 1
+    if mode == "stubborn":
+        # Before the port line: the launcher may send SIGTERM as soon as it has read it.
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
     lines = {"bad": b"garbage\n", "port0": b"FL_BRIDGE_PORT=0\n", "noeol": b"x" * 64, "silent": b""}
     os.write(1, lines.get(mode, b"FL_BRIDGE_PORT=4242\n"))
     if mode == "exit":
@@ -57,8 +60,6 @@ def main() -> int:
     devnull = os.open(os.devnull, os.O_WRONLY)
     if mode != "silent":
         os.dup2(devnull, 1)
-    if mode == "stubborn":
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
     parent = int(_option(argv, "--parent-pid") or os.getppid())
     deadline = time.monotonic() + LIFETIME
     while time.monotonic() < deadline:
