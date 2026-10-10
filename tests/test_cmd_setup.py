@@ -276,6 +276,32 @@ def test_reset_with_an_unknown_step_deletes_nothing(harness: Harness) -> None:
     assert harness.state().get("setup.complete") is True
 
 
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (("--fork-version", "2.23.2; rm -rf /"), "not a Fork version"),
+        (("--fork-version", "9.98.7"), "not pinned"),
+        (("--fork-version", "9.98.7", "--reset"), "not pinned"),
+    ],
+)
+def test_a_bad_fork_version_is_refused_before_any_step(harness: Harness, argv: tuple[str, ...], message: str) -> None:
+    with pytest.raises(UsageError, match=message):
+        harness.run("--accept-fork-eula", "--wine", str(harness.wine_root), *argv)
+    assert not harness.paths.state_file.exists()
+    assert not harness.paths.prefix.exists()
+    assert harness.ui.kinds("confirm") == []
+    assert harness.downloads == []
+
+
+def test_an_unpinned_fork_version_with_allow_untested_goes_on(harness: Harness) -> None:
+    setup_cmd.check_fork_request(
+        _parser().parse_args(["setup", "--fork-version", "9.98.7", "--allow-untested"]),
+        cli.AppContext(_parser().parse_args(["setup"]), env=harness.env, runner=harness.runner),
+    )
+    listing = _parser().parse_args(["setup", "--fork-version", "nonsense", "--list-steps"])
+    setup_cmd.check_fork_request(listing, cli.AppContext(listing, env=harness.env, runner=harness.runner))
+
+
 def test_wine_choice_is_saved_only_when_it_changes(harness: Harness) -> None:
     harness.run("--only", "consent", "--accept-fork-eula", "--wine", "system")
     first = harness.paths.config_file.read_text()

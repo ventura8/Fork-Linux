@@ -141,7 +141,7 @@ def test_plan_refuses_known_bad(manifest: Manifest, requested: str, reason: str)
     assert "2.23.2" in info.value.hint
 
 
-@pytest.mark.parametrize("requested", ["abc", "", "../2.23.2", 123])
+@pytest.mark.parametrize("requested", ["abc", "", "../2.23.2", 123, "2.23.2; rm -rf /", "vv2.23.2", "2.23.2/x"])
 def test_plan_rejects_invalid_versions(manifest: Manifest, requested: Any) -> None:
     with pytest.raises(UsageError, match="not a Fork version"):
         fi.plan(manifest, requested=requested, allow_untested=True)

@@ -11,6 +11,8 @@ import re
 from functools import total_ordering
 
 _NUMERIC = re.compile(r"^\s*v?(\d+(?:\.\d+)*)")
+# A version a user or a feed may name for a download: digits and dots only, nothing else.
+_PLAIN = re.compile(r"\d{1,6}(?:\.\d{1,6}){0,3}", re.ASCII)
 
 
 @total_ordering
@@ -57,6 +59,11 @@ def parse(raw: str) -> Version:
 def is_valid(raw: str) -> bool:
     """True if ``raw`` starts with a dotted number."""
     return _NUMERIC.match(raw) is not None
+
+
+def is_plain(raw: str) -> bool:
+    """True if ``raw`` is exactly a dotted number (``2.23.2``): no prefix, suffix or spaces."""
+    return _PLAIN.fullmatch(raw) is not None
 
 
 def compare(a: str, b: str) -> int:

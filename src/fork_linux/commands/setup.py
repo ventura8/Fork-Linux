@@ -13,7 +13,8 @@ import importlib
 import os
 from typing import Any
 
-from .. import fsutil, procs, winecmd
+from .. import fork_install, fsutil, procs, winecmd
+from .. import manifest as manifest_mod
 from ..cli import AppContext
 from ..errors import Declined, ForkLinuxError, UsageError
 from ..locking import FileLock
@@ -170,10 +171,23 @@ def check_selection(boot: Any, args: argparse.Namespace) -> None:
         raise UsageError(f"unknown setup step(s): {', '.join(unknown)}", hint=f"steps: {', '.join(ids)}")
 
 
+def check_fork_request(args: argparse.Namespace, ctx: AppContext) -> None:
+    """Refuse a malformed, known-bad or (without ``--allow-untested``) unpinned ``--fork-version`` first.
+
+    The ``fork_download`` step checks it again; refusing it here means nothing (no Wine
+    download, no prefix, no ``--reset``) happens for a request that can never succeed.
+    """
+    if args.fork_version is None or args.list_steps:
+        return
+    manifest = manifest_mod.load(override=ctx.paths.manifest_override)
+    fork_install.plan(manifest, requested=args.fork_version, allow_untested=args.allow_untested)
+
+
 def run(args: argparse.Namespace, ctx: AppContext) -> int:
     """Run the pending setup steps (or list them)."""
     boot = _bootstrap()
     check_selection(boot, args)
+    check_fork_request(args, ctx)
     bctx = _make_ctx(args, ctx)
     if args.list_steps:
         return list_steps(ctx, boot, bctx)

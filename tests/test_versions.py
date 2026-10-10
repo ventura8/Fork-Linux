@@ -82,6 +82,13 @@ def test_is_valid(raw: str) -> None:
     assert versions.is_valid(raw) is True
 
 
+@pytest.mark.parametrize(("raw", "plain"), [("2.23.2", True), ("11", True), ("1.2.3.4", True), ("1.2.3.4.5", False),
+                                            ("v2.0", False), (" 2.0", False), ("2.0-rc1", False), ("2.0; x", False),
+                                            ("", False), ("1234567", False)])
+def test_is_plain(raw: str, plain: bool) -> None:
+    assert versions.is_plain(raw) is plain
+
+
 def test_ordering_against_non_version_raises_type_error() -> None:
     with pytest.raises(TypeError):
         _ = Version("1.0") < "0.9"  # type-mismatch must not silently compare
