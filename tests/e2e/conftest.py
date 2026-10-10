@@ -1,5 +1,10 @@
 """Real end-to-end tier: the official Fork under the managed Wine runtime, on an Xvfb display.
 
+Containers only: run it with ``scripts/e2e-docker.sh pytest tests/e2e`` (CI:
+``scripts/ci-e2e-wine.sh``). With ``FL_E2E_FORK=1`` outside a container (no ``/.dockerenv`` /
+``/run/.containerenv``) pytest exits at once, before anything is created (AGENTS.md hard rule
+18; ``tests/fixtures/real_tier.py``); there is no host override.
+
 Gated: nothing here runs unless ``FL_E2E_FORK=1`` (each test module skips itself). The tier downloads (or
 reuses) the pinned Wine runtime, winetricks verbs and the official Fork
 installer, builds a real prefix (~2.5 GB, ~4-10 minutes) and drives Fork's
@@ -12,7 +17,9 @@ Environment:
 
 * ``FL_E2E_ROOT``: the root directory (default: a new directory under the
   system temp dir). An existing root is reused: its ``home/.cache`` (verified
-  downloads, winetricks cache) is kept and everything else is rebuilt.
+  downloads, winetricks cache) is kept and everything else is rebuilt. The root
+  must be absolute and symlink-free, and must not be ``/`` or be, contain or lie
+  inside a home directory; a non-empty root without the tier's marker is refused.
 * ``FL_E2E_SEED``: a directory whose files (``wine-*.tar.xz``,
   ``Fork-*.exe``, ``winetricks-*``) are copied into the download cache; our
   code re-verifies every one of them by size and sha256.
@@ -38,6 +45,18 @@ from pathlib import Path
 
 import pytest
 
+from fixtures import real_tier
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_configure(config: pytest.Config) -> None:
+    """Defence in depth (tests/conftest.py does the same): no real tier outside a container.
+
+    Ends the session with status 2 before any fixture creates anything (AGENTS.md hard rule 18).
+    """
+    real_tier.enforce()
+
+
 # The gate itself is a module-level skip in each test module: a skip raised while a
 # conftest.py is imported ends the whole session under pytest 6.2 (Ubuntu 22.04) and
 # aborts ``pytest tests/e2e`` under pytest 8. Without the flag these fixtures are never used.
@@ -58,28 +77,16 @@ def _require_tools() -> None:
         pytest.skip(f"E2E tier needs {', '.join(missing)} on PATH")
 
 
-def _prepare_root(root: Path) -> None:
-    """Create ``root`` or clean a previous run in it (keeping ``home/.cache``)."""
-    if root.exists():
-        entries = [entry for entry in root.iterdir() if entry.name != ROOT_MARKER]
-        if entries and not (root / ROOT_MARKER).is_file():
-            pytest.fail(f"{root} is not empty and was not created by the E2E tier; refusing to clean it")
-        for entry in entries:
-            if entry.name == "home":
-                for sub in entry.iterdir():
-                    if sub.name != ".cache":
-                        _remove(sub)
-            else:
-                _remove(entry)
-    root.mkdir(mode=0o700, parents=True, exist_ok=True)
-    (root / ROOT_MARKER).write_text("fork-linux E2E root\n", encoding="utf-8")
+def _prepare_root(root: Path) -> Path:
+    """Create ``root`` or clean a previous run in it (keeping ``home/.cache``).
 
-
-def _remove(path: Path) -> None:
-    if path.is_dir() and not path.is_symlink():
-        shutil.rmtree(path)
-    else:
-        path.unlink()
+    ``real_tier.prepare_root`` refuses ``/``, home directories, symlink components and
+    unmarked non-empty roots, and deletes only inside the root without following symlinks.
+    """
+    try:
+        return real_tier.prepare_root(root, ROOT_MARKER, keep=(".cache",))
+    except real_tier.RefusedPath as exc:
+        pytest.exit(f"E2E root refused: {exc}", returncode=2)
 
 
 def _seed(home: Path) -> None:
@@ -190,8 +197,7 @@ class E2E:
 def e2e() -> Iterator[E2E]:
     """The isolated root, seeded caches and an X display; Wine and Xvfb are stopped afterwards."""
     _require_tools()
-    root = Path(os.environ.get("FL_E2E_ROOT") or tempfile.mkdtemp(prefix="fork-linux-e2e-")).absolute()
-    _prepare_root(root)
+    root = _prepare_root(Path(os.environ.get("FL_E2E_ROOT") or tempfile.mkdtemp(prefix="fork-linux-e2e-")))
     display = os.environ.get("FL_E2E_DISPLAY", ":98")
     env = E2E(root, display)
     for sub in (".config", ".local/share", ".cache", ".local/state"):

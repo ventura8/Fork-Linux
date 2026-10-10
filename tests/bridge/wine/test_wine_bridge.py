@@ -26,6 +26,8 @@ from typing import Any
 
 import pytest
 
+from fixtures import real_tier
+
 if os.environ.get("FL_REAL_WINE") != "1":
     pytest.skip("requires FL_REAL_WINE=1", allow_module_level=True)
 
@@ -40,6 +42,9 @@ from .fl_winetier import (
     wine_candidates,
     wine_label,
 )
+
+# Containers only (AGENTS.md hard rule 18): FL_CI_STAGE=bridge ./scripts/ci-docker.sh.
+real_tier.enforce()
 
 WINES = wine_candidates()
 

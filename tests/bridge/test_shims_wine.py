@@ -36,6 +36,8 @@ from pathlib import Path
 
 import pytest
 
+from fixtures import real_tier
+
 ROOT = Path(__file__).resolve().parents[2]
 UNIX_DIR = ROOT / "bridge" / "unix"
 COMMON_DIR = ROOT / "bridge" / "common"
@@ -76,6 +78,8 @@ def tools() -> Tools:
     """Locate Wine and the built PEs (gated on FL_REAL_WINE=1)."""
     if os.environ.get("FL_REAL_WINE") != "1":
         pytest.skip("Wine tier: set FL_REAL_WINE=1 to run the shims under Wine")
+    # Containers only (AGENTS.md hard rule 18): FL_CI_STAGE=bridge ./scripts/ci-docker.sh.
+    real_tier.enforce()
     wine = os.environ.get("FL_WINE") or shutil.which("wine")
     if not wine:
         pytest.skip("wine is not installed")

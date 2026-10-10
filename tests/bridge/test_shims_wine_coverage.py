@@ -34,8 +34,12 @@ from types import ModuleType
 
 import pytest
 
+from fixtures import real_tier
+
 if os.environ.get("FL_REAL_WINE") != "1":
     pytest.skip("requires FL_REAL_WINE=1", allow_module_level=True)
+# Containers only (AGENTS.md hard rule 18): FL_CI_STAGE=bridge ./scripts/ci-docker.sh.
+real_tier.enforce()
 
 
 def _load_base() -> ModuleType:
