@@ -7,7 +7,10 @@ fork-linux (1.0.0) resolute; urgency=medium
     runtime, Microsoft .NET Framework and the official Fork installer
     (downloaded from cdn.fork.dev on the user's machine, never redistributed).
   * Menu entry, AppStream metainfo, manual pages and shell completions;
-    "Open in Fork" file-manager actions per user.
+    "Open in Fork" file-manager actions per user for the installed file
+    managers.
+  * Selawik (SIL OFL 1.1, downloaded pinned per user) as Fork's interface
+    font in place of Wine's Tahoma.
   * Update snapshots and rollback, health check (doctor), logs bundle,
     reversible uninstall (never touches ~/.wine).
   * Experimental native-git bridge (fl-shim.exe, fl-launch.exe,

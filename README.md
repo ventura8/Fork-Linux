@@ -47,7 +47,7 @@ less install.sh
 bash install.sh            # --help lists --system, --setup, --dry-run, --version, ...
 ```
 
-The installer verifies the release tarball against `SHA256SUMS` and keeps a manifest so `uninstall.sh` removes exactly what it installed.
+The installer verifies the release tarball against `SHA256SUMS` and keeps a manifest so `uninstall.sh` removes exactly what it installed. With `--from-tarball FILE`, a checksum mismatch stops the install and leaves your file where it is.
 
 ## Install methods
 
@@ -74,16 +74,19 @@ Start **Fork for Linux (unofficial)** from your app menu, or run `fork`. Setup s
 | Wine 11.0 staging (WoW64) — Kron4ek build, pinned + sha256-verified | GitHub ([Kron4ek/Wine-Builds](https://github.com/Kron4ek/Wine-Builds)) | ~75 MB |
 | Winetricks (pinned release) | GitHub ([Winetricks/winetricks](https://github.com/Winetricks/winetricks)) | < 1 MB |
 | Microsoft .NET Framework 4.8 and core fonts — installed by winetricks under **Microsoft's license terms** | Microsoft | ~125 MB |
+| Selawik 1.01 interface font (Microsoft's open-source Segoe UI stand-in, SIL OFL 1.1), pinned + sha256-verified | GitHub ([microsoft/Selawik](https://github.com/microsoft/Selawik)) | < 1 MB |
 | Fork installer (2.23.2 by default), verified against a pinned sha256 | `https://cdn.fork.dev/win/` | ~76 MB |
 
 Plan for **about 2.5–3 GB of disk** and **10–20 minutes** (less on a fast connection). Setup is resumable: if it fails, the next run continues from the failed step. Headless: `fork-linux setup --accept-fork-eula --no-launch`.
+
+Downloads are cached in `~/.cache/fork-linux/` (winetricks' .NET and font downloads in `~/.cache/fork-linux/winetricks/`, so `uninstall --purge` removes them too). Files already in winetricks' own `~/.cache/winetricks/` are reused, and that folder is never changed. Fork's default folder for new clones is your Linux home from the very first start.
 
 ## Usage
 
 - `fork` — start Fork.
 - `fork .` or `fork ~/src/myrepo` — open a repository (a path inside a repository opens its root). If Fork is already running, the repository opens in a new tab.
-- **Desktop launcher** — "Fork for Linux (unofficial)" in your app menu, with Fork's own icon extracted from your copy.
-- **Open in Fork** — a right-click action in Nautilus, Nemo, Caja, Dolphin and Thunar: `fork-linux desktop install --file-managers <list>`.
+- **Desktop launcher** — "Fork for Linux (unofficial)" in your app menu, with Fork's own icon extracted from your copy (at every icon size; a neutral placeholder until Fork is installed).
+- **Open in Fork** — a right-click action in Nautilus, Nemo, Caja, Dolphin and Thunar. `install.sh` and `fork-linux desktop install` add it for the file managers installed on your computer (`--file-managers auto`, the default); `--file-managers all` or a list such as `thunar,nemo` picks them yourself. In Thunar the action is added next to your desktop's own custom actions ("Open Terminal Here", ...), and removing it brings back exactly what was there.
 
 ## Updating
 
@@ -104,14 +107,14 @@ Plan for **about 2.5–3 GB of disk** and **10–20 minutes** (less on a fast co
 | `update [--check \| --fork \| --wine] [--fork-version V \| --latest] [--allow-untested]` | Check for and apply Fork / Wine runtime updates |
 | `snapshot create [--reason R] \| list \| delete ID \| prune` | Manage snapshots of Fork's install |
 | `rollback [ID \| --to-version V] [--with-settings] [--no-pin]` | Restore a snapshot and pin that version |
-| `doctor [--fix] [--deep] [--network] [--check ID …]` | 36 health checks with fix hints |
+| `doctor [--fix] [--deep] [--network] [--check ID …]` | 46 health checks with fix hints |
 | `config get \| set \| unset \| list \| path \| edit` | Fork for Linux settings (`~/.config/fork-linux/config.ini`) |
 | `settings show \| get \| set \| unset \| apply-defaults \| backup \| restore [FILE] \| path` | Fork's own `settings.json` (edited only while Fork is closed) |
 | `desktop install [--file-managers LIST] [--no-menu] [--no-icons] [--cli-alias] \| remove \| status` | Menu entry, icon, file-manager actions |
 | `ssh sync [--dry-run] [--mode link\|copy] [--no-config] \| status` | Share your SSH keys and config with Fork |
 | `git-bridge enable \| disable \| status \| record on\|off` | Experimental native-git bridge (opt-in; `record` forwards to bundled git for debugging) |
 | `logs [--wine \| --fork \| --velopack \| --setup \| --all] [--follow \| --path \| --bundle]` | Show logs or create a redacted bug-report bundle |
-| `uninstall [--purge] [--keep-downloads] [--yes]` | Remove integrations; `--purge` also removes the prefix and runtimes |
+| `uninstall [--purge] [--keep-downloads] [--yes]` | Remove integrations; `--purge` also removes the prefix, runtimes and caches (`--keep-downloads` keeps the downloaded Wine, Fork, .NET and fonts) |
 | `about` / `credits`, `version`, `status` | Credits, version, setup and Fork status |
 
 Exit codes are stable and documented in [AGENTS.md §5](AGENTS.md#5-standard-exit-code-mapping) (for example `10` not set up, `13` integrity check failed, `15` Fork is running).
@@ -193,7 +196,7 @@ Then remove the program with the tool you installed it with: `curl -fsSL https:/
 
 **Community prior art:** [pixiekat's Wine guide (§10)](https://github.com/pixiekat/gists/blob/main/install-wine-and-delinea.md), [jasonnicholson/fork-wine-setup](https://github.com/jasonnicholson/fork-wine-setup), [NitroHxC's gists](https://gist.github.com/NitroHxC/ff579d57b15f7ba5dcd1429eac13468f), [fork-dev/Tracker#2033](https://github.com/fork-dev/Tracker/issues/2033) and [#153](https://github.com/fork-dev/Tracker/issues/153), the [WineHQ AppDB](https://appdb.winehq.org/objectManager.php?sClass=version&iId=42350), [dakusan/tortoisewine](https://github.com/dakusan/tortoisewine), [coskunergan/ubuntu_tortoise](https://github.com/coskunergan/ubuntu_tortoise), [andy-5/wslgit](https://github.com/andy-5/wslgit).
 
-**Upstream projects:** [Wine](https://www.winehq.org), [Kron4ek Wine-Builds](https://github.com/Kron4ek/Wine-Builds), [Winetricks](https://github.com/Winetricks/winetricks).
+**Upstream projects:** [Wine](https://www.winehq.org), [Kron4ek Wine-Builds](https://github.com/Kron4ek/Wine-Builds), [Winetricks](https://github.com/Winetricks/winetricks), [Selawik](https://github.com/microsoft/Selawik).
 
 Full credits and third-party licenses: [docs/CREDITS.md](docs/CREDITS.md).
 <!-- credits:end -->
