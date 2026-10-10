@@ -25,8 +25,10 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     install.add_argument(
         "--file-managers",
         metavar="LIST",
-        default="all",
-        help="comma separated: " + ", ".join(desktop_integration.FILE_MANAGERS) + ", all or none (default: all)",
+        default=desktop_integration.AUTO,
+        help="comma separated: "
+        + ", ".join(desktop_integration.FILE_MANAGERS)
+        + ", auto (the installed ones), all or none (default: auto)",
     )
     install.add_argument("--no-menu", action="store_true", help="no application menu entry")
     install.add_argument("--no-icons", action="store_true", help="do not install icons")

@@ -189,8 +189,17 @@ def test_icon_extraction_failure_is_not_fatal(xdg: Path, tmp_path: Path) -> None
     ctx = make_ctx(RecordingRunner(), env=_env(xdg, tmp_path))
     install_fork(ctx.layout)
     integration.run_icon(ctx)
-    assert ctx.state.get(integration.ICONS_KEY) == []
+    # The fake Fork.exe has no icon: our neutral placeholder stays the scalable icon.
+    scalable = Path(os.environ["XDG_DATA_HOME"]) / "icons" / "hicolor" / "scalable" / "apps" / f"{APP_ID}.svg"
+    assert ctx.state.get(integration.ICONS_KEY) == [str(scalable)]
+    assert scalable.read_bytes() == (resources.install_root() / "data" / "icons" / "hicolor" / "scalable" / "apps"
+                                     / f"{APP_ID}.svg").read_bytes()
     assert integration.verify_icon(ctx)
+
+
+def test_icon_step_revision() -> None:
+    # Rev 2: every hicolor size and the scalable SVG are written, so existing installs re-run it.
+    assert integration.ICON.rev == 2
 
 
 # -- desktop_entry -------------------------------------------------------------------------------
@@ -205,6 +214,8 @@ def test_desktop_entry_is_installed(xdg: Path, tmp_path: Path) -> None:
     assert menu.is_file()
     assert "StartupWMClass=fork.exe" in menu.read_text()
     assert integration.verify_desktop(ctx)
+    # Until Fork's own icon is extracted, the menu shows our placeholder.
+    assert (Path(os.environ["XDG_DATA_HOME"]) / "icons" / "hicolor" / "scalable" / "apps" / f"{APP_ID}.svg").is_file()
 
 
 def test_desktop_entry_packaged(xdg: Path, tmp_path: Path) -> None:

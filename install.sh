@@ -237,7 +237,8 @@ EOF
 		# The per-user menu entry belongs to fork-linux's own desktop integration (it records
 		# what it writes in ~/.local/share/fork-linux/integrations.json and removes only that).
 		say "menu entry: fork-linux desktop install"
-		run "${python}" -I "${dest}/bin/fork-linux" desktop install --file-managers all ||
+		# --file-managers auto (the default): only the file managers installed here get the action.
+		run "${python}" -I "${dest}/bin/fork-linux" desktop install ||
 			warn "fork-linux desktop install failed; run it again later"
 		printf 'desktop\tfork-linux\n' >>"${manifest}"
 	fi

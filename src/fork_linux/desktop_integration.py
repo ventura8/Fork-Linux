@@ -7,6 +7,9 @@ since. The menu entry is skipped when a package already installed one in
 ``$XDG_DATA_DIRS``. The menu icon is Fork's own, extracted at runtime from
 the user's ``Fork.exe`` (never shipped). Thunar keeps its custom actions in
 one shared ``uca.xml``: only our ``<action>`` element is added or removed.
+Thunar reads only the first ``Thunar/uca.xml`` of ``$XDG_CONFIG_HOME`` and
+``$XDG_CONFIG_DIRS``, so a missing user file is first seeded from the
+desktop's own file (Xubuntu's "Open Terminal Here", ...), never created empty.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ import shlex
 import shutil
 import sys
 import xml.etree.ElementTree as ET
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -44,7 +47,11 @@ CLI_ALIASES = ("fork", "fork-linux")
 TEMPLATE_DIR = "templates"
 REGISTRY_SCHEMA = 1
 THUNAR_BACKUP = "uca.xml.fork-linux-backup"
+THUNAR_UCA = ("Thunar", "uca.xml")
+# Our neutral placeholder icon, relative to a data directory (share/).
+SCALABLE_ICON = ("icons", "hicolor", "scalable", "apps", f"{APP_ID}.svg")
 DEFAULT_DATA_DIRS = "/usr/local/share:/usr/share"
+DEFAULT_CONFIG_DIRS = "/etc/xdg"
 TOOL_TIMEOUT = 60.0
 
 # Kinds of recorded integration entries.
@@ -59,6 +66,7 @@ THUNAR = "thunar"
 CLI_ALIAS = "cli-alias"
 FILE_KINDS = (MENU, ICON, NAUTILUS, NAUTILUS_SCRIPT, NEMO, FMA, DOLPHIN)
 
+AUTO = "auto"
 # File manager name -> integration kinds it needs.
 _MANAGER_KINDS = {
     "nautilus": (NAUTILUS, NAUTILUS_SCRIPT),
@@ -67,6 +75,16 @@ _MANAGER_KINDS = {
     "fma": (FMA,),
     "dolphin": (DOLPHIN,),
     "thunar": (THUNAR,),
+}
+_FILE_MANAGER_KINDS = frozenset(kind for kinds in _MANAGER_KINDS.values() for kind in kinds)
+# File manager -> (programs on PATH, menu entries in */applications) that show it is installed.
+_MANAGER_PROBES = {
+    "nautilus": (("nautilus",), ("org.gnome.Nautilus.desktop", "nautilus.desktop")),
+    "nemo": (("nemo",), ("nemo.desktop",)),
+    "caja": (("caja",), ("caja.desktop", "caja-browser.desktop")),
+    "dolphin": (("dolphin",), ("org.kde.dolphin.desktop", "dolphin.desktop")),
+    "thunar": (("thunar", "Thunar"), ("thunar.desktop", "Thunar.desktop")),
+    "fma": (("fma-config-tool",), ("fma-config-tool.desktop",)),
 }
 _PLACEHOLDER = re.compile(r"@([A-Z][A-Z0-9_]*)@")
 # Characters that force quoting in a Desktop Entry Exec argument.
@@ -82,6 +100,7 @@ class _Dirs:
     config: Path
     bin: Path
     data_dirs: tuple[Path, ...]
+    config_dirs: tuple[Path, ...] = ()
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> _Dirs:
@@ -91,12 +110,16 @@ class _Dirs:
             value = env.get(name, "")
             return Path(value) if os.path.isabs(value) else default
 
-        raw_dirs = env.get("XDG_DATA_DIRS") or DEFAULT_DATA_DIRS
+        def search(name: str, default: str) -> tuple[Path, ...]:
+            raw = env.get(name) or default
+            return tuple(Path(item) for item in raw.split(":") if os.path.isabs(item))
+
         return cls(
             data=xdg("XDG_DATA_HOME", home / ".local" / "share"),
             config=xdg("XDG_CONFIG_HOME", home / ".config"),
             bin=xdg("XDG_BIN_HOME", home / ".local" / "bin"),
-            data_dirs=tuple(Path(item) for item in raw_dirs.split(":") if os.path.isabs(item)),
+            data_dirs=search("XDG_DATA_DIRS", DEFAULT_DATA_DIRS),
+            config_dirs=search("XDG_CONFIG_DIRS", DEFAULT_CONFIG_DIRS),
         )
 
     @property
@@ -112,8 +135,20 @@ class _Dirs:
         return self.data / "icons" / "hicolor"
 
     @property
+    def scalable_icon(self) -> Path:
+        return self.data.joinpath(*SCALABLE_ICON)
+
+    @property
     def thunar_uca(self) -> Path:
-        return self.config / "Thunar" / "uca.xml"
+        return self.config.joinpath(*THUNAR_UCA)
+
+    def system_thunar_uca(self) -> Path | None:
+        """The ``Thunar/uca.xml`` Thunar reads when the user has none: the first in ``$XDG_CONFIG_DIRS``."""
+        for base in self.config_dirs:
+            candidate = base.joinpath(*THUNAR_UCA)
+            if candidate.is_file():
+                return candidate
+        return None
 
     def kind_path(self, kind: str) -> Path:
         """Where the file of a file-manager ``kind`` goes."""
@@ -354,53 +389,102 @@ def _ours(element: ET.Element) -> bool:
     return element.tag == "action" and (element.findtext("unique-id") or "").strip() == UNIQUE_ID
 
 
+def _uca_bytes(root: ET.Element) -> bytes:
+    """``root`` as fork-linux writes ``uca.xml`` (tab indented, with an XML declaration)."""
+    if not len(root) and not (root.text or "").strip():
+        root.text = None  # ET.indent leaves an element without children alone
+    ET.indent(root, space="\t")
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="unicode") + "\n").encode("utf-8")
+
+
 def _write_uca(path: Path, root: ET.Element) -> None:
     """Back up ``uca.xml``, then write ``root`` to it atomically (keeping its mode)."""
     mode = 0o644
     if path.exists():
         mode = path.stat().st_mode & 0o777
         fsutil.atomic_write(path.with_name(THUNAR_BACKUP), path.read_bytes(), mode=mode)
-    ET.indent(root, space="\t")
-    data = '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="unicode") + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
-    fsutil.atomic_write(path, data, mode=mode)
+    fsutil.atomic_write(path, _uca_bytes(root), mode=mode)
+
+
+def _drop_ours(root: ET.Element) -> int:
+    """Remove our ``<action>`` elements from ``root``; how many there were."""
+    ours = [child for child in root if _ours(child)]
+    for element in ours:
+        root.remove(element)
+    return len(ours)
+
+
+def _thunar_seed(dirs: _Dirs) -> tuple[ET.Element, dict[str, Any]]:
+    """What a new user ``uca.xml`` starts from, and the registry fields that describe it.
+
+    Thunar reads the desktop's own file (e.g. ``/etc/xdg/xdg-xubuntu/Thunar/uca.xml``)
+    only while the user has none, so that file's actions are copied first; without
+    one (or when it cannot be parsed) the file starts empty. ``seed_sha256`` is the
+    seed as fork-linux writes it, without our action: :func:`_remove_thunar` deletes
+    the file only when it is back to exactly that.
+    """
+    fields: dict[str, Any] = {}
+    system = dirs.system_thunar_uca()
+    tree = _read_uca(system) if system is not None else None
+    root = ET.Element("actions") if tree is None else tree.getroot()
+    if tree is not None:
+        fields["seed"] = str(system)
+    _drop_ours(root)
+    fields["seed_sha256"] = _sha256(_uca_bytes(root))
+    return root, fields
 
 
 def _install_thunar(dirs: _Dirs, cmd: list[str], registry: _Registry) -> bool:
-    """Merge our action into ``uca.xml`` (created when missing); True on success."""
+    """Merge our action into ``uca.xml`` (seeded from the desktop's own file when missing); True on success."""
     path = dirs.thunar_uca
-    entry = registry.get(path)
-    created = bool(entry and entry.get("created"))
+    entry = registry.get(path) or {}
+    created = bool(entry.get("created"))
+    fields = {key: entry[key] for key in ("seed", "seed_sha256") if key in entry}
+    root: ET.Element | None = None
     if path.exists():
         tree = _read_uca(path)
         if tree is None:
             return False
         root = tree.getroot()
-    else:
-        root = ET.Element("actions")
+        if created and "seed_sha256" not in entry and all(_ours(child) for child in root if child.tag == "action"):
+            # fork-linux 1.0.0 created the file with only our action, which hid the desktop's own actions.
+            root = None
+    if root is None:
+        root, fields = _thunar_seed(dirs)
         created = True
-    for element in [child for child in root if _ours(child)]:
-        root.remove(element)
+    _drop_ours(root)
+    if created and "seed_sha256" not in fields:
+        # Recorded by a build without seed fields: adopt the seed when the file is still exactly it.
+        seed_fields = _thunar_seed(dirs)[1]
+        if _sha256(_uca_bytes(root)) == seed_fields["seed_sha256"]:
+            fields = seed_fields
     root.append(_thunar_action(cmd))
     _write_uca(path, root)
-    registry.record(path, THUNAR, unique_id=UNIQUE_ID, created=created)
+    registry.record(path, THUNAR, unique_id=UNIQUE_ID, created=created, **fields)
     return True
 
 
+def _back_to_seed(root: ET.Element, entry: Mapping[str, Any]) -> bool:
+    """True when ``root`` (our action already removed) is what fork-linux created the file from."""
+    seed_sha = entry.get("seed_sha256")
+    if isinstance(seed_sha, str):
+        return _sha256(_uca_bytes(root)) == seed_sha
+    # Created before seeding existed: from an empty <actions>.
+    return not any(child.tag == "action" for child in root)
+
+
 def _remove_thunar(path: Path, entry: Mapping[str, Any]) -> bool:
-    """Remove our action from ``uca.xml`` (and the file if we created it and it is now empty)."""
+    """Remove our action from ``uca.xml``; delete the file when we created it and it is back to its seed."""
     if not path.exists():
         return False
     tree = _read_uca(path)
     if tree is None:
         return False
     root = tree.getroot()
-    ours = [child for child in root if _ours(child)]
-    if not ours:
+    if not _drop_ours(root):
         return False
-    for element in ours:
-        root.remove(element)
-    if entry.get("created") and not any(child.tag == "action" for child in root):
+    if entry.get("created") and _back_to_seed(root, entry):
         path.unlink()
         backup = path.with_name(THUNAR_BACKUP)
         if backup.exists():
@@ -461,28 +545,68 @@ def _install_aliases(dirs: _Dirs, cmd: list[str], registry: _Registry) -> list[P
     return installed
 
 
-def _kinds(file_managers: str | Iterable[str] | None) -> list[str]:
-    """Integration kinds for ``all``, ``none``, a comma-separated list or an iterable of names."""
+def installed_file_managers(env: Mapping[str, str] | None = None) -> list[str]:
+    """The file managers of :data:`FILE_MANAGERS` installed here (program on ``PATH`` or menu entry)."""
+    environ: Mapping[str, str] = os.environ if env is None else env
+    dirs = _Dirs.from_env(environ)
+    search = sandbox.clean_env(environ).get("PATH")
+    menus = [dirs.applications, *(base / "applications" for base in dirs.data_dirs)]
+    found = []
+    for name in FILE_MANAGERS:
+        programs, entries = _MANAGER_PROBES[name]
+        if any(shutil.which(program, path=search) for program in programs) or any(
+            (menu / entry).is_file() for menu in menus for entry in entries
+        ):
+            found.append(name)
+    return found
+
+
+def _names(file_managers: str | Iterable[str] | None) -> list[str]:
+    """The lower-case names in ``file_managers`` (a comma-separated string or an iterable)."""
     if file_managers is None:
         return []
     if isinstance(file_managers, str):
-        names = [item.strip().lower() for item in file_managers.split(",") if item.strip()]
-    else:
-        names = [str(item).strip().lower() for item in file_managers]
+        return [item.strip().lower() for item in file_managers.split(",") if item.strip()]
+    return [str(item).strip().lower() for item in file_managers]
+
+
+def _kinds(names: list[str], detect: Callable[[], list[str]]) -> list[str]:
+    """Integration kinds for ``auto`` (``detect()``), ``all``, ``none`` or file manager names."""
     if names == ["none"]:
         return []
     if "all" in names:
         names = list(FILE_MANAGERS)
+    elif AUTO in names:
+        names = [*detect(), *(name for name in names if name != AUTO)]
     unknown = [name for name in names if name not in _MANAGER_KINDS]
     if unknown:
         raise UsageError(
             f"unknown file manager(s): {', '.join(unknown)}",
-            hint=f"choose from: all, none, {', '.join(FILE_MANAGERS)}",
+            hint=f"choose from: {AUTO}, all, none, {', '.join(FILE_MANAGERS)}",
         )
     kinds: list[str] = []
     for name in names:
         kinds.extend(kind for kind in _MANAGER_KINDS[name] if kind not in kinds)
     return kinds
+
+
+def _drop_unused_kinds(dirs: _Dirs, registry: _Registry, kinds: list[str]) -> list[Path]:
+    """Remove recorded file-manager actions that are not in ``kinds`` (``auto``: that manager is gone)."""
+    removed = []
+    for key, entry in sorted(registry.entries.items()):
+        kind = entry["kind"]
+        path = Path(key)
+        if kind not in _FILE_MANAGER_KINDS or kind in kinds or not _inside_user_dirs(path, dirs):
+            continue
+        if kind == THUNAR:
+            registry.forget(path)
+            done = _remove_thunar(path, entry)
+        else:
+            done = _remove_owned(path, registry)
+        if done:
+            log.info("removed %s: its file manager is not installed", path)
+            removed.append(path)
+    return removed
 
 
 def _refresh(dirs: _Dirs, env: Mapping[str, str], runner: Runner, *, menu: bool, icons: bool) -> None:
@@ -524,7 +648,12 @@ def _install_menu(
 
 
 def _install_icons(fork_exe: Path, dirs: _Dirs, registry: _Registry) -> list[Path]:
-    """Extract Fork's icon into the hicolor theme and record the PNGs written."""
+    """Extract Fork's icon into the hicolor theme and record the files written.
+
+    Besides the PNGs, the per-user scalable icon becomes an SVG showing Fork's
+    largest image, so no size falls back to our placeholder (GTK takes the
+    scalable directory for every size without its own PNG).
+    """
     try:
         pngs = icon_extract.extract_icons(fork_exe, dirs.hicolor, APP_ID)
     except ForkLinuxError as exc:
@@ -532,7 +661,40 @@ def _install_icons(fork_exe: Path, dirs: _Dirs, registry: _Registry) -> list[Pat
         pngs = []
     for png in pngs:
         registry.record(png, ICON, sha256=fsutil.sha256_file(png))
+    if pngs:
+        svg = icon_extract.scalable_svg(pngs[-1].read_bytes())
+        if _write_owned(dirs.scalable_icon, svg, 0o644, ICON, registry):
+            pngs.append(dirs.scalable_icon)
     return pngs
+
+
+def _shipped_placeholder() -> Path | None:
+    """Our placeholder SVG in this installation (``share/``) or checkout (``data/``)."""
+    root = resources.install_root()
+    for candidate in (root.joinpath("share", *SCALABLE_ICON), root.joinpath("data", *SCALABLE_ICON)):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _install_placeholder(dirs: _Dirs, registry: _Registry) -> list[Path]:
+    """Our placeholder as the user's scalable icon until Fork's is extracted; the paths written.
+
+    Skipped when the file is already ours (the placeholder, or Fork's icon that
+    replaced it) and when a package installed the placeholder in ``$XDG_DATA_DIRS``.
+    """
+    path = dirs.scalable_icon
+    if registry.get(path) is not None and os.path.lexists(path):
+        return []
+    own = os.path.realpath(path)
+    for base in dirs.data_dirs:
+        candidate = base.joinpath(*SCALABLE_ICON)
+        if candidate.is_file() and os.path.realpath(candidate) != own:
+            return []
+    source = _shipped_placeholder()
+    if source is None:
+        return []
+    return [path] if _write_owned(path, source.read_bytes(), 0o644, ICON, registry) else []
 
 
 def _install_kind(kind: str, dirs: _Dirs, cmd: list[str], registry: _Registry) -> list[Path]:
@@ -552,14 +714,16 @@ def install(
     fork_exe: Path | None = None,
     menu: bool = True,
     icons: bool = True,
-    file_managers: str | Iterable[str] | None = "all",
+    file_managers: str | Iterable[str] | None = AUTO,
     cli_alias: bool = False,
     system_desktop_present: bool | None = None,
     runner: Runner | None = None,
 ) -> list[Path]:
     """Install the per-user integration; return every path that is now ours.
 
-    ``file_managers`` is ``all``, ``none``, or names from
+    ``file_managers`` is ``auto`` (the installed ones, see
+    :func:`installed_file_managers`; actions installed earlier for a file
+    manager that is gone are removed), ``all``, ``none``, or names from
     :data:`FILE_MANAGERS` (comma separated or a list). Files that exist but
     were not written by us (or were changed by the user) are left alone with
     a warning.
@@ -567,15 +731,19 @@ def install(
     environ: Mapping[str, str] = os.environ if env is None else env
     dirs = _Dirs.from_env(environ)
     cmd = list(exec_cmd) if exec_cmd else launcher_command(environ)
-    kinds = _kinds(file_managers)
+    names = _names(file_managers)
+    kinds = _kinds(names, lambda: installed_file_managers(environ))
     registry = _Registry.load(paths.integrations_file)
     installed: list[Path] = []
     menu_changed = menu and _install_menu(dirs, cmd, registry, system_desktop_present, installed)
     icons_changed = False
-    if icons and fork_exe is not None and Path(fork_exe).is_file():
-        pngs = _install_icons(Path(fork_exe), dirs, registry)
-        installed.extend(pngs)
-        icons_changed = bool(pngs)
+    if icons:
+        written = _install_icons(Path(fork_exe), dirs, registry) if fork_exe and Path(fork_exe).is_file() else []
+        written = written or _install_placeholder(dirs, registry)
+        installed.extend(written)
+        icons_changed = bool(written)
+    if AUTO in names:
+        _drop_unused_kinds(dirs, registry, kinds)
     for kind in kinds:
         installed.extend(_install_kind(kind, dirs, cmd, registry))
     if cli_alias:

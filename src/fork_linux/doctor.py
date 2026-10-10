@@ -1534,9 +1534,11 @@ def check_bridge(ctx: DoctorCtx) -> Result:
 
 
 def _icons(ctx: DoctorCtx) -> list[Path]:
+    """Fork's extracted icon PNGs (the step records the scalable SVG, which may be our placeholder, too)."""
     recorded = ctx.state.get(integration_step.ICONS_KEY)
     if isinstance(recorded, list) and recorded:
-        return [Path(item) for item in recorded if isinstance(item, str) and Path(item).is_file()]
+        pngs = [Path(item) for item in recorded if isinstance(item, str) and item.endswith(".png")]
+        return [png for png in pngs if png.is_file()]
     hicolor = ctx.data_home / "icons" / "hicolor"
     return sorted(hicolor.glob(f"*/apps/{desktop_integration.APP_ID}.png"))
 

@@ -44,7 +44,8 @@ def test_install_defaults_and_options(
     assert out == f"installed {tmp_path / 'a.desktop'}\ninstalled {tmp_path / 'icon.png'}\n"
     kwargs = calls[0][1]
     assert kwargs["fork_exe"] is None
-    assert (kwargs["menu"], kwargs["icons"], kwargs["file_managers"], kwargs["cli_alias"]) == (True, True, "all", False)
+    options = (kwargs["menu"], kwargs["icons"], kwargs["file_managers"], kwargs["cli_alias"])
+    assert options == (True, True, "auto", False)
     install_fork(layout())
     result = run_json(
         capsys, "desktop", "install", "--file-managers", "nautilus,dolphin", "--no-menu", "--no-icons", "--cli-alias"

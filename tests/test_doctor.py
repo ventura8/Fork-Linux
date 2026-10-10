@@ -1185,6 +1185,14 @@ def test_desktop_entry(monkeypatch: pytest.MonkeyPatch) -> None:
     assert run(ctx, "desktop.entry").status == "ok"
     ctx.state.set("desktop.icons", [str(icon) + ".gone"])
     assert run(ctx, "desktop.entry").status == "warn"
+    # The step records the scalable SVG too; on its own (our placeholder) it is not Fork's icon.
+    svg = icon.parent.parent.parent / "scalable" / "apps" / "io.github.ventura8.ForkLinux.svg"
+    svg.parent.mkdir(parents=True)
+    svg.write_text("<svg/>", encoding="utf-8")
+    ctx.state.set("desktop.icons", [str(svg)])
+    assert run(ctx, "desktop.entry").status == "warn"
+    ctx.state.set("desktop.icons", [str(icon), str(svg)])
+    assert run(ctx, "desktop.entry").status == "ok"
 
 
 def test_desktop_entry_validation() -> None:

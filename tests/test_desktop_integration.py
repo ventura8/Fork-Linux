@@ -24,6 +24,10 @@ from fork_linux.paths import Paths
 from fork_linux.procrun import Completed, RecordingRunner
 
 LAUNCHER = "/opt/fork-linux/bin/fork-linux"
+# The default test Fork.exe holds 16, 32 and 256 px images; the other hicolor sizes are scaled.
+ICON_SIZES = (16, 22, 24, 32, 36, 48, 64, 72, 96, 128, 192, 256)
+EMPTY_UCA = b'<?xml version="1.0" encoding="UTF-8"?>\n<actions />\n'
+PLACEHOLDER = resources.install_root() / "data" / "icons" / "hicolor" / "scalable" / "apps" / f"{APP_ID}.svg"
 
 
 @pytest.fixture(autouse=True)
@@ -33,11 +37,13 @@ def _no_flatpak(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def env(xdg: Path, tmp_path: Path) -> dict[str, str]:
-    """The test environment with an empty system data dir and an empty PATH."""
+    """The test environment with empty system data and config dirs and an empty PATH."""
     system = tmp_path / "system-share"
     system.mkdir()
+    (tmp_path / "system-config").mkdir()
     environ = dict(os.environ)
     environ["XDG_DATA_DIRS"] = str(system)
+    environ["XDG_CONFIG_DIRS"] = str(tmp_path / "system-config")
     environ["PATH"] = str(tmp_path / "empty-path")
     return environ
 
@@ -64,7 +70,14 @@ def _registry(paths: Paths) -> dict[str, dict[str, Any]]:
 
 
 def _install(paths: Paths, env: dict[str, str], runner: RecordingRunner, **kwargs: Any) -> list[Path]:
+    """:func:`di.install` with every file manager and no icons unless a test asks.
+
+    The defaults ``file_managers="auto"`` (detection) and ``icons=True`` (Fork's
+    icon or our placeholder) have their own tests below.
+    """
     kwargs.setdefault("exec_cmd", [LAUNCHER])
+    kwargs.setdefault("file_managers", "all")
+    kwargs.setdefault("icons", False)
     return di.install(paths, env, runner=runner, **kwargs)
 
 
@@ -79,12 +92,15 @@ def test_dirs_from_env(tmp_path: Path) -> None:
         "XDG_CONFIG_HOME": str(tmp_path / "cfg"),
         "XDG_BIN_HOME": str(tmp_path / "bin"),
         "XDG_DATA_DIRS": f"relative:{tmp_path / 'sys'}:",
+        "XDG_CONFIG_DIRS": f"{tmp_path / 'xdg-a'}:relative:{tmp_path / 'xdg-b'}",
     }
     dirs = di._Dirs.from_env(env)
     assert dirs.data == home / ".local" / "share"
     assert dirs.config == tmp_path / "cfg"
     assert dirs.bin == tmp_path / "bin"
     assert dirs.data_dirs == (tmp_path / "sys",)
+    assert dirs.config_dirs == (tmp_path / "xdg-a", tmp_path / "xdg-b")
+    assert dirs.scalable_icon == home / ".local" / "share" / "icons" / "hicolor" / "scalable" / "apps" / f"{APP_ID}.svg"
     assert dirs.menu_file == home / ".local" / "share" / "applications" / f"{APP_ID}.desktop"
     assert dirs.thunar_uca == tmp_path / "cfg" / "Thunar" / "uca.xml"
     assert dirs.kind_path(di.NAUTILUS_SCRIPT).name == "Open in Fork"
@@ -95,6 +111,7 @@ def test_dirs_defaults(xdg: Path) -> None:
     assert dirs.data == xdg / ".local" / "share"
     assert dirs.bin == xdg / ".local" / "bin"
     assert dirs.data_dirs == (Path("/usr/local/share"), Path("/usr/share"))
+    assert dirs.config_dirs == (Path("/etc/xdg"),)
 
 
 def test_launcher_command_appimage_and_flatpak() -> None:
@@ -271,8 +288,9 @@ def test_install_everything(paths: Paths, env: dict[str, str], runner: Recording
     exe = tmp_path / "Fork.exe"
     exe.write_bytes(pb.build_pe())
     dirs = _dirs(env)
-    installed = _install(paths, env, runner, fork_exe=exe)
-    icons = [dirs.hicolor / f"{n}x{n}" / "apps" / f"{APP_ID}.png" for n in (16, 32, 256)]
+    installed = _install(paths, env, runner, fork_exe=exe, icons=True)
+    icons = [dirs.hicolor / f"{n}x{n}" / "apps" / f"{APP_ID}.png" for n in ICON_SIZES]
+    icons.append(dirs.scalable_icon)
     expected = [
         dirs.menu_file,
         *icons,
@@ -292,12 +310,15 @@ def test_install_everything(paths: Paths, env: dict[str, str], runner: Recording
         assert registry[str(path)]["sha256"] == di.fsutil.sha256_file(path)
     assert registry[str(dirs.thunar_uca)] == {
         "path": str(dirs.thunar_uca), "kind": di.THUNAR, "unique_id": di.UNIQUE_ID, "created": True,
+        "seed_sha256": di._sha256(EMPTY_UCA),
     }
+    # The scalable icon shows Fork's largest image, so no size falls back to the placeholder.
+    assert b"data:image/png;base64," in dirs.scalable_icon.read_bytes()
     assert stat.S_IMODE(dirs.kind_path(di.DOLPHIN).stat().st_mode) == 0o755
     assert stat.S_IMODE(dirs.kind_path(di.NAUTILUS_SCRIPT).stat().st_mode) == 0o755
     assert stat.S_IMODE(dirs.menu_file.stat().st_mode) == 0o644
     # Installing again is a no-op that reports the same files.
-    assert _install(paths, env, runner, fork_exe=exe) == expected
+    assert _install(paths, env, runner, fork_exe=exe, icons=True) == expected
     assert sum(1 for child in ET.parse(dirs.thunar_uca).getroot() if di._ours(child)) == 1
 
 
@@ -587,6 +608,157 @@ def test_thunar_created_file_is_removed_with_its_backup(
     assert not backup.exists()
 
 
+XUBUNTU_UCA = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n<actions>\n<!-- Xubuntu defaults -->\n'
+    "<action><icon>utilities-terminal</icon><name>Open Terminal Here</name><unique-id>1-1</unique-id>"
+    "<command>exo-open --working-directory %f --launch TerminalEmulator</command></action>\n"
+    "</actions>\n"
+)
+
+
+def _system_uca(env: dict[str, str], tmp_path: Path, content: str = XUBUNTU_UCA) -> Path:
+    """A desktop's own uca.xml in the second $XDG_CONFIG_DIRS entry (the first has none)."""
+    first, second = tmp_path / "xdg-first", tmp_path / "xdg-xubuntu"
+    first.mkdir()
+    (first / "Thunar").mkdir()  # a directory without uca.xml is skipped
+    uca = second / "Thunar" / "uca.xml"
+    uca.parent.mkdir(parents=True)
+    uca.write_text(content, encoding="utf-8")
+    env["XDG_CONFIG_DIRS"] = f"{first}:{second}"
+    return uca
+
+
+def _actions(path: Path) -> list[str | None]:
+    return [action.findtext("unique-id") for action in ET.parse(path).getroot().findall("action")]
+
+
+def test_thunar_new_file_starts_from_the_desktops_own(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
+) -> None:
+    system = _system_uca(env, tmp_path)
+    dirs = _dirs(env)
+    assert dirs.system_thunar_uca() == system
+    assert _install(paths, env, runner, menu=False, file_managers="thunar") == [dirs.thunar_uca]
+    assert _actions(dirs.thunar_uca) == ["1-1", di.UNIQUE_ID]
+    assert "<!-- Xubuntu defaults -->" in dirs.thunar_uca.read_text(encoding="utf-8")
+    entry = _registry(paths)[str(dirs.thunar_uca)]
+    assert entry["created"] is True
+    assert entry["seed"] == str(system)
+    assert system.read_text(encoding="utf-8") == XUBUNTU_UCA
+    # Installing again keeps one action of ours and the recorded seed.
+    _install(paths, env, runner, menu=False, file_managers="thunar")
+    assert _actions(dirs.thunar_uca) == ["1-1", di.UNIQUE_ID]
+    assert _registry(paths)[str(dirs.thunar_uca)] == entry
+    # Back to exactly the seed: the file goes, so Thunar reads the desktop's file again.
+    assert di.remove(paths, env, runner=runner) == [dirs.thunar_uca]
+    assert not dirs.thunar_uca.exists()
+    assert not dirs.thunar_uca.with_name(di.THUNAR_BACKUP).exists()
+
+
+def test_thunar_file_the_user_changed_after_seeding_is_kept(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
+) -> None:
+    _system_uca(env, tmp_path)
+    dirs = _dirs(env)
+    _install(paths, env, runner, menu=False, file_managers="thunar")
+    root = ET.parse(dirs.thunar_uca).getroot()
+    root.append(ET.fromstring("<action><name>Mine</name><unique-id>2-2</unique-id></action>"))
+    dirs.thunar_uca.write_bytes(ET.tostring(root))
+    assert di.remove(paths, env, runner=runner) == [dirs.thunar_uca]
+    assert _actions(dirs.thunar_uca) == ["1-1", "2-2"]
+
+
+def test_thunar_seed_without_our_action_and_unusable_seeds(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
+) -> None:
+    ours = f"<action><name>old</name><unique-id>{di.UNIQUE_ID}</unique-id></action>"
+    _system_uca(env, tmp_path, XUBUNTU_UCA.replace("</actions>", ours + "</actions>"))
+    dirs = _dirs(env)
+    _install(paths, env, runner, menu=False, file_managers="thunar")
+    assert _actions(dirs.thunar_uca) == ["1-1", di.UNIQUE_ID]
+    assert di.remove(paths, env, runner=runner) == [dirs.thunar_uca]
+    assert not dirs.thunar_uca.exists()
+    for broken in ("<actions><unclosed></actions>", "<other/>"):
+        (tmp_path / "xdg-xubuntu" / "Thunar" / "uca.xml").write_text(broken, encoding="utf-8")
+        _install(paths, env, runner, menu=False, file_managers="thunar")
+        assert _actions(dirs.thunar_uca) == [di.UNIQUE_ID]
+        entry = _registry(paths)[str(dirs.thunar_uca)]
+        assert "seed" not in entry
+        assert entry["seed_sha256"] == di._sha256(EMPTY_UCA)
+        assert di.remove(paths, env, runner=runner) == [dirs.thunar_uca]
+        assert not dirs.thunar_uca.exists()
+
+
+def _legacy_entry(paths: Paths, dirs: di._Dirs) -> None:
+    """The registry entry fork-linux 1.0.0 wrote for a uca.xml it created (no seed fields)."""
+    registry = di._Registry.load(paths.integrations_file)
+    registry.record(dirs.thunar_uca, di.THUNAR, unique_id=di.UNIQUE_ID, created=True)
+    registry.save()
+
+
+def test_thunar_file_created_by_1_0_0_is_reseeded(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
+) -> None:
+    dirs = _dirs(env)
+    dirs.thunar_uca.parent.mkdir(parents=True)
+    dirs.thunar_uca.write_text(
+        f"<actions><action><name>Open in Fork</name><unique-id>{di.UNIQUE_ID}</unique-id></action></actions>",
+        encoding="utf-8",
+    )
+    _legacy_entry(paths, dirs)
+    system = _system_uca(env, tmp_path)
+    _install(paths, env, runner, menu=False, file_managers="thunar")
+    # 1.0.0 hid the desktop's "Open Terminal Here": it is back.
+    assert _actions(dirs.thunar_uca) == ["1-1", di.UNIQUE_ID]
+    assert _registry(paths)[str(dirs.thunar_uca)]["seed"] == str(system)
+    assert di.remove(paths, env, runner=runner) == [dirs.thunar_uca]
+    assert not dirs.thunar_uca.exists()
+
+
+def test_thunar_file_created_by_1_0_0_and_extended_by_the_user(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
+) -> None:
+    dirs = _dirs(env)
+    dirs.thunar_uca.parent.mkdir(parents=True)
+    mine = "<action><name>Mine</name><unique-id>2-2</unique-id></action>"
+    dirs.thunar_uca.write_text(
+        f"<actions>{mine}<action><unique-id>{di.UNIQUE_ID}</unique-id></action></actions>", encoding="utf-8"
+    )
+    _legacy_entry(paths, dirs)
+    _system_uca(env, tmp_path)
+    _install(paths, env, runner, menu=False, file_managers="thunar")
+    # The user's own action stays; the file is not the seed, so no seed is adopted.
+    assert _actions(dirs.thunar_uca) == ["2-2", di.UNIQUE_ID]
+    entry = _registry(paths)[str(dirs.thunar_uca)]
+    assert entry["created"] is True
+    assert "seed_sha256" not in entry
+    assert di.remove(paths, env, runner=runner) == [dirs.thunar_uca]
+    assert _actions(dirs.thunar_uca) == ["2-2"]
+
+
+def test_thunar_file_created_by_1_0_0_that_matches_the_seed_adopts_it(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
+) -> None:
+    dirs = _dirs(env)
+    system = _system_uca(env, tmp_path)
+    # The user copied the desktop's file and 1.0.0 added its action to it, recording it as created.
+    seed = ET.fromstring(XUBUNTU_UCA, parser=ET.XMLParser(target=ET.TreeBuilder(insert_comments=True)))
+    seed.append(ET.fromstring(f"<action><unique-id>{di.UNIQUE_ID}</unique-id></action>"))
+    dirs.thunar_uca.parent.mkdir(parents=True)
+    dirs.thunar_uca.write_bytes(ET.tostring(seed))
+    _legacy_entry(paths, dirs)
+    _install(paths, env, runner, menu=False, file_managers="thunar")
+    entry = _registry(paths)[str(dirs.thunar_uca)]
+    assert entry["seed"] == str(system)
+    assert di.remove(paths, env, runner=runner) == [dirs.thunar_uca]
+    assert not dirs.thunar_uca.exists()
+
+
+def test_uca_bytes_of_an_empty_file() -> None:
+    root = ET.fromstring("<actions>\n\t\n</actions>")
+    assert di._uca_bytes(root) == EMPTY_UCA
+
+
 def test_remove_thunar_edge_cases(tmp_path: Path) -> None:
     uca = tmp_path / "uca.xml"
     assert not di._remove_thunar(uca, {"created": True})
@@ -717,12 +889,132 @@ def test_remove_keeps_links_that_changed(
     ],
 )
 def test_kinds(spec: Any, kinds: list[str]) -> None:
-    assert di._kinds(spec) == kinds
+    assert di._kinds(di._names(spec), _never) == kinds
+
+
+def _never() -> list[str]:
+    raise AssertionError("detection must not run")
 
 
 def test_kinds_rejects_unknown_names() -> None:
-    with pytest.raises(UsageError, match="unknown file manager"):
-        di._kinds("nautilus,konqueror")
+    with pytest.raises(UsageError, match="unknown file manager") as caught:
+        di._kinds(di._names("nautilus,konqueror"), _never)
+    assert caught.value.hint.startswith("choose from: auto, all, none,")
+
+
+@pytest.mark.parametrize(
+    ("spec", "kinds"),
+    [
+        ("auto", [di.NEMO, di.THUNAR]),
+        ("AUTO", [di.NEMO, di.THUNAR]),
+        ("auto,dolphin", [di.NEMO, di.THUNAR, di.DOLPHIN]),
+        ("thunar,auto", [di.NEMO, di.THUNAR]),
+        ("auto,all", [di.NAUTILUS, di.NAUTILUS_SCRIPT, di.NEMO, di.FMA, di.DOLPHIN, di.THUNAR]),
+    ],
+)
+def test_kinds_auto_uses_detection(spec: str, kinds: list[str]) -> None:
+    assert di._kinds(di._names(spec), lambda: ["nemo", "thunar"]) == kinds
+
+
+def test_kinds_auto_rejects_unknown_names_too() -> None:
+    with pytest.raises(UsageError, match="konqueror"):
+        di._kinds(di._names("auto,konqueror"), lambda: [])
+
+
+# --- file manager detection ------------------------------------------------------------------------------
+
+
+def _program(directory: Path, name: str) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / name).write_text("#!/bin/sh\n", encoding="utf-8")
+    (directory / name).chmod(0o755)
+
+
+def test_installed_file_managers(env: dict[str, str], tmp_path: Path) -> None:
+    assert di.installed_file_managers(env) == []
+    bindir = tmp_path / "empty-path"
+    _program(bindir, "Thunar")
+    _program(bindir, "nemo")
+    (bindir / "dolphin").write_text("not executable", encoding="utf-8")
+    assert di.installed_file_managers(env) == ["nemo", "thunar"]
+    # A menu entry is enough (Flatpak or snap file managers have no program on PATH).
+    system_apps = tmp_path / "system-share" / "applications"
+    system_apps.mkdir()
+    (system_apps / "org.kde.dolphin.desktop").write_text("[Desktop Entry]\n", encoding="utf-8")
+    user_apps = _dirs(env).applications
+    user_apps.mkdir(parents=True)
+    (user_apps / "caja-browser.desktop").write_text("[Desktop Entry]\n", encoding="utf-8")
+    (user_apps / "nautilus.desktop").mkdir()
+    assert di.installed_file_managers(env) == ["nemo", "caja", "dolphin", "thunar"]
+    _program(bindir, "fma-config-tool")
+    _program(bindir, "nautilus")
+    assert di.installed_file_managers(env) == list(di.FILE_MANAGERS)
+
+
+def test_installed_file_managers_defaults_to_os_environ(
+    env: dict[str, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _program(tmp_path / "empty-path", "caja")
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    assert di.installed_file_managers() == ["caja"]
+
+
+def test_install_auto_is_the_default(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
+) -> None:
+    dirs = _dirs(env)
+    _program(tmp_path / "empty-path", "nemo")
+    installed = di.install(paths, env, runner=runner, exec_cmd=[LAUNCHER], menu=False, icons=False)
+    assert installed == [dirs.kind_path(di.NEMO)]
+
+
+def test_install_auto_removes_actions_of_file_managers_that_are_gone(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
+) -> None:
+    dirs = _dirs(env)
+    _install(paths, env, runner, menu=False, file_managers="nemo,dolphin,thunar,fma,caja")
+    dirs.kind_path(di.FMA).write_text("edited\n", encoding="utf-8")
+    _program(tmp_path / "empty-path", "dolphin")
+    installed = _install(paths, env, runner, menu=False, cli_alias=True, file_managers="auto")
+    assert dirs.kind_path(di.DOLPHIN) in installed
+    assert not dirs.kind_path(di.NEMO).exists()
+    # The Thunar file we created is gone with our action; a file the user edited is kept, no longer ours.
+    assert not dirs.thunar_uca.exists()
+    assert dirs.kind_path(di.FMA).read_text(encoding="utf-8") == "edited\n"
+    assert {entry["kind"] for entry in _registry(paths).values()} == {di.DOLPHIN, di.CLI_ALIAS}
+    # An explicit list never removes anything.
+    _install(paths, env, runner, menu=False, file_managers="nemo")
+    _install(paths, env, runner, menu=False, file_managers="dolphin")
+    assert dirs.kind_path(di.NEMO).exists()
+
+
+def test_install_auto_keeps_a_thunar_file_the_user_still_uses(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner
+) -> None:
+    dirs = _dirs(env)
+    _install(paths, env, runner, menu=False, file_managers="thunar")
+    root = ET.parse(dirs.thunar_uca).getroot()
+    root.append(ET.fromstring("<action><name>Mine</name><unique-id>1-1</unique-id></action>"))
+    dirs.thunar_uca.write_bytes(ET.tostring(root))
+    _install(paths, env, runner, menu=False, file_managers="auto")
+    root = ET.parse(dirs.thunar_uca).getroot()
+    assert [action.findtext("unique-id") for action in root.findall("action")] == ["1-1"]
+    assert not paths.integrations_file.exists()
+
+
+def test_install_auto_never_touches_entries_outside_the_user_dirs(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
+) -> None:
+    outside = tmp_path / "elsewhere" / "fork-linux-open.nemo_action"
+    outside.parent.mkdir()
+    outside.write_text("x", encoding="utf-8")
+    registry = di._Registry.load(paths.integrations_file)
+    registry.record(outside, di.NEMO, sha256=di.fsutil.sha256_file(outside))
+    registry.save()
+    _install(paths, env, runner, menu=False, file_managers="auto")
+    assert outside.exists()
+    assert str(outside) in _registry(paths)
 
 
 # --- icons and caches ------------------------------------------------------------------------------------------
@@ -731,9 +1023,87 @@ def test_kinds_rejects_unknown_names() -> None:
 def test_icons_skipped_or_failing(paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path) -> None:
     bad = tmp_path / "bad.exe"
     bad.write_bytes(b"MZ not really")
-    assert _install(paths, env, runner, menu=False, file_managers="none", fork_exe=bad) == []
-    assert _install(paths, env, runner, menu=False, file_managers="none", fork_exe=tmp_path / "missing.exe") == []
+    dirs = _dirs(env)
     assert _install(paths, env, runner, menu=False, file_managers="none", icons=False, fork_exe=bad) == []
+    # An undecodable Fork.exe leaves our placeholder as the icon.
+    assert _install(paths, env, runner, menu=False, file_managers="none", icons=True, fork_exe=bad) == [
+        dirs.scalable_icon
+    ]
+    assert dirs.scalable_icon.read_bytes() == PLACEHOLDER.read_bytes()
+    assert not (dirs.hicolor / "16x16").exists()
+    # Already there: nothing new to report.
+    assert _install(paths, env, runner, menu=False, file_managers="none", icons=True, fork_exe=bad) == []
+    missing = tmp_path / "missing.exe"
+    assert _install(paths, env, runner, menu=False, file_managers="none", icons=True, fork_exe=missing) == []
+
+
+def test_placeholder_is_replaced_by_forks_icon_and_comes_back(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
+) -> None:
+    exe = tmp_path / "Fork.exe"
+    exe.write_bytes(pb.build_pe())
+    dirs = _dirs(env)
+    assert _install(paths, env, runner, menu=False, file_managers="none", icons=True) == [dirs.scalable_icon]
+    installed = _install(paths, env, runner, menu=False, file_managers="none", icons=True, fork_exe=exe)
+    assert installed[-1] == dirs.scalable_icon
+    assert dirs.scalable_icon.read_bytes() != PLACEHOLDER.read_bytes()
+    # The step without Fork.exe keeps Fork's icon.
+    assert _install(paths, env, runner, menu=False, file_managers="none", icons=True) == []
+    assert di.remove(paths, env, runner=runner)
+    assert not dirs.scalable_icon.exists()
+    # Recorded but deleted by hand: the placeholder is written again.
+    _install(paths, env, runner, menu=False, file_managers="none", icons=True)
+    dirs.scalable_icon.unlink()
+    assert _install(paths, env, runner, menu=False, file_managers="none", icons=True) == [dirs.scalable_icon]
+
+
+def test_scalable_icon_the_user_owns_is_kept(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
+) -> None:
+    exe = tmp_path / "Fork.exe"
+    exe.write_bytes(pb.build_pe())
+    dirs = _dirs(env)
+    dirs.scalable_icon.parent.mkdir(parents=True)
+    dirs.scalable_icon.write_text("<svg>mine</svg>", encoding="utf-8")
+    installed = _install(paths, env, runner, menu=False, file_managers="none", icons=True, fork_exe=exe)
+    assert dirs.scalable_icon not in installed
+    assert len(installed) == len(ICON_SIZES)
+    assert dirs.scalable_icon.read_text(encoding="utf-8") == "<svg>mine</svg>"
+    paths.integrations_file.unlink()
+    assert _install(paths, env, runner, menu=False, file_managers="none", icons=True) == []
+
+
+def test_placeholder_skipped_when_a_package_ships_it(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
+) -> None:
+    packaged = tmp_path / "system-share" / "icons" / "hicolor" / "scalable" / "apps" / f"{APP_ID}.svg"
+    packaged.parent.mkdir(parents=True)
+    packaged.write_bytes(PLACEHOLDER.read_bytes())
+    assert _install(paths, env, runner, menu=False, file_managers="none", icons=True) == []
+    # Our own data dir listed in XDG_DATA_DIRS is not a package.
+    env["XDG_DATA_DIRS"] = str(_dirs(env).data)
+    assert _install(paths, env, runner, menu=False, file_managers="none", icons=True) == [_dirs(env).scalable_icon]
+
+
+def test_shipped_placeholder_locations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "usr"
+    monkeypatch.setattr(resources, "install_root", lambda: root)
+    assert di._shipped_placeholder() is None
+    checkout = root.joinpath("data", *di.SCALABLE_ICON)
+    checkout.parent.mkdir(parents=True)
+    checkout.write_text("<svg/>", encoding="utf-8")
+    assert di._shipped_placeholder() == checkout
+    installed = root.joinpath("share", *di.SCALABLE_ICON)
+    installed.parent.mkdir(parents=True)
+    installed.write_text("<svg/>", encoding="utf-8")
+    assert di._shipped_placeholder() == installed
+
+
+def test_no_placeholder_shipped(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(resources, "install_root", lambda: tmp_path / "nothing")
+    assert _install(paths, env, runner, menu=False, file_managers="none", icons=True) == []
 
 
 def test_refresh_runs_available_tools(paths: Paths, env: dict[str, str], tmp_path: Path) -> None:
@@ -786,9 +1156,10 @@ def test_refresh_with_fake_tools(paths: Paths, env: dict[str, str], fake_bin: Pa
 def test_refresh_defaults(paths: Paths, monkeypatch: pytest.MonkeyPatch, env: dict[str, str]) -> None:
     for key, value in env.items():
         monkeypatch.setenv(key, value)
-    assert di.install(paths, exec_cmd=[LAUNCHER], file_managers="none") == [_dirs(env).menu_file]
+    dirs = _dirs(env)
+    assert di.install(paths, exec_cmd=[LAUNCHER], file_managers="none") == [dirs.menu_file, dirs.scalable_icon]
     assert di.status(paths)["installed"]
-    assert di.remove(paths) == [_dirs(env).menu_file]
+    assert di.remove(paths) == [dirs.menu_file, dirs.scalable_icon]
 
 
 # --- remove and status ------------------------------------------------------------------------------------------------
@@ -800,11 +1171,12 @@ def test_remove_only_removes_unmodified_files(
     exe = tmp_path / "Fork.exe"
     exe.write_bytes(pb.build_pe())
     dirs = _dirs(env)
-    _install(paths, env, runner, fork_exe=exe, file_managers="nemo,fma")
+    _install(paths, env, runner, fork_exe=exe, icons=True, file_managers="nemo,fma")
     dirs.kind_path(di.NEMO).write_text("changed\n", encoding="utf-8")
     dirs.kind_path(di.FMA).unlink()
     removed = di.remove(paths, env, runner=runner)
-    icons = [dirs.hicolor / f"{n}x{n}" / "apps" / f"{APP_ID}.png" for n in (16, 256, 32)]
+    icons = [dirs.hicolor / f"{n}x{n}" / "apps" / f"{APP_ID}.png" for n in ICON_SIZES]
+    icons.append(dirs.scalable_icon)
     assert sorted(removed) == sorted([dirs.menu_file, *icons])
     assert dirs.kind_path(di.NEMO).read_text(encoding="utf-8") == "changed\n"
     assert not paths.integrations_file.exists()

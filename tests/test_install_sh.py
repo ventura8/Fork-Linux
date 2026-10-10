@@ -197,7 +197,8 @@ def test_install_from_release_server(home: Path, release) -> None:
     # The per-user menu entry is fork-linux's own job; install.sh never writes it directly.
     assert not (home / ".local" / "share" / "applications" / f"{APP_ID}.desktop").exists()
     calls = (home / "cli-calls.log").read_text(encoding="utf-8").splitlines()
-    assert "fork-linux desktop install --file-managers all" in calls
+    # The file-manager actions follow fork-linux's default (--file-managers auto: the installed ones).
+    assert "fork-linux desktop install" in calls
     assert "sha256 OK" in result.stdout
     manifest = (tree / "install-manifest.txt").read_text(encoding="utf-8")
     assert f"version\t{VERSION}" in manifest

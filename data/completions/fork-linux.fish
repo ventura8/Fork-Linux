@@ -77,7 +77,7 @@ complete -c fork-linux -n '__fish_seen_subcommand_from settings; and __fish_seen
 complete -c fork-linux -n '__fish_seen_subcommand_from settings; and not __fish_seen_subcommand_from show get set unset apply-defaults backup restore path' -a path -d 'print the location of settings.json'
 complete -c fork-linux -n '__fish_use_subcommand' -a desktop -d 'add or remove the menu entry and \'Open in Fork\' actions'
 complete -c fork-linux -n '__fish_seen_subcommand_from desktop; and not __fish_seen_subcommand_from install remove status' -a install -d 'install (or refresh) the integration'
-complete -c fork-linux -n '__fish_seen_subcommand_from desktop; and __fish_seen_subcommand_from install' -l file-managers -r -d 'comma separated: nautilus, nemo, caja, dolphin, thunar, fma, all or none (default: all)'
+complete -c fork-linux -n '__fish_seen_subcommand_from desktop; and __fish_seen_subcommand_from install' -l file-managers -r -d 'comma separated: nautilus, nemo, caja, dolphin, thunar, fma, auto (the installed ones), all or none (default: auto)'
 complete -c fork-linux -n '__fish_seen_subcommand_from desktop; and __fish_seen_subcommand_from install' -l no-menu -d 'no application menu entry'
 complete -c fork-linux -n '__fish_seen_subcommand_from desktop; and __fish_seen_subcommand_from install' -l no-icons -d 'do not install icons'
 complete -c fork-linux -n '__fish_seen_subcommand_from desktop; and __fish_seen_subcommand_from install' -l cli-alias -d 'also link fork and fork-linux into ~/.local/bin'
