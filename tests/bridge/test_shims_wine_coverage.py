@@ -7,7 +7,8 @@ Complements tests/bridge/test_shims_wine.py (whose fixtures it reuses) with:
 * a scripted fake daemon (Python) that speaks the frame protocol of
   bridge/common/fl_proto.h, to drive the shims through the daemon misbehaviours a real
   daemon never shows (no challenge, rejected AUTH, SPAWN_ERR, malformed frames, a
-  connection lost mid-call, a SPAWN_OK larger than one chunk);
+  connection lost mid-call or mid-frame, a SPAWN_OK larger than one chunk, an over-long
+  SPAWN_ERR message, a stderr that cannot be written);
 * more shim scenarios against the real daemon: git global options and anchors, record
   mode of the bash / sh personas, an empty or over-long command line, fl-launch's log
   line and configuration errors, a stdin pipe that is never closed.
@@ -269,6 +270,16 @@ def _reject_auth(c: Conn) -> None:
     c.send(F_STDOUT, b"")
 
 
+def _challenge_of_the_wrong_type(c: Conn) -> None:
+    c.hello()
+    c.send(F_AUTH_OK)
+
+
+def _close_after_auth(c: Conn) -> None:
+    c.hello()
+    c.challenge()
+
+
 def _close_before_spawn(c: Conn) -> None:
     c.handshake_and_req()
 
@@ -281,6 +292,11 @@ def _spawn_err(c: Conn) -> None:
 def _spawn_err_empty(c: Conn) -> None:
     c.handshake_and_req()
     c.send(F_SPAWN_ERR, struct.pack(">i", 5))
+
+
+def _spawn_err_long(c: Conn) -> None:
+    c.handshake_and_req()
+    c.send(F_SPAWN_ERR, struct.pack(">i", 7) + b"m" * 600)
 
 
 def _wrong_first_frame(c: Conn) -> None:
@@ -329,20 +345,29 @@ def _bad_header(c: Conn) -> None:
     c.drain()
 
 
+def _truncated_payload(c: Conn) -> None:
+    _spawn_ok(c)
+    c.sock.sendall(struct.pack(">BI", F_STDOUT, 10) + b"abc")
+
+
 @pytest.mark.parametrize(
     ("script", "code", "needle"),
     [
         (_no_challenge, 125, "did not answer HELLO with a challenge"),
+        (_challenge_of_the_wrong_type, 125, "did not answer HELLO with a challenge"),
         (_reject_auth, 125, "rejected our token"),
+        (_close_after_auth, 125, "rejected our token"),
         (_close_before_spawn, 125, "closed the connection before starting '/bin/sh'"),
         (_spawn_err, 127, "cannot run '/bin/sh': no such file (errno 2)"),
         (_spawn_err_empty, 127, "cannot run '/bin/sh': spawn failed (errno 5)"),
+        (_spawn_err_long, 127, "cannot run '/bin/sh': " + "m" * 511 + " (errno 7)"),
         (_wrong_first_frame, 125, "expected SPAWN_OK from the bridge daemon, got frame type 11"),
         (_signaled, 137, ""),
         (_unexpected_in_relay, 125, "unexpected frame type 2 from the bridge daemon"),
         (_lost_in_relay, 125, "lost before the exit status"),
         (_malformed_exit, 125, "malformed EXIT frame"),
         (_bad_header, 125, "lost before the exit status"),
+        (_truncated_payload, 125, "lost before the exit status"),
     ],
 )
 def test_fake_daemon_misbehaviour(
@@ -366,6 +391,36 @@ def test_fake_daemon_spawn_ok_larger_than_a_chunk(
     assert proc.returncode == 3, err_text(proc)
     assert proc.stdout == b"out"
     assert err_text(proc).endswith("err")
+
+
+def test_fake_daemon_stderr_that_cannot_be_written(
+    env: Env, fake: Callable[[Script], FakeDaemon], tmp_path: Path
+) -> None:
+    """A failed write marks stderr broken; later STDERR frames are dropped, the exit code stays."""
+
+    def script(c: Conn) -> None:
+        _spawn_ok(c)
+        c.send(F_STDERR, b"one")
+        c.send(F_STDERR, b"two")
+        c.send(F_EXIT, b"\0" + struct.pack(">i", 4))
+        c.drain()
+
+    d = fake(script)
+    sink = tmp_path / "stderr-read-only"
+    sink.write_bytes(b"")
+    with sink.open("rb") as read_only:
+        proc = subprocess.run(
+            [env.tools.wine, str(env.sh), "-c", "true"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=read_only,
+            cwd=env.repo,
+            env=env.wine_env(FL_BRIDGE_PORT=str(d.port)),
+            timeout=120,
+            check=False,
+        )
+    assert proc.returncode == 4
+    assert sink.read_bytes() == b""
 
 
 def test_fake_daemon_launch_detached(
