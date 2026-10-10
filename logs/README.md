@@ -24,6 +24,11 @@ When running the Docker CI gate (`scripts/ci-pipeline.sh` / `ci-docker.sh` / `ci
 | `ci-packaging-summary.log` | Packaging matrix launcher summary |
 | `ci-packaging/<format>.log` | Per-format packaging cell (`deb`, `deb-jammy`, `rpm-fedora`, `rpm-opensuse`, `arch`, `snap`, `appimage`, `flatpak`, `tarball`) |
 | `ci-e2e-wine.log` | Real Wine + Fork end-to-end run (`./scripts/ci-e2e-wine.sh`) |
+| `e2e-wine/` | `./scripts/ci-e2e-wine.sh`: `pytest.log` + text logs copied from its scratch root |
+| `e2e-docker/<NAME>/` | `./scripts/e2e-docker.sh --name NAME …`: `pytest.log` (pytest mode) + text logs (`*.log *.json *.txt` < 20 MB, never `drive_c`) copied from the scratch root `/var/tmp/fork-linux-e2e/<NAME>`; screenshots stay there (`root/shots/`) |
+
+Real-Fork / Wine runs happen **only in containers** (AGENTS.md hard rule 18): never point a
+scratch root or a log at `$HOME`, never run Wine or the `FL_E2E_*` / `FL_REAL_*` tiers on the host.
 
 After packaging, agents must **scan every** `ci-packaging/<format>.log` for meaningful ERROR/WARNING product issues (not only cell exit codes) — see [AGENTS.md](../AGENTS.md) §4.8 packaging log scan and `.agents/skills/pipeline-runner/SKILL.md`.
 

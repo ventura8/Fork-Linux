@@ -55,8 +55,30 @@ FL_CI_STAGE=compat FL_CI_CELL=jammy ./scripts/ci-docker.sh
 ./scripts/ci-packaging-cell.sh deb             # one packaging cell: build + smoke + live E2E
 ./scripts/ci-packaging-matrix.sh               # 9 cells in parallel
 ./scripts/ci-pipeline.sh                       # everything, fail-fast, tee'd under logs/
-./scripts/ci-e2e-wine.sh                       # the real Fork under Wine (Xvfb, ~2.5 GB download)
+./scripts/ci-e2e-wine.sh                       # CI's real tier: Fork under Wine (Xvfb, ~2.5 GB download, no seed)
 ```
+
+### Real Fork / Wine locally: containers only
+
+Real-Fork and Wine work never runs on the host (AGENTS.md hard rule 18: on 2026-10-10 a home
+directory was deleted while real-Fork tests ran on the host). With `FL_E2E_FORK=1` or
+`FL_REAL_WINE=1` outside a container pytest stops at once (status 2), and `scripts/qa/*`,
+`scripts/spike/*`, `ci-docker.sh --inside` and `ci-c-coverage.sh --no-docker` refuse. Use:
+
+```sh
+scripts/e2e-docker.sh --name e2e pytest tests/e2e              # the real tier, seeded
+scripts/e2e-docker.sh --name e2e --keep pytest tests/e2e -k 03 # reuse the previous prefix
+scripts/e2e-docker.sh --name look --keep shell -- bash         # xdotool / import on DISPLAY=:99
+scripts/e2e-docker.sh --name trace --ptrace shell -- strace -f -o /e2e/t.txt python3 -m fork_linux doctor
+```
+
+The container sees only this worktree (read-only), the git common dir (read-only), the scratch
+root `/var/tmp/fork-linux-e2e/<NAME>` (`/e2e`, 0700; `FL_E2E_SCRATCH` overrides, never under
+`$HOME`) and the seed `/var/tmp/fork-linux-e2e/seed` (`/seed`, read-only: `wine-*.tar.xz`,
+`Fork-*.exe`, `winetricks-*`, `selawik-*.zip`, `winetricks/` cache; `FL_E2E_SEED_DIR` overrides).
+Logs land in `logs/e2e-docker/<NAME>/`; screenshots stay in `<scratch>/root/shots/` (Fork's logo:
+never commit them). At most `FL_E2E_SLOTS` (default 3) such containers run at once on the host.
+Runbook: [`.agents/skills/e2e-docker/SKILL.md`](../.agents/skills/e2e-docker/SKILL.md).
 
 Read every `logs/ci-packaging/<format>.log` after a packaging run (exit 0 is not enough).
 

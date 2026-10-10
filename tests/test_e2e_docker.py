@@ -11,6 +11,7 @@ logs-only copy, and that the lock descriptors never reach the container.
 from __future__ import annotations
 
 import json
+import re
 import os
 import shutil
 import stat
@@ -546,3 +547,52 @@ def test_ci_e2e_wine_refuses_a_tmpdir_in_home(box: Box) -> None:
     assert result.returncode == 2
     assert "home directory" in result.stderr
     assert list(box.home.iterdir()) == []
+
+
+# -- contracts: docs, skills, image ----------------------------------------------------------------
+
+HOST_RUN = re.compile(r"FL_(?:E2E_FORK|REAL_WINE)=1 (?:python3|pytest|xvfb-run)")
+
+
+def test_agents_md_hard_rule_18() -> None:
+    text = (REPO / "AGENTS.md").read_text(encoding="utf-8")
+    rule = next(line for line in text.splitlines() if line.startswith("> 18. "))
+    for needle in ("only in containers", "scripts/e2e-docker.sh", "scripts/ci-*.sh", "never on the host",
+                   "scratch roots outside `$HOME`", "never mount `$HOME` writable", "2026-10-10"):
+        assert needle in rule, needle
+    assert "tests/fixtures/real_tier.py" in rule
+
+
+def test_docs_and_skills_route_real_tiers_through_containers() -> None:
+    docs = [REPO / rel for rel in ("AGENTS.md", "skills.md", "docs/INSTRUCTIONS.md", "bridge/README.md",
+                                   "bridge/win/README.md", "logs/README.md")]
+    skills = sorted((REPO / ".agents" / "skills").glob("*/SKILL.md"))
+    for path in docs + skills:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if HOST_RUN.search(line):
+                assert "on the host" in line, f"{path.relative_to(REPO)} tells to run a real tier: {line}"
+    for rel in ("test-runner", "pipeline-runner", "e2e-docker", "wine-runtime-bump", "fork-version-bump",
+                "git-bridge", "troubleshoot"):
+        text = (REPO / ".agents" / "skills" / rel / "SKILL.md").read_text(encoding="utf-8")
+        assert "hard rule 18" in text, rel
+    assert "e2e-docker" in (REPO / "skills.md").read_text(encoding="utf-8")
+    assert "scripts/e2e-docker.sh" in (REPO / "docs" / "INSTRUCTIONS.md").read_text(encoding="utf-8")
+    assert "e2e-docker/<NAME>/" in (REPO / "logs" / "README.md").read_text(encoding="utf-8")
+
+
+def test_e2e_image_carries_the_exploration_tools() -> None:
+    text = (REPO / "docker" / "Dockerfile.e2e.wine").read_text(encoding="utf-8")
+    packages = set(re.findall(r"[a-z0-9][a-z0-9.+-]+", text.split("apt-get install", 1)[1].split("\n\n", 1)[0]))
+    for package in ("xvfb", "xdotool", "x11-utils", "x11-xserver-utils", "imagemagick", "strace", "git-lfs",
+                    "openssh-client", "openssh-server", "python3-pytest", "git"):
+        assert package in packages, package
+    assert "latest" not in text
+
+
+def test_both_runners_share_the_library() -> None:
+    for rel in ("scripts/e2e-docker.sh", "scripts/ci-e2e-wine.sh"):
+        text = (REPO / rel).read_text(encoding="utf-8")
+        assert '. "${ROOT}/scripts/lib-e2e-docker.sh"' in text, rel
+        assert "fl_e2e_check_dir" in text and "fl_e2e_acquire_slot" in text and "fl_e2e_copy_logs" in text
+        assert "--privileged" not in text.replace("never --privileged", "")
+        assert "/tmp/.X11-unix" not in text
