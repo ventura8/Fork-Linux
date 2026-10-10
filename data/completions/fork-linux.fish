@@ -122,7 +122,7 @@ complete -c fork-linux -n '__fish_seen_subcommand_from doctor' -l network -d 'al
 complete -c fork-linux -n '__fish_seen_subcommand_from doctor' -l check -r -d 'run only these checks (ids such as wine.present, or groups such as wine)'
 complete -c fork-linux -n '__fish_use_subcommand' -a uninstall -d 'remove the desktop integration (with --purge: everything fork-linux created)'
 complete -c fork-linux -n '__fish_seen_subcommand_from uninstall' -l purge -d 'also delete the prefix, runtimes, caches and config'
-complete -c fork-linux -n '__fish_seen_subcommand_from uninstall' -l keep-downloads -d 'with --purge: keep the download cache'
+complete -c fork-linux -n '__fish_seen_subcommand_from uninstall' -l keep-downloads -d 'with --purge: keep the download caches (ours and winetricks\')'
 complete -c fork-linux -n '__fish_seen_subcommand_from uninstall' -l yes -d 'with --purge: do not ask for confirmation'
 complete -c fork-linux -n '__fish_use_subcommand' -a status -d 'show setup, Fork and Wine status'
 complete -c fork-linux -n '__fish_use_subcommand' -a version -d 'show the fork-linux version'

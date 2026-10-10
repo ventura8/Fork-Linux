@@ -41,7 +41,9 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "settings. ~/.wine is never touched. Remove the fork-linux package with your package manager.",
     )
     parser.add_argument("--purge", action="store_true", help="also delete the prefix, runtimes, caches and config")
-    parser.add_argument("--keep-downloads", action="store_true", help="with --purge: keep the download cache")
+    parser.add_argument(
+        "--keep-downloads", action="store_true", help="with --purge: keep the download caches (ours and winetricks')"
+    )
     parser.add_argument("--yes", action="store_true", help="with --purge: do not ask for confirmation")
     parser.set_defaults(func=run)
 
@@ -127,16 +129,16 @@ def _purge_prefix(paths: Paths, home: Path, removed: list[str], kept: list[str])
 
 
 def _purge_cache_keeping_downloads(paths: Paths, removed: list[str], kept: list[str]) -> None:
-    """Empty the cache directory except for the downloads directory."""
+    """Empty the cache directory except for the downloads: ours and winetricks' (.NET, core fonts)."""
+    downloads = (paths.downloads_dir, paths.winetricks_cache_dir)
     try:
         names = sorted(os.listdir(paths.cache_dir))
     except OSError:
         names = []
     for name in names:
-        if paths.cache_dir / name != paths.downloads_dir:
+        if paths.cache_dir / name not in downloads:
             _remove(paths.cache_dir / name, removed)
-    if os.path.lexists(paths.downloads_dir):
-        kept.append(str(paths.downloads_dir))
+    kept.extend(str(directory) for directory in downloads if os.path.lexists(directory))
 
 
 def _purge(ctx: AppContext, args: argparse.Namespace) -> dict[str, Any]:

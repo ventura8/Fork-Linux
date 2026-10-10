@@ -76,6 +76,8 @@ def test_derived_locations(tmp_path: Path) -> None:
     assert p.snapshots_dir == p.data_dir / "snapshots"
     assert p.integrations_file == p.data_dir / "integrations.json"
     assert p.downloads_dir == p.cache_dir / "downloads"
+    assert p.winetricks_cache_dir == p.cache_dir / "winetricks"
+    assert p.legacy_winetricks_cache_dir == p.cache_dir.parent / "winetricks"
     assert p.feeds_dir == p.cache_dir / "feeds"
     assert p.logs_dir == p.state_dir / "logs"
     assert p.lock_file == p.runtime_dir / "setup.lock"

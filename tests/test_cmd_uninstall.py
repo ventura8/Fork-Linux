@@ -51,6 +51,8 @@ def ours(xdg: Path) -> Paths:
         where.state_dir,
         where.config_dir,
         where.downloads_dir,
+        where.winetricks_cache_dir,
+        where.legacy_winetricks_cache_dir,
         where.feeds_dir,
         where.logs_dir,
     ):
@@ -104,6 +106,8 @@ def test_purge_deletes_everything_we_created(
         assert not directory.exists(), directory
     assert not ours.session_file.exists()
     assert (xdg / ".wine" / "E2E_SENTINEL").read_text(encoding="utf-8") == "keep"
+    # Winetricks' own default cache is only ever read (setup reuses its files).
+    assert (ours.legacy_winetricks_cache_dir / "file").exists()
     assert f"deleted {ours.prefix}" in out
     assert "~/.wine was never touched" in out
 
@@ -111,9 +115,10 @@ def test_purge_deletes_everything_we_created(
 def test_purge_keep_downloads_and_json(capsys: pytest.CaptureFixture[str], removed: list[int], ours: Paths) -> None:
     result = run_json(capsys, "uninstall", "--purge", "--yes", "--keep-downloads")
     assert (ours.downloads_dir / "file").exists()
+    assert (ours.winetricks_cache_dir / "file").exists()
     assert not ours.feeds_dir.exists()
     assert not (ours.cache_dir / "file").exists()
-    assert result["kept"] == [str(ours.downloads_dir)]
+    assert result["kept"] == [str(ours.downloads_dir), str(ours.winetricks_cache_dir)]
     assert result["purged"] is True
     assert result["wineserver_stopped"] is False
     assert str(ours.prefix) in result["removed"]
@@ -122,6 +127,16 @@ def test_purge_keep_downloads_and_json(capsys: pytest.CaptureFixture[str], remov
 def test_purge_keep_downloads_text(capsys: pytest.CaptureFixture[str], removed: list[int], ours: Paths) -> None:
     out = run_cli(capsys, "uninstall", "--purge", "--yes", "--keep-downloads")[1]
     assert f"kept {ours.downloads_dir}" in out
+    assert f"kept {ours.winetricks_cache_dir}" in out
+
+
+def test_purge_keep_downloads_with_only_the_winetricks_cache(
+    capsys: pytest.CaptureFixture[str], removed: list[int], xdg: Path
+) -> None:
+    where = paths()
+    (where.winetricks_cache_dir / "corefonts").mkdir(parents=True)
+    result = run_json(capsys, "uninstall", "--purge", "--yes", "--keep-downloads")
+    assert result["kept"] == [str(where.winetricks_cache_dir)]
 
 
 def test_purge_keep_downloads_without_a_cache(

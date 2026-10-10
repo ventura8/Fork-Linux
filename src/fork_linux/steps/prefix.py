@@ -75,9 +75,14 @@ def import_batch(ctx: Ctx, batch: RegBatch, name: str) -> None:
 
 
 def run_verbs(ctx: Ctx, step_id: str, verbs: Sequence[str]) -> None:
-    """``winetricks -q <verbs>``; a non-zero exit raises :class:`SetupFailed` for ``step_id``."""
+    """``winetricks -q <verbs>`` with its cache in ours; a non-zero exit raises :class:`SetupFailed` for ``step_id``.
+
+    Downloads already in winetricks' default cache are reused first (that cache is only read).
+    """
+    cache = ctx.paths.winetricks_cache_dir
+    winetricks.seed_cache(cache, ctx.paths.legacy_winetricks_cache_dir)
     result = winetricks.run_verbs(
-        ctx.runner, runtime.winetricks_path(ctx), ctx.wine_env(), list(verbs), log_file=ctx.log_file
+        ctx.runner, runtime.winetricks_path(ctx), ctx.wine_env(), list(verbs), log_file=ctx.log_file, cache=cache
     )
     if not result.ok:
         raise SetupFailed(
