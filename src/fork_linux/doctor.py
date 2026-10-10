@@ -85,6 +85,9 @@ _RUN_FIX = "run 'fork-linux doctor --fix'"
 X86_64 = ("x86_64", "amd64")
 MIN_PYTHON = (3, 10)
 FC_LIST_TIMEOUT = 30.0
+# The ClearType gamma range Windows accepts (SPI_SETFONTSMOOTHINGCONTRAST).
+GAMMA_MIN = 1000
+GAMMA_MAX = 2200
 GIT_TIMEOUT = 120.0
 VALIDATE_TIMEOUT = 30.0
 HEAD_TIMEOUT = 10.0
@@ -539,23 +542,26 @@ def _families(ctx: DoctorCtx) -> set[str] | None:
 
 
 def check_fonts(ctx: DoctorCtx) -> Result:
-    """A Linux font that can stand in for Segoe UI, and a monospace one for Consolas."""
+    """Linux fonts that can stand in for Segoe UI Symbol and Consolas (Segoe UI itself is Selawik)."""
     families = _families(ctx)
     if families is None:
         return Result("warn", "fc-list is not available; cannot check the fonts", _install_hint(["fc-list"], []))
-    sans = next((name for name in fonts_step.SANS_CHOICES if name in families), None)
+    symbol = next((name for name in fonts_step.SYMBOL_CHOICES if name in families), None)
     mono = next((name for name in fonts_step.MONO_CHOICES if name in families), None)
-    if sans and mono:
-        return Result("ok", f"Segoe UI -> {sans}, Consolas -> {mono}")
+    if symbol and mono:
+        return Result("ok", f"Segoe UI Symbol -> {symbol}, Consolas -> {mono}")
     missing = []
-    if not sans:
-        missing.append(f"a Segoe UI replacement ({' / '.join(fonts_step.SANS_CHOICES)}; using Tahoma)")
+    if not symbol:
+        choices = " / ".join(fonts_step.SYMBOL_CHOICES)
+        missing.append(f"a Segoe UI Symbol replacement ({choices}; using {fonts_step.SYMBOL_FALLBACK})")
     if not mono:
-        missing.append(f"a monospace font ({' / '.join(fonts_step.MONO_CHOICES)}; using Courier New)")
+        choices = " / ".join(fonts_step.MONO_CHOICES)
+        missing.append(f"a monospace font ({choices}; using {fonts_step.MONO_FALLBACK})")
     return Result(
         "warn",
         "missing " + " and ".join(missing),
-        "install Noto fonts (e.g. fonts-noto-core / google-noto-sans-fonts), then run 'fork-linux doctor --fix'",
+        "install DejaVu or Noto fonts (e.g. fonts-dejavu-core / dejavu-sans-fonts), "
+        "then run 'fork-linux doctor --fix'",
     )
 
 
@@ -732,8 +738,28 @@ def check_corefonts(ctx: DoctorCtx) -> Result:
     return Result("ok", f"core fonts installed ({found.name})")
 
 
+def check_ui_font(ctx: DoctorCtx) -> Result:
+    """The interface font (Selawik, standing in for Segoe UI) is installed and registered in the prefix."""
+    if not _has_prefix(ctx):
+        return _skip(NO_PREFIX)
+    font = ctx.manifest.ui_font
+    missing = fonts_step.missing_faces(ctx.boot)
+    if missing:
+        return Result("fail", f"{font.family} is not installed (missing {', '.join(missing)})", _RUN_FIX)
+    unregistered = [
+        name for key, name, value in fonts_step.ui_font_registry(font) if _reg(ctx, key, name) != value
+    ]
+    if unregistered:
+        return Result("warn", f"{font.family} faces are not registered: {', '.join(unregistered)}", _RUN_FIX)
+    return Result("ok", f"{font.family} {font.version} ({font.license}), {len(font.faces)} faces")
+
+
+def _shown(target: str | list[str]) -> str:
+    return " | ".join(target) if isinstance(target, list) else target
+
+
 def check_font_replacements(ctx: DoctorCtx) -> Result:
-    """Segoe UI / Consolas are mapped to the installed Linux fonts."""
+    """Segoe UI / Consolas are mapped to installed fonts, and the system fonts ask for Segoe UI."""
     if not _has_prefix(ctx):
         return _skip(NO_PREFIX)
     wanted = fonts_step.replacements(ctx.boot)
@@ -742,7 +768,15 @@ def check_font_replacements(ctx: DoctorCtx) -> Result:
         return Result(
             "warn", f"replacements missing or outdated for: {', '.join(wrong)}", _RUN_FIX
         )
-    return Result("ok", ", ".join(f"{name} -> {target}" for name, target in sorted(wanted.items())))
+    system = fonts_step.wrong_system_fonts(ctx.boot)
+    if system:
+        return Result(
+            "warn",
+            f"system fonts do not use {fonts_step.SEGOE_UI} (Wine's Tahoma is used instead): {', '.join(system)}",
+            _RUN_FIX,
+        )
+    shown = ", ".join(f"{name} -> {_shown(target)}" for name, target in sorted(wanted.items()))
+    return Result("ok", f"{shown}; system fonts: {fonts_step.SEGOE_UI}")
 
 
 def _registry_result(ctx: DoctorCtx, key: str, name: str, expected: object, what: str) -> Result:
@@ -756,6 +790,21 @@ def _registry_result(ctx: DoctorCtx, key: str, name: str, expected: object, what
         f"{key}\\{name} is {value!r}, expected {expected!r}",
         _RUN_FIX,
     )
+
+
+def check_font_smoothing(ctx: DoctorCtx) -> Result:
+    """Font smoothing is on, with a ClearType gamma Windows accepts (1000-2200; Wine's 0 means unset)."""
+    if not _has_prefix(ctx):
+        return _skip(NO_PREFIX)
+    key = prefix_step.DESKTOP_KEY
+    smoothing, gamma = (_reg(ctx, key, name) for name in ("FontSmoothing", "FontSmoothingGamma"))
+    if smoothing != "2":
+        return Result("warn", f"font smoothing is off (FontSmoothing is {smoothing!r})", _RUN_FIX)
+    if not isinstance(gamma, int) or not GAMMA_MIN <= gamma <= GAMMA_MAX:
+        return Result(
+            "warn", f"FontSmoothingGamma is {gamma!r}, expected {GAMMA_MIN}-{GAMMA_MAX}", _RUN_FIX
+        )
+    return Result("ok", f"font smoothing on, gamma {gamma}")
 
 
 def check_avalon(ctx: DoctorCtx) -> Result:
@@ -1604,12 +1653,16 @@ CHECKS: list[Check] = [
     Check("prefix.exists", "Wine prefix", "prefix", check_prefix, fix_steps=("prefix_init",)),
     Check("prefix.dotnet", ".NET Framework", "prefix", check_dotnet, fix_steps=("dotnet",)),
     Check("prefix.corefonts", "Core fonts", "prefix", check_corefonts, fix_steps=("fonts",)),
+    Check("prefix.ui_font", "Interface font", "prefix", check_ui_font, fix_steps=("ui_font",)),
     Check(
         "prefix.font_replacements",
         "Font replacements",
         "prefix",
         check_font_replacements,
         fix_steps=("font_replacements",),
+    ),
+    Check(
+        "prefix.font_smoothing", "Font smoothing", "prefix", check_font_smoothing, fix_steps=("registry",)
     ),
     Check("prefix.avalon", "WPF rendering", "prefix", check_avalon, fix_steps=("registry",)),
     Check("prefix.appdefaults", "Fork.exe Windows version", "prefix", check_appdefaults, fix_steps=("registry",)),

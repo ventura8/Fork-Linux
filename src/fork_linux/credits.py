@@ -82,6 +82,7 @@ UPSTREAM_PROJECTS: tuple[tuple[str, str, str], ...] = (
     ("Wine", "https://www.winehq.org", "runs Fork for Windows on Linux"),
     ("Kron4ek Wine-Builds", "https://github.com/Kron4ek/Wine-Builds", "the pinned managed Wine runtime"),
     ("Winetricks", "https://github.com/Winetricks/winetricks", "installs .NET Framework and the core fonts"),
+    ("Selawik", "https://github.com/microsoft/Selawik", "the OFL-1.1 Segoe UI stand-in for Fork's interface"),
 )
 
 PRIOR_ART: list[tuple[str, str, str]] = [*COMMUNITY_PRIOR_ART, *UPSTREAM_PROJECTS]

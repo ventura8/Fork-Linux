@@ -114,6 +114,7 @@ def test_consent_text_credits_the_developers_and_lists_downloads(xdg: Path) -> N
                    "Fork 2.23.2 installer from cdn.fork.dev: 76 MB", ".NET Framework 4.8", "core fonts",
                    "about 3 GB", "minutes"):
         assert needed in text
+    assert "Selawik 1.01 interface font (OFL-1.1) from GitHub (Microsoft): 0.5 MB" in consent.downloads(ctx)
 
 
 def test_consent_text_for_other_providers_and_latest(xdg: Path) -> None:

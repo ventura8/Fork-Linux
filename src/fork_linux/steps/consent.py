@@ -41,12 +41,14 @@ def _wine_line(ctx: Ctx) -> str:
 def downloads(ctx: Ctx) -> list[str]:
     """One line per download setup will make."""
     winetricks = ctx.manifest.winetricks
+    font = ctx.manifest.ui_font
     version, size = fork_steps.describe_request(ctx)
     return [
         _wine_line(ctx),
         f"winetricks {winetricks.version} from GitHub: {_mb(winetricks.size)}",
         f"Microsoft .NET Framework 4.8 from Microsoft, via winetricks: {DOTNET_SIZE}",
         f"Microsoft core fonts (Arial, Verdana, ...) via winetricks: {COREFONTS_SIZE}",
+        f"{font.family} {font.version} interface font ({font.license}) from GitHub (Microsoft): {_mb(font.size)}",
         f"Fork {version} installer from {credits.INSTALLER_HOST}: {_mb(size)}",
     ]
 

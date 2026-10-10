@@ -16,12 +16,14 @@ from fork_linux.doctor import Check, DoctorCtx, Result
 from fork_linux.errors import ForkLinuxError, Locked, UsageError
 from fork_linux.paths import Paths
 from fork_linux.procrun import Completed, RecordingRunner
+from fork_linux.registry import RegBatch
 from fork_linux.state import State
+from fork_linux.steps import fonts as fonts_step
 from fork_linux.winecmd import WineInfo
 
 from fixtures.cli_run import make_prefix
 from fixtures.fork_tree import install_fork, write_settings
-from fixtures.setup_ctx import add_values, write_release
+from fixtures.setup_ctx import add_values, apply_reg, write_release
 
 USER = "tester"
 GUID = "0f8fad5b-d9cb-469f-a165-70867728950e"
@@ -401,31 +403,33 @@ def _managed_runtime_existing(ctx: DoctorCtx) -> WineInfo:
 
 def test_host_fonts() -> None:
     fc = {"fc-list": "/usr/bin/fc-list"}
-    good = RecordingRunner({"fc-list": "Noto Sans\nNoto Sans Mono\n"}, which_map=fc)
-    assert run(make(good), "host.fonts") == Result("ok", "Segoe UI -> Noto Sans, Consolas -> Noto Sans Mono")
-    sans_only = RecordingRunner({"fc-list": "DejaVu Sans\n"}, which_map=fc)
+    good = RecordingRunner({"fc-list": "DejaVu Sans\nNoto Sans Mono\n"}, which_map=fc)
+    assert run(make(good), "host.fonts") == Result("ok", "Segoe UI Symbol -> DejaVu Sans, Consolas -> Noto Sans Mono")
+    sans_only = RecordingRunner({"fc-list": "Noto Sans\n"}, which_map=fc)
     result = run(make(sans_only), "host.fonts")
     assert result.status == "warn"
-    assert "monospace" in result.detail
-    assert "Segoe" not in result.detail
+    assert result.detail == (
+        "missing a monospace font (Noto Sans Mono / DejaVu Sans Mono / Liberation Mono; using Courier New)"
+    )
+    assert "fonts-dejavu-core" in result.hint
     mono_only = RecordingRunner({"fc-list": "Noto Sans Mono\n"}, which_map=fc)
     result = run(make(mono_only), "host.fonts")
-    assert "Segoe UI replacement" in result.detail
-    assert "monospace" not in result.detail
+    assert result.detail == (
+        "missing a Segoe UI Symbol replacement (DejaVu Sans / Noto Sans / Liberation Sans; using Tahoma)"
+    )
     none = RecordingRunner({"fc-list": "Comic Neue\n"}, which_map=fc)
-    assert "Segoe UI replacement" in run(make(none), "host.fonts").detail
+    detail = run(make(none), "host.fonts").detail
+    assert "Segoe UI Symbol replacement" in detail
+    assert "monospace" in detail
     missing = RecordingRunner(which_map={"fc-list": None})
     assert "not available" in run(make(missing), "host.fonts").detail
     failing = RecordingRunner({"fc-list": 1}, which_map=fc)
     assert "not available" in run(make(failing), "host.fonts").detail
 
-    def raises(_argv: list[str]) -> Any:
-        raise ForkLinuxError("timeout")
+    def hanging(argv: list[str]) -> Completed:
+        raise ForkLinuxError("fc-list timed out")
 
-    assert "not available" in run(make(RecordingRunner({"fc-list": raises}, which_map=fc)), "host.fonts").detail
-
-
-# -- wine ----------------------------------------------------------------------------------------
+    assert "not available" in run(make(RecordingRunner({"fc-list": hanging}, which_map=fc)), "host.fonts").detail
 
 
 def test_wine_present_and_version_managed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -562,23 +566,94 @@ def test_prefix_corefonts() -> None:
     assert run(ctx, "prefix.corefonts") == Result("ok", "core fonts installed (ARIAL.TTF)")
 
 
+def test_prefix_ui_font() -> None:
+    ctx = make()
+    assert run(ctx, "prefix.ui_font") == Result("info", "skipped: the Wine prefix does not exist yet")
+    pfx = prefix(ctx)
+    result = run(ctx, "prefix.ui_font")
+    assert result.status == "fail"
+    assert result.detail == (
+        "Selawik is not installed (missing selawk.ttf, selawkb.ttf, selawkl.ttf, selawksb.ttf, selawksl.ttf)"
+    )
+    assert "doctor --fix" in result.hint
+    folder = pfx / "drive_c" / "windows" / "Fonts"
+    folder.mkdir(parents=True)
+    font = ctx.manifest.ui_font
+    for file_name, _face in font.faces:
+        (folder / file_name).write_bytes(b"ttf")
+    result = run(ctx, "prefix.ui_font")
+    assert result.status == "warn"
+    assert result.detail.startswith("Selawik faces are not registered: Selawik (TrueType), Selawik Bold (TrueType)")
+    batch = RegBatch()
+    for key, name, value in fonts_step.ui_font_registry(font):
+        batch.set_sz(key, name, str(value))
+    apply_reg(pfx, batch.render_text())
+    assert run(ctx, "prefix.ui_font") == Result("ok", "Selawik 1.01 (OFL-1.1), 5 faces")
+    assert doctor.get("prefix.ui_font").fix_steps == ("ui_font",)
+
+
+def _replacements(ctx: DoctorCtx, *, system_fonts: bool) -> None:
+    batch = RegBatch()
+    for name, target in fonts_step.replacements(ctx.boot).items():
+        if isinstance(target, list):
+            batch.set_multi_sz(fonts_step.REPLACEMENTS_KEY, name, target)
+        else:
+            batch.set_sz(fonts_step.REPLACEMENTS_KEY, name, target)
+    if system_fonts:
+        for name, value in fonts_step.system_fonts().items():
+            batch.set_binary(fonts_step.METRICS_KEY, name, value)
+    apply_reg(ctx.paths.prefix, batch.render_text())
+
+
 def test_prefix_font_replacements() -> None:
     runner = RecordingRunner({"fc-list": "Noto Sans\nDejaVu Sans Mono\n"})
     ctx = make(runner)
+    assert run(ctx, "prefix.font_replacements").status == "info"
     prefix(ctx)
     result = run(ctx, "prefix.font_replacements")
     assert result.status == "warn"
     assert "Segoe UI" in result.detail
     assert "Consolas" in result.detail
+    # The values fork-linux 1.0.0 wrote (a Linux font for Segoe UI itself) count as outdated.
     lines = [f'"{name}"="Noto Sans"' for name in ("Segoe UI", "Segoe UI Semibold", "Segoe UI Light")]
-    user_values(ctx, FONT_KEY, *lines, '"Consolas"="DejaVu Sans Mono"')
+    user_values(ctx, FONT_KEY, *lines, '"Consolas"="DejaVu Sans Mono"', '"Segoe UI Symbol"="Noto Sans"')
+    result = run(ctx, "prefix.font_replacements")
+    assert result.detail == (
+        "replacements missing or outdated for: Segoe UI, Segoe UI Semibold, Segoe UI Semilight, Segoe UI Light"
+    )
+    _replacements(ctx, system_fonts=False)
     result = run(ctx, "prefix.font_replacements")
     assert result.status == "warn"
-    assert result.detail.endswith("Segoe UI Symbol")
-    user_values(ctx, FONT_KEY, '"Segoe UI Symbol"="Noto Sans"')
+    assert result.detail.startswith("system fonts do not use Segoe UI (Wine's Tahoma is used instead): CaptionFont")
+    _replacements(ctx, system_fonts=True)
     result = run(ctx, "prefix.font_replacements")
     assert result.status == "ok"
     assert "Consolas -> DejaVu Sans Mono" in result.detail
+    assert "Segoe UI Light -> Selawik Light | Selawik" in result.detail
+    assert "Segoe UI Symbol -> Noto Sans" in result.detail
+    assert result.detail.endswith("; system fonts: Segoe UI")
+
+
+def test_prefix_font_smoothing() -> None:
+    ctx = make()
+    assert run(ctx, "prefix.font_smoothing").status == "info"
+    prefix(ctx)
+    desktop_key = "Control Panel\\Desktop"
+    result = run(ctx, "prefix.font_smoothing")
+    assert result == Result("warn", "font smoothing is off (FontSmoothing is None)", result.hint)
+    assert "doctor --fix" in result.hint
+    user_values(ctx, desktop_key, '"FontSmoothing"="2"', '"FontSmoothingGamma"=dword:00000000')
+    assert run(ctx, "prefix.font_smoothing").detail == "FontSmoothingGamma is 0, expected 1000-2200"
+    user_values(ctx, desktop_key, '"FontSmoothingGamma"="1400"')
+    assert run(ctx, "prefix.font_smoothing").detail == "FontSmoothingGamma is '1400', expected 1000-2200"
+    user_values(ctx, desktop_key, '"FontSmoothingGamma"=dword:00000899')
+    assert run(ctx, "prefix.font_smoothing").status == "warn"
+    for gamma in (1000, 1400, 2200):
+        user_values(ctx, desktop_key, f'"FontSmoothingGamma"=dword:{gamma:08x}')
+        assert run(ctx, "prefix.font_smoothing") == Result("ok", f"font smoothing on, gamma {gamma}")
+    user_values(ctx, desktop_key, '"FontSmoothing"="0"')
+    assert run(ctx, "prefix.font_smoothing").detail == "font smoothing is off (FontSmoothing is '0')"
+    assert doctor.get("prefix.font_smoothing").fix_steps == ("registry",)
 
 
 def test_prefix_avalon_and_appdefaults() -> None:

@@ -44,7 +44,7 @@ def test_developers() -> None:
 
 def test_prior_art_entries() -> None:
     names = [name for name, _url, _note in credits.PRIOR_ART]
-    assert len(names) == len(set(names)) == 12
+    assert len(names) == len(set(names)) == 13
     for name, url, note in credits.PRIOR_ART:
         assert name
         assert note
@@ -53,6 +53,7 @@ def test_prior_art_entries() -> None:
     assert "https://github.com/jasonnicholson/fork-wine-setup" in urls
     assert "https://github.com/fork-dev/Tracker/issues/2033" in urls
     assert "https://www.winehq.org" in urls
+    assert "https://github.com/microsoft/Selawik" in urls
     assert credits.PRIOR_ART == [*credits.COMMUNITY_PRIOR_ART, *credits.UPSTREAM_PROJECTS]
 
 

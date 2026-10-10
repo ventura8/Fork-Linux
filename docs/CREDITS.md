@@ -50,6 +50,7 @@ Fork for Linux's own code is MIT-licensed (see [LICENSE](../LICENSE)). At runtim
 | [Wine](https://www.winehq.org) | Runs Fork for Windows on Linux | LGPL-2.1-or-later |
 | [Kron4ek Wine-Builds](https://github.com/Kron4ek/Wine-Builds) | The pinned, sha256-verified managed Wine runtime (staging, WoW64), downloaded per user | Wine's LGPL-2.1-or-later (build scripts MIT) |
 | [Winetricks](https://github.com/Winetricks/winetricks) | Installs .NET Framework and the core fonts into the prefix | LGPL-2.1-or-later |
+| [Selawik](https://github.com/microsoft/Selawik) 1.01 | Microsoft's open-source stand-in for Segoe UI (matching metrics), Fork's interface font under Wine; the pinned, sha256-verified release zip is downloaded per user into the prefix's `C:\windows\Fonts` (setup step `ui_font`) | SIL Open Font License 1.1 (OFL-1.1) |
 | [Flathub `org.winehq.Wine` BaseApp](https://github.com/flathub/org.winehq.Wine) | Wine inside the Flatpak build | Wine's LGPL-2.1-or-later |
 | [mingw-w64](https://www.mingw-w64.org) runtime | Statically linked into our Windows shims | Permissive (ZPL-2.1 / MIT / public domain, see its COPYING) |
 | [musl](https://musl.libc.org) | Statically linked into our Linux bridge helper | MIT |

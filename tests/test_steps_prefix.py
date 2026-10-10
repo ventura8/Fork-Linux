@@ -185,12 +185,15 @@ def test_registry_batch_is_imported_and_verified(xdg: Path) -> None:
     text = prefix.registry_batch(ctx).render_text()
     for needed in ('"winemenubuilder.exe"=""', '"DisableHWAcceleration"=dword:00000001', '"Version"="win7"',
                    '"ShowCrashDialog"=dword:00000000', '"renderer"="gdi"', '"FontSmoothing"="2"',
-                   '"FontSmoothingType"=dword:00000002'):
+                   '"FontSmoothingType"=dword:00000002', '"FontSmoothingGamma"=dword:00000578'):
         assert needed in text
     handler = prefix.url_handler()
     assert prefix.registry_inputs(ctx) == {"renderer": "gdi", "url_handler": str(handler) if handler else ""}
     regedit = next(call for call in ctx.runner.calls if call["argv"][1:2] == ["regedit"])
     assert regedit["argv"][2:] == ["/S", "C:\\fork-linux\\tmp\\registry.reg"]
+    # Rev 3 added the ClearType gamma, so existing prefixes get it too.
+    assert prefix.REGISTRY.rev == 3
+    assert prefix.FONT_SMOOTHING_GAMMA == 1400
 
 
 def test_registry_routes_links_through_our_handler(

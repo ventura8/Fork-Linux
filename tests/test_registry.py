@@ -131,6 +131,8 @@ def test_round_trip_through_wine_reader() -> None:
     batch.set_multi_sz(key, "empty multi", [])
     batch.set_dword(key, "max", 0xFFFFFFFF)
     batch.set_dword(key, "zero", 0)
+    batch.set_binary(key, "logfont", bytes(range(92)))
+    batch.set_binary(key, "empty binary", b"")
     text = _text(batch)
     for line in text.split(CRLF):
         assert len(line) <= 80
@@ -146,6 +148,8 @@ def test_round_trip_through_wine_reader() -> None:
         "empty multi": (REG_MULTI_SZ, []),
         "max": (REG_DWORD, 0xFFFFFFFF),
         "zero": (REG_DWORD, 0),
+        "logfont": (REG_BINARY, bytes(range(92))),
+        "empty binary": (REG_BINARY, b""),
     }
     assert values['quote"and\\slash'].name == 'quote"and\\slash'
 
@@ -166,6 +170,11 @@ def test_hex_first_byte_stays_on_a_long_lead_line() -> None:
     lines = batch.render_text().split(CRLF)
     first = next(line for line in lines if line.startswith(f'"{name}"'))
     assert first == f'"{name}"=hex(7):61,\\'
+
+
+def test_binary_is_written_as_plain_hex() -> None:
+    lines = RegBatch().set_binary("HKCU\\Control Panel\\Desktop", "b", b"\x00\xff").render_text().split(CRLF)
+    assert '"b"=hex:00,ff' in lines
 
 
 def test_short_hex_has_no_continuation() -> None:
@@ -357,6 +366,8 @@ def test_write_failure_leaves_no_temp_file(tmp_path: Path) -> None:
         lambda b: b.set_sz("HKCU\\S", 5, "v"),
         lambda b: b.set_expand_sz("HKCU\\S", "n", b"bytes"),
         lambda b: b.set_multi_sz("HKCU\\S", "n", ["ok", 3]),
+        lambda b: b.set_binary("HKCU\\S", "n", bytearray(b"x")),
+        lambda b: b.set_binary("HKCU\\S", "n", "text"),
         lambda b: b.set_sz(Path("HKCU/S"), "n", "v"),
         lambda b: b.delete_key(None),
     ],

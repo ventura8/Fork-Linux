@@ -33,6 +33,8 @@ DIRECT3D_KEY = r"HKCU\Software\Wine\Direct3D"
 DESKTOP_KEY = r"HKCU\Control Panel\Desktop"
 WINE_KEY = r"HKCU\Software\Wine"
 DEFAULT_RENDERER = "default"
+# Windows' default ClearType gamma; Wine reads it for GDI text (0, wine.inf's value, means "unset").
+FONT_SMOOTHING_GAMMA = 1400
 
 
 # -- shared helpers (also used by the dotnet, fonts and display steps) -----------------
@@ -184,6 +186,7 @@ def registry_expected(ctx: Ctx) -> list[tuple[str, str, object]]:
         (DESKTOP_KEY, "FontSmoothing", "2"),
         (DESKTOP_KEY, "FontSmoothingType", 2),
         (DESKTOP_KEY, "FontSmoothingOrientation", 1),
+        (DESKTOP_KEY, "FontSmoothingGamma", FONT_SMOOTHING_GAMMA),
     ]
     renderer = _renderer(ctx)
     if renderer != DEFAULT_RENDERER:
@@ -252,7 +255,7 @@ SHELL_FOLDERS = Step(
 REGISTRY = Step(
     id="registry",
     title="Applying Wine settings for Fork",
-    rev=2,
+    rev=3,
     weight=3,
     run=run_registry,
     verify=verify_registry,

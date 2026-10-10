@@ -4,12 +4,17 @@
 Wine, wineserver and winetricks would, with the effects the steps verify:
 ``wineboot`` writes 64-bit hives and the drive links, ``regedit /S`` merges the
 batch into ``user.reg`` / ``system.reg``, ``winetricks dotnet48`` records the
-.NET release and ``corefonts`` drops ``arial.ttf``.
+.NET release and ``corefonts`` drops ``arial.ttf``. :func:`ui_font_archive`
+builds a stand-in for the pinned interface font zip, so no test downloads it.
 """
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
+import io
 import os
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -119,6 +124,41 @@ def make_ctx(
     return ctx
 
 
+# -- interface font ------------------------------------------------------------------------------
+
+
+def ui_font_archive(font: manifest_mod.UiFont, extra: dict[str, bytes] | None = None) -> bytes:
+    """A zip with a small fake TrueType file for every face of ``font`` (plus ``extra`` members)."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as bundle:
+        for file_name, face in font.faces:
+            bundle.writestr(file_name, b"\x00\x01\x00\x00" + face.encode("ascii"))
+        for name, data in (extra or {}).items():
+            bundle.writestr(name, data)
+    return buffer.getvalue()
+
+
+def ui_font_pin(data: bytes) -> dict[str, Any]:
+    """The ``ui_font`` manifest fields that pin ``data`` (an override or :func:`dataclasses.replace` input)."""
+    return {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+
+
+def seed_ui_font(paths: Paths, font: manifest_mod.UiFont, data: bytes | None = None) -> dict[str, Any]:
+    """Put a fake interface font archive in the download cache; return the ``ui_font`` fields pinning it."""
+    payload = ui_font_archive(font) if data is None else data
+    target = paths.downloads_dir / font.archive_name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(payload)
+    return ui_font_pin(payload)
+
+
+def use_fake_ui_font(ctx: Ctx, data: bytes | None = None) -> manifest_mod.UiFont:
+    """Pin ``ctx``'s manifest to a fake interface font archive already in the download cache."""
+    font = ctx.manifest.ui_font
+    ctx.manifest.ui_font = dataclasses.replace(font, **seed_ui_font(ctx.paths, font, data))
+    return ctx.manifest.ui_font
+
+
 # -- registry effects ----------------------------------------------------------------------------
 
 
@@ -156,7 +196,8 @@ def apply_reg(prefix: Path, text: str) -> None:
             for root, name in REG_HIVES.items():
                 if inner.startswith(root):
                     hive, key = name, inner[len(root):]
-        elif line.startswith(('"', "@")):
+        elif line.startswith(('"', "@")) or (lines and line[:1] in (" ", "\t")):
+            # A value line, or the continuation of a wrapped hex value.
             lines.append(line)
     flush()
 

@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fixtures.setup_ctx import USER, FakeUI, FakeWine
+from fixtures.setup_ctx import USER, FakeUI, FakeWine, seed_ui_font
 
-from fork_linux import bootstrap, cli
+from fork_linux import bootstrap, cli, manifest
 from fork_linux import ui as ui_mod
 from fork_linux import winetricks as winetricks_mod
 from fork_linux.commands import setup as setup_cmd
@@ -60,7 +60,11 @@ class Harness:
         self.runner.which_map.update({"cabextract": "/usr/bin/cabextract", "unzip": "/usr/bin/unzip"})
         self.downloads: list[InstallPlan] = []
         self.ui = FakeUI()
-        override = {"winetricks": {"sha256": hashlib.sha256(SCRIPT).hexdigest(), "size": len(SCRIPT)}}
+        override = {
+            "winetricks": {"sha256": hashlib.sha256(SCRIPT).hexdigest(), "size": len(SCRIPT)},
+            # The interface font comes from the download cache: a fake archive pinned by the override.
+            "ui_font": seed_ui_font(self.paths, manifest.load().ui_font),
+        }
         self.paths.config_dir.mkdir(parents=True, exist_ok=True)
         self.paths.manifest_override.write_text(json.dumps(override))
         shims = tmp_path / "no-shims"

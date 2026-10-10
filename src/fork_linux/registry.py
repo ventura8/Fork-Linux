@@ -169,6 +169,12 @@ class RegBatch:
             raise ValueError(f"DWORD out of range: {value!r}")
         return self._add(key, [f"{_value_name(name)}=dword:{value:08x}"])
 
+    def set_binary(self, key: str, name: str, data: bytes) -> RegBatch:
+        """Set a REG_BINARY value (written as ``hex:``)."""
+        if not isinstance(data, bytes):
+            raise ValueError(f"binary values take bytes, not {type(data).__name__}")
+        return self._add(key, _hex_lines(_value_name(name) + "=hex:", data))
+
     def set_multi_sz(self, key: str, name: str, values: Iterable[str]) -> RegBatch:
         """Set a REG_MULTI_SZ value (written as ``hex(7)``); items must be non-empty."""
         if isinstance(values, str):
