@@ -248,16 +248,18 @@ def test_dry_run_changes_nothing(home: Path, release) -> None:
 def test_from_tarball_verifies_against_local_sums(tmp_path: Path, home: Path) -> None:
     _skip_if_root()
     name = f"fork-linux-{VERSION}-x86_64.tar.gz"
-    (tmp_path / name).write_bytes(_tarball())
+    # One build: gzip stamps the current second into the header, so two calls can differ.
+    tarball = _tarball()
+    (tmp_path / name).write_bytes(tarball)
     (tmp_path / "SHA256SUMS").write_bytes(_sums(name, b"tampered"))
     bad = _run(INSTALL, home, "--no-deps", "--from-tarball", str(tmp_path / name))
     assert bad.returncode != 0
     assert "sha256 mismatch" in bad.stderr
     # The user's own file is never deleted, only a download is.
     assert f"{tmp_path / name} was left in place" in bad.stderr
-    assert (tmp_path / name).read_bytes() == _tarball()
+    assert (tmp_path / name).read_bytes() == tarball
     assert not (home / ".local" / "opt").exists()
-    (tmp_path / "SHA256SUMS").write_bytes(_sums(name, _tarball()))
+    (tmp_path / "SHA256SUMS").write_bytes(_sums(name, tarball))
     good = _run(INSTALL, home, "--no-deps", "--no-desktop", "--from-tarball", str(tmp_path / name))
     assert good.returncode == 0, good.stderr
     assert not (home / "cli-calls.log").exists() or "desktop install" not in (home / "cli-calls.log").read_text(
