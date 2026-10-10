@@ -10,6 +10,8 @@
 # Exploration tools: strace (with e2e-docker.sh --ptrace), x11-utils / x11-xserver-utils
 # (xdpyinfo, xwininfo, xprop, xrandr), imagemagick (import), git-lfs, openssh client + server
 # (ssh_sync / git-over-ssh scenarios against a local sshd).
+# fonts-noto-core / fonts-noto-cjk: the Linux fonts the font_fallback step maps WPF's
+# composite font to (Cyrillic, Greek, CJK, ... in Fork's interface).
 # Wine's host libraries come from the same table as `fork-linux doctor`
 # (fork_linux.hostdeps, Debian names); distro Wine is not installed.
 FROM ubuntu:26.04
@@ -22,7 +24,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates git git-lfs python3 python3-pytest \
     xvfb xauth xdotool x11-utils x11-xserver-utils imagemagick \
-    cabextract unzip 7zip fontconfig curl \
+    cabextract unzip 7zip fontconfig fonts-noto-core fonts-noto-cjk curl \
     strace openssh-client openssh-server file \
     libfreetype6 libfontconfig1 libgnutls30t64 libx11-6 libxext6 libxrender1 libxi6 \
     libxrandr2 libxcursor1 libxcomposite1 libxinerama1 libxfixes3 libgl1 \

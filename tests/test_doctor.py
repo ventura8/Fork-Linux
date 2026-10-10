@@ -18,12 +18,13 @@ from fork_linux.paths import Paths
 from fork_linux.procrun import Completed, RecordingRunner
 from fork_linux.registry import RegBatch
 from fork_linux.state import State
+from fork_linux.steps import font_fallback as fallback_step
 from fork_linux.steps import fonts as fonts_step
 from fork_linux.winecmd import WineInfo
 
 from fixtures.cli_run import make_prefix
 from fixtures.fork_tree import install_fork, write_settings
-from fixtures.setup_ctx import add_values, apply_reg, write_release
+from fixtures.setup_ctx import add_values, apply_reg, write_composite_font, write_release
 
 USER = "tester"
 GUID = "0f8fad5b-d9cb-469f-a165-70867728950e"
@@ -554,6 +555,7 @@ def test_prefix_checks_skip_without_prefix() -> None:
         "prefix.dotnet",
         "prefix.corefonts",
         "prefix.font_replacements",
+        "prefix.font_fallback",
         "prefix.avalon",
         "prefix.appdefaults",
         "prefix.dpi",
@@ -651,6 +653,63 @@ def test_prefix_font_replacements() -> None:
     assert "Segoe UI Light -> Selawik Light | Selawik" in result.detail
     assert "Segoe UI Symbol -> Noto Sans" in result.detail
     assert result.detail.endswith("; system fonts: Segoe UI")
+
+
+CJK_FC_LIST = "Noto Sans\nNoto Sans CJK JP\nNoto Sans CJK KR\nNoto Sans CJK SC\n"
+
+
+def test_prefix_font_fallback_missing_and_damaged() -> None:
+    ctx = make(RecordingRunner({"fc-list": CJK_FC_LIST}))
+    pfx = prefix(ctx)
+    result = run(ctx, "prefix.font_fallback")
+    assert result.status == "warn"
+    assert result.detail.startswith("WPF's composite font is missing (C:\\windows\\Microsoft.NET\\Framework64")
+    assert "setup --reset" in result.hint
+    write_composite_font(pfx, "Fonts", text="<broken")
+    result = run(ctx, "prefix.font_fallback")
+    assert result.status == "warn"
+    assert "is damaged (not well-formed XML" in result.detail
+    assert doctor.get("prefix.font_fallback").fix_steps == ("font_fallback",)
+
+
+def test_prefix_font_fallback_names_the_folders() -> None:
+    ctx = make(RecordingRunner({"fc-list": CJK_FC_LIST}))
+    pfx = prefix(ctx)
+    write_composite_font(pfx, "Fonts")
+    result = run(ctx, "prefix.font_fallback")
+    assert result == Result(
+        "warn",
+        "WPF's composite font is not patched for the installed Linux fonts (WPF\\Fonts\\)",
+        "run 'fork-linux doctor --fix'",
+    )
+    fallback_step.run(ctx.boot)
+    assert run(ctx, "prefix.font_fallback") == Result(
+        "ok", "4 scripts mapped in WPF's composite font (WPF\\Fonts\\; CJK: Noto Sans CJK JP first)"
+    )
+    # .NET 4.8 has both copies; a new, unpatched WPF\ copy is named on its own.
+    write_composite_font(pfx)
+    result = run(ctx, "prefix.font_fallback")
+    assert result.detail == "WPF's composite font is not patched for the installed Linux fonts (WPF\\)"
+    fallback_step.run(ctx.boot)
+    assert run(ctx, "prefix.font_fallback").detail == (
+        "4 scripts mapped in WPF's composite font (WPF\\, WPF\\Fonts\\; CJK: Noto Sans CJK JP first)"
+    )
+    (pfx / "drive_c" / "windows" / "Microsoft.NET" / "Framework64" / "v4.0.30319" / "WPF" / "Fonts" /
+     fallback_step.COMPOSITE_FONT_NAME).unlink()
+    assert run(ctx, "prefix.font_fallback").detail == (
+        "4 scripts mapped in WPF's composite font (WPF\\; CJK: Noto Sans CJK JP first)"
+    )
+
+
+def test_prefix_font_fallback_without_cjk_fonts() -> None:
+    ctx = make(RecordingRunner({"fc-list": "DejaVu Sans\n"}))
+    pfx = prefix(ctx)
+    write_composite_font(pfx)
+    fallback_step.run(ctx.boot)
+    result = run(ctx, "prefix.font_fallback")
+    assert result.status == "warn"
+    assert result.detail == "no Linux font for Hangul, Han text in Fork's interface (WPF\\)"
+    assert "fonts-noto-cjk" in result.hint
 
 
 def test_prefix_font_smoothing() -> None:

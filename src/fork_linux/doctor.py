@@ -66,6 +66,7 @@ from .procrun import Runner, tail
 from .state import FORK_VERSION, State
 from .steps import display as display_step
 from .steps import dotnet as dotnet_step
+from .steps import font_fallback as fallback_step
 from .steps import fonts as fonts_step
 from .steps import integration as integration_step
 from .steps import prefix as prefix_step
@@ -784,6 +785,33 @@ def check_font_replacements(ctx: DoctorCtx) -> Result:
         )
     shown = ", ".join(f"{name} -> {_shown(target)}" for name, target in sorted(wanted.items()))
     return Result("ok", f"{shown}; system fonts: {fonts_step.SEGOE_UI}")
+
+
+def check_font_fallback(ctx: DoctorCtx) -> Result:
+    """WPF's composite font maps non-Latin scripts (Cyrillic, Greek, CJK, ...) to installed Linux fonts."""
+    if not _has_prefix(ctx):
+        return _skip(NO_PREFIX)
+    maps = fallback_step.wanted_maps(ctx.boot)
+    try:
+        patches = fallback_step.patched_composite_fonts(ctx.boot, maps)
+    except fallback_step.Unpatchable as exc:
+        return Result("warn", exc.message, exc.hint)
+    folders = ", ".join(patch.folder for patch in patches)
+    stale = ", ".join(patch.folder for patch in patches if patch.stale)
+    if stale:
+        return Result("warn", f"WPF's composite font is not patched for the installed Linux fonts ({stale})", _RUN_FIX)
+    unmapped = fallback_step.unmapped_key_scripts(maps)
+    if unmapped:
+        return Result(
+            "warn",
+            f"no Linux font for {', '.join(unmapped)} text in Fork's interface ({folders})",
+            fallback_step.FONTS_HINT,
+        )
+    scripts = len(fallback_step.mapped_scripts(maps))
+    return Result(
+        "ok",
+        f"{scripts} scripts mapped in WPF's composite font ({folders}; CJK: {fallback_step.han_first(maps)} first)",
+    )
 
 
 def _registry_result(ctx: DoctorCtx, key: str, name: str, expected: object, what: str) -> Result:
@@ -1672,6 +1700,9 @@ CHECKS: list[Check] = [
     ),
     Check(
         "prefix.font_smoothing", "Font smoothing", "prefix", check_font_smoothing, fix_steps=("registry",)
+    ),
+    Check(
+        "prefix.font_fallback", "Non-Latin text fonts", "prefix", check_font_fallback, fix_steps=("font_fallback",)
     ),
     Check("prefix.avalon", "WPF rendering", "prefix", check_avalon, fix_steps=("registry",)),
     Check("prefix.appdefaults", "Fork.exe Windows version", "prefix", check_appdefaults, fix_steps=("registry",)),

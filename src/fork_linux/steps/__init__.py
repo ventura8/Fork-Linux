@@ -2,7 +2,7 @@
 
 preflight -> consent -> wine_runtime -> winetricks -> prefix_init ->
 shell_folders -> registry -> dotnet -> winver -> fonts -> ui_font -> font_replacements ->
-display_dpi -> fork_download -> fork_install -> fork_settings -> host_shims ->
+font_fallback -> display_dpi -> fork_download -> fork_install -> fork_settings -> host_shims ->
 host_integration -> git_overlay -> ssh_sync -> icon -> desktop_entry -> finalize
 """
 
@@ -13,6 +13,7 @@ from .consent import CONSENT
 from .display import DISPLAY_DPI
 from .dotnet import DOTNET
 from .finalize import FINALIZE
+from .font_fallback import FONT_FALLBACK
 from .fonts import FONT_REPLACEMENTS, FONTS, UI_FONT
 from .fork import FORK_DOWNLOAD, FORK_INSTALL, FORK_SETTINGS
 from .integration import DESKTOP_ENTRY, GIT_OVERLAY, HOST_INTEGRATION, HOST_SHIMS, ICON, SSH_SYNC
@@ -33,6 +34,7 @@ STEPS: tuple[Step, ...] = (
     FONTS,
     UI_FONT,
     FONT_REPLACEMENTS,
+    FONT_FALLBACK,
     DISPLAY_DPI,
     FORK_DOWNLOAD,
     FORK_INSTALL,

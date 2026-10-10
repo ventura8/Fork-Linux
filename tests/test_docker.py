@@ -206,3 +206,10 @@ def test_clang_tidy_config_errors_on_every_enabled_check() -> None:
     assert entries[0] == "-*"
     assert all(not entry.startswith("-") for entry in entries[1:]), "individual checks must not be disabled"
     assert "cert-env33-c" in entries
+
+
+def test_e2e_image_has_the_fonts_font_fallback_maps() -> None:
+    """Without Noto, prefix.font_fallback warns and the E2E doctor step (no warnings) fails."""
+    text = (DOCKER / "Dockerfile.e2e.wine").read_text(encoding="utf-8")
+    packages = text.split("apt-get install", 1)[1].split()
+    assert {"fonts-noto-core", "fonts-noto-cjk"} <= set(packages)
