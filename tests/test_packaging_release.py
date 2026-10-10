@@ -32,7 +32,8 @@ SCRIPTS = [
     "aur-render.sh", "ppa-docker.sh", "release-verify-tag-version.sh", "packaging-smoke-verify.sh",
     "packaging-e2e-install.sh", "ci-docker.sh", "ci-matrix.sh", "ci-pipeline.sh", "ci-packaging-cell.sh",
     "ci-packaging-matrix.sh", "ci-snap-build.sh", "ci-e2e-wine.sh", "check-upstream-fork.py",
-    "check-dep-names.py", "generate-badges.py", "gen-data.py",
+    "check-dep-names.py", "generate-badges.py", "gen-data.py", "build-version-variant.sh", "version-variant.py",
+    "check-update-scenarios.py",
 ]
 FINISH_ARGS_ALLOWED = {
     "--share=network",
@@ -58,6 +59,14 @@ def _text(path: Path) -> str:
 def test_debian_changelog_top_entry_is_version() -> None:
     first = _text(ROOT / "debian" / "changelog").splitlines()[0]
     assert re.fullmatch(rf"fork-linux \({re.escape(VERSION)}\) resolute; urgency=medium", first)
+
+
+@pytest.mark.parametrize("spec", SPECS, ids=lambda p: p.parent.name)
+def test_rpm_changelog_top_entry_is_version(spec: Path) -> None:
+    """rpmlint fails the cell on incoherent-version-in-changelog: a version bump updates %changelog too."""
+    lines = _text(spec).splitlines()
+    top = lines[lines.index("%changelog") + 1]
+    assert re.fullmatch(rf"\* \w{{3}} \w{{3}} \d{{2}} \d{{4}} .+ <.+> - {re.escape(VERSION)}-1", top), top
 
 
 def test_metainfo_newest_release_is_version() -> None:
@@ -327,3 +336,89 @@ def test_source_tarball_contains_only_what_git_would_commit(tmp_path: Path) -> N
         assert "__pycache__" not in entry
         assert not entry.endswith((".exe", ".pyc"))
         assert ".sonar-token" not in entry
+
+
+def _common(root: Path, call: str, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    """Run a release-common.sh function with FL_REPO_ROOT=``root`` (git sees nothing above tmp_path)."""
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": str(tmp_path),
+        "TMPDIR": str(tmp_path),
+        "FL_REPO_ROOT": str(root),
+        "GIT_CEILING_DIRECTORIES": str(tmp_path),
+    }
+    script = f'. "{ROOT}/scripts/release-common.sh"; {call}'
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False, env=env, cwd=root)
+
+
+def _tar_listing(tarball: Path) -> list[str]:
+    return subprocess.run(["tar", "-tzf", str(tarball)], capture_output=True, text=True, check=True).stdout.split()
+
+
+def test_source_tarball_without_git_skips_the_git_pointer_and_byte_code(tmp_path: Path) -> None:
+    """A tree whose git metadata is out of reach (a linked worktree in a container, a copy) is taken whole,
+    except a worktree's ``.git`` pointer file and Python byte code."""
+    tree = tmp_path / "tree"
+    (tree / "src" / "pkg" / "__pycache__").mkdir(parents=True)
+    (tree / "VERSION").write_text("0.0.0\n", encoding="utf-8")
+    (tree / ".git").write_text("gitdir: /nonexistent/.git/worktrees/x\n", encoding="utf-8")
+    (tree / "src" / "pkg" / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    (tree / "src" / "pkg" / "__pycache__" / "mod.cpython-310.pyc").write_bytes(b"\0")
+    (tree / "src" / "pkg" / "stray.pyc").write_bytes(b"\0")
+    out = tmp_path / "src.tar.gz"
+    result = _common(tree, f'fl_create_source_tarball 0.0.0 "{out}"', tmp_path)
+    assert result.returncode == 0, result.stderr
+    files = sorted(entry for entry in _tar_listing(out) if not entry.endswith("/"))
+    assert files == ["fork-linux-0.0.0/VERSION", "fork-linux-0.0.0/src/pkg/mod.py"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["src.tar.gz", "tree"], "temporary files were left behind"
+
+
+def test_source_files_of_a_copy_inside_another_checkout_are_not_that_checkouts(tmp_path: Path) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    outer = tmp_path / "outer"
+    outer.mkdir()
+    subprocess.run(["git", "init", "-q", str(outer)], check=True)
+    (outer / ".gitignore").write_text("artifacts/\n", encoding="utf-8")
+    copy = outer / "artifacts" / "fork-linux-0.9.9"
+    copy.mkdir(parents=True)
+    (copy / "VERSION").write_text("0.9.9\n", encoding="utf-8")
+    result = _common(copy, "fl_source_files | tr '\\0' '\\n'", tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["VERSION"]
+
+
+def test_git_mount_args_for_a_linked_worktree_only(tmp_path: Path) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    main = tmp_path / "main"
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-C", str(main)]
+    subprocess.run(["git", "init", "-q", str(main)], check=True)
+    (main / "f").write_text("x\n", encoding="utf-8")
+    subprocess.run([*git, "add", "f"], check=True)
+    subprocess.run([*git, "commit", "-qm", "x"], check=True)
+    subprocess.run([*git, "worktree", "add", "-q", str(tmp_path / "wt")], check=True)
+    plain = _common(main, "fl_git_mount_args", tmp_path)
+    assert plain.returncode == 0, plain.stderr
+    assert plain.stdout == ""
+    linked = _common(tmp_path / "wt", "fl_git_mount_args", tmp_path)
+    assert linked.returncode == 0, linked.stderr
+    common = (main / ".git").resolve()
+    assert linked.stdout.splitlines() == ["-v", f"{common}:{common}:ro"]
+    no_git = _common(tmp_path, "fl_git_mount_args", tmp_path)
+    assert no_git.returncode == 0
+    assert no_git.stdout == ""
+
+
+def test_packaging_containers_get_the_git_common_dir() -> None:
+    cell = _text(ROOT / "scripts" / "ci-packaging-cell.sh")
+    snap = _text(ROOT / "scripts" / "ci-snap-build.sh")
+    for text in (cell, snap):
+        assert "mapfile -t GIT_MOUNT < <(fl_git_mount_args)" in text
+        assert '-v "${ROOT}:/src:rw" "${GIT_MOUNT[@]}"' in text
+
+
+def test_snap_smoke_verify_always_runs() -> None:
+    snap = _text(ROOT / "scripts" / "ci-snap-build.sh")
+    smoke = snap.index("./scripts/packaging-smoke-verify.sh snap")
+    assert smoke < snap.index('if [[ "${FL_SNAP_E2E:-1}" == "1" ]]; then')

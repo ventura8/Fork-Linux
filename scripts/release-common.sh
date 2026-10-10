@@ -10,6 +10,8 @@
 #                                   replace <ROOT>/lib/fork-linux/fl-bridge-helper with the
 #                                   musl -static -no-pie build (portable channels: tarball,
 #                                   AppImage, snap; bridge/README.md "Install layout")
+#   fl_copy_source_tree DEST        copy the tree as git sees it into DEST
+#   fl_git_mount_args               docker -v arguments for a linked worktree's git common dir
 #   fl_create_source_tarball VER DEST
 #                                   fork-linux-VER.tar.gz of the tree as git sees it (tracked +
 #                                   untracked-but-not-ignored; not HEAD, so uncommitted
@@ -69,27 +71,57 @@ fl_install_static_helper() {
 # uncommitted packaging fixes are exercised, and ignored build output, caches and secrets
 # never are). Without git metadata (an extracted tarball) every file is taken.
 fl_source_files() {
-	if git -c safe.directory='*' -C "${FL_REPO_ROOT}" rev-parse --git-dir >/dev/null 2>&1; then
+	local top
+	top="$(git -c safe.directory='*' -C "${FL_REPO_ROOT}" rev-parse --show-toplevel 2>/dev/null || true)"
+	# Only the tree's own repository counts: a copy of the tree that lies inside another
+	# checkout (a version variant under artifacts/, say) is not that checkout's subdirectory.
+	if [[ -n "${top}" && "$(cd "${top}" && pwd -P)" == "$(cd "${FL_REPO_ROOT}" && pwd -P)" ]]; then
 		git -c safe.directory='*' -C "${FL_REPO_ROOT}" ls-files -z -co --exclude-standard
 	else
-		(cd "${FL_REPO_ROOT}" && find . -type f -not -path './.git/*' -printf '%P\0')
+		# A linked worktree's .git is a file pointing at the main repository: never ship it,
+		# nor Python's byte-code caches.
+		(cd "${FL_REPO_ROOT}" && find . \( -path ./.git -o -name __pycache__ \) -prune -o \
+			-type f -not -name '*.pyc' -printf '%P\0')
+	fi
+}
+
+# fl_copy_source_tree DEST: copy the tree as git sees it (fl_source_files) into the existing
+# directory DEST, skipping entries git lists but the working tree has deleted.
+fl_copy_source_tree() {
+	local dest="$1" list
+	list="$(mktemp "${TMPDIR:-/tmp}/fl-src-list.XXXXXX")"
+	fl_source_files | (cd "${FL_REPO_ROOT}" && while IFS= read -r -d '' f; do
+		if [[ -e "${f}" || -L "${f}" ]]; then printf '%s\0' "${f}"; fi
+	done) >"${list}"
+	if ! tar -C "${FL_REPO_ROOT}" --null -T "${list}" -cf - | tar -C "${dest}" -xf -; then
+		rm -f "${list}"
+		echo "error: could not copy the source tree" >&2
+		return 1
+	fi
+	rm -f "${list}"
+}
+
+# fl_git_mount_args: docker run arguments (one per line) that mount a linked worktree's git
+# common dir read-only at its own path, so git sees the tree mounted at /src as a checkout
+# (otherwise fl_source_files falls back to every file on disk: artifacts/, logs/, secrets).
+# None for a plain checkout or a tree without git.
+fl_git_mount_args() {
+	local common
+	common="$(git -c safe.directory='*' -C "${FL_REPO_ROOT}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+	if [[ -n "${common}" && "${common}" != "${FL_REPO_ROOT}/"* ]]; then
+		printf '%s\n' -v "${common}:${common}:ro"
 	fi
 }
 
 fl_create_source_tarball() {
 	local version="$1" dest="$2"
-	local stage tmp list
-	stage="$(mktemp -d "/tmp/fl-src-${version}.XXXXXX")"
-	tmp="$(mktemp "/tmp/fork-linux-${version}.tar.gz.XXXXXX")"
-	list="${stage}/files"
+	local stage tmp
+	# ${TMPDIR:-/tmp}: a /tmp tmpfs with a small per-user quota cannot hold the tree.
+	stage="$(mktemp -d "${TMPDIR:-/tmp}/fl-src-${version}.XXXXXX")"
+	tmp="$(mktemp "${TMPDIR:-/tmp}/fork-linux-${version}.tar.gz.XXXXXX")"
 	mkdir -p "${stage}/fork-linux-${version}"
-	# Skip entries listed by git but deleted in the working tree.
-	fl_source_files | (cd "${FL_REPO_ROOT}" && while IFS= read -r -d '' f; do
-		if [[ -e "${f}" || -L "${f}" ]]; then printf '%s\0' "${f}"; fi
-	done) >"${list}"
-	if ! tar -C "${FL_REPO_ROOT}" --null -T "${list}" -cf - | tar -C "${stage}/fork-linux-${version}" -xf -; then
+	if ! fl_copy_source_tree "${stage}/fork-linux-${version}"; then
 		rm -rf "${stage}" "${tmp}"
-		echo "error: could not copy the source tree" >&2
 		return 1
 	fi
 	if ! tar -C "${stage}" --sort=name --owner=0 --group=0 --numeric-owner -czf "${tmp}" "fork-linux-${version}"; then

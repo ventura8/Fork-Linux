@@ -26,6 +26,9 @@ export FL_ARTIFACTS_DIR="${FL_ARTIFACTS_DIR:-${ROOT}/artifacts}"
 }
 mkdir -p "${FL_ARTIFACTS_DIR}"
 ART_IN="/src/${FL_ARTIFACTS_DIR#"${ROOT}"/}"
+# shellcheck source=scripts/release-common.sh
+. scripts/release-common.sh
+mapfile -t GIT_MOUNT < <(fl_git_mount_args)
 
 DOCKER_FLAGS=()
 case "${FORMAT}" in
@@ -80,7 +83,7 @@ else
 	docker build -f "${DOCKERFILE}" -t "${IMAGE}" docker
 	run_in_image() {
 		docker run --rm "${DOCKER_FLAGS[@]}" -e "FL_ARTIFACTS_DIR=${ART_IN}" \
-			-v "${ROOT}:/src:rw" -w /src "${IMAGE}" "$@"
+			-v "${ROOT}:/src:rw" "${GIT_MOUNT[@]}" -w /src "${IMAGE}" "$@"
 	}
 	run_in_image "${BUILD[@]}" || status=$?
 	if ((status == 0)); then

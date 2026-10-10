@@ -99,7 +99,7 @@ remove exactly what they recorded.
 
 ## 5. Releasing
 
-Bump `VERSION`, add a `debian/changelog` entry and a metainfo `<release>`, write
+Bump `VERSION`, add a `debian/changelog` entry, the RPM specs' `%changelog` entry and a metainfo `<release>`, write
 `docs/releases/vX.Y.Z.md` + `vX.Y.Z_github_description.md`, then
 `./scripts/release-verify-tag-version.sh vX.Y.Z`. Pushing the tag (maintainer only) runs
 `.github/workflows/release.yml`; `workflow_dispatch` with `dry_run` builds everything without

@@ -16,5 +16,8 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 - AUR: `./scripts/aur-render.sh [--tarball FILE]` → `artifacts/aur/{PKGBUILD,.SRCINFO}`.
 - Rules (AGENTS.md §4.9): no maintainer scripts, amd64 only, never the distro `wine`, lintian `--fail-on error` without
   overrides, rpmlint without filters (any E/W fails), Flatpak finish-args each with `# why:`.
+- Another version (upgrade tests, N-1 = 0.9.9): `./scripts/build-version-variant.sh [--date D] 0.9.9 OUTDIR FORMAT...`
+  inside the format's image (worktree read-only is fine; output to OUTDIR), or `--tree-only` for just the rewritten tree.
+  The upgrade / downgrade scenarios it serves: `docs/qa/UPDATE-SCENARIOS.md` (A1, A2, A8, A10).
 - Dependency names come from `fork_linux.hostdeps`: `python3 scripts/check-dep-names.py [--available FAMILY]`.
 - Snap needs `--privileged` + host cgroups (systemd in Docker); Flatpak needs `--privileged` and Flathub runtimes.
