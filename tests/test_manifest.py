@@ -56,7 +56,7 @@ def extra_version(sha: str = GOOD_SHA, status: str = "known-good") -> dict[str, 
 
 def test_packaged_manifest_loads() -> None:
     m = manifest.load()
-    assert m.revision == "2026.10.1"
+    assert m.revision == "2026.10.2"
     assert m.bootstrap_revision == 1
     assert m.overridden is False
     assert m.min_system_wine == "9.0"
@@ -103,6 +103,37 @@ def test_winetricks_pin() -> None:
         sha256="431f82fc74000e6c864409f1d8fb495d696c03928808e3e8acffc45179312a7b",
         size=830687,
     )
+
+
+def test_ui_font_pin() -> None:
+    font = manifest.load().ui_font
+    assert font == manifest.UiFont(
+        family="Selawik",
+        version="1.01",
+        license="OFL-1.1",
+        url="https://github.com/microsoft/Selawik/releases/download/1.01/Selawik_Release.zip",
+        sha256="3f62c51e05e3b5a1e6241cf92a371f0be2ea1183aa87b30718bbd40832a8d423",
+        size=530652,
+        faces=(
+            ("selawk.ttf", "Selawik"),
+            ("selawkb.ttf", "Selawik Bold"),
+            ("selawkl.ttf", "Selawik Light"),
+            ("selawksb.ttf", "Selawik Semibold"),
+            ("selawksl.ttf", "Selawik Semilight"),
+        ),
+    )
+    assert font.archive_name == "selawik-1.01.zip"
+
+
+def test_ui_font_archive_name_has_no_spaces() -> None:
+    data = mutate(base_data(), ("ui_font", "family"), "Open Sans")
+    data["ui_font"]["faces"] = {"opensans.ttf": "Open Sans"}
+    assert manifest.Manifest(data).ui_font.archive_name == "open-sans-1.01.zip"
+
+
+def test_ui_font_comment_keys_are_ignored() -> None:
+    data = mutate(base_data(), ("ui_font", "faces", "_comment"), "regular first")
+    assert len(manifest.Manifest(data).ui_font.faces) == 5
 
 
 SHIPPED_INSTALLER_SHA = "fee9b2bf84aca6297d7b7e10b29a09c624ac16a82486f2c04136f5ebaf8f079e"
@@ -179,7 +210,7 @@ def test_as_dict_is_a_copy() -> None:
     m = manifest.load()
     snapshot = m.as_dict()
     snapshot["revision"] = "changed"
-    assert m.as_dict()["revision"] == "2026.10.1"
+    assert m.as_dict()["revision"] == "2026.10.2"
     assert snapshot["schema"] == 1
 
 
@@ -471,6 +502,26 @@ INVALID: list[tuple[tuple[str, ...], Any]] = [
     (("dotnet", "verbs"), ["vcrun2019"]),
     (("dotnet", "verbs"), [48]),
     (("dotnet", "min_release"), 0),
+    (("ui_font",), DELETE),
+    (("ui_font",), []),
+    (("ui_font", "family"), "Selawik!"),
+    (("ui_font", "family"), " Selawik"),
+    (("ui_font", "family"), "Noto Sans"),
+    (("ui_font", "version"), "1.01-beta"),
+    (("ui_font", "license"), "OFL 1.1"),
+    (("ui_font", "license"), ""),
+    (("ui_font", "url"), "http://github.com/microsoft/Selawik/Selawik_Release.zip"),
+    (("ui_font", "sha256"), "PENDING"),
+    (("ui_font", "size"), 0),
+    (("ui_font", "faces"), []),
+    (("ui_font", "faces"), {}),
+    (("ui_font", "faces", "../selawk.ttf"), "Selawik Other"),
+    (("ui_font", "faces", "Selawk.TTF"), "Selawik Other"),
+    (("ui_font", "faces", "selawk.otf"), "Selawik Other"),
+    (("ui_font", "faces", "selawkb.ttf"), "Selawik"),
+    (("ui_font", "faces", "selawkb.ttf"), "Selawik/Bold"),
+    (("ui_font", "faces", "selawkb.ttf"), 1),
+    (("ui_font", "extra"), 1),
     (("fork", "default"), "2.0.0"),
     (("fork", "default"), "v2.23.2"),
     (("fork", "installer_url_template"), "https://cdn.fork.dev/win/Fork.exe"),
