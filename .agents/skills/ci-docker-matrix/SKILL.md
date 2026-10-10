@@ -14,6 +14,8 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
   (`ubuntu:26.04|24.04|22.04`, `debian:13`, `fedora:44`, `opensuse/leap:16.0`, dated `archlinux:base(-devel)-YYYYMMDD.0.N`).
 - Each Dockerfile declares `# Image tag: fork-linux-ci-<name>:<FROM tag>`; scripts must use exactly that tag (`tests/test_docker.py`).
 - Pip pins are exact `==`; tools come from pinned images (`rhysd/actionlint:1.7.12`, `hadolint/hadolint:v2.14.0`).
+- The coverage stage runs `scripts/ci-c-coverage.sh` and then `scripts/check-coverage.py` (every file >= 90%) on the
+  host side; `FL_CI_C_COVERAGE=0` skips both (check.yml runs them as steps of the coverage job).
 - Caching: `FL_CI_DOCKER_CACHE=gha|local|none`, `FL_CI_FORCE_BUILD=1`, `FL_CI_PARALLEL_BUILD=1` in the matrix.
 - Real-Fork image `fork-linux-ci-e2e-wine:26.04` (`docker/Dockerfile.e2e.wine`): CI via `scripts/ci-e2e-wine.sh`, locally
   only via `scripts/e2e-docker.sh` (hard rule 18; shared code in `scripts/lib-e2e-docker.sh`). `ci-docker.sh --inside`

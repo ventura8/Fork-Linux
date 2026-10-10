@@ -63,7 +63,8 @@ jobs:
         env:
           FL_CI_DOCKER_CACHE: gha
           FL_CI_STAGE: coverage
-          # The C coverage report is its own step below (ci-docker.sh runs it locally).
+          # The C coverage report and the per-file gate are steps of their own below
+          # (ci-docker.sh runs both locally).
           FL_CI_C_COVERAGE: "0"
         run: ./scripts/ci-docker.sh
 
@@ -71,6 +72,11 @@ jobs:
       # builds (shims included) -> artifacts/coverage/c-coverage.xml, before the scan.
       - name: C coverage (scripts/ci-c-coverage.sh)
         run: ./scripts/ci-c-coverage.sh
+
+      # SonarQube's per-file view of both reports: every file >= 90% (Python 100% line and
+      # branch), exclusions read from sonar-project.properties. Runs on fork PRs too.
+      - name: Per-file coverage gate (scripts/check-coverage.py)
+        run: python3 scripts/check-coverage.py --min 90 --min-python-line 100 --min-python-branch 100
 
       # The Docker stages run as the runner's uid, but reclaim the tree anyway before the scan
       # action walks it (it fails on any unreadable path).

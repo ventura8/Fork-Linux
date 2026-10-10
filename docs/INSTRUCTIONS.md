@@ -48,7 +48,7 @@ After changing a command or option: `python3 scripts/gen-data.py write`.
 
 ```sh
 FL_CI_STAGE=lint ./scripts/ci-docker.sh        # every linter (see AGENTS.md §4.8)
-FL_CI_STAGE=coverage ./scripts/ci-docker.sh    # pytest gates + ASan/UBSan unit tests + C coverage
+FL_CI_STAGE=coverage ./scripts/ci-docker.sh    # pytest gates + ASan/UBSan unit tests + C coverage + per-file gate (scripts/check-coverage.py)
 FL_CI_STAGE=bridge ./scripts/ci-docker.sh      # MinGW/musl, reproducibility, FL_REAL_WINE=1 tier
 FL_CI_STAGE=compat FL_CI_CELL=jammy ./scripts/ci-docker.sh
 ./scripts/ci-matrix.sh                         # 7 compat cells in parallel

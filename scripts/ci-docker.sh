@@ -12,7 +12,10 @@
 #                                            branch on the critical modules) ->
 #                                            artifacts/coverage/coverage.xml; the native C unit
 #                                            tests under ASan + UBSan; then the C coverage report
-#                                            (scripts/ci-c-coverage.sh, when present)
+#                                            (scripts/ci-c-coverage.sh) and the per-file gate:
+#                                            every file >= 90%, enforced by
+#                                            scripts/check-coverage.py (FL_CI_C_COVERAGE=0
+#                                            skips both: check.yml runs them as steps)
 #   bridge    docker/Dockerfile.ci.bridge    MinGW + musl builds with the reproducibility check,
 #                                            native unit tests, FL_REAL_WINE=1 Wine tier
 #   compat    one Dockerfile per cell        meson build + meson test, py_compile, pytest (no
@@ -420,8 +423,15 @@ docker run --rm \
 	"${IMAGE}" \
 	./scripts/ci-docker.sh --inside
 
-if [[ "${FL_CI_STAGE}" == "coverage" && "${FL_CI_C_COVERAGE:-1}" == "1" && -x scripts/ci-c-coverage.sh ]]; then
-	echo "==> C coverage (scripts/ci-c-coverage.sh) -> artifacts/coverage/c-coverage.xml"
-	./scripts/ci-c-coverage.sh
+if [[ "${FL_CI_STAGE}" == "coverage" ]]; then
+	if [[ "${FL_CI_C_COVERAGE:-1}" == "1" ]]; then
+		echo "==> C coverage (scripts/ci-c-coverage.sh) -> artifacts/coverage/c-coverage.xml"
+		./scripts/ci-c-coverage.sh
+		echo "==> gate: every file >= 90% (scripts/check-coverage.py, SonarQube's per-file view)"
+		python3 scripts/check-coverage.py --min 90 --min-python-line 100 --min-python-branch 100
+	else
+		# check.yml runs both as steps of its own (FL_CI_C_COVERAGE=0 there).
+		echo "==> note: FL_CI_C_COVERAGE=0: C coverage and the per-file gate (scripts/check-coverage.py) skipped"
+	fi
 fi
 echo "==> stage ${FL_CI_STAGE} OK"
