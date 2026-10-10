@@ -588,6 +588,16 @@ def test_restore_detects_changed_and_missing_files(paths: Paths, layout: ForkLay
     _damage_and_expect(paths, layout, snap, "has changed")
 
 
+def test_restore_detects_a_same_size_rewrite_of_a_hard_link(paths: Paths, layout: ForkLayout, clock: _Clock) -> None:
+    """A hard-linked snapshot shares its files with current/: an in-place rewrite of the same size is caught."""
+    snap = snaps.create(paths, layout, method="hardlink")
+    original = layout.exe.read_bytes()
+    info = os.stat(layout.exe)
+    layout.exe.write_bytes(bytes(reversed(original)))
+    os.utime(layout.exe, ns=(info.st_atime_ns, info.st_mtime_ns + 1_000_000))
+    _damage_and_expect(paths, layout, snap, "Fork.exe has changed since the snapshot was taken")
+
+
 @pytest.mark.parametrize(
     "entry",
     [

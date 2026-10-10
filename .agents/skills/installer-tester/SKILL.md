@@ -13,5 +13,7 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 - Live: `./scripts/ci-packaging-cell.sh tarball` (installs as the unprivileged `tester`, upgrade, uninstall, reinstall).
 - Invariants: whole body in `main()`; HTTPS only (loopback http for tests); SHA256SUMS verified before unpacking;
   per-user tree `~/.local/opt/fork-linux`, links in `~/.local/bin`; manifest-based removal of unchanged files only;
-  `--purge` delegates to `fork-linux uninstall --purge`; refuses when a distro package owns fork-linux; never `~/.wine`.
+  `--purge` delegates to `fork-linux uninstall --purge`; refuses when a distro package owns fork-linux; never `~/.wine`;
+  an upgrade stages `<dest>.new` (marked) and swaps it in when complete, so an interrupted upgrade keeps the old install
+  (scenarios A1, A13, A14 in `docs/qa/UPDATE-SCENARIOS.md`).
 - `shellcheck -x install.sh uninstall.sh`.

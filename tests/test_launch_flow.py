@@ -18,6 +18,7 @@ from fork_linux import bootstrap, bridge, launcher, procs, snapshots, updates
 from fork_linux.cli import AppContext
 from fork_linux.errors import (
     ForkLinuxError,
+    ForkRunning,
     IntegrityFailed,
     NotSetUpError,
     UsageError,
@@ -730,6 +731,39 @@ def test_run_fast_path_when_fork_runs(
     dup2.clear()
     launcher.run(_app(dict(ctx.env), verbose=1), [], debug=True, execvpe=flow["exec"])
     assert dup2 == []
+
+
+def test_f10_fork_path_during_velopack_apply_waits(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], not_running: list[bool], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """UPD-3: while Update.exe swaps current\\, 'fork <path>' waits and then forwards to the restarted Fork."""
+    launcher.write_session(ctx.paths, ctx.wine(), 99)
+    polls: list[float] = []
+
+    def updater(prefix: Path, **_kw: Any) -> list[int]:
+        if len(polls) < 2:
+            return [77]
+        not_running[0] = True  # Velopack started the new Fork.exe and exited
+        return []
+
+    monkeypatch.setattr(procs, "updater_pids", updater)
+    monkeypatch.setattr(procs.time, "sleep", polls.append)  # the time module, restored by monkeypatch
+    launcher.run(flow["app"], ["repo"], execvpe=flow["exec"])
+    assert polls == [0.5, 0.5]
+    assert flow["ensure"] == []
+    assert flow["hooks"] == 0
+    assert len(flow["exec"].calls) == 1
+
+
+def test_f10_velopack_apply_that_never_ends_is_reported(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(procs, "updater_pids", lambda prefix, **_kw: [77])
+    monkeypatch.setattr(launcher, "UPDATER_WAIT", 0.0)
+    with pytest.raises(ForkRunning, match="still updating itself"):
+        launcher.run(flow["app"], ["repo"], execvpe=flow["exec"])
+    assert flow["exec"].calls == []
+    assert flow["ensure"] == []
 
 
 def test_run_running_without_session_takes_the_normal_path_without_hooks(

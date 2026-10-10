@@ -28,6 +28,7 @@ from .. import (
     fsutil,
     resources,
     theme,
+    updates,
     versions,
     winecmd,
 )
@@ -40,6 +41,8 @@ log = logging.getLogger(__name__)
 
 REQUEST_KEY = "fork.request"
 PLAN_KEY = "fork.plan"
+# A trust-on-first-use install that failed its feed check: never accepted on a resumed setup.
+UNVERIFIED_KEY = "fork.unverified"
 DEFAULT = "default"
 REQUESTED = "requested"
 LATEST = "latest"
@@ -135,7 +138,7 @@ def satisfied(ctx: Ctx) -> bool:
     if ctx.force:
         return False
     installed = ctx.layout.installed_version()
-    if installed is None:
+    if installed is None or installed == ctx.state.get(UNVERIFIED_KEY):
         return False
     wanted = request(ctx)
     if wanted["source"] != REQUESTED:
@@ -176,7 +179,12 @@ def verify_download(ctx: Ctx) -> bool:
 
 
 def _verify_tofu(ctx: Ctx, chosen: InstallPlan) -> None:
-    """For an unpinned install: the installed full nupkg must match the feed's sha256."""
+    """For an unpinned install: the installed full nupkg must match the feed's sha256 (hard rule 6).
+
+    A feed that is unavailable or does not list the version fails the step like a
+    mismatch does, and the version is remembered as unverified, so a resumed setup
+    installs and checks it again instead of accepting what is on disk.
+    """
     assets = feed_assets(ctx) or []
     expected = next(
         (
@@ -188,23 +196,32 @@ def _verify_tofu(ctx: Ctx, chosen: InstallPlan) -> None:
         ),
         None,
     )
-    if expected is None:
-        ctx.ui.warn(
-            f"Fork {chosen.version} could not be checked against Fork's release feed "
-            "(the feed is unavailable or does not list it)"
-        )
+    if expected is not None and fork_install.verify_nupkg(ctx.layout, chosen.version, expected):
+        ctx.state.set(UNVERIFIED_KEY, None)
         return
-    if not fork_install.verify_nupkg(ctx.layout, chosen.version, expected):
+    ctx.state.set(UNVERIFIED_KEY, chosen.version)
+    if expected is None:
         raise IntegrityFailed(
-            f"the installed Fork {chosen.version} package does not match the sha256 in Fork's release feed",
-            hint="run 'fork-linux setup --reset' to start over, and report this if it happens again",
+            f"Fork {chosen.version} cannot be checked: Fork's release feed is unavailable or does not list it",
+            hint="try again when the feed is reachable, or install the tested default without --fork-version",
         )
+    raise IntegrityFailed(
+        f"the installed Fork {chosen.version} package does not match the sha256 in Fork's release feed",
+        hint="run 'fork-linux setup --reset' to start over, and report this if it happens again",
+    )
 
 
 def run_install(ctx: Ctx) -> None:
-    """Run the installer silently, check the result, record what is installed."""
+    """Run the installer silently, check the result, record what is installed.
+
+    The version fork-linux installs itself is recorded as the last one seen, so the
+    launcher never reports it as Fork having updated itself; a reinstall because
+    ``current\\`` went missing (an interrupted Velopack update, say) is said as such.
+    """
     chosen = None
     if not satisfied(ctx):
+        previous = ctx.state.get("fork.version")
+        missing = isinstance(previous, str) and ctx.layout.installed_version() is None
         chosen = _current_plan(ctx)
         installer = fork_install.download_installer(chosen, ctx.manifest, ctx.paths, offline=ctx.offline)
         info = ctx.wine()
@@ -217,6 +234,9 @@ def run_install(ctx: Ctx) -> None:
         ctx.state.set("fork.installed_at", now())
         ctx.state.set("fork.source", chosen.source)
         ctx.state.set("fork.installer_sha256", chosen.sha256)
+        ctx.state.set(updates.LAST_SEEN_VERSION, ctx.layout.installed_version())
+        if missing:
+            ctx.ui.info(f"Fork {previous} was missing or incomplete; Fork {chosen.version} was installed again")
     ctx.state.set("fork.version", ctx.layout.installed_version())
 
 
@@ -329,6 +349,7 @@ FORK_INSTALL = Step(
     run=run_install,
     verify=verify_install,
     inputs=inputs,
+    verify_on_launch=True,
 )
 
 FORK_SETTINGS = Step(

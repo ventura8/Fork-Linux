@@ -71,6 +71,7 @@ def fork_running(monkeypatch: pytest.MonkeyPatch, running: bool = True) -> None:
 
     monkeypatch.setattr(procs, "fork_pids", lambda prefix, **_kw: [4242] if running else [])
     monkeypatch.setattr(procs, "fork_running", lambda prefix, **_kw: running)
+    monkeypatch.setattr(procs, "updater_pids", lambda prefix, **_kw: [])
 
 
 def write_json(path: Path, data: Any) -> None:

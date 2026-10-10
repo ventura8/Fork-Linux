@@ -148,11 +148,18 @@ EOF
 		esac
 	done <"${manifest}"
 
-	# The tree carries our marker; nothing outside it is removed recursively.
+	# The tree carries our marker; nothing outside it is removed recursively. So do the
+	# staging / retired copies an interrupted install.sh upgrade can leave next to it.
 	case "${dest}" in
 		*/opt/"${PACKAGE}") run rm -rf "${dest}" ;;
 		*) die "refusing to remove ${dest}" ;;
 	esac
+	local leftover
+	for leftover in "${dest}.new" "${dest}.old"; do
+		if [[ -d "${leftover}" && ! -L "${leftover}" && -f "${leftover}/${MARKER_NAME}" ]]; then
+			run rm -rf "${leftover:?}"
+		fi
+	done
 	if ((!opt_dry)); then
 		rmdir "${prefix}/opt" 2>/dev/null || true
 	fi

@@ -405,7 +405,10 @@ def _valid_info(info: Any) -> bool:
 
 
 def _verified_sizes(directory: Path) -> dict[str, int]:
-    """``{relpath: size}`` from ``meta.json``, after checking every listed file still has that size."""
+    """``{relpath: size}`` from ``meta.json``, after checking every listed file still has that size and mtime.
+
+    The mtime catches a hard-linked file that was rewritten in place with the same size.
+    """
     meta = _read_meta(directory)
     files = None if meta is None else meta.get("files")
     if not isinstance(files, dict):
@@ -418,7 +421,7 @@ def _verified_sizes(directory: Path) -> dict[str, int]:
             found = os.lstat(directory / rel)
         except OSError:
             raise _damaged(directory, f"{rel} is missing") from None
-        if not stat.S_ISREG(found.st_mode) or found.st_size != info[0]:
+        if not stat.S_ISREG(found.st_mode) or found.st_size != info[0] or found.st_mtime_ns != info[1]:
             raise _damaged(directory, f"{rel} has changed since the snapshot was taken")
         sizes[rel] = info[0]
     return sizes

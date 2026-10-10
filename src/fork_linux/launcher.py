@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import version as version_mod
 from . import (
     bootstrap,
     bridge,
@@ -51,7 +52,7 @@ from . import (
 )
 from .cli import AppContext
 from .config import Config
-from .errors import ForkLinuxError, NotSetUpError, UsageError, WineUnavailable
+from .errors import ForkLinuxError, ForkRunning, NotSetUpError, UsageError, WineUnavailable
 from .fork_layout import ForkLayout
 from .pathmap import PathMap
 from .paths import Paths
@@ -73,6 +74,8 @@ SESSION_SCHEMA = 1
 SETUP_HINT = "run 'fork-linux setup' to finish setting up, then try again"
 FORK_LOG_PREFIX = "fork-"
 FORK_LOGS_KEEP = 10
+# Velopack's "Restart and Update" takes ~4 s under Wine (spike S9); allow for a slow disk.
+UPDATER_WAIT = 120.0
 _LOG_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_CLOEXEC | os.O_NOFOLLOW
 
 
@@ -252,6 +255,21 @@ def _host_home(env: Mapping[str, str]) -> Path:
     return Path(env.get("HOME") or Path.home())
 
 
+def _note_downgrade(ctx: bootstrap.Ctx, notes: list[str]) -> None:
+    """Warn (once: saving the state records this release) when a newer fork-linux set the prefix up."""
+    writer, ours = ctx.state.previous_writer, version_mod.get_version()
+    if writer is None or version_mod.UNKNOWN in (writer, ours) or not versions.is_valid(writer):
+        return
+    if versions.Version(writer) <= versions.Version(ours):
+        return
+    message = (
+        f"fork-linux {ours} is older than {writer}, which set this prefix up last; it keeps working, "
+        f"but install fork-linux {writer} or newer again if something misbehaves"
+    )
+    ctx.ui.warn(message)
+    notes.append(message)
+
+
 def _note_version(ctx: bootstrap.Ctx, notes: list[str]) -> None:
     """Tell the user when Fork updated itself, and warn about a known-bad version."""
     change = updates.observe_version(ctx.state, ctx.layout)
@@ -423,6 +441,7 @@ def _git(ctx: bootstrap.Ctx, notes: list[str]) -> None:
 
 
 HOOKS: tuple[tuple[str, Callable[[bootstrap.Ctx, list[str]], None]], ...] = (
+    ("fork-linux downgrade check", _note_downgrade),
     ("version check", _note_version),
     ("snapshot", _snapshot),
     ("update pin", _pin),
@@ -736,6 +755,22 @@ def _ready_ctx(app_ctx: AppContext, *, no_setup: bool, running: bool) -> bootstr
     return ctx
 
 
+def wait_for_fork_update(prefix: Path) -> None:
+    """When Velopack is replacing Fork (``Update.exe``), wait until the restarted Fork is up.
+
+    Starting Fork, snapshotting or applying settings meanwhile would race the swap of
+    ``current\\`` and could start a second Fork next to the one Velopack restarts.
+    """
+    if not procs.updater_pids(prefix):
+        return
+    log.info("Fork is updating itself; waiting for Velopack to restart it")
+    if not procs.wait_for_updater(prefix, timeout=UPDATER_WAIT):
+        raise ForkRunning(
+            "Fork is still updating itself (Velopack's Update.exe is running)",
+            hint="wait until Fork has restarted, then try again",
+        )
+
+
 def run(
     app_ctx: AppContext,
     raw_targets: Sequence[str],
@@ -750,7 +785,8 @@ def run(
 ) -> int:
     """Open ``raw_targets`` in Fork (or just start it); returns only when ``execvpe`` does (tests).
 
-    1. resolve the paths; 2. Fork already running in our prefix: exec at once
+    1. resolve the paths (and wait while Velopack restarts Fork after an update);
+    2. Fork already running in our prefix: exec at once
     with the session's Wine and bridge daemon (Fork forwards the paths to its
     window); 3. make sure setup is complete (``no_setup``:
     :class:`NotSetUpError` instead of running it); 4. start the git bridge
@@ -760,6 +796,7 @@ def run(
     """
     targets = resolve_targets(raw_targets, Path(os.getcwd()), from_file_manager=from_file_manager)
     terminal = _to_terminal(app_ctx, debug)
+    wait_for_fork_update(app_ctx.paths.prefix)
     running = procs.fork_running(app_ctx.paths.prefix)
     fast = _fast_spec(app_ctx, targets, debug=debug, wine_debug=wine_debug, driver=driver) if running else None
     if fast is not None:

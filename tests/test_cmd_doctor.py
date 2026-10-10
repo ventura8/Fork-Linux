@@ -13,7 +13,8 @@ from fork_linux.commands import doctor as doctor_cmd
 from fork_linux.doctor import Check, Result
 from fork_linux.procrun import RecordingRunner
 
-from fixtures.cli_run import isolate, run_cli
+from fixtures.cli_run import isolate, layout, paths, run_cli
+from fixtures.fork_tree import install_fork
 
 
 @pytest.fixture(autouse=True)
@@ -163,3 +164,17 @@ def test_real_checks_run_offline(capsys: pytest.CaptureFixture[str]) -> None:
     assert ids["prefix.exists"] == "fail"
     assert ids["fork.installed"] == "fail"
     assert ids["env.python"] == "ok"
+
+
+def test_f5_known_bad_override_fails_doctor_with_rollback_hint(capsys: pytest.CaptureFixture[str]) -> None:
+    """A manifest override marking the installed Fork known-bad: fork.version fails and says how to go back."""
+    install_fork(layout(), "2.24.0")  # Fork updated itself to a version the manifest now marks known-bad
+    override = paths().manifest_override
+    override.parent.mkdir(parents=True, exist_ok=True)
+    override.write_text(json.dumps({"fork": {"known_bad": {"2.24.0": "the diff view freezes under Wine"}}}))
+    code, out, err = run_cli(capsys, "--offline", "doctor", "--check", "fork.version")
+    assert code == 17
+    assert "[FAIL] fork.version" in out
+    assert "Fork 2.24.0 is known-bad: the diff view freezes under Wine" in out
+    assert "hint: go back to a working version: 'fork-linux rollback' or 'fork-linux update --fork'" in out
+    assert "1 check(s) failed: fork.version" in err

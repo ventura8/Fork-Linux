@@ -301,7 +301,9 @@ def test_override_that_breaks_validation(tmp_path: Path) -> None:
     with pytest.raises(IntegrityFailed) as info:
         manifest.load(override=override)
     assert info.value.exit_code == ExitCode.INTEGRITY_FAILED
-    assert "override" in info.value.hint
+    assert info.value.message.startswith(f"manifest override {override} does not fit this fork-linux's")
+    assert "missing-build" in info.value.message
+    assert info.value.hint == f"fix or remove {override}"
 
 
 def test_load_explicit_path(tmp_path: Path) -> None:

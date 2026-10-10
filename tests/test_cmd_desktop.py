@@ -8,8 +8,9 @@ from typing import Any
 import pytest
 
 from fork_linux import desktop_integration
+from fork_linux.state import State
 
-from fixtures.cli_run import isolate, layout, run_cli, run_json
+from fixtures.cli_run import isolate, layout, paths, run_cli, run_json
 from fixtures.fork_tree import install_fork
 
 
@@ -65,6 +66,20 @@ def test_remove(capsys: pytest.CaptureFixture[str], calls: list[tuple[str, dict[
     assert run_cli(capsys, "desktop", "remove")[1] == "nothing to remove\n"
     assert run_json(capsys, "desktop", "remove") == {"removed": []}
     assert [name for name, _kw in calls] == ["remove", "remove"]
+
+
+def test_remove_lets_the_next_launch_restore_the_integration(
+    capsys: pytest.CaptureFixture[str], calls: list[tuple[str, dict[str, Any]]]
+) -> None:
+    """AppImage --remove-desktop runs 'desktop remove': Fork's icon and the menu entry come back on the next launch."""
+    state = State.load(paths().state_file)
+    for step_id in ("icon", "desktop_entry", "fork_install"):
+        state.set_step_marker(step_id, 1, "x")
+    state.save()
+    assert run_cli(capsys, "desktop", "remove")[0] == 0
+    state = State.load(paths().state_file)
+    assert (state.step_marker("icon"), state.step_marker("desktop_entry")) == (None, None)
+    assert state.step_marker("fork_install") is not None
 
 
 def test_install_with_nothing_installed(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:

@@ -13,8 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from fork_linux import APP_NAME, cli, commands, credits, errors
+from fork_linux import APP_NAME, cli, commands, credits, errors, launcher
 from fork_linux import config as config_mod
+from fork_linux import ui as ui_mod
 from fork_linux.commands import config as config_cmd
 from fork_linux.commands import version as version_cmd
 from fork_linux.paths import Paths
@@ -672,3 +673,72 @@ def test_module_entry_point_subprocess(xdg: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "Dan Pristupov" in result.stdout
     assert credits.LINKS["buy"] in result.stdout
+
+
+class _Dialog(ui_mod.UI):
+    """A dialog UI that records its error messages (or fails to show them)."""
+
+    def __init__(self, fail: bool = False) -> None:
+        self.errors: list[tuple[str, str]] = []
+        self.fail = fail
+
+    def error(self, msg: str, hint: str = "") -> None:
+        if self.fail:
+            raise OSError("zenity crashed")
+        self.errors.append((msg, hint))
+
+
+def test_f21_desktop_launch_errors_are_shown_in_a_dialog(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """From the menu (no terminal) a launch error must not vanish into stderr: it is shown in a dialog."""
+    dialog = _Dialog()
+    picked: list[dict[str, object]] = []
+
+    def choose(env: object, **kwargs: object) -> ui_mod.UI:
+        picked.append(kwargs)
+        return dialog
+
+    def still_updating(*_args: object, **_kwargs: object) -> int:
+        raise errors.ForkRunning("Fork is still updating itself", hint="wait until Fork has restarted")
+
+    monkeypatch.setattr(ui_mod, "choose", choose)
+    monkeypatch.setattr(launcher, "run", still_updating)
+    assert cli.main(["run", str(tmp_path)]) == 15
+    assert dialog.errors == [("Fork is still updating itself", "wait until Fork has restarted")]
+    assert picked[0]["mode"] == "auto"
+    assert "Fork is still updating itself" in capsys.readouterr().err
+
+    def crashes(*_args: object, **_kwargs: object) -> int:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(launcher, "run", crashes)
+    assert cli.main(["open", str(tmp_path)]) == 1
+    assert dialog.errors[-1][0] == "unexpected RuntimeError: boom"
+    assert "please report it at" in dialog.errors[-1][1]
+
+
+def test_f21_no_dialog_for_terminals_other_commands_or_broken_dialogs(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    shown: list[ui_mod.UI] = []
+
+    def failing(*_args: object, **_kwargs: object) -> int:
+        raise errors.NotSetUpError("not set up", hint="run 'fork-linux setup'")
+
+    monkeypatch.setattr(launcher, "run", failing)
+    for ui in (ui_mod.TerminalUI(), ui_mod.NullUI(), _Dialog(fail=True)):
+        monkeypatch.setattr(ui_mod, "choose", lambda env, ui=ui, **_kw: shown.append(ui) or ui)
+        assert cli.main(["run", str(tmp_path)]) == 10
+    assert len(shown) == 3
+    shown.clear()
+    assert cli.main(["config", "get", "no.such-key"]) == 2  # not a launch: stderr is enough
+    assert shown == []
+    (Paths.from_env().config_file).parent.mkdir(parents=True, exist_ok=True)
+    Paths.from_env().config_file.write_text("[ui\nbroken", encoding="utf-8")
+    dialog = _Dialog()
+    monkeypatch.setattr(ui_mod, "choose", lambda env, **kw: shown.append(kw) or dialog)
+    assert cli.main(["run", str(tmp_path)]) != 0
+    assert shown[-1]["mode"] == "auto"  # an unreadable config still gets its error shown
+    assert dialog.errors
+    capsys.readouterr()

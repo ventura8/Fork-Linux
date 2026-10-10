@@ -298,7 +298,42 @@ appimage_remove() {
 	rm -f "${TESTER_HOME}/Applications/fork-linux.AppImage"
 	rm -rf "${APPIMAGE_ROOT}"
 }
+# The update information AppImageUpdate reads (ELF section .upd_info): the GitHub releases zsync.
+APPIMAGE_UPDATE_INFO="gh-releases-zsync|ventura8|Fork-Linux|latest|fork-linux-*-x86_64.AppImage.zsync"
+check_appimage_update_info() {
+	local image="$1"
+	python3 - "${image}" "${APPIMAGE_UPDATE_INFO}" <<'EOF'
+import struct
+import sys
+
+data = open(sys.argv[1], "rb").read()
+(shoff,) = struct.unpack_from("<Q", data, 0x28)
+shentsize, shnum, shstrndx = struct.unpack_from("<HHH", data, 0x3A)
+
+
+def section(index: int) -> tuple[int, int, int]:
+    base = shoff + index * shentsize
+    (name,) = struct.unpack_from("<I", data, base)
+    offset, size = struct.unpack_from("<QQ", data, base + 0x18)
+    return name, offset, size
+
+
+_n, names_at, _s = section(shstrndx)
+for index in range(shnum):
+    name, offset, size = section(index)
+    if data[names_at + name:data.index(b"\0", names_at + name)] == b".upd_info":
+        found = data[offset:offset + size].split(b"\0", 1)[0].decode()
+        if found != sys.argv[2]:
+            raise SystemExit(f"update information is {found!r}, expected {sys.argv[2]!r}")
+        print(f"ok  AppImage update information: {found}")
+        break
+else:
+    raise SystemExit("the AppImage has no .upd_info section")
+EOF
+}
+
 appimage_assert() {
+	check_appimage_update_info "$(artifact "fork-linux-${VERSION}-x86_64.AppImage")"
 	assert_installed "${APPIMAGE_ROOT}/usr" static \
 		"${TESTER_HOME}/.local/share/applications/${APP_ID}.desktop" "${TESTER_HOME}/.local/bin/fork-linux"
 	grep -q "^Exec=.*fork-linux.AppImage" "${TESTER_HOME}/.local/share/applications/${APP_ID}.desktop" ||

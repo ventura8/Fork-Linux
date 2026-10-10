@@ -184,7 +184,9 @@ class Step:
     ``rev`` is bumped when the step's behaviour changes (forcing a re-run);
     ``weight`` is its share of the progress bar; ``inputs`` must be cheap and
     offline (it runs on every launch). ``always`` steps keep no marker and
-    run every time (preflight, finalize).
+    run every time (preflight, finalize). ``verify_on_launch`` steps have a
+    verification of a few ``stat`` calls that every launch runs too (Fork's
+    install: a ``current\\`` that vanished is reinstalled, never started).
     """
 
     id: str
@@ -197,6 +199,7 @@ class Step:
     needs_network: bool = False
     requires_fork_closed: bool = True
     always: bool = False
+    verify_on_launch: bool = False
 
 
 def default_steps() -> list[Step]:
@@ -401,6 +404,34 @@ def run_steps(
     return ran
 
 
+# Steps whose results live in the desktop integration (Fork's extracted icon, the menu entry).
+INTEGRATION_STEPS = ("icon", "desktop_entry")
+
+
+def forget_markers(paths: Paths, step_ids: Sequence[str] = INTEGRATION_STEPS) -> list[str]:
+    """Clear the completion markers of ``step_ids`` so the next launch runs them again; return the ids cleared.
+
+    Called when the desktop integration those steps created is removed (``uninstall``,
+    ``desktop remove``): reinstalling fork-linux then brings Fork's icon and the menu
+    entry back. Without a state file, or while another setup holds the lock (it records
+    its own markers), nothing changes.
+    """
+    if not paths.state_file.is_file():
+        return []
+    try:
+        with FileLock(paths.lock_file, "desktop remove"):
+            state = State.load(paths.state_file)
+            cleared = [step_id for step_id in step_ids if state.step_marker(step_id) is not None]
+            for step_id in cleared:
+                state.clear_step_marker(step_id)
+            if cleared:
+                state.save()
+    except ForkLinuxError as exc:
+        log.warning("could not reset the setup steps %s: %s", ", ".join(step_ids), exc)
+        return []
+    return cleared
+
+
 def needs_setup(ctx: Ctx, steps: Sequence[Step] | None = None) -> bool:
     """True when setup is incomplete, was completed with other revisions, or an input changed."""
     if ctx.state.get(SETUP_COMPLETE) is not True:
@@ -410,7 +441,7 @@ def needs_setup(ctx: Ctx, steps: Sequence[Step] | None = None) -> bool:
     if ctx.state.get(MANIFEST_REVISION) != ctx.manifest.revision:
         return True
     chosen = default_steps() if steps is None else list(steps)
-    return any(not step.always and not is_done(step, ctx, cheap=True) for step in chosen)
+    return any(not step.always and not is_done(step, ctx, cheap=not step.verify_on_launch) for step in chosen)
 
 
 def ensure_ready(ctx: Ctx, *, allow: bool = True, steps: Sequence[Step] | None = None) -> None:
@@ -429,7 +460,7 @@ def ensure_ready(ctx: Ctx, *, allow: bool = True, steps: Sequence[Step] | None =
         deferred = {
             step.id
             for step in chosen
-            if step.requires_fork_closed and not step.always and not is_done(step, ctx, cheap=True)
+            if step.requires_fork_closed and not step.always and not is_done(step, ctx, cheap=not step.verify_on_launch)
         }
         if deferred:
             log.info("Fork is running; deferring setup steps %s", ", ".join(sorted(deferred)))

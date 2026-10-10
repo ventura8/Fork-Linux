@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from fork_linux import APP_ID, PACKAGE, hostdeps
+from fork_linux import APP_ID, PACKAGE, credits, hostdeps
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
@@ -422,3 +422,29 @@ def test_snap_smoke_verify_always_runs() -> None:
     snap = _text(ROOT / "scripts" / "ci-snap-build.sh")
     smoke = snap.index("./scripts/packaging-smoke-verify.sh snap")
     assert smoke < snap.index('if [[ "${FL_SNAP_E2E:-1}" == "1" ]]; then')
+
+
+def test_a9_appimage_update_information() -> None:
+    """AppImageUpdate finds the next release through the GitHub releases zsync of this repository."""
+    expected = "gh-releases-zsync|ventura8|Fork-Linux|latest|fork-linux-*-x86_64.AppImage.zsync"
+    owner, repo = credits.LINKS["project"].removeprefix("https://github.com/").split("/")
+    assert expected.split("|")[1:3] == [owner, repo]
+    build = _text(ROOT / "packaging" / "appimage" / "build-appimage.sh")
+    assert f'UPDATE_INFO="{expected}"' in build
+    assert '-u "${UPDATE_INFO}"' in build
+    assert f'APPIMAGE_UPDATE_INFO="{expected}"' in _text(ROOT / "scripts" / "packaging-e2e-install.sh")
+    smoke = _text(ROOT / "scripts" / "packaging-smoke-verify.sh")
+    assert 'expect "fork-linux-${VERSION}-x86_64.AppImage.zsync"' in smoke
+    assert "artifacts/*.AppImage.zsync" in _text(ROOT / ".github" / "workflows" / "release.yml")
+
+
+def test_a18_package_versions_sort_upwards() -> None:
+    """Every upgrade path is an upgrade for dpkg: N-1 < N < N's PPA builds (by series) < N+1."""
+    if shutil.which("dpkg") is None:
+        pytest.skip("dpkg is not installed (the deb packaging images have it)")
+    major, minor, patch = (int(part) for part in VERSION.split("."))
+    ppa = [f"{VERSION}+ppa1~ubuntu{series}.1" for series in ("22.04", "24.04", "26.04")]
+    chain = ["0.9.9", VERSION, *ppa, f"{major}.{minor}.{patch + 1}", f"{major}.{minor + 1}.0", f"{major + 1}.0.0"]
+    for older, newer in zip(chain, chain[1:], strict=False):
+        result = subprocess.run(["dpkg", "--compare-versions", older, "lt", newer], check=False)
+        assert result.returncode == 0, f"dpkg does not sort {older} below {newer}"

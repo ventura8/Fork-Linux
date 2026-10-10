@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import uuid
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,7 @@ import pytest
 from fixtures.fork_tree import install_fork, write_settings
 from fixtures.setup_ctx import make_ctx
 
-from fork_linux import bootstrap, resources
+from fork_linux import bootstrap, launcher, resources, updates
 from fork_linux import fork_settings as fork_settings_mod
 from fork_linux.bootstrap import Ctx
 from fork_linux.errors import (
@@ -304,10 +305,37 @@ def test_install_tofu_mismatch_is_an_integrity_failure(
         fork_steps.run_install(ctx)
 
 
-def test_install_tofu_without_feed_warns(xdg: Path, downloads: list[InstallPlan], feeds: dict[str, Any]) -> None:
+def test_f3_setup_tofu_without_a_feed_entry_is_refused(
+    xdg: Path, downloads: list[InstallPlan], feeds: dict[str, Any]
+) -> None:
+    """UPD-6: like 'update --fork', setup never accepts an unpinned Fork the feed cannot vouch for."""
     ctx = _tofu_ctx(feeds, None)
+    with pytest.raises(IntegrityFailed, match="cannot be checked: Fork's release feed is unavailable or does not"):
+        fork_steps.run_install(ctx)
+    assert ctx.state.get(fork_steps.UNVERIFIED_KEY) == "2.24.0"
+    feeds[ctx.manifest.feed_url] = _feed(("2.23.2", _nupkg_sha("2.23.2")))
+    with pytest.raises(IntegrityFailed, match="does not list it"):
+        fork_steps.run_install(ctx)
+    assert ctx.ui.kinds("warn") == []
+
+
+def test_f3_setup_resume_never_accepts_an_unverified_fork(
+    xdg: Path, downloads: list[InstallPlan], feeds: dict[str, Any]
+) -> None:
+    """UPD-6: the failed Fork is on disk, but a resumed setup installs and checks it again."""
+    ctx = _tofu_ctx(feeds, "0" * 64)
+    with pytest.raises(IntegrityFailed, match="does not match"):
+        fork_steps.run_install(ctx)
+    assert ctx.layout.installed_version() == "2.24.0"
+    assert not fork_steps.satisfied(ctx)
+    with pytest.raises(IntegrityFailed, match="does not match"):
+        fork_steps.run_install(ctx)
+    assert len(downloads) == 2
+    feeds[ctx.manifest.feed_url] = _feed(("2.24.0", _nupkg_sha("2.24.0")))
     fork_steps.run_install(ctx)
-    assert "could not be checked" in ctx.ui.kinds("warn")[0]
+    assert ctx.state.get(fork_steps.UNVERIFIED_KEY) is None
+    assert ctx.state.get("fork.version") == "2.24.0"
+    assert fork_steps.satisfied(ctx)
 
 
 # -- fork_settings ---------------------------------------------------------------------------
@@ -384,6 +412,30 @@ def test_settings_without_shims_or_drives(xdg: Path, monkeypatch: pytest.MonkeyP
     # A later context has nothing cached: a loadable file verifies.
     later = make_ctx(RecordingRunner())
     assert fork_steps.verify_settings(later)
+
+
+def test_f20_missing_current_is_reinstalled_and_reported(
+    xdg: Path, downloads: list[InstallPlan], feeds: dict[str, Any]
+) -> None:
+    """An interrupted Velopack apply left no current\\: setup reinstalls, says so, and it is no 'update'."""
+    ctx = make_ctx()
+    _drives(ctx)
+    ctx.runner = _installer_runner(ctx)
+    bootstrap.init_prefix_meta(ctx)
+    bootstrap.run_step(ctx, fork_steps.FORK_DOWNLOAD)
+    bootstrap.run_step(ctx, fork_steps.FORK_INSTALL)
+    assert ctx.state.get(updates.LAST_SEEN_VERSION) == "2.23.2"
+    assert ctx.ui.kinds("info") == []
+    shutil.rmtree(ctx.layout.current_dir)
+    (ctx.layout.packages_dir / "VelopackTemp").mkdir()
+    assert not bootstrap.is_done(fork_steps.FORK_INSTALL, ctx)
+    bootstrap.run_step(ctx, fork_steps.FORK_INSTALL)
+    assert ctx.layout.installed_version() == "2.23.2"
+    assert ctx.ui.kinds("info") == ["Fork 2.23.2 was missing or incomplete; Fork 2.23.2 was installed again"]
+    notes: list[str] = []
+    launcher._note_version(ctx, notes)
+    assert notes == []
+    assert ctx.ui.kinds("notify") == []
 
 
 def test_bootstrap_resumes_install_from_the_recorded_plan(

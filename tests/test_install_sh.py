@@ -49,8 +49,8 @@ TREE_FILES = {
 }
 
 
-def _tarball(version: str = VERSION) -> bytes:
-    """A fake ``fork-linux-VERSION-x86_64.tar.gz``."""
+def _tarball(version: str = VERSION, extra: dict[str, tuple[bytes, int]] | None = None) -> bytes:
+    """A fake ``fork-linux-VERSION-x86_64.tar.gz`` (``extra``: more members, name -> (data, mode))."""
     buffer = io.BytesIO()
     root = f"fork-linux-{version}"
     with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
@@ -68,6 +68,8 @@ def _tarball(version: str = VERSION) -> bytes:
         tar.addfile(link)
         for name, text in TREE_FILES.items():
             add(name, text.encode(), 0o755 if name.startswith("lib/") else 0o644)
+        for name, (data, mode) in (extra or {}).items():
+            add(name, data, mode)
     return buffer.getvalue()
 
 
@@ -328,3 +330,128 @@ def test_shellcheck_clean() -> None:
     if shutil.which("shellcheck") is None:
         pytest.skip("shellcheck is not installed (the lint stage runs it)")
     subprocess.run(["shellcheck", "-x", str(INSTALL), str(UNINSTALL)], check=True, cwd=ROOT)
+
+
+# -- upgrade scenarios (docs/qa/UPDATE-SCENARIOS.md) ------------------------------------------
+
+
+def _local_tarball(directory: Path, version: str, extra: dict[str, tuple[bytes, int]] | None = None) -> Path:
+    """``fork-linux-VERSION-x86_64.tar.gz`` with its SHA256SUMS in ``directory``."""
+    directory.mkdir(parents=True, exist_ok=True)
+    name = f"fork-linux-{version}-x86_64.tar.gz"
+    data = _tarball(version, extra)
+    (directory / name).write_bytes(data)
+    (directory / "SHA256SUMS").write_bytes(_sums(name, data))
+    return directory / name
+
+
+def test_a1_upgrade_from_previous_version_keeps_user_state(tmp_path: Path, home: Path) -> None:
+    """N-1 -> N with install.sh: the tree, links and manifest move to N; the user's state stays."""
+    _skip_if_root()
+    old = _run(INSTALL, home, "--no-deps", "--from-tarball", str(_local_tarball(tmp_path / "n-1", "9.8.6")))
+    assert old.returncode == 0, old.stderr
+    user_files = {
+        home / ".config" / "fork-linux" / "config.ini": b"[fork]\nupdate_policy = pinned\n",
+        home / ".local" / "share" / "fork-linux" / "prefix" / ".fork-linux" / "state.json": b'{"schema": 1}\n',
+        home / ".local" / "share" / "fork-linux" / "integrations.json": b'{"files": []}\n',
+    }
+    for path, data in user_files.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    edited = home / ".local" / "share" / "man" / "man1" / "fork.1"
+    edited.write_text("my notes\n", encoding="utf-8")
+    before = _snapshot(home)
+    new = _run(INSTALL, home, "--no-deps", "--from-tarball", str(_local_tarball(tmp_path / "n", VERSION)))
+    assert new.returncode == 0, new.stderr
+    assert "upgrading the existing install" in new.stdout
+    assert f"keeping {edited}" in new.stderr
+    dest = home / ".local" / "opt" / "fork-linux"
+    assert (dest / ".fork-linux-install").read_text(encoding="utf-8") == f"{VERSION}\n"
+    assert f"version\t{VERSION}\n" in (dest / "install-manifest.txt").read_text(encoding="utf-8")
+    assert os.readlink(home / ".local" / "bin" / "fork-linux") == str(dest / "bin" / "fork-linux")
+    version = subprocess.run(
+        [sys.executable, str(home / ".local" / "bin" / "fork-linux"), "--version"],
+        capture_output=True, text=True, check=True, env=_env(home),
+    )
+    assert version.stdout.strip() == f"fork-linux {VERSION} (tarball)"
+    after = _snapshot(home)
+    for path, data in user_files.items():
+        assert path.read_bytes() == data
+    assert edited.read_text(encoding="utf-8") == "my notes\n"
+    for key in (".wine/E2E_SENTINEL", ".local/share/fork-linux/E2E_MARKER"):
+        assert after[key] == before[key]
+    calls = (home / "cli-calls.log").read_text(encoding="utf-8").splitlines()
+    assert calls.count("fork-linux desktop install") == 2, "the menu entry is refreshed by the new release"
+    assert not list(dest.parent.glob("fork-linux.*")), "no staging or retired copy is left"
+
+
+def test_a14_failed_upgrade_keeps_the_previous_install(tmp_path: Path, home: Path) -> None:
+    """UPD-7: an upgrade that fails while copying leaves the previous install untouched."""
+    _skip_if_root()
+    quiet = ("--no-deps", "--no-desktop", "--from-tarball")
+    first = _run(INSTALL, home, *quiet, str(_local_tarball(tmp_path / "a", VERSION)))
+    assert first.returncode == 0, first.stderr
+    dest = home / ".local" / "opt" / "fork-linux"
+    installed = _snapshot(dest)
+    broken = _local_tarball(tmp_path / "b", "9.9.0", {"share/fork-linux/unreadable.dat": (b"x", 0o000)})
+    failed = _run(INSTALL, home, *quiet, str(broken))
+    assert failed.returncode != 0
+    assert _snapshot(dest) == installed
+    assert (home / ".local" / "bin" / "fork-linux").is_symlink()
+    assert (dest.parent / "fork-linux.new" / ".fork-linux-install").is_file(), "the partial copy is marked as ours"
+    fixed = _run(INSTALL, home, *quiet, str(_local_tarball(tmp_path / "c", "9.9.0")))
+    assert fixed.returncode == 0, fixed.stderr
+    assert (dest / ".fork-linux-install").read_text(encoding="utf-8") == "9.9.0\n"
+    assert not list(dest.parent.glob("fork-linux.*"))
+
+
+@pytest.mark.parametrize("leftover", ["fork-linux.new", "fork-linux.old"])
+def test_a14_refuses_a_staging_path_that_is_not_ours(tmp_path: Path, home: Path, leftover: str) -> None:
+    _skip_if_root()
+    foreign = home / ".local" / "opt" / leftover
+    foreign.mkdir(parents=True)
+    (foreign / "mine.txt").write_text("keep\n", encoding="utf-8")
+    result = _run(INSTALL, home, "--no-deps", "--from-tarball", str(_local_tarball(tmp_path / "a", VERSION)))
+    assert result.returncode != 0
+    assert f"{foreign} exists but was not created by install.sh" in result.stderr
+    assert (foreign / "mine.txt").read_text(encoding="utf-8") == "keep\n"
+    assert not (home / ".local" / "opt" / "fork-linux").exists()
+
+
+def test_a14_uninstall_removes_leftovers_of_an_interrupted_upgrade(tmp_path: Path, home: Path) -> None:
+    _skip_if_root()
+    tarball = _local_tarball(tmp_path / "a", VERSION)
+    assert _run(INSTALL, home, "--no-deps", "--no-desktop", "--from-tarball", str(tarball)).returncode == 0
+    opt = home / ".local" / "opt"
+    for name in ("fork-linux.new", "fork-linux.old"):
+        (opt / name).mkdir()
+        (opt / name / ".fork-linux-install").write_text("9.9.0\n", encoding="utf-8")
+    (opt / "fork-linux.other").mkdir()
+    result = _run(UNINSTALL, home)
+    assert result.returncode == 0, result.stderr
+    assert sorted(p.name for p in opt.iterdir()) == ["fork-linux.other"]
+
+
+@pytest.mark.parametrize(
+    ("owner", "fakes"),
+    [
+        ("dpkg", {"dpkg-query": "printf 'install ok installed'"}),
+        ("rpm", {"dpkg-query": "exit 1", "rpm": "exit 0"}),
+        ("pacman", {"dpkg-query": "exit 1", "rpm": "exit 1", "pacman": "exit 0"}),
+    ],
+)
+def test_a13_refuses_to_shadow_a_package_install(
+    tmp_path: Path, home: Path, owner: str, fakes: dict[str, str]
+) -> None:
+    _skip_if_root()
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    for name, body in fakes.items():
+        (fake_bin / name).write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+        (fake_bin / name).chmod(0o755)
+    path = f"{fake_bin}:{_env(home)['PATH']}"
+    result = _run(INSTALL, home, "--no-deps", "--from-tarball", str(_local_tarball(tmp_path / "a", VERSION)), PATH=path)
+    assert result.returncode != 0
+    assert f"fork-linux is installed by your package manager ({owner})" in result.stderr
+    assert not (home / ".local" / "opt").exists()
+    assert not (home / ".local" / "bin").exists()

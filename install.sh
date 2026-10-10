@@ -191,11 +191,11 @@ EOF
 	if [[ -e "${dest}" && ! -e "${dest}/${MARKER_NAME}" ]]; then
 		die "${dest} exists but was not created by install.sh; move it away first"
 	fi
-	if [[ -f "${dest}/${MANIFEST_NAME}" ]]; then
-		say "upgrading the existing install in ${dest}"
-		fl_remove_manifest_files "${dest}/${MANIFEST_NAME}"
-		run rm -rf "${dest}"
-	fi
+	# The new tree is staged next to the old one and swapped in only once it is complete, so an
+	# interrupted upgrade (killed, disk full) leaves the previous install working.
+	local staged="${dest}.new" retired="${dest}.old"
+	fl_clear_ours "${staged}" "${MARKER_NAME}"
+	fl_clear_ours "${retired}" "${MARKER_NAME}"
 	local manifest="${tmp}/${MANIFEST_NAME}"
 	{
 		printf '# fork-linux install manifest (install.sh); uninstall.sh removes these paths\n'
@@ -204,10 +204,21 @@ EOF
 		printf 'tree\t%s\n' "${dest}"
 	} >"${manifest}"
 
-	run mkdir -p "${dest}"
-	run cp -a "${tree}/." "${dest}/"
+	run mkdir -p "${staged}"
 	if ((!opt_dry)); then
-		printf '%s\n' "${version}" >"${dest}/${MARKER_NAME}"
+		printf '%s\n' "${version}" >"${staged}/${MARKER_NAME}"
+	fi
+	run cp -a "${tree}/." "${staged}/"
+	if [[ -f "${dest}/${MANIFEST_NAME}" ]]; then
+		say "upgrading the existing install in ${dest}"
+		fl_remove_manifest_files "${dest}/${MANIFEST_NAME}"
+	fi
+	if [[ -e "${dest}" ]]; then
+		run mv "${dest}" "${retired}"
+	fi
+	run mv "${staged}" "${dest}"
+	if [[ -e "${retired}" ]]; then
+		run rm -rf "${retired:?}"
 	fi
 
 	local name
@@ -542,6 +553,18 @@ fl_manifest_has() {
 
 # Remove what an earlier manifest recorded: links that still point where we left them and
 # files whose content is unchanged; anything else is reported and kept.
+# fl_clear_ours PATH MARKER: remove PATH, a leftover of an interrupted install, when it is a
+# directory carrying our marker; refuse anything else at that path.
+fl_clear_ours() {
+	local path="$1" marker="$2"
+	[[ -e "${path}" || -L "${path}" ]] || return 0
+	if [[ -d "${path}" && ! -L "${path}" && -f "${path}/${marker}" ]]; then
+		run rm -rf "${path:?}"
+	else
+		die "${path} exists but was not created by install.sh; move it away first"
+	fi
+}
+
 fl_remove_manifest_files() {
 	local manifest="$1" kind path extra
 	while IFS=$'\t' read -r kind path extra; do

@@ -123,3 +123,60 @@ def test_read_is_capped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     path.write_bytes(b"A" * 100)
     monkeypatch.setattr(procs, "MAX_BYTES", 10)
     assert procs._read(path) == b"A" * 10
+
+
+UPDATE_CMD = ["C:\\users\\tester\\AppData\\Local\\Fork\\Update.exe", "apply", "--waitPid", "201", "--restart"]
+
+
+def test_f10_velopack_apply_counts_as_busy(proc: Path, prefix: Path) -> None:
+    """UPD-3: Velopack's Update.exe replacing current\\ means Fork is busy, though no Fork.exe runs."""
+    env = {"WINEPREFIX": str(prefix)}
+    _process(proc, 401, env=env, cmdline=UPDATE_CMD)
+    _process(proc, 402, env=env, cmdline=["wine", "c:/users/tester/appdata/local/fork/UPDATE.EXE", "patch"])
+    _process(proc, 403, env=env, cmdline=["C:\\Program Files\\Other\\Update.exe", "apply"])
+    _process(proc, 404, env={"WINEPREFIX": "/elsewhere"}, cmdline=UPDATE_CMD)
+    _process(proc, 405, env=env, cmdline=None)
+    assert procs.updater_pids(prefix, proc_root=proc) == [401, 402]
+    assert procs.fork_pids(prefix, proc_root=proc) == []
+    assert procs.fork_running(prefix, proc_root=proc) is False
+    with pytest.raises(ForkRunning, match=r"updating itself .*pid 401, 402") as exc:
+        procs.require_closed(prefix, proc_root=proc)
+    assert "wait until Fork has restarted" in exc.value.hint
+
+
+def test_wait_for_updater(proc: Path, prefix: Path) -> None:
+    updater = _process(proc, 501, env={"WINEPREFIX": str(prefix)}, cmdline=UPDATE_CMD)
+    clock = [0.0]
+    slept: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        slept.append(seconds)
+        clock[0] += seconds
+        if len(slept) == 3 and (updater / "cmdline").exists():
+            (updater / "cmdline").unlink()  # Velopack is done
+
+    def now() -> float:
+        return clock[0]
+
+    assert procs.wait_for_updater(prefix, timeout=10, proc_root=proc, sleep=sleep, clock=now) is True
+    assert slept == [0.5, 0.5, 0.5]
+    _process(proc, 502, env={"WINEPREFIX": str(prefix)}, cmdline=UPDATE_CMD)
+    slept.clear()
+    assert procs.wait_for_updater(prefix, timeout=1, proc_root=proc, sleep=sleep, clock=now, poll=0.4) is False
+    assert slept == [0.4, 0.4, 0.4]
+
+
+def test_wait_for_updater_defaults_to_real_time(proc: Path, prefix: Path) -> None:
+    assert procs.wait_for_updater(prefix, timeout=0, proc_root=proc) is True
+
+
+def test_wineserver_exes(proc: Path, prefix: Path, tmp_path: Path) -> None:
+    env = {"WINEPREFIX": str(prefix)}
+    server = tmp_path / "wine-a" / "bin" / "wineserver"
+    (_process(proc, 601, env=env, cmdline=["wineserver"]) / "exe").symlink_to(server)
+    (_process(proc, 602, env=env, cmdline=["wineserver"]) / "exe").symlink_to(server)
+    preloader = tmp_path / "wine-a" / "bin" / "wine64-preloader"
+    (_process(proc, 603, env=env, cmdline=FORK_CMD) / "exe").symlink_to(preloader)
+    _process(proc, 604, env=env, cmdline=["wineserver"])  # exe unreadable
+    (_process(proc, 605, env={"WINEPREFIX": "/x"}, cmdline=["wineserver"]) / "exe").symlink_to(server)
+    assert procs.wineserver_exes(prefix, proc_root=proc) == [server]

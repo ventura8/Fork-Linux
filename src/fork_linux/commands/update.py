@@ -15,7 +15,7 @@ Fork's own updater (Velopack) is not involved: ``rollback`` undoes either.
 from __future__ import annotations
 
 import argparse
-from typing import Any
+from typing import Any, NoReturn
 
 from .. import (
     bootstrap,
@@ -133,7 +133,14 @@ def _print_check(info: dict[str, Any], feed_error: str | None) -> None:
 
 
 def _install_fork(ctx: bootstrap.Ctx, args: argparse.Namespace) -> dict[str, Any]:
-    """Snapshot, download, install and verify the chosen Fork version (holding the lock)."""
+    """Download, snapshot, install and verify the chosen Fork version (holding the lock).
+
+    The installer is downloaded and verified before anything changes, so a failed or
+    offline attempt leaves neither a partial install nor an extra snapshot (which would
+    push the previous version's snapshot out of ``[snapshots] keep``). A trust-on-first-use
+    install that does not match Fork's update feed is undone from the "before update"
+    snapshot at once: an unverified Fork never starts.
+    """
     paths, layout, manifest = ctx.paths, ctx.layout, ctx.manifest
     installed = layout.installed_version()
     if installed is None:
@@ -150,20 +157,24 @@ def _install_fork(ctx: bootstrap.Ctx, args: argparse.Namespace) -> dict[str, Any
         return {"installed": installed, "previous": installed, "changed": False, "snapshot": None}
     if plan.tofu and assets is None:
         assets = _feed_assets(manifest, paths, offline=ctx.offline)
-    snap = snapshots.create(paths, layout, method=ctx.config.get("snapshots", "method"), reason="before update")
     installer = fork_install.download_installer(plan, manifest, paths, offline=ctx.offline)
+    # The official installer may write into current\ in place (Velopack's own updates swap the
+    # directory instead), so by default this snapshot is a copy, never hard links to those files.
+    method = ctx.config.get("snapshots", "method")
+    snap = snapshots.create(paths, layout, method="copy" if method == "auto" else method, reason="before update")
     info = ctx.wine()
-    fork_install.run_installer(ctx.runner, ctx.wine_env(), info.wine, installer, ctx.pathmap, log_file=ctx.log_file)
-    version = fork_install.finish_install(layout, plan)
-    if plan.tofu:
-        expected = next(
-            (asset.sha256 for asset in assets or () if asset.type == "Full" and asset.version == version), None
+    try:
+        fork_install.run_installer(
+            ctx.runner, ctx.wine_env(), info.wine, installer, ctx.pathmap, log_file=ctx.log_file
         )
-        if expected is None or not fork_install.verify_nupkg(layout, version, expected):
-            raise IntegrityFailed(
-                f"the installed Fork {version} package does not match Fork's update feed",
-                hint=f"'fork-linux rollback --to-version {installed}' restores the previous version",
-            )
+        version = fork_install.finish_install(layout, plan)
+    except ForkLinuxError as exc:
+        where = "" if ctx.log_file is None else f"see {ctx.log_file}; "
+        back = f"'fork-linux rollback --to-version {installed}' restores Fork {installed} (snapshot {snap.id})"
+        exc.hint = where + back
+        raise
+    if plan.tofu and not _matches_feed(layout, version, assets):
+        _undo_unverified(ctx, snap, installed, version)
     ctx.state.set(FORK_VERSION, version)
     ctx.state.set(updates.LAST_SEEN_VERSION, version)
     ctx.state.set(REQUEST_KEY, _request(plan))
@@ -171,6 +182,31 @@ def _install_fork(ctx: bootstrap.Ctx, args: argparse.Namespace) -> dict[str, Any
         ctx.state.set(PINNED_VERSION, version)
     ctx.state.save()
     return {"installed": version, "previous": installed, "changed": True, "snapshot": snap.id}
+
+
+def _matches_feed(layout: ForkLayout, version: str, assets: list[feeds.FeedAsset] | None) -> bool:
+    """True when the feed lists ``version``'s full package and the installed one has its sha256."""
+    expected = next(
+        (asset.sha256 for asset in assets or () if asset.type == "Full" and asset.version == version), None
+    )
+    return expected is not None and fork_install.verify_nupkg(layout, version, expected)
+
+
+def _undo_unverified(ctx: bootstrap.Ctx, snap: snapshots.Snapshot, installed: str, version: str) -> NoReturn:
+    """Put ``installed`` back from ``snap`` after an unverifiable install of ``version``; always raises."""
+    problem = f"the installed Fork {version} package does not match Fork's update feed"
+    try:
+        snapshots.restore(ctx.paths, ctx.layout, snap)
+    except (ForkLinuxError, OSError) as exc:
+        raise IntegrityFailed(
+            f"{problem}, and putting Fork {installed} back failed: {exc}",
+            hint=f"do not start Fork {version}; 'fork-linux rollback --to-version {installed}' restores the previous "
+            "version",
+        ) from exc
+    raise IntegrityFailed(
+        f"{problem}; Fork {installed} was put back (snapshot {snap.id})",
+        hint="nothing unverified was kept; try again later, and report it if it happens again",
+    )
 
 
 def _request(plan: fork_install.InstallPlan) -> dict[str, str] | None:

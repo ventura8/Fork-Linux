@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from .. import registry, resources, winecmd, winetricks
+from .. import procs, registry, resources, wine_provider, winecmd, winetricks
 from ..bootstrap import Ctx, Step
 from ..errors import ForkLinuxError, SetupFailed
 from ..registry import RegBatch
@@ -102,10 +102,50 @@ def prefix_inputs(ctx: Ctx) -> dict[str, Any]:
     return {"wine": runtime.wine_inputs(ctx)}
 
 
+def stop_other_wineservers(ctx: Ctx, info: winecmd.WineInfo) -> list[Path]:
+    """Stop a wineserver of another managed Wine build still serving the prefix; return the binaries used.
+
+    After a Wine pin change (an app upgrade, ``config set wine.build``) Wine's services
+    can keep the previous build's wineserver alive; every client of the new build would
+    then fail with a protocol version mismatch. Only that build's own ``wineserver -k``
+    can stop it, and only the managed builds in our data directory are trusted to run.
+    """
+    if not ctx.paths.prefix.is_dir():
+        return []
+    current = info.root.resolve()
+    trusted = {
+        wine_provider.managed_root(ctx.paths, build).resolve(): build
+        for build in wine_provider.installed_builds(ctx.paths)
+    }
+    stopped = []
+    for exe in procs.wineserver_exes(ctx.paths.prefix, proc_root=ctx.proc_root):
+        root = exe.parent.parent
+        if root == current or root not in trusted or exe != root / "bin" / exe.name:
+            continue
+        old = winecmd.WineInfo(
+            provider="managed",
+            build_id=trusted[root],
+            root=root,
+            wine=root / "bin" / "wine",
+            wineserver=exe,
+            version="",
+            staging=False,
+            wow64=False,
+        )
+        env = winecmd.build_env(ctx.paths, old, user=ctx.user, base_env=ctx.env)
+        winecmd.wineserver(ctx.runner, env, old, "-k")
+        stopped.append(exe)
+    return stopped
+
+
 def run_prefix_init(ctx: Ctx) -> None:
-    """``wineboot --init`` (Mono/Gecko off), then wait for the server to write the hives."""
+    """``wineboot --init`` (Mono/Gecko off), then wait for the server to write the hives.
+
+    A wineserver of the previously used Wine build is stopped first (:func:`stop_other_wineservers`).
+    """
     env = ctx.wine_env(dll_overrides=BOOT_DLL_OVERRIDES)
     info = ctx.wine()
+    stop_other_wineservers(ctx, info)
     result = winecmd.run(
         ctx.runner, env, info, ["wineboot", "--init"], timeout=WINEBOOT_TIMEOUT, log_file=ctx.log_file
     )

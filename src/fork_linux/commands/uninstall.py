@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .. import APP_NAME, desktop_integration, fsutil, procs, wine_provider
+from .. import APP_NAME, bootstrap, desktop_integration, fsutil, procs, wine_provider
 from ..cli import AppContext
 from ..errors import Declined
 from ..locking import FileLock
@@ -172,6 +172,9 @@ def run(args: argparse.Namespace, ctx: AppContext) -> int:
     result: dict[str, Any] = {"integration_removed": [str(path) for path in integration], "purged": args.purge}
     if args.purge:
         result.update(_purge(ctx, args))
+    else:
+        # The prefix stays: a reinstall must put Fork's icon and the menu entry back on its first launch.
+        bootstrap.forget_markers(ctx.paths)
     if ctx.json:
         ctx.print_json(result)
     else:

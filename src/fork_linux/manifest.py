@@ -519,6 +519,13 @@ def load(path: Path | None = None, override: Path | None = None) -> Manifest:
         merged = Manifest(merge_patch(data, patch), overridden=True)
     except RecursionError:
         raise IntegrityFailed(f"manifest override {override} is nested too deeply", hint=_HINT) from None
+    except IntegrityFailed as exc:
+        # The packaged manifest is valid on its own: the override is what no longer fits
+        # (typically after an upgrade changed the manifest it was written against).
+        raise IntegrityFailed(
+            f"manifest override {override} does not fit this fork-linux's runtime manifest: {exc.message}",
+            hint=f"fix or remove {override}",
+        ) from None
     added = sorted(set(merged.allowed_hosts) - set(base.allowed_hosts))
     if added:
         raise IntegrityFailed(

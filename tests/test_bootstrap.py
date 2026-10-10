@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 from pathlib import Path
@@ -453,6 +454,27 @@ def test_needs_setup(ctx: Ctx, rec: Recorder, monkeypatch: pytest.MonkeyPatch) -
     ctx.state.set(bootstrap.BOOTSTRAP_REVISION, ctx.manifest.bootstrap_revision)
     monkeypatch.setattr(bootstrap, "default_steps", lambda: listed)
     assert not bootstrap.needs_setup(ctx)
+
+
+def test_f20_launch_verifies_steps_marked_verify_on_launch(ctx: Ctx, rec: Recorder) -> None:
+    """Fork's install is checked on every launch: a vanished current\\ is reinstalled, not started."""
+    def reinstall(_ctx: Ctx) -> None:
+        rec.runs.append("install")
+        rec.ok["install"] = True
+
+    plain = rec.step("plain")
+    install = dataclasses.replace(rec.step("install"), run=reinstall, verify_on_launch=True)
+    listed = [plain, install]
+    bootstrap.run_steps(ctx, listed)
+    rec.ok["plain"] = False  # only a full verification (setup) notices this one
+    assert not bootstrap.needs_setup(ctx, listed)
+    rec.ok["install"] = False
+    assert bootstrap.needs_setup(ctx, listed)
+    rec.ok["plain"] = True
+    rec.runs.clear()
+    bootstrap.ensure_ready(ctx, steps=listed)
+    assert rec.runs == ["install"]
+    assert next(step for step in steps.STEPS if step.id == "fork_install").verify_on_launch
 
 
 def test_ensure_ready(ctx: Ctx, rec: Recorder) -> None:
