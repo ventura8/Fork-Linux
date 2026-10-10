@@ -6,7 +6,8 @@ Date: 2026-10-09 · Host: Ubuntu 26.04 x86_64, host git 2.53.0 · Fork **2.23.2*
 
 ## Method and isolation
 
-* Everything ran under the scratch root `~/.cache/fork-linux-audit` with a fake `HOME` and XDG
+* Everything ran under the scratch root `~/.cache/fork-linux-audit` (historical: QA now runs only
+  in containers, see Reproduce) with a fake `HOME` and XDG
   dirs, a private `Xvfb :96` (1920x1200, **no window manager**: no X11 WM is installed on the
   host), and download caches seeded from the real cache. The user's prefix, `~/.wine`, `:0`,
   `:97` and `:98` were never touched. Screenshots stayed in the scratch root (they show Fork's
@@ -260,12 +261,17 @@ portal, About / update check, settings persistence, a 5k-commit repo, and an idl
 
 ## Reproduce
 
+The audit above ran on the host. Since 2026-10-10 the QA scripts run **only inside a
+container** (AGENTS.md hard rule 18): they refuse to start on the host. Run them through the
+E2E runner; the scratch root is `/e2e/qa` inside, `/var/tmp/fork-linux-e2e/qa/qa` on the host
+(screenshots in its `shots/`), and the downloads come from the runner's read-only seed.
+
 ```sh
-scripts/qa/fl-qa.sh init && scripts/qa/fl-qa.sh xvfb
-scripts/qa/fl-qa.sh setup                      # isolated install, no downloads with seeded caches
-scripts/qa/fl-qa.sh fixtures && scripts/qa/fl-qa.sh bigrepo
-scripts/qa/fl-qa.sh run "$HOME/.cache/fork-linux-audit/repos/main"
-scripts/qa/fl-qa.sh shot NAME                  # screenshots stay in the scratch root
-scripts/qa/fl-qa-gitprobe.sh                   # GUI-free repro of 3.2, 5.2, 7.2, 7.4, 5.3, 5.4
-scripts/qa/fl-qa.sh stop                       # wineserver -k for the scratch prefix + stop Xvfb
+QA="scripts/e2e-docker.sh --name qa --keep shell --"
+$QA bash -c 'scripts/qa/fl-qa.sh init && scripts/qa/fl-qa.sh setup'   # isolated install, seeded caches
+$QA bash -c 'scripts/qa/fl-qa.sh fixtures && scripts/qa/fl-qa.sh bigrepo'
+$QA bash                                       # interactive: fl-qa.sh run /e2e/qa/repos/main, shot NAME, key, click, ...
+$QA scripts/qa/fl-qa-gitprobe.sh               # GUI-free repro of 3.2, 5.2, 7.2, 7.4, 5.3, 5.4
 ```
+
+Each `shell` container has its own Xvfb on `:99` and ends (with Wine) when its command exits.

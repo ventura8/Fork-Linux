@@ -12,13 +12,15 @@ For each wine binary it boots a scratch prefix exactly like the Wine tier
 for ``rev-parse HEAD`` and ``status -z -uall``, plus the host git started natively.
 Prints a Markdown table (docs/spikes/B5-bridge-wine-tier.md).
 
-usage: (cd tests/bridge && python3 -m wine.bench_bridge --scratch DIR [--iterations 200]
+usage (inside a container only, e.g. scripts/e2e-docker.sh --image fork-linux-ci-bridge:26.04 shell --):
+       (cd tests/bridge && python3 -m wine.bench_bridge --scratch DIR [--iterations 200]
            [--wine PATH ...] [--bundled-git PATH] [--noop PATH])
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import statistics
 import subprocess
 import sys
@@ -92,7 +94,19 @@ def row(label: str, what: str, res: dict[str, object]) -> str:
     return f"| {label} | {what} | {f('p50_ms')} | {f('p95_ms')} | {f('mean_ms')} | {fails} |"
 
 
+# Wine runs only inside a container (AGENTS.md hard rule 18): /.dockerenv or /run/.containerenv.
+CONTAINER_MARKERS = ("/.dockerenv", "/run/.containerenv")
+
+
 def main() -> int:
+    if not any(os.path.lexists(marker) for marker in CONTAINER_MARKERS):
+        print(
+            "bench_bridge: refusing to run Wine on the host; run it inside the bridge image, e.g. "
+            "scripts/e2e-docker.sh --image fork-linux-ci-bridge:26.04 shell -- sh -c "
+            "'cd tests/bridge && python3 -m wine.bench_bridge --scratch /e2e/bench'",
+            file=sys.stderr,
+        )
+        return 2
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument(
         "--scratch",

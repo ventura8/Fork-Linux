@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 
+from fixtures import real_tier
 from fork_linux import manifest, versions
 
 if os.environ.get("FL_E2E_FORK") != "1":
@@ -25,6 +26,8 @@ if os.environ.get("FL_E2E_FORK") != "1":
         "requires FL_E2E_FORK=1 (real Wine + the official Fork download, ~2.5 GB disk, Xvfb and xdotool)",
         allow_module_level=True,
     )
+# Containers only (AGENTS.md hard rule 18): scripts/e2e-docker.sh pytest tests/e2e.
+real_tier.enforce()
 
 
 

@@ -3,6 +3,9 @@
 Date: 2026-10-09 · Host: Ubuntu 26.04 x86_64 · Script: `scripts/spike/fl-spike.sh`
 (isolated scratch root: fake `HOME`, XDG dirs and `WINEPREFIX`; `~/.wine` untouched).
 Screenshots stayed in the scratch dir (they show Fork's logo — never committed).
+Historical: since 2026-10-10 the script refuses to run on the host; re-run a spike with
+`scripts/e2e-docker.sh --name spike --keep shell -- env FL_SPIKE_ROOT=/e2e/spike scripts/spike/fl-spike.sh s1`
+(AGENTS.md hard rule 18).
 
 ## Results
 

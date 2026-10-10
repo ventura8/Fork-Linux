@@ -7,7 +7,8 @@ Canonical agent rules: [AGENTS.md](AGENTS.md). Setup guide: [docs/INSTRUCTIONS.m
 | Skill | Purpose |
 |-------|---------|
 | [pipeline-runner](.agents/skills/pipeline-runner/SKILL.md) | Full local gate: lint → coverage → bridge → compat ×7 → packaging ×9; fix until green |
-| [test-runner](.agents/skills/test-runner/SKILL.md) | pytest unit + contract tests, `FL_REAL_WINE=1` bridge tier, `FL_E2E_FORK=1` end-to-end tier |
+| [test-runner](.agents/skills/test-runner/SKILL.md) | pytest unit + contract tests on the host; `FL_REAL_WINE=1` bridge tier and `FL_E2E_FORK=1` end-to-end tier in containers only |
+| [e2e-docker](.agents/skills/e2e-docker/SKILL.md) | Real-Fork / Wine work (E2E tier, xdotool, strace, QA, spikes) — only via `scripts/e2e-docker.sh` (hard rule 18) |
 | [ci-docker-matrix](.agents/skills/ci-docker-matrix/SKILL.md) | Docker CI stages and per-distro compat cells (`docker/Dockerfile.ci*`) |
 | [release](.agents/skills/release/SKILL.md) | Release notes from **all** branch changes, `VERSION` bump, `release: vX.Y.Z - <Title>` commit |
 | [release-packaging](.agents/skills/release-packaging/SKILL.md) | Local multi-format builds (deb / rpm / arch / snap / AppImage / Flatpak / tarball) |

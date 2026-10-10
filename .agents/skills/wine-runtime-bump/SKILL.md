@@ -13,5 +13,7 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
    The same rules apply to the `ui_font` pin (Selawik release zip on `github.com`; `faces` lists the `.ttf` members
    copied into the prefix); bump `revision` with any pin change.
 2. `python3 -m pytest -q tests/test_manifest.py tests/test_wine_provider.py`.
-3. Bridge tier + real E2E: `FL_CI_STAGE=bridge ./scripts/ci-docker.sh`, `./scripts/ci-e2e-wine.sh`.
+3. Bridge tier + real E2E, containers only (hard rule 18): `FL_CI_STAGE=bridge ./scripts/ci-docker.sh`,
+   `scripts/e2e-docker.sh --name wine-bump pytest tests/e2e` (put the new tarball in
+   `/var/tmp/fork-linux-e2e/seed` or let the container download it) or `./scripts/ci-e2e-wine.sh`.
 4. Record results in `tests/e2e/RESULTS.md` and `docs/COMPATIBILITY.md` (evidence only).

@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
 # fl-qa.sh — isolated manual-QA driver for Fork for Linux (unofficial).
 #
-# Everything lives under one scratch root (default ~/.cache/fork-linux-audit):
-# a fake HOME + XDG dirs, a private Xvfb display, fixture repos and
-# screenshots. The real ~/.local/share/fork-linux prefix and ~/.wine are never
-# touched. Screenshots show Fork's UI (and logo): keep them in the scratch
-# root, never copy them into the repository.
+# Containers only (AGENTS.md hard rule 18): it starts Wine and the official Fork, so it
+# refuses to run on the host. Run it through the E2E runner, e.g.
+#   scripts/e2e-docker.sh --name qa --keep shell -- bash -c \
+#       'scripts/qa/fl-qa.sh init && scripts/qa/fl-qa.sh setup && scripts/qa/fl-qa.sh fixtures'
+#   scripts/e2e-docker.sh --name qa --keep shell -- bash      # interactive (a TTY)
+# and look at the screenshots on the host under /var/tmp/fork-linux-e2e/qa/qa/shots/.
+#
+# Everything lives under one scratch root (FL_QA_ROOT, default /e2e/qa inside the
+# container's scratch mount): a fake HOME + XDG dirs, a private Xvfb display, fixture repos
+# and screenshots. Screenshots show Fork's UI (and logo): keep them in the scratch root,
+# never copy them into the repository. Downloads are seeded from the runner's read-only
+# seed (FL_E2E_SEED, FL_E2E_WINETRICKS_CACHE); our code re-verifies every file.
 #
 # Usage: scripts/qa/fl-qa.sh <command> [args]
 #   env                 print the export lines (eval "$(fl-qa.sh env)")
 #   init                create the scratch tree and seed download caches
-#   xvfb                start Xvfb on $FL_QA_DISPLAY (default :96)
+#   xvfb                start Xvfb on $FL_QA_DISPLAY (default: the runner's $DISPLAY, else :96)
 #   setup               fork-linux setup --accept-fork-eula --no-gui
 #   cli <args...>       run fork-linux from the source tree in the isolated env
 #   run <path>          launch Fork on <path> (background, log in $R/logs)
@@ -28,21 +35,27 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-R="${FL_QA_ROOT:-$HOME/.cache/fork-linux-audit}"
-# When sourced twice the fake HOME is already exported; never nest it.
-case "$R" in
-    */fork-linux-audit/home/*) R="${R%%/home/*}" ;;
-esac
-DISP="${FL_QA_DISPLAY:-:96}"
-REAL_HOME="${FL_QA_REAL_HOME:-$HOME}"
-case "$REAL_HOME" in
-    */fork-linux-audit/home) REAL_HOME="${REAL_HOME%/.cache/fork-linux-audit/home}" ;;
-esac
+# A fixed root (never derived from $HOME, which qa_env replaces).
+R="${FL_QA_ROOT:-/e2e/qa}"
+DISP="${FL_QA_DISPLAY:-${DISPLAY:-:96}}"
 
 die() {
     printf 'fl-qa: %s\n' "$*" >&2
     exit 1
 }
+
+if [ ! -e /.dockerenv ] && [ ! -e /run/.containerenv ]; then
+    printf 'fl-qa: refusing to run Wine / Fork on the host (AGENTS.md hard rule 18); use\n' >&2
+    printf '  scripts/e2e-docker.sh --name qa --keep shell -- scripts/qa/fl-qa.sh %s\n' "${1:-<command>}" >&2
+    exit 2
+fi
+case "$R" in
+    /?*) ;;
+    *) die "FL_QA_ROOT must be an absolute path below /: '$R'" ;;
+esac
+case "/$R/" in
+    */../* | */./*) die "FL_QA_ROOT must not contain '.' or '..': '$R'" ;;
+esac
 
 qa_env() {
     export HOME="$R/home"
@@ -94,9 +107,14 @@ cmd_env() {
 cmd_init() {
     mkdir -p "$R"/{home,run,shots,repos,logs} "$R/home/.cache/fork-linux/downloads" "$R/home/.local/bin"
     chmod 700 "$R/run"
-    cp -n "$REAL_HOME"/.cache/fork-linux/downloads/* "$R/home/.cache/fork-linux/downloads/" 2>/dev/null || true
-    if [ -d "$REAL_HOME/.cache/winetricks" ] && [ ! -d "$R/home/.cache/winetricks" ]; then
-        cp -r "$REAL_HOME/.cache/winetricks" "$R/home/.cache/winetricks"
+    local seed="${FL_E2E_SEED:-}" cache="${FL_E2E_WINETRICKS_CACHE:-}" f
+    if [ -n "$seed" ] && [ -d "$seed" ]; then
+        for f in "$seed"/wine-*.tar.xz "$seed"/Fork-*.exe "$seed"/winetricks-*; do
+            [ -f "$f" ] && cp -n "$f" "$R/home/.cache/fork-linux/downloads/"
+        done
+    fi
+    if [ -n "$cache" ] && [ -d "$cache" ] && [ ! -d "$R/home/.cache/winetricks" ]; then
+        cp -r "$cache" "$R/home/.cache/winetricks"
     fi
     printf 'scratch root ready: %s\n' "$R"
 }
@@ -200,7 +218,7 @@ cmd_fixtures() {
     export GIT_AUTHOR_NAME="QA Fixture" GIT_AUTHOR_EMAIL="fixture@example.invalid"
     export GIT_COMMITTER_NAME="QA Fixture" GIT_COMMITTER_EMAIL="fixture@example.invalid"
     local main="$base/main" bare="$base/remote.git"
-    rm -rf "$main" "$bare" "$base/withsub" "$base/subproj" "$base/hooks" "$base/conflict"
+    rm -rf "${main:?}" "${bare:?}" "${base:?}/withsub" "${base:?}/subproj" "${base:?}/hooks" "${base:?}/conflict"
     git init -q -b main "$main"
     printf '#!/bin/sh\necho hello\n' >"$main/run.sh"
     chmod +x "$main/run.sh"
@@ -286,7 +304,7 @@ HOOK
     # Extra small repos for the tab stress test.
     local i
     for i in 1 2 3; do
-        rm -rf "$base/tab$i"
+        rm -rf "${base:?}/tab$i"
         git init -q -b main "$base/tab$i"
         printf 'tab %s\n' "$i" >"$base/tab$i/f.txt"
         git -C "$base/tab$i" add -A
@@ -297,7 +315,7 @@ HOOK
 
 cmd_bigrepo() {
     local big="$R/repos/big"
-    rm -rf "$big"
+    rm -rf "${big:?}"
     git init -q -b main "$big"
     python3 - "$big" <<'PY'
 import os, subprocess, sys

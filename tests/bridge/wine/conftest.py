@@ -13,7 +13,18 @@ import os
 
 import pytest
 
+from fixtures import real_tier
+
 from .fl_winetier import wine_candidates
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_configure(config: pytest.Config) -> None:
+    """Defence in depth (tests/conftest.py does the same): FL_REAL_WINE=1 only inside a container.
+
+    AGENTS.md hard rule 18; the Wine tier runs in ``FL_CI_STAGE=bridge ./scripts/ci-docker.sh``.
+    """
+    real_tier.enforce()
 
 
 def pytest_report_header(config: pytest.Config) -> str:

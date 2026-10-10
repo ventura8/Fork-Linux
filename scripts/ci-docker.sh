@@ -377,6 +377,10 @@ run_inside() {
 resolve_stage
 
 if [[ "${1:-}" == "--inside" ]]; then
+	# The container half only: the bridge stage runs the FL_REAL_WINE=1 tier, which never runs
+	# on the host (AGENTS.md hard rule 18). Run ./scripts/ci-docker.sh without --inside.
+	[[ -e /.dockerenv || -e /run/.containerenv ]] ||
+		die "--inside runs only inside the CI container; run FL_CI_STAGE=${FL_CI_STAGE} ./scripts/ci-docker.sh"
 	run_inside
 	exit 0
 fi
@@ -395,6 +399,13 @@ WORKDIR="/src"
 if [[ "${FL_CI_STAGE}" == "coverage" ]]; then
 	WORKDIR="${ROOT}"
 fi
+# A linked worktree's .git points into the main repository's git dir: mount that read-only at
+# its own path so git (ls-files for the lint stage) works inside.
+GIT_MOUNT=()
+GIT_COMMON="$(git -C "${ROOT}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+if [[ -n "${GIT_COMMON}" && "${GIT_COMMON}" != "${ROOT}/"* ]]; then
+	GIT_MOUNT=(-v "${GIT_COMMON}:${GIT_COMMON}:ro")
+fi
 echo "==> docker run ${IMAGE} (stage=${FL_CI_STAGE}, build dir ${BUILD_DIR}, workdir ${WORKDIR})"
 docker run --rm \
 	--user "$(id -u):$(id -g)" \
@@ -404,6 +415,7 @@ docker run --rm \
 	-e "FL_CI_BUILD_DIR=${BUILD_DIR}" \
 	-e "FL_CI_WORKDIR=${WORKDIR}" \
 	-v "${ROOT}:${WORKDIR}:rw" \
+	"${GIT_MOUNT[@]}" \
 	-w "${WORKDIR}" \
 	"${IMAGE}" \
 	./scripts/ci-docker.sh --inside

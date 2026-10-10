@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from fixtures import real_tier
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC = REPO_ROOT / "src"
 FAKES_BIN = Path(__file__).resolve().parent / "fakes" / "bin"
@@ -16,6 +18,17 @@ pytest_plugins = ["fixtures.http_server"]
 
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_configure(config: pytest.Config) -> None:
+    """Before anything else: a real Wine / Fork tier never runs on the host (AGENTS.md hard rule 18).
+
+    ``FL_E2E_FORK=1``, ``FL_REAL_WINE=1`` (any ``FL_E2E_*`` / ``FL_REAL_*`` switch) run only inside a
+    container (scripts/e2e-docker.sh, scripts/ci-*.sh). ``pytest.exit`` here ends the session with
+    status 2 before any test, fixture or directory exists; there is no host override.
+    """
+    real_tier.enforce()
 
 
 @pytest.fixture

@@ -11,7 +11,18 @@
 # ╚══════════════════════════════════════════════════════════════════════════╝
 set -euo pipefail
 
+# Containers only (AGENTS.md hard rule 18): the spikes start Wine and the official Fork, e.g.
+#   scripts/e2e-docker.sh --name spike --keep shell -- env FL_SPIKE_ROOT=/e2e/spike \
+#       scripts/spike/fl-spike.sh s1
+if [[ ! -e /.dockerenv && ! -e /run/.containerenv ]]; then
+	printf 'fl-spike: refusing to run Wine / Fork on the host (AGENTS.md hard rule 18); use\n' >&2
+	printf '  scripts/e2e-docker.sh --name spike --keep shell -- env FL_SPIKE_ROOT=/e2e/spike scripts/spike/fl-spike.sh %s\n' "${1:-all}" >&2
+	exit 2
+fi
+
 : "${FL_SPIKE_ROOT:?set FL_SPIKE_ROOT to a scratch directory}"
+[[ "${FL_SPIKE_ROOT}" == /?* && "/${FL_SPIKE_ROOT}/" != */../* ]] ||
+	{ printf 'fl-spike: FL_SPIKE_ROOT must be an absolute path below / without ..\n' >&2; exit 2; }
 
 readonly WINE_BUILD_ID="wine-11.0-staging-amd64-wow64"
 readonly WINE_URL="https://github.com/Kron4ek/Wine-Builds/releases/download/11.0/${WINE_BUILD_ID}.tar.xz"

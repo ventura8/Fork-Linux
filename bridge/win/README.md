@@ -196,17 +196,20 @@ exactness, configuration and authentication failures (125), log redaction, recor
 `fl-launch.exe`.
 
 ```sh
-bridge/win/build-dev.sh
-FL_REAL_WINE=1 python3 -m pytest -q tests/bridge/test_shims_wine.py
-FL_REAL_WINE=1 FL_WINE=/path/to/wine-11.0-staging-amd64-wow64/bin/wine python3 -m pytest -q tests/bridge/test_shims_wine.py
+FL_CI_STAGE=bridge ./scripts/ci-docker.sh   # builds the PEs, then FL_REAL_WINE=1 tests/bridge in Docker
 ```
+
+The Wine tier runs only inside a container (AGENTS.md hard rule 18): with `FL_REAL_WINE=1` on the
+host pytest stops at once.
 
 ## Trying it by hand under Wine
 
-Use a scratch prefix and a fake `HOME` — never `~/.wine`:
+Only inside a container (AGENTS.md hard rule 18), e.g. an interactive shell in the bridge image
+(`scripts/e2e-docker.sh --name shim --image fork-linux-ci-bridge:26.04 shell -- bash`, scratch
+under `/e2e`), with a scratch prefix and a fake `HOME` — never `~/.wine`:
 
 ```sh
-export HOME=/scratch/home WINEPREFIX=/scratch/prefix WINEDEBUG=-all \
+export HOME=/e2e/home WINEPREFIX=/e2e/prefix WINEDEBUG=-all \
        WINEDLLOVERRIDES="mscoree,mshtml=;winemenubuilder.exe=d"
 export FL_BRIDGE_TOKEN=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
 fl-bridge-helper --daemon --port 0 --host-helper /usr/libexec/fork-linux/fork-linux-host &  # prints FL_BRIDGE_PORT=<n>
