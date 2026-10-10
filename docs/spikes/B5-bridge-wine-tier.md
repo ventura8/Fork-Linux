@@ -28,10 +28,13 @@ The suite tests `/usr/bin/wine` by default. Other Wine builds (W11s) are listed 
 `FL_TEST_WINE`, separated by `:`:
 
 ```sh
-scripts/build-bridge.sh
-FL_TEST_WINE=/usr/bin/wine:<runtimes>/wine-11.0-staging-amd64-wow64/bin/wine \
-  FL_REAL_WINE=1 python3 -m pytest tests/bridge --basetemp=<scratch>/bridge-pt
+FL_CI_STAGE=bridge ./scripts/ci-docker.sh   # build + FL_REAL_WINE=1 tests/bridge in fork-linux-ci-bridge:26.04
 ```
+
+(The measurements below were taken on the host with
+`FL_TEST_WINE=... FL_REAL_WINE=1 python3 -m pytest tests/bridge`. Since 2026-10-10 the Wine tier
+refuses to run outside a container, AGENTS.md hard rule 18; other Wine builds go in
+`FL_TEST_WINE` inside the bridge image.)
 
 For each Wine build the suite:
 

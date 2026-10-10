@@ -377,6 +377,10 @@ run_inside() {
 resolve_stage
 
 if [[ "${1:-}" == "--inside" ]]; then
+	# The container half only: the bridge stage runs the FL_REAL_WINE=1 tier, which never runs
+	# on the host (AGENTS.md hard rule 18). Run ./scripts/ci-docker.sh without --inside.
+	[[ -e /.dockerenv || -e /run/.containerenv ]] ||
+		die "--inside runs only inside the CI container; run FL_CI_STAGE=${FL_CI_STAGE} ./scripts/ci-docker.sh"
 	run_inside
 	exit 0
 fi

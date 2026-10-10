@@ -3,13 +3,25 @@
 # without driving the GUI. Runs Fork's own bundled git.exe under the managed Wine
 # of the isolated QA install created by scripts/qa/fl-qa.sh (never the real prefix).
 #
+# Containers only (AGENTS.md hard rule 18): run it inside the same runner as fl-qa.sh, e.g.
+#   scripts/e2e-docker.sh --name qa --keep shell -- scripts/qa/fl-qa-gitprobe.sh
+#
 # Usage: scripts/qa/fl-qa-gitprobe.sh
 # Each probe prints PROBE <name>: <observed> and a short verdict. Exit code is 0;
 # this is a diagnostic, not a gate.
 # Diagnostic: keep going after failing probes (no -e, no pipefail).
 set -u
 
-R="${FL_QA_ROOT:-$HOME/.cache/fork-linux-audit}"
+if [ ! -e /.dockerenv ] && [ ! -e /run/.containerenv ]; then
+    printf 'fl-qa-gitprobe: refusing to run Wine on the host (AGENTS.md hard rule 18); use\n' >&2
+    printf '  scripts/e2e-docker.sh --name qa --keep shell -- scripts/qa/fl-qa-gitprobe.sh\n' >&2
+    exit 2
+fi
+R="${FL_QA_ROOT:-/e2e/qa}"
+case "$R" in
+    /?*) ;;
+    *) printf 'fl-qa-gitprobe: FL_QA_ROOT must be an absolute path below /\n' >&2; exit 1 ;;
+esac
 PREFIX="$R/home/.local/share/fork-linux/prefix"
 WORK="$R/probe"
 WIN_USER="$(id -un)"
@@ -58,7 +70,7 @@ probe() {
     printf '\nPROBE %s\n' "$1"
 }
 
-rm -rf "$WORK"
+rm -rf "${WORK:?}"
 mkdir -p "$WORK"
 
 probe "symlink status (bundled git vs native)"

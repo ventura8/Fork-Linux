@@ -356,9 +356,8 @@ python3 -m pytest tests/bridge                          # daemon protocol + corp
 meson setup build-bridge-asan -Dbridge=disabled -Db_sanitize=address,undefined \
   && meson test -C build-bridge-asan --suite bridge-unit  # all unit tests incl. the daemon helpers
 
-# Wine tier (gated; isolated scratch prefix + fake HOME; never ~/.wine)
-FL_REAL_WINE=1 FL_WINE=/usr/bin/wine FL_TEST_WINE=/usr/bin/wine \
-  python3 -m pytest tests/bridge --basetemp=<scratch dir>
+# Wine tier (gated; containers only, AGENTS.md hard rule 18: FL_REAL_WINE=1 refuses on the host)
+FL_CI_STAGE=bridge ./scripts/ci-docker.sh   # FL_REAL_WINE=1 tests/bridge in fork-linux-ci-bridge:26.04
 ```
 
 `tests/bridge/test_launcher_wine.py` runs `scripts/build-bridge.sh` (skip with

@@ -20,11 +20,18 @@ dotnet48 and corefonts.
 
 ## Automated tier
 
-Run the tier with this command:
+The run below used this command on the host:
 
 ```
 FL_E2E_FORK=1 FL_E2E_ROOT=/var/tmp/fork-linux-e2e-pytest FL_E2E_SEED=<downloads> \
   FL_E2E_WINETRICKS_CACHE=<winetricks cache> python3 -m pytest -v tests/e2e
+```
+
+Since 2026-10-10 the tier runs **only inside a container** (AGENTS.md hard rule 18; on the host
+pytest stops at once). Today's equivalent, with the seed in `/var/tmp/fork-linux-e2e/seed`:
+
+```
+scripts/e2e-docker.sh --name e2e pytest tests/e2e
 ```
 
 Result: **7 passed in 314.75 s**. It ran from a fresh prefix, with only the caches reused.

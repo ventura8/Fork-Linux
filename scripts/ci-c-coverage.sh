@@ -2,8 +2,9 @@
 # ci-c-coverage.sh - C coverage of the native-git bridge for SonarQube Cloud.
 #
 # usage: scripts/ci-c-coverage.sh [--no-docker] [--no-wine]
-#   --no-docker  run the toolchain directly (already inside fork-linux-ci-bridge:26.04, or
-#                a host with gcc/gcov, MinGW-w64 (+ its gcov), meson, ninja, Wine, pytest)
+#   --no-docker  run the toolchain directly: inside fork-linux-ci-bridge:26.04 (the Wine tier
+#                refuses to run on the host, AGENTS.md hard rule 18), or on a host together
+#                with --no-wine (gcc/gcov, meson, ninja, pytest)
 #   --no-wine    skip the Wine tier (bridge/win then has no coverage: the report says so)
 #
 # Writes artifacts/coverage/c-coverage.xml (SonarQube generic coverage format, paths
@@ -43,7 +44,7 @@ for arg in "$@"; do
     --no-docker) NO_DOCKER=1 ;;
     --no-wine) WINE=0 ;;
     -h | --help)
-      sed -n '4,7p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '4,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) die "unknown argument: ${arg}" ;;
@@ -88,6 +89,10 @@ inside() {
 }
 
 if ((NO_DOCKER)); then
+  # Wine runs only inside a container (AGENTS.md hard rule 18).
+  if ((WINE)) && [[ ! -e /.dockerenv && ! -e /run/.containerenv ]]; then
+    die "the Wine tier runs only inside a container: run scripts/ci-c-coverage.sh without --no-docker (or add --no-wine)"
+  fi
   inside
   exit 0
 fi
