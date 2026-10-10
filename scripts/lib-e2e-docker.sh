@@ -23,6 +23,16 @@ fl_e2e_base() {
 	printf '%s\n' "/var/tmp/fork-linux-e2e"
 }
 
+# fl_e2e_user: this user's login name (a uid without a passwd entry falls back to $USER / uid<N>).
+fl_e2e_user() {
+	local name
+	if name="$(id -un 2>/dev/null)"; then
+		printf '%s\n' "${name}"
+	else
+		printf '%s\n' "${USER:-uid$(id -u)}"
+	fi
+}
+
 # fl_e2e_refuse MESSAGE: a safety refusal (exit status 2).
 fl_e2e_refuse() {
 	echo "${FL_E2E_PROG:-e2e-docker}: refusing: $*" >&2
@@ -106,7 +116,7 @@ fl_e2e_own_dir() {
 		mkdir -m 0700 -- "${dir}"
 	fi
 	[[ ! -L "${dir}" && -d "${dir}" ]] || fl_e2e_refuse "${what} '${dir}' is not a plain directory"
-	[[ "$(stat -c %u -- "${dir}")" == "$(id -u)" ]] || fl_e2e_refuse "${what} '${dir}' is not owned by $(id -un)"
+	[[ "$(stat -c %u -- "${dir}")" == "$(id -u)" ]] || fl_e2e_refuse "${what} '${dir}' is not owned by $(fl_e2e_user)"
 }
 
 # fl_e2e_wipe DIR: delete a scratch root this library created (it must carry the marker). The

@@ -45,14 +45,15 @@ fi
 fl_e2e_own_dir "${LOCK_DIR}" "lock directory"
 fl_e2e_acquire_slot "${LOCK_DIR}" "${FL_E2E_SLOTS:-3}"
 
+USER_NAME="$(fl_e2e_user)"
 status=0
 docker run --rm --init \
 	--name "${CONTAINER}" \
 	--label fl-e2e=ci-e2e-wine \
 	--user "$(id -u):$(id -g)" \
 	-e HOME=/e2e/home \
-	-e USER="$(id -un)" \
-	-e LOGNAME="$(id -un)" \
+	-e USER="${USER_NAME}" \
+	-e LOGNAME="${USER_NAME}" \
 	-e FL_E2E_FORK=1 \
 	-e FL_E2E_ROOT=/e2e/root \
 	-e FL_E2E_FORK_VERSION \

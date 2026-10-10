@@ -192,7 +192,8 @@ fi
 if ((PTRACE)); then
 	args+=(--cap-add SYS_PTRACE)
 fi
-args+=(--env HOME=/e2e/home --env "USER=$(id -un)" --env "LOGNAME=$(id -un)"
+USER_NAME="$(fl_e2e_user)"
+args+=(--env HOME=/e2e/home --env "USER=${USER_NAME}" --env "LOGNAME=${USER_NAME}"
 	--env PYTHONDONTWRITEBYTECODE=1 --env FL_E2E_FORK=1 --env FL_E2E_ROOT=/e2e/root)
 if [[ -n "${SEED}" ]]; then
 	args+=(--env FL_E2E_SEED=/seed)

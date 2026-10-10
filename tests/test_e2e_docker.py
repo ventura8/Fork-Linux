@@ -192,7 +192,8 @@ def test_pytest_mode_mounts_env_and_logs(box: Box) -> None:
             f"{box.seed}:/seed:ro",
         ]
     )
-    user = subprocess.run(["id", "-un"], capture_output=True, text=True, check=True).stdout.strip()
+    named = subprocess.run(["id", "-un"], capture_output=True, text=True, check=False)
+    user = named.stdout.strip() if named.returncode == 0 else os.environ.get("USER") or f"uid{os.getuid()}"
     assert sorted(_opts(opts, "--env")) == sorted(
         [
             "HOME=/e2e/home",
