@@ -32,6 +32,8 @@ real_tier.enforce()
 REPO = Path(__file__).resolve().parents[2]
 SHIM_GIT = "C:\\fork-linux\\gitInstance\\bin\\git.exe"
 DAEMON_EXIT_SECONDS = 20.0
+# git calls per latency series (B-PERFORMANCE).
+BENCH_CALLS = 30
 REMOTES = remotes_dir()
 # The Linux tools the bridge's host actions start: a stand-in "meld" records what it was given. It
 # reads the files only after a pause, like a user who looks at them a while: Fork's temporary
@@ -536,15 +538,27 @@ def test_git_calls_meet_the_latency_budget(bridged: Any, installed: Any) -> None
     bundled = next(iter(sorted((installed.fork.local_dir / "Fork" / "gitInstance").glob("*/bin/git.exe"))))
     cwd = windows_path(repo)
 
-    def bench(exe: str) -> dict[str, Any]:
-        result = subprocess.run([session["wine"], str(driver), "bench", "30", "--cwd", cwd, "--", exe, "rev-parse",
-                                 "HEAD"], env=env, capture_output=True, text=True, timeout=600, check=False)
+    def series(exe: str) -> dict[str, Any]:
+        result = subprocess.run([session["wine"], str(driver), "bench", str(BENCH_CALLS), "--cwd", cwd, "--", exe,
+                                 "rev-parse", "HEAD"], env=env, capture_output=True, text=True, timeout=600,
+                                check=False)
         line = next(item for item in reversed(result.stdout.splitlines()) if item.startswith("{"))
         return json.loads(line)
 
+    def bench(exe: str) -> dict[str, Any]:
+        """One series of calls; a series with a failed call is run once more (Wine sometimes cannot
+        start a process: CreateProcess fails or the call ends at once, with bundled git too)."""
+        first = series(exe)
+        if first["ok"] == first["n"]:
+            return first
+        print(f"{exe}: {first['failures']} of {first['n']} calls failed (first status {first['first_bad_rc']}); "
+              "running the series again")
+        return series(exe)
+
     through_bridge = bench(SHIM_GIT)
     bundled_git = bench(windows_path(bundled))
-    assert through_bridge["ok"] == through_bridge["n"] and bundled_git["ok"] == bundled_git["n"]
+    assert through_bridge["ok"] == through_bridge["n"], through_bridge
+    assert bundled_git["ok"] == bundled_git["n"], bundled_git
     assert through_bridge["p50_ms"] < bundled_git["p50_ms"], (through_bridge, bundled_git)
 
 
