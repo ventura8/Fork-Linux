@@ -320,12 +320,45 @@ def _budgie_entries(session: dekit.Session) -> list[dict[str, object]]:
     """Every entry of Budgie's panel menus, as libbudgie-appindexer files them."""
     return json.loads(session.run(["python3", "-I", "-c", BUDGIE_READER]).stdout)
 
+# mate-panel's Applications menu: libmate-menu on mate-applications.menu (the panel names that file
+# itself, whatever XDG_MENU_PREFIX says), as the panel shows it (directory names, not menu ids). The
+# binding has no TreeEntry.get_app_info: the command comes from the entry's desktop file.
+MATE_PANEL_READER = """
+import json, gi
+gi.require_version("MateMenu", "2.0")
+from gi.repository import Gio, MateMenu
+tree = MateMenu.Tree.new("mate-applications.menu", MateMenu.TreeFlags.NONE)
+tree.load_sync()
+found = []
+def walk(directory, path):
+    items = directory.iter()
+    kind = items.next()
+    while kind != MateMenu.TreeItemType.INVALID:
+        if kind == MateMenu.TreeItemType.ENTRY:
+            entry = items.get_entry()
+            info = Gio.DesktopAppInfo.new_from_filename(entry.get_desktop_file_path())
+            found.append({"path": path, "id": entry.get_desktop_file_id(), "command": info.get_commandline()})
+        elif kind == MateMenu.TreeItemType.DIRECTORY:
+            folder = items.get_directory()
+            walk(folder, path + [folder.get_name()])
+        kind = items.next()
+walk(tree.get_root_directory(), [])
+print(json.dumps(found))
+"""
+
+
+def _mate_panel_entries(session: dekit.Session) -> list[dict[str, object]]:
+    """Every entry of mate-panel's Applications menu."""
+    return json.loads(session.run(["python3", "-I", "-c", MATE_PANEL_READER]).stdout)
+
+
 MENU_READERS: dict[str, Callable[[dekit.Session], list[dict[str, object]]]] = {
     desktops.MENU_BUDGIE: _budgie_entries,
     desktops.MENU_GARCON: _garcon_entries,
     desktops.MENU_KSYCOCA: _ksycoca_entries,
     desktops.MENU_LXQT_PANEL: _lxqt_panel_entries,
     desktops.MENU_GNOME_SHELL: _gnome_shell_entries,
+    desktops.MENU_MATE_PANEL: _mate_panel_entries,
 }
 
 
@@ -428,12 +461,33 @@ def _check_nemo_action(session: dekit.Session, _installed: dekit.Installed) -> N
     assert action["Nemo Action"]["active"] == "true"
     assert OPEN_ACTION in action["Nemo Action"]["exec"]
 
+# caja-actions' menu plugin: Caja loads it from its extensions directory when it starts.
+CAJA_ACTIONS_MENU = b"/caja/extensions-2.0/libcaja-actions-menu.so"
+
+
+def _loaded(pid: int, library: bytes) -> bool:
+    try:
+        return library in Path("/proc", str(pid), "maps").read_bytes()
+    except OSError:
+        return False
+
+
+def _check_caja_fma(session: dekit.Session, installed: dekit.Installed) -> None:
+    """Our FileManager-Actions entry, and the running Caja (started before install.sh wrote it)
+    has caja-actions' menu plugin, which watches the actions directories: no restart."""
+    _check_fma_action(session, installed)
+    cajas = dekit.pids_of("caja")
+    assert cajas, "Caja is not running"
+    assert any(_loaded(pid, CAJA_ACTIONS_MENU) for pid in cajas), "Caja did not load caja-actions"
+
+
 INTEGRATION_CHECKS: dict[str, Callable[[dekit.Session, dekit.Installed], None]] = {
     desktops.NEMO_ACTION: _check_nemo_action,
     desktops.THUNAR_UCA: _check_thunar_uca,
     desktops.DOLPHIN_SERVICEMENU: _check_dolphin_servicemenu,
     desktops.PCMANFM_QT_FMA: _check_fma_action,
     desktops.NAUTILUS_EXTENSION: _check_nautilus_extension,
+    desktops.CAJA_FMA: _check_caja_fma,
 }
 
 

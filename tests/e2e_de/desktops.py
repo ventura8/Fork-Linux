@@ -34,7 +34,8 @@ MENU_KSYCOCA = "kbuildsycoca"
 MENU_LXQT_PANEL = "lxqt-panel"
 MENU_GNOME_SHELL = "gnome-shell"
 MENU_BUDGIE = "budgie-appindexer"
-MENU_READERS = (MENU_GARCON, MENU_KSYCOCA, MENU_LXQT_PANEL, MENU_GNOME_SHELL, MENU_BUDGIE)
+MENU_MATE_PANEL = "mate-panel"
+MENU_READERS = (MENU_GARCON, MENU_KSYCOCA, MENU_LXQT_PANEL, MENU_GNOME_SHELL, MENU_BUDGIE, MENU_MATE_PANEL)
 
 # How the desktop picks the web browser that xdg-open hands http(s) links to.
 BROWSER_XFCE_HELPERS = "xfce-helpers"
@@ -665,4 +666,144 @@ BUDGIE = Desktop(
 )
 
 
-DESKTOPS: dict[str, Desktop] = {desktop.key: desktop for desktop in (XFCE, KDE, LXQT, GNOME, BUDGIE)}
+def _mate_set(schema: str, key: str, value: str) -> Command:
+    """``gsettings set`` of one MATE key, as MATE's Control Center dialogs write it."""
+    return ("gsettings", "set", schema, key, value)
+
+
+def _mate_reset(schema: str, key: str) -> Command:
+    """``gsettings reset``: the key back to its (Ubuntu MATE) default."""
+    return ("gsettings", "reset", schema, key)
+
+
+_MATE_INTERFACE = "org.mate.interface"
+_MATE_FONTS = "org.mate.font-rendering"
+_MARCO = "org.mate.Marco.general"
+
+
+def _mate_theme(gtk: str, marco: str) -> tuple[Command, ...]:
+    """Appearance > Theme: a theme sets the controls (GTK) and Marco's window border."""
+    return (_mate_set(_MATE_INTERFACE, "gtk-theme", gtk), _mate_set(_MARCO, "theme", marco))
+
+
+# Appearance > Fonts > Details > Window Scaling: org.mate.interface window-scaling-factor (0 = auto,
+# 1 on the tier's 96 DPI screen). When the scale changes, mate-settings-daemon restarts the window
+# manager ("marco --replace"), and the replaced marco never exits (marco 1.26.2's meta_quit finds
+# no main loop: "g_main_loop_is_running: assertion 'loop != NULL' failed"), so stale marcos pile
+# up. The command waits for the new marco (40 s, within Session.run's 60 s) and ends the replaced
+# ones, as their own exit would have.
+_MATE_WINDOW_SCALING = """
+import os, signal, subprocess, sys, time
+KEY = ("org.mate.interface", "window-scaling-factor")
+def scale():
+    words = subprocess.run(["gsettings", "get", *KEY], capture_output=True, text=True, check=True).stdout.split()
+    return max(int(words[-1]), 1)
+def wm_check():
+    try:
+        root = subprocess.run(["xprop", "-root", "_NET_SUPPORTING_WM_CHECK"], capture_output=True, text=True,
+                              timeout=5).stdout
+    except subprocess.TimeoutExpired:
+        return None
+    return root.rpartition("#")[2].strip()
+def marcos():
+    found = []
+    for pid in filter(str.isdigit, os.listdir("/proc")):
+        try:
+            with open(f"/proc/{pid}/stat", encoding="utf-8") as stat:
+                text = stat.read()
+        except OSError:
+            continue
+        fields = text[text.rfind(")") + 2 :].split()
+        if text[text.find("(") + 1 : text.rfind(")")] == "marco" and fields[0] != "Z":
+            found.append((int(fields[19]), int(pid)))
+    return [pid for _started, pid in sorted(found)]
+before, check = scale(), wm_check()
+subprocess.run(["gsettings", "set", *KEY, sys.argv[1]] if sys.argv[1:] else ["gsettings", "reset", *KEY], check=True)
+deadline = time.monotonic() + 40
+while scale() != before and wm_check() in (check, None):
+    if time.monotonic() > deadline:
+        sys.exit("no new marco after 40 s (the X server is held: dekit's X queries wait for it)")
+    time.sleep(0.2)
+for pid in marcos()[:-1]:
+    os.kill(pid, signal.SIGTERM)
+"""
+
+
+def _mate_window_scaling(*value: str) -> Command:
+    """Set (or, without a value, reset) MATE's window scaling and settle marco's restart."""
+    return ("python3", "-I", "-c", _MATE_WINDOW_SCALING, *value)
+
+
+MATE = Desktop(
+    key="mate",
+    title="Ubuntu MATE 26.04 (MATE 1.26: marco, mate-settings-daemon, Caja + caja-actions, mate-terminal)",
+    # What lightdm + /etc/X11/Xsession.d (60x11-common_xdg_path, 80mate-environment),
+    # /etc/profile.d/mate-qt.sh and mate-session export for the "MATE" session.
+    session_env={
+        "XDG_CURRENT_DESKTOP": "MATE",
+        "DESKTOP_SESSION": "mate",
+        "XDG_SESSION_DESKTOP": "mate",
+        "XDG_SESSION_TYPE": "x11",
+        "XDG_MENU_PREFIX": "mate-",
+        "XDG_CONFIG_DIRS": "/etc/xdg/xdg-mate:/etc/xdg",
+        "XDG_DATA_DIRS": "/usr/share/mate:/usr/local/share/:/usr/share/",
+        "GTK_OVERLAY_SCROLLING": "0",
+        "COMPIZ_CONFIG_PROFILE": "mate",
+        "QT_QPA_PLATFORMTHEME": "gtk2",
+    },
+    settings_daemon=("/usr/libexec/mate-settings-daemon",),
+    window_manager=("marco", "--replace"),
+    wm_name="Metacity (Marco)",
+    # mate-session's file manager (and the FileManager1 D-Bus service Caja ships) is
+    # "caja --no-default-window", which also draws the desktop.
+    file_manager="caja",
+    file_manager_service=("caja", "--no-default-window"),
+    file_manager_class="Caja",
+    provides_file_manager1=True,
+    integration=CAJA_FMA,
+    # mate-panel's Applications menu (libmate-menu on mate-applications.menu) files
+    # Categories=Development under its "Development" menu, shown as "Programming".
+    menu_reader=MENU_MATE_PANEL,
+    menu_folder=("Programming",),
+    terminal="mate-terminal",
+    terminal_class="Mate-terminal",
+    # Control Center > Appearance > Theme: Ubuntu MATE's Yaru-MATE light and dark, and MATE's own
+    # stock themes (mate-themes), whose dark ones do not say "dark" in their names.
+    themes={
+        LIGHT: _mate_theme("Yaru-MATE-light", "Yaru"),
+        DARK: _mate_theme("Yaru-MATE-dark", "Yaru-dark"),
+        "light:menta": _mate_theme("Menta", "Menta"),
+        "dark:blackmate": _mate_theme("BlackMATE", "BlackMATE"),
+        "dark:highcontrastinverse": _mate_theme("HighContrastInverse", "HighContrastInverse"),
+    },
+    # Control Center > Appearance > Fonts > Details: Resolution (dots per inch); Window Scaling
+    # (org.mate.interface window-scaling-factor, 0 = auto).
+    scales=(
+        ScaleCase("default", 100),
+        ScaleCase("window-scaling-2", 200, (_mate_window_scaling("2"),)),
+        ScaleCase("font-dpi-144", 150, (_mate_set(_MATE_FONTS, "dpi", "144.0"),)),
+        ScaleCase("font-dpi-192", 200, (_mate_set(_MATE_FONTS, "dpi", "192.0"),)),
+    ),
+    reset=(
+        _mate_reset(_MATE_INTERFACE, "gtk-theme"),
+        _mate_reset(_MARCO, "theme"),
+        _mate_window_scaling(),
+        _mate_reset(_MATE_FONTS, "dpi"),
+    ),
+    browser=BROWSER_XDG_MIME,
+    # Caja's folder context menu: Create Folder, Create Document, Caja-Actions actions (the submenu
+    # caja-actions puts every action in), whose first item is "Open in Fork".
+    open_in_fork_keys=("Menu", "Down", "Down", "Down", "Right", "Return"),
+    # marco, like metacity, gives a window that asks for no decorations no frame: Fork's main
+    # window is managed (client list, WM_STATE) but stays a child of the root window.
+    frames_undecorated=False,
+    settings_ready=("sh", "-c", "xrdb -query | grep -q '^Xft.dpi:'"),
+    packages=(
+        "marco", "mate-settings-daemon", "mate-desktop-common", "caja", "caja-actions", "mate-terminal",
+        "mate-menus", "gir1.2-matemenu-2.0", "mate-themes", "ubuntu-mate-default-settings", "ubuntu-mate-themes",
+        "dconf-gsettings-backend",
+    ),
+)
+
+
+DESKTOPS: dict[str, Desktop] = {desktop.key: desktop for desktop in (XFCE, KDE, LXQT, GNOME, BUDGIE, MATE)}

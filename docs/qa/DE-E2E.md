@@ -19,6 +19,7 @@ root under `/var/tmp/fork-linux-e2e/`, the read-only seed for the real-Fork tier
 | Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, kcminit + kded6, Dolphin 25.12 + its FileManager1 and our service menu, Konsole, Kickoff's menu through kbuildsycoca6, Kubuntu / Kubuntu Dark / Breeze Dark global themes and colour schemes) | `fork-linux-e2e-de-kde:26.04` | ❌ 17/18: the `dark:custom-colors` theme case fails until the `theme.py` fix in [de-fixes/kde.md](de-fixes/kde.md) lands (18/18 with it) | ✅ 9/9 (setup 308 s from the seed, tier 369 s) | local `scripts/ci-e2e-de.sh kde [--fork]`, 2026-10-11 |
 | Ubuntu 26.04, GNOME 50 (mutter 50 headless Wayland + rootless Xwayland, gsd-xsettings, Nautilus 50 + python3-nautilus and its FileManager1, Ptyxis via xdg-terminal-exec, gnome-shell's app grid, Yaru / Yaru-dark + color-scheme) | `fork-linux-e2e-de-gnome:26.04` | ❌ 12/14 (3 src bugs, fixes proposed); ✅ 14/14 with the fixes | ❌ stops at 07 (Nautilus shows no "Open in Fork"); ✅ 9/9 with the fixes (setup 266-357 s from the seed, tier 325-431 s) | local `scripts/ci-e2e-de.sh gnome [--fork]`, 2026-10-11; [de-fixes/gnome.md](de-fixes/gnome.md) |
 | Ubuntu Budgie 26.04, Budgie 10.10 (labwc 0.9 headless Wayland + rootless Xwayland, budgie-daemon, Nemo 6.4 + its FileManager1 service, xfce4-terminal, the panel menus' libbudgie-appindexer, Pocillo / Pocillo-dark + the Dark theme switch, display scale and text scaling) | `fork-linux-e2e-de-budgie:26.04` | ❌ 13/14: Nemo shows no "Open in Fork" inside a folder until fix 1 in [de-fixes/budgie.md](de-fixes/budgie.md) lands; ✅ 14/14 with it | ❌ stops at 06 (the Nemo that Open In File Explorer starts inside Wine's sandbox aborts; 01-05 pass); ✅ 9/9 with both fixes (setup 256-267 s from the seed, tier 332 s) | local `scripts/ci-e2e-de.sh budgie [--fork]`, 2026-10-11 |
+| Ubuntu MATE 26.04, MATE 1.26 (marco, mate-settings-daemon, Caja 1.26 + its FileManager1 and caja-actions, mate-terminal, mate-panel's menu, Yaru-MATE light / dark and the stock Menta, BlackMATE, HighContrastInverse) | `fork-linux-e2e-de-mate:26.04` | ❌ 15/17: the `dark:blackmate` and `dark:highcontrastinverse` theme cases fail until the `theme.py` fix in [de-fixes/mate.md](de-fixes/mate.md) lands (17/17 with it) | ✅ 9/9 in both runs (setup 257 / 287 s from the seed, tier 313 / 340 s) | local `scripts/ci-e2e-de.sh mate [--fork]`, 2026-10-11 |
 
 Cinnamon and MATE follow the same pattern: one
 `docker/Dockerfile.e2e.de.<desktop>` plus one entry in `tests/e2e_de/desktops.py` (see "Adding a
@@ -316,6 +317,60 @@ with `Theme=1` and a dark window;
 - Ubuntu Budgie's terminal is xfce4-terminal (`org.gnome.desktop.default-applications.terminal`,
   labwc's Ctrl+Alt+T); fork-linux reaches it because no terminal earlier in its list is
   installed (it does not read Budgie's setting; see de-fixes/budgie.md).
+
+## MATE facts the recipe relies on
+
+- The session is Ubuntu MATE's as lightdm and Xsession set it (`XDG_CURRENT_DESKTOP=MATE`,
+  `DESKTOP_SESSION=mate`, `XDG_MENU_PREFIX=mate-`, `XDG_DATA_DIRS=/usr/share/mate:...`, where
+  ubuntu-mate-default-settings keeps its `mate-mimeapps.list` and `defaults.list`). Ubuntu MATE
+  26.04 no longer overrides `org.mate.interface gtk-theme`: its default is MATE's Menta; the
+  Yaru-MATE themes come from ubuntu-mate-themes (Appearance > Theme lists them).
+- marco names itself "Metacity (Marco)" (`_NET_WM_NAME` of its check window), and like metacity
+  it does not frame a window that asks for no decorations (`_MOTIF_WM_HINTS`): Fork's main
+  window is managed (in `_NET_CLIENT_LIST`, `WM_STATE` Normal) but stays a child of the root
+  window (`frames_undecorated=False`); decorated windows such as mate-terminal are framed
+  (checked in the container with an undecorated X window and with Fork).
+- `xdotool getwindowgeometry` adds a frame's offset twice for a reparented window (a framed
+  mate-terminal reported 11 px right and 39 px down of where it is): `dekit` takes window
+  positions from `xwininfo`'s absolute upper-left corner, so window screenshots and clicks
+  land on the window under every window manager.
+- mate-settings-daemon publishes `Xft.dpi` = font DPI (Appearance > Fonts > Details >
+  Resolution, `org.mate.font-rendering dpi`, 0 = the X server's 96) x window scaling
+  (`org.mate.interface window-scaling-factor`, 0 = auto): window scaling 2 gives 192, so
+  fork-linux's `xrdb` probe reads every MATE scale; no MATE probe is needed.
+- When the window scaling changes, mate-settings-daemon restarts the window manager (`marco
+  --replace`), and the replaced marco never exits: marco 1.26.2 logs `g_main_loop_is_running:
+  assertion 'loop != NULL' failed` from its quit path and stays, one more stale marco per
+  change. The recipe's window-scaling command (`_mate_window_scaling`) waits for the new marco
+  and ends the replaced ones, as their own exit would have.
+- Now and then the X server answered nobody for a minute or more: 1 of 16 integration runs (the
+  terminal and reveal tests timed out after 30 s in `xdotool search`) and 4 stress runs (5 to 80
+  loops of theme and scale switches, then a new mate-terminal) in the same hour, while the host
+  was busy with other real-Fork runs; none in about 7000 stress steps later. During one stall
+  Xvfb sat idle in `epoll_wait`, marco's main thread waited in `poll` and its two glycin image
+  loaders (`glycin-svg`, `glycin-image-rs`, the loaders gdk-pixbuf 2.44 uses) waited on a futex:
+  marco was holding a server grab while it waited for an image. The cause inside marco or glycin
+  is not known (a faked low `MemAvailable`, a CPU limit and a memory limit did not bring it
+  back). The tier waits it out: X queries in `dekit` (xdotool, xwininfo, xprop, screenshots) may
+  take up to `X_TIMEOUT` (300 s) instead of failing after 30 s. fork-linux is not involved.
+- MATE's own dark theme BlackMATE and HighContrastInverse do not say "dark" in their names, and
+  `org.mate.interface` has no color-scheme key: fork-linux reads them as light (the two
+  failing theme cases; the fix is proposed in [de-fixes/mate.md](de-fixes/mate.md)). The
+  real-Fork tier's dark step uses Yaru-MATE-dark, which fork-linux reads correctly.
+- Caja (`caja --no-default-window`, as mate-session and its FileManager1 D-Bus service start
+  it) draws the desktop and owns `org.freedesktop.FileManager1`. caja-actions puts every
+  FileManager-Actions entry in a "Caja-Actions actions" submenu of the folder's context menu
+  (Menu, Down x3 to it, Right opens it on "Open in Fork"), and it watches the actions
+  directories: a Caja that was running when `install.sh` wrote the action shows it without a
+  restart, so fork-linux rightly prints no restart notice for Caja.
+- mate-panel's Applications menu (libmate-menu on `mate-applications.menu`) lists
+  `Categories=Development` entries in its "Development" menu, shown as "Programming". The
+  MateMenu binding has no `TreeEntry.get_app_info`; the reader takes the command from the
+  entry's desktop file.
+- `xdg-open` on MATE runs `gio open`, so web links follow `mimeapps.list` (the user's entry
+  wins over `mate-mimeapps.list`, which names firefox). Nothing in the image binds Ctrl+Alt+T
+  (marco's `run-command-terminal` is disabled, mate-settings-daemon's media keys have no
+  terminal key), unlike Xubuntu; the tier still uses Fork's Repository menu, as on every desktop.
 
 ## Adding a desktop
 

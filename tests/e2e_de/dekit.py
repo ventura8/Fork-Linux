@@ -39,6 +39,10 @@ SCREEN = "1920x1080x24"
 SESSION_MARKER = "FL_E2E_DE_SESSION"
 FILE_MANAGER1 = "org.freedesktop.FileManager1"
 START_TIMEOUT = 30.0
+# How long a query of the X server may take. While a client holds a server grab the server answers
+# nobody else: on MATE the window manager now and then held one for a minute or more (marco waiting
+# for an image loader, see docs/qa/DE-E2E.md). A query then waits for the server instead of failing.
+X_TIMEOUT = 300.0
 POLL = 0.3
 T = TypeVar("T")
 # The file a Wayland compositor writes its Xwayland's variables to (KEY=VALUE lines), in
@@ -142,6 +146,20 @@ def _geometry(shell: str) -> dict[str, int]:
         key, sep, value = line.partition("=")
         if sep and value.strip().lstrip("-").isdigit():
             values[key.strip().lower()] = int(value)
+    return values
+
+
+_XWININFO_GEOMETRY = {"absolute upper-left x": "x", "absolute upper-left y": "y", "width": "width", "height": "height"}
+
+
+def _xwininfo_geometry(text: str) -> dict[str, int]:
+    """``xwininfo -id`` output as x, y (the absolute upper-left corner), width and height."""
+    values = {}
+    for line in text.splitlines():
+        key, sep, value = line.partition(":")
+        name = _XWININFO_GEOMETRY.get(key.strip().lower())
+        if sep and name and value.strip().lstrip("-").isdigit():
+            values[name] = int(value)
     return values
 
 
@@ -395,15 +413,20 @@ class Session:
 
     def xdotool(self, *args: str, check: bool = True) -> str:
         """``xdotool ARGS`` on the session's display; its output."""
-        return self.run(["xdotool", *args], check=check, timeout=30).stdout
+        return self.run(["xdotool", *args], check=check, timeout=X_TIMEOUT).stdout
 
     def window(self, wid: str) -> Window | None:
-        """The visible window ``wid``, or None when it is gone or has no geometry."""
-        geometry = _geometry(self.xdotool("getwindowgeometry", "--shell", wid, check=False))
+        """The visible window ``wid``, or None when it is gone or has no geometry.
+
+        Its position is where it is on the screen (``xwininfo``'s absolute upper-left corner):
+        ``xdotool getwindowgeometry`` adds a frame's offset twice once the window manager has
+        reparented the window (marco: 11 px and 39 px too far for a framed mate-terminal).
+        """
+        geometry = _xwininfo_geometry(self.run(["xwininfo", "-id", wid], check=False, timeout=X_TIMEOUT).stdout)
         if not {"x", "y", "width", "height"} <= geometry.keys():
             return None
         name = self.xdotool("getwindowname", wid, check=False).strip()
-        wm_class = _wm_class(self.run(["xprop", "-id", wid, "WM_CLASS"], check=False).stdout)
+        wm_class = _wm_class(self.run(["xprop", "-id", wid, "WM_CLASS"], check=False, timeout=X_TIMEOUT).stdout)
         pid_text = self.xdotool("getwindowpid", wid, check=False).strip()
         return Window(
             id=wid, name=name, wm_class=wm_class, pid=int(pid_text) if pid_text.isdigit() else None,
@@ -483,7 +506,7 @@ class Session:
         argv = ["magick", "import", "-display", self.display, "-window", "root"]
         if window is not None:
             argv += ["-crop", f"{window.width}x{window.height}+{window.x}+{window.y}"]
-        self.run([*argv, str(target)], timeout=60)
+        self.run([*argv, str(target)], timeout=X_TIMEOUT)
         return target
 
     def _rootless_screenshot(self, target: Path, window: Window | None) -> Path:
