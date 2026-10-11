@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import logging
 import socket
 import ssl
 import urllib.error
@@ -119,16 +120,20 @@ def test_offline_hit_and_miss(http_server: FakeHTTPServer, tmp_path: Path) -> No
 # -- resume ---------------------------------------------------------------------------
 
 
-def test_resume_from_part_file(http_server: FakeHTTPServer, tmp_path: Path) -> None:
+def test_resume_from_part_file(
+    http_server: FakeHTTPServer, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     http_server.add("/f.bin", BODY)
     (tmp_path / "f.bin.part").write_bytes(BODY[:1000])
     seen: list[tuple[int, int | None]] = []
-    path = get(
-        http_server, "/f.bin", tmp_path, sha256=BODY_SHA, size=len(BODY), progress=lambda d, t: seen.append((d, t))
-    )
+    with caplog.at_level(logging.INFO, logger="fork_linux.download"):
+        path = get(
+            http_server, "/f.bin", tmp_path, sha256=BODY_SHA, size=len(BODY), progress=lambda d, t: seen.append((d, t))
+        )
     assert path.read_bytes() == BODY
     assert http_server.requests_for("/f.bin")[0].headers["Range"] == "bytes=1000-"
     assert seen[0] == (1000, len(BODY))
+    assert "resuming f.bin.part at byte 1000" in caplog.text
 
 
 def test_server_ignoring_range_restarts_from_zero(http_server: FakeHTTPServer, tmp_path: Path) -> None:

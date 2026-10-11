@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import logging
 import os
 import re
 import ssl
@@ -36,6 +37,8 @@ from urllib.parse import urlsplit
 
 from .errors import DownloadFailed, IntegrityFailed
 from .version import get_version
+
+log = logging.getLogger(__name__)
 
 PROJECT_URL = "https://github.com/ventura8/Fork-Linux"
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
@@ -309,6 +312,8 @@ def _transfer(
     response = _open_response(opener, url, part, offset, timeout)
     with response:
         offset, total, hasher = _body_start(response, part, offset)
+        if offset:
+            log.info("resuming %s at byte %d", part.name, offset)
         _check_announced(url, part, total, size, max_size)
         expected = total if total is not None else size
         with _open_part(part, append=offset > 0) as out:
