@@ -58,6 +58,21 @@ def pytest_configure(config: pytest.Config) -> None:
     real_tier.enforce()
 
 
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """One scenario (test module) of this tier per session: each builds on a root of its own.
+
+    Ends the session with status 2 before any test runs when the tests of several modules of
+    this directory were collected (``real_tier.mixed_scenarios``).
+    """
+    here = Path(__file__).resolve().parent
+    nodeids = [
+        item.nodeid for item in items if (config.rootpath / item.nodeid.split("::", 1)[0]).resolve().parent == here
+    ]
+    reason = real_tier.mixed_scenarios(nodeids)
+    if reason is not None:
+        pytest.exit(reason, returncode=2)
+
+
 # The gate itself is a module-level skip in each test module: a skip raised while a
 # conftest.py is imported ends the whole session under pytest 6.2 (Ubuntu 22.04) and
 # aborts ``pytest tests/e2e`` under pytest 8. Without the flag these fixtures are never used.

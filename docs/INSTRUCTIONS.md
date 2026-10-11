@@ -56,6 +56,7 @@ FL_CI_STAGE=compat FL_CI_CELL=jammy ./scripts/ci-docker.sh
 ./scripts/ci-packaging-matrix.sh               # 9 cells in parallel
 ./scripts/ci-pipeline.sh                       # everything, fail-fast, tee'd under logs/
 ./scripts/ci-e2e-wine.sh                       # CI's real tier: Fork under Wine (Xvfb, ~2.5 GB download, no seed)
+FL_E2E_FORK_UPDATES=1 FL_E2E_APP_UPGRADE=1 ./scripts/ci-e2e-wine.sh  # + both update tiers (as e2e-wine.yml), one fresh root per module
 ```
 
 ### Real Fork / Wine locally: containers only
@@ -71,6 +72,7 @@ scripts/e2e-docker.sh --name e2e --keep pytest tests/e2e -k 03 # reuse the previ
 FL_E2E_FORK_UPDATES=1 scripts/e2e-docker.sh --name upd-fork pytest tests/e2e/test_fork_update.py  # Fork updates (run scripts/build-bridge.sh first)
 FL_E2E_APP_UPGRADE=1 scripts/e2e-docker.sh --name upd-app pytest tests/e2e/test_wine_app_upgrade.py  # app upgrades
 scripts/e2e-docker.sh --name look --keep shell -- bash         # xdotool / import on DISPLAY=:99
+# One tests/e2e module per session (each is one scenario; a session that collects several stops with status 2).
 scripts/e2e-docker.sh --name trace --ptrace shell -- strace -f -o /e2e/t.txt python3 -m fork_linux doctor
 ```
 

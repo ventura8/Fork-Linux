@@ -382,6 +382,38 @@ def test_package_imports_only_stdlib_or_fork_linux() -> None:
     assert bad == [], "src/fork_linux must use the standard library only:\n" + "\n".join(bad)
 
 
+def _duplicate_test_basenames(paths: list[str]) -> dict[str, list[str]]:
+    """``{basename: [paths]}`` of the test modules under ``tests/`` that share a file name."""
+    seen: dict[str, list[str]] = {}
+    for rel in paths:
+        name = rel.rsplit("/", 1)[-1]
+        if rel.startswith("tests/") and name.startswith("test_") and name.endswith(".py"):
+            seen.setdefault(name, []).append(rel)
+    return {name: rels for name, rels in seen.items() if len(rels) > 1}
+
+
+def test_duplicate_test_basenames_detector() -> None:
+    paths = [
+        "tests/test_app_upgrade.py",
+        "tests/e2e/test_app_upgrade.py",
+        "tests/e2e/conftest.py",
+        "tests/conftest.py",
+        "tests/bridge/test_corpus.py",
+        "scripts/test_app_upgrade.py",
+    ]
+    assert _duplicate_test_basenames(paths) == {
+        "test_app_upgrade.py": ["tests/test_app_upgrade.py", "tests/e2e/test_app_upgrade.py"]
+    }
+
+
+def test_test_module_basenames_are_unique() -> None:
+    """tests/ has no __init__.py, so pytest imports test modules by file name: under pytest 6.2
+    (Ubuntu 22.04's Python 3.10 cell) two modules of one name stop the whole collection
+    ("import file mismatch")."""
+    duplicates = _duplicate_test_basenames(_repo_files())
+    assert duplicates == {}, f"test modules must have unique file names: {duplicates}"
+
+
 def test_tests_and_scripts_import_only_stdlib_pytest_or_local() -> None:
     """pytest is the only test dependency (AGENTS.md §1); local helpers live in tests/."""
     local = {

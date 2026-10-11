@@ -124,6 +124,7 @@ the rest are named under Planned; **planned** = nothing exists yet. Test referen
 | UPD-26 | A4 | Fork 2.23.1 does not start on Kron4ek 11.19 staging in a prefix 11.0 created (`System.IO.FileLoadException` in WPF's BAML reader); not ours, but a reason to E2E-test every new Wine pin before it ships (`wine-runtime-bump` skill) | recorded (Wine 11.19); the pin stays 11.0 |
 | UPD-27 | A2-A12 | When all `FL_E2E_SLOTS` were busy, a waiting `e2e-docker.sh` / `ci-e2e-wine.sh` blocked on one fixed slot while later runs took every slot that freed up (a run waited over 15 minutes) | fixed: the waiting run polls every slot (`FL_E2E_SLOT_POLL`) |
 | UPD-28 | A6 | `fork_settings` ran before `host_shims`, and its inputs (Fork's tools: `fl-launch.exe` when the bridge is ready) depend on the installed shims matching the shipped ones: after every bridge upgrade (and the first `git-bridge enable` setup) it ran once with the old shims ("bridge not ready", tools without `fl-launch.exe`) and once more on the next launch (real tier A6) | fixed: `host_shims` runs first, and a pending step that an earlier step of the same run made current is skipped |
+| UPD-29 | A2-A12, F1-F23 | `scripts/ci-e2e-wine.sh` (e2e-wine.yml) ran every `tests/e2e` module in one pytest session and one scratch root: with the update tiers on, the app-upgrade scenario would have run in the prefix `test_real_fork.py` had set up with Fork 2.23.2 (and later purged), and one module's failure failed the next one's steps | fixed: one container and fresh scratch root per module, logs in `logs/e2e-wine/<module>/`; `tests/e2e/conftest.py` stops a session that collects several modules |
 
 ## Running the tiers
 
@@ -132,6 +133,8 @@ python3 scripts/check-update-scenarios.py            # the matrix is consistent
 python3 scripts/check-update-scenarios.py --strict   # ... and every scenario is covered
 python3 -m pytest -q tests/test_cmd_update.py tests/test_updates.py tests/test_snapshots.py   # U
 ./scripts/ci-packaging-cell.sh deb                   # P, one format (Docker)
-scripts/e2e-docker.sh --name upd-fork pytest tests/e2e/test_fork_update.py   # R (Docker only)
+scripts/build-bridge.sh && FL_E2E_FORK_UPDATES=1 scripts/e2e-docker.sh --name upd-fork pytest tests/e2e/test_fork_update.py   # R (Docker only)
+FL_E2E_APP_UPGRADE=1 scripts/e2e-docker.sh --name upd-app pytest tests/e2e/test_wine_app_upgrade.py   # R (A6 also needs FL_E2E_BRIDGE_BUILDS)
+FL_E2E_FORK_UPDATES=1 FL_E2E_APP_UPGRADE=1 ./scripts/ci-e2e-wine.sh   # R as CI runs it: one fresh root per module, no seed
 scripts/build-version-variant.sh 0.9.9 artifacts/n-1 tarball   # an N-1 build, inside its packaging image
 ```

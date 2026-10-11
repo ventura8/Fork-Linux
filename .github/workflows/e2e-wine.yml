@@ -5,9 +5,11 @@ name: E2E (real Fork under Wine)
 # minutes, ~2.5 GB of downloads made on the runner), then the Fork-update tier (Fork 2.23.1
 # updating itself and through fork-linux, another ~20 minutes) and the app-upgrade tier (a step
 # revision, an upgrade while Fork runs, a Wine pin change and back, uninstall / reinstall, the
-# bridge replaced under a running daemon, our upgrade plus Fork's own, ~30 minutes). Weekly, on demand, and on same-repo PRs
-# from release branches (feature/vX.Y.Z). Uploads logs only: no screenshots (they show Fork's
-# logo), no binaries, and the Fork installer is never cached (AGENTS.md hard rules 1, 4).
+# bridge replaced under a running daemon, our upgrade plus Fork's own, ~30 minutes). Each test
+# module runs in a container and a fresh scratch root of its own (scripts/ci-e2e-wine.sh).
+# Weekly, on demand, and on same-repo PRs from release branches (feature/vX.Y.Z). Uploads logs
+# only: no screenshots (they show Fork's logo), no binaries, and the Fork installer is never
+# cached (AGENTS.md hard rules 1, 4).
 on:
   schedule:
     - cron: '17 4 * * 1'

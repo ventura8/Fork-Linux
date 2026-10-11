@@ -38,6 +38,9 @@ scripts/e2e-docker.sh --name shim --image fork-linux-ci-bridge:26.04 shell -- ba
   it carries `.fl-e2e-scratch`); with `--keep` it is reused (the conftest keeps
   `root/home/.cache`, everything else of the E2E root is rebuilt).
 - `--ptrace` adds only `CAP_SYS_PTRACE`. Never `--privileged`.
+- One `tests/e2e` module per run: each module is one scenario whose steps build on the root, and
+  `tests/e2e/conftest.py` stops (status 2) a session that collected tests of several modules. Give
+  each module its own `--name` (CI: `scripts/ci-e2e-wine.sh` gives each a fresh scratch root).
 - `tests/e2e/test_fork_update.py` (gated by `FL_E2E_FORK_UPDATES=1` as well) installs Fork 2.23.1
   from `cdn.fork.dev` in a prefix of its own (`root/fork-update`) and lets it update to the tested
   version through Fork's own updater (Velopack: File > Check for Updates..., Restart and Update; a

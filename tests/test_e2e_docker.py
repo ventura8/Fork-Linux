@@ -539,23 +539,86 @@ def test_ci_e2e_wine_uses_a_fresh_wiped_scratch_and_no_seed(box: Box) -> None:
                      FAKE_FLOCK_BUSY="slot-1")
     assert result.returncode == 0, result.stdout + result.stderr
     assert [(row["lock"], row["nonblocking"]) for row in box.calls("flock")] == [("slot-1", 1), ("slot-2", 1)]
-    argv = box.docker_runs()[0]
+    (argv,) = box.docker_runs()
     image = _image_index(argv, "fork-linux-ci-e2e-wine:26.04")
-    assert argv[image + 1:][-2:] == ["-k", "setup"]
+    assert argv[image + 1:][-3:] == ["tests/e2e/test_real_fork.py", "-k", "setup"]
     argv = argv[:image]
     volumes = _opts(argv, "-v")
     assert volumes[0] == f"{box.wt.resolve()}:/src:ro"
     assert volumes[1].startswith(f"{tmpdir}/fl-e2e-wine.") and volumes[1].endswith(":/e2e:rw")
     assert len(volumes) == 2
     assert "FL_E2E_FORK_VERSION" in _opts(argv, "-e")
+    assert "FL_E2E_BRIDGE_BUILDS=" in _opts(argv, "-e")
     assert not any(value.endswith(":/seed:ro") or value.startswith("FL_E2E_SEED") for value in argv)
     assert "--init" in argv and "--rm" in argv
     assert list(tmpdir.iterdir()) == [], "the scratch root is deleted afterwards"
-    logs = box.wt / "logs" / "e2e-wine"
+    logs = box.wt / "logs" / "e2e-wine" / "test_real_fork"
     assert (logs / "root" / "logs" / "launch.log").is_file()
+    assert "fake container output" in (logs / "pytest.log").read_text(encoding="utf-8")
     assert not list(logs.rglob("*.png"))
     for row in box.calls("docker"):
         assert row["fds"]["9"] is False
+
+
+FAKE_VARIANT = """#!/usr/bin/env bash
+# fake build-version-variant.sh --tree-only VERSION OUTDIR: a variant tree with a fake build-bridge.sh
+set -euo pipefail
+printf '{"tool": "variant", "args": "%s"}\\n' "$*" >> "$FAKE_LOG"
+tree="$3/fork-linux-$2"
+mkdir -p "$tree/scripts"
+cp "$(dirname "$0")/build-bridge.sh" "$tree/scripts/build-bridge.sh"
+"""
+FAKE_BUILD_BRIDGE = """#!/usr/bin/env bash
+# fake build-bridge.sh [--out DIR]
+set -euo pipefail
+printf '{"tool": "build-bridge", "args": "%s"}\\n' "$*" >> "$FAKE_LOG"
+if [[ "${1:-}" == "--out" ]]; then
+    mkdir -p "$2"
+    for name in fl-bridge-helper fl-shim.exe fl-launch.exe; do printf 'build\\n' > "$2/$name"; done
+fi
+"""
+
+
+def test_ci_e2e_wine_runs_each_module_in_a_scratch_root_of_its_own(box: Box) -> None:
+    """Fork-update and app-upgrade tiers on: one container and one fresh root per module; the bridge is built
+    first, the app-upgrade tier gets two bridge builds read-only; every module runs although each fails."""
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    for name, text in (("build-version-variant.sh", FAKE_VARIANT), ("build-bridge.sh", FAKE_BUILD_BRIDGE)):
+        path = box.wt / "scripts" / name
+        path.write_text(text, encoding="utf-8")
+        path.chmod(0o755)
+    result = box.run(script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_FORK_UPDATES="1", FL_E2E_APP_UPGRADE="1",
+                     FAKE_RUN_RC="3")
+    assert result.returncode == 3, result.stdout + result.stderr
+    builds = [row["args"] for row in box.calls() if row["tool"] in ("variant", "build-bridge")]
+    assert builds[0] == ""
+    assert [args.split()[:2] for args in builds[1:]] == [
+        ["--tree-only", "0.9.1"], ["--out", builds[2].split()[1]], ["--tree-only", "0.9.2"],
+        ["--out", builds[4].split()[1]],
+    ]
+    full = box.docker_runs()
+    modules = [argv[-1] for argv in full]
+    runs = [argv[:_image_index(argv, "fork-linux-ci-e2e-wine:26.04")] for argv in full]
+    assert modules == ["tests/e2e/test_real_fork.py", "tests/e2e/test_fork_update.py",
+                       "tests/e2e/test_wine_app_upgrade.py"]
+    roots = [next(v for v in _opts(argv, "-v") if v.endswith(":/e2e:rw")) for argv in runs]
+    assert len(set(roots)) == 3
+    for argv in runs[:2]:
+        assert len(_opts(argv, "-v")) == 2
+        assert "FL_E2E_BRIDGE_BUILDS=" in _opts(argv, "-e")
+    upgrade = _opts(runs[2], "-v")
+    assert upgrade[2].endswith(":/bridge-builds:ro")
+    built = Path(upgrade[2].split(":")[0])
+    assert "FL_E2E_BRIDGE_BUILDS=/bridge-builds" in _opts(runs[2], "-e")
+    assert not built.exists(), "the bridge builds are deleted afterwards"
+    assert list(tmpdir.iterdir()) == []
+    logs = box.wt / "logs" / "e2e-wine"
+    assert sorted(path.name for path in logs.iterdir()) == ["test_fork_update", "test_real_fork",
+                                                             "test_wine_app_upgrade"]
+    for module in ("test_real_fork", "test_fork_update", "test_wine_app_upgrade"):
+        assert f"tests/e2e/{module}.py exit 3" in result.stdout
+        assert (logs / module / "pytest.log").is_file()
 
 
 def test_ci_e2e_wine_refuses_a_tmpdir_in_home(box: Box) -> None:

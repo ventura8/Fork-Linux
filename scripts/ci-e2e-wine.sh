@@ -8,22 +8,28 @@
 # CI or uploaded, and no seed is used. Only logs are kept: logs/e2e-wine/ (screenshots show
 # Fork's logo and stay in the scratch root, which is deleted afterwards).
 #
-# The scratch root is a fresh directory under ${TMPDIR:-/tmp}, refused when it is or lies
-# inside a home directory (AGENTS.md hard rule 18); the container sees only the read-only
-# source tree and that root. It shares scripts/lib-e2e-docker.sh (scratch checks, host-wide
+# Each scratch root is a fresh directory under ${TMPDIR:-/tmp}, refused when it is or lies
+# inside a home directory (AGENTS.md hard rule 18); a container sees only the read-only
+# source tree and its root. It shares scripts/lib-e2e-docker.sh (scratch checks, host-wide
 # slots, image build, logs-only copy) with scripts/e2e-docker.sh, the local runner.
 #
-# FL_E2E_FORK_UPDATES=1 adds the Fork-update tier (tests/e2e/test_fork_update.py: Fork 2.23.1
-# updating itself and through fork-linux, in a prefix of its own); its bridge scenarios need the
-# bridge, which is built first (scripts/build-bridge.sh, in its own CI image) when it is missing.
+# Every test module of tests/e2e is one scenario whose steps build on each other, so each runs
+# in a pytest session and a fresh scratch root of its own (one container per module, the root
+# deleted afterwards; tests/e2e/conftest.py refuses a session that mixes modules). Logs go to
+# logs/e2e-wine/<module>/ (pytest.log + the root's text logs, paths relative to the root):
+#   test_real_fork.py        always: setup, Fork's window, doctor, snapshot / rollback, purge
+#   test_fork_update.py      FL_E2E_FORK_UPDATES=1: Fork 2.23.1 updating itself and through
+#                            fork-linux; its bridge scenarios need the bridge, built first
+#                            (scripts/build-bridge.sh, in its own CI image) when it is missing
+#   test_wine_app_upgrade.py FL_E2E_APP_UPGRADE=1: upgrades of fork-linux itself. Its A6 step
+#                            replaces the bridge binaries of one version by another's while the
+#                            daemon runs, so two bridge builds of different versions are made
+#                            first (variant trees of this one, 0.9.1 and 0.9.2, by
+#                            scripts/build-version-variant.sh --tree-only) into a directory of
+#                            their own, mounted read-only (FL_E2E_BRIDGE_BUILDS=/bridge-builds)
+# Every module runs even when an earlier one failed; the exit status is the first failure's.
 #
-# FL_E2E_APP_UPGRADE=1 adds the app-upgrade tier (tests/e2e/test_wine_app_upgrade.py). Its A6
-# step replaces the bridge binaries of one version by another's while the daemon runs, so two
-# bridge builds of different versions are made first (variant trees of this one, 0.9.1 and
-# 0.9.2, by scripts/build-version-variant.sh --tree-only) into the scratch root's bridge/1 and
-# bridge/2 (FL_E2E_BRIDGE_BUILDS=/e2e/bridge).
-#
-# Usage: ./scripts/ci-e2e-wine.sh [pytest args...]
+# Usage: ./scripts/ci-e2e-wine.sh [pytest args...]   (added to every module's run)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -35,30 +41,55 @@ FL_E2E_PROG="ci-e2e-wine.sh"
 IMAGE="fork-linux-ci-e2e-wine:26.04"
 LOG_DIR="${ROOT}/logs/e2e-wine"
 CONTAINER="fl-e2e-ci-wine-$$"
+BUILDS_IN="/bridge-builds"
 
 command -v docker >/dev/null 2>&1 || fl_e2e_die "docker not found"
 TMP_BASE="$(fl_e2e_check_dir "${TMPDIR:-/tmp}" "TMPDIR")" || exit $?
-SCRATCH="$(mktemp -d "${TMP_BASE}/fl-e2e-wine.XXXXXX")"
-SCRATCH="$(fl_e2e_check_dir "${SCRATCH}" "scratch root")" || exit $?
-fl_e2e_prepare_scratch "${SCRATCH}" 0
-# On every exit: remove the container if it still runs, then the scratch root (marker-checked).
-trap 'docker rm -f "${CONTAINER}" >/dev/null 2>&1 9>&- || true; fl_e2e_wipe "${SCRATCH}"' EXIT
-mkdir -p -- "${SCRATCH}/root" "${SCRATCH}/home" "${LOG_DIR}"
+SCRATCH=""
+BUILDS=""
+# On every exit: remove the container if it still runs, then the scratch roots (marker-checked).
+cleanup() {
+	docker rm -f "${CONTAINER}" >/dev/null 2>&1 9>&- || true
+	if [[ -n "${SCRATCH}" ]]; then
+		fl_e2e_wipe "${SCRATCH}"
+	fi
+	if [[ -n "${BUILDS}" ]]; then
+		fl_e2e_wipe "${BUILDS}"
+	fi
+}
+trap cleanup EXIT
+
+# new_scratch: a fresh, marked scratch root under TMPDIR (refused inside a home directory).
+new_scratch() {
+	local dir
+	dir="$(mktemp -d "${TMP_BASE}/fl-e2e-wine.XXXXXX")"
+	dir="$(fl_e2e_check_dir "${dir}" "scratch root")" || exit $?
+	fl_e2e_prepare_scratch "${dir}" 0 >&2
+	printf '%s\n' "${dir}"
+}
+
+MODULES=(test_real_fork.py)
+if [[ "${FL_E2E_FORK_UPDATES:-0}" == "1" ]]; then
+	MODULES+=(test_fork_update.py)
+fi
+if [[ "${FL_E2E_APP_UPGRADE:-0}" == "1" ]]; then
+	MODULES+=(test_wine_app_upgrade.py)
+fi
 
 fl_e2e_build_image "${ROOT}" "${IMAGE}"
 if [[ "${FL_E2E_FORK_UPDATES:-0}" == "1" && ! -x "${ROOT}/build-bridge/bridge/fl-bridge-helper" ]]; then
 	"${ROOT}/scripts/build-bridge.sh"
 fi
-BRIDGE_BUILDS=""
 if [[ "${FL_E2E_APP_UPGRADE:-0}" == "1" ]]; then
+	BUILDS="$(new_scratch)"
 	for n in 1 2; do
-		"${ROOT}/scripts/build-version-variant.sh" --tree-only "0.9.${n}" "${SCRATCH}/variants"
-		"${SCRATCH}/variants/fork-linux-0.9.${n}/scripts/build-bridge.sh" --out "${SCRATCH}/bridge/${n}"
+		"${ROOT}/scripts/build-version-variant.sh" --tree-only "0.9.${n}" "${BUILDS}/variants"
+		"${BUILDS}/variants/fork-linux-0.9.${n}/scripts/build-bridge.sh" --out "${BUILDS}/${n}"
 	done
-	rm -rf -- "${SCRATCH:?}/variants"
-	BRIDGE_BUILDS="/e2e/bridge"
+	rm -rf -- "${BUILDS:?}/variants"
 fi
-# Host-wide slots shared with scripts/e2e-docker.sh (FL_E2E_SLOTS, default 3).
+# Host-wide slots shared with scripts/e2e-docker.sh (FL_E2E_SLOTS, default 3); one slot for the
+# modules, which run one after the other.
 BASE="$(fl_e2e_base)"
 LOCK_DIR="$(fl_e2e_check_dir "${FL_E2E_LOCK_DIR:-${BASE}/locks}" "lock directory")" || exit $?
 if [[ "${LOCK_DIR}" == "${BASE}/locks" ]]; then
@@ -68,29 +99,59 @@ fl_e2e_own_dir "${LOCK_DIR}" "lock directory"
 fl_e2e_acquire_slot "${LOCK_DIR}" "${FL_E2E_SLOTS:-3}"
 
 USER_NAME="$(fl_e2e_user)"
-status=0
-docker run --rm --init \
-	--name "${CONTAINER}" \
-	--label fl-e2e=ci-e2e-wine \
-	--user "$(id -u):$(id -g)" \
-	-e HOME=/e2e/home \
-	-e USER="${USER_NAME}" \
-	-e LOGNAME="${USER_NAME}" \
-	-e FL_E2E_FORK=1 \
-	-e FL_E2E_ROOT=/e2e/root \
-	-e FL_E2E_FORK_VERSION \
-	-e FL_E2E_FORK_UPDATES \
-	-e FL_E2E_APP_UPGRADE \
-	-e FL_E2E_BRIDGE_BUILDS="${BRIDGE_BUILDS}" \
-	-e PYTHONDONTWRITEBYTECODE=1 \
-	-v "${ROOT}:/src:ro" \
-	-v "${SCRATCH}:/e2e:rw" \
-	-w /src \
-	"${IMAGE}" \
-	python3 -m pytest -v -p no:cacheprovider --basetemp=/e2e/pytest tests/e2e "$@" \
-	9>&- 2>&1 | tee "${LOG_DIR}/pytest.log" 9>&- || status=$?
 
-# Logs only: text files from the scratch root, never images, executables or archives.
-fl_e2e_copy_logs "${SCRATCH}" "${LOG_DIR}"
+# run_module MODULE [pytest args...]: one module in a fresh scratch root, then its logs and the
+# root's deletion. Returns pytest's status.
+run_module() {
+	local module="$1" logs status=0
+	shift
+	logs="${LOG_DIR}/${module%.py}"
+	SCRATCH="$(new_scratch)"
+	mkdir -p -- "${SCRATCH}/root" "${SCRATCH}/home" "${logs}"
+	local -a mounts=(-v "${ROOT}:/src:ro" -v "${SCRATCH}:/e2e:rw")
+	local builds_env=""
+	if [[ "${module}" == test_wine_app_upgrade.py ]]; then
+		mounts+=(-v "${BUILDS}:${BUILDS_IN}:ro")
+		builds_env="${BUILDS_IN}"
+	fi
+	echo "==> e2e-wine: tests/e2e/${module} (scratch root ${SCRATCH})"
+	docker run --rm --init \
+		--name "${CONTAINER}" \
+		--label fl-e2e=ci-e2e-wine \
+		--user "$(id -u):$(id -g)" \
+		-e HOME=/e2e/home \
+		-e USER="${USER_NAME}" \
+		-e LOGNAME="${USER_NAME}" \
+		-e FL_E2E_FORK=1 \
+		-e FL_E2E_ROOT=/e2e/root \
+		-e FL_E2E_FORK_VERSION \
+		-e FL_E2E_FORK_UPDATES \
+		-e FL_E2E_APP_UPGRADE \
+		-e FL_E2E_BRIDGE_BUILDS="${builds_env}" \
+		-e PYTHONDONTWRITEBYTECODE=1 \
+		"${mounts[@]}" \
+		-w /src \
+		"${IMAGE}" \
+		python3 -m pytest -v -p no:cacheprovider --basetemp=/e2e/pytest "tests/e2e/${module}" "$@" \
+		9>&- 2>&1 | tee "${logs}/pytest.log" 9>&- || status=$?
+	# Logs only: text files from the scratch root, never images, executables or archives.
+	fl_e2e_copy_logs "${SCRATCH}" "${logs}"
+	fl_e2e_wipe "${SCRATCH}"
+	SCRATCH=""
+	return "${status}"
+}
+
+rm -rf -- "${LOG_DIR:?}"
+mkdir -p -- "${LOG_DIR}"
+status=0
+for module in "${MODULES[@]}"; do
+	module_status=0
+	run_module "${module}" "$@" || module_status=$?
+	echo "==> e2e-wine: tests/e2e/${module} exit ${module_status}"
+	if ((status == 0)); then
+		status="${module_status}"
+	fi
+done
+cleanup
 echo "==> e2e-wine logs: ${LOG_DIR}"
 exit "${status}"
