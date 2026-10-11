@@ -283,7 +283,45 @@ def _gnome_shell_entries(session: dekit.Session) -> list[dict[str, object]]:
     return json.loads(session.run(["python3", "-I", "-c", GNOME_SHELL_READER]).stdout)
 
 
+# Budgie's panel menus (Budgie Menu; Ubuntu Budgie's AppMenu groups the same way) list what
+# libbudgie-appindexer indexes: Gio's desktop entries that should be shown, grouped by their main
+# category (named after desktop-directories). The library has no GObject introspection data, so
+# it is called through ctypes (its lists are Gee lists); it needs GTK for the icons it looks up.
+BUDGIE_READER = """
+import ctypes, json, gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk
+Gtk.init(None)
+indexer, gee = ctypes.CDLL("libbudgie-appindexer.so.0"), ctypes.CDLL("libgee-0.8.so.2")
+def function(library, name, restype, *argtypes):
+    found = getattr(library, name)
+    found.restype, found.argtypes = restype, list(argtypes)
+    return found
+P, S = ctypes.c_void_p, ctypes.c_char_p
+index = function(indexer, "budgie_app_index_get", P)()
+categories = function(indexer, "budgie_app_index_get_categories", P, P)
+category_name = function(indexer, "budgie_category_get_name", S, P)
+category_apps = function(indexer, "budgie_category_get_apps", P, P)
+desktop_id = function(indexer, "budgie_application_get_desktop_id", S, P)
+command = function(indexer, "budgie_application_get_exec", S, P)
+size, get = function(gee, "gee_collection_get_size", ctypes.c_int, P), function(gee, "gee_list_get", P, P, ctypes.c_int)
+def items(gee_list):
+    return [get(gee_list, position) for position in range(size(gee_list))]
+found = [
+    {"path": [category_name(category).decode()], "id": (desktop_id(app) or b"").decode(),
+     "command": (command(app) or b"").decode()}
+    for category in items(categories(index)) for app in items(category_apps(category))
+]
+print(json.dumps(found))
+"""
+
+
+def _budgie_entries(session: dekit.Session) -> list[dict[str, object]]:
+    """Every entry of Budgie's panel menus, as libbudgie-appindexer files them."""
+    return json.loads(session.run(["python3", "-I", "-c", BUDGIE_READER]).stdout)
+
 MENU_READERS: dict[str, Callable[[dekit.Session], list[dict[str, object]]]] = {
+    desktops.MENU_BUDGIE: _budgie_entries,
     desktops.MENU_GARCON: _garcon_entries,
     desktops.MENU_KSYCOCA: _ksycoca_entries,
     desktops.MENU_LXQT_PANEL: _lxqt_panel_entries,
@@ -377,7 +415,21 @@ def _check_nautilus_extension(session: dekit.Session, installed: dekit.Installed
     dekit.wait_for(lambda: not dekit.pids_of("nautilus"), 30, "Nautilus to quit")
 
 
+NEMO_ACTION_FILE = (".local", "share", "nemo", "actions", "fork-linux-open.nemo_action")
+
+
+def _check_nemo_action(session: dekit.Session, _installed: dekit.Installed) -> None:
+    """Our Nemo action is where Nemo reads the user's actions, active, and runs
+    ``open --from-file-manager`` (Nemo watches its action folders: no restart)."""
+    path = session.home.joinpath(*NEMO_ACTION_FILE)
+    assert path.is_file(), "fork-linux added no Nemo action"
+    action = configparser.RawConfigParser(strict=False, interpolation=None)  # keys lower-cased
+    action.read(path, encoding="utf-8")
+    assert action["Nemo Action"]["active"] == "true"
+    assert OPEN_ACTION in action["Nemo Action"]["exec"]
+
 INTEGRATION_CHECKS: dict[str, Callable[[dekit.Session, dekit.Installed], None]] = {
+    desktops.NEMO_ACTION: _check_nemo_action,
     desktops.THUNAR_UCA: _check_thunar_uca,
     desktops.DOLPHIN_SERVICEMENU: _check_dolphin_servicemenu,
     desktops.PCMANFM_QT_FMA: _check_fma_action,

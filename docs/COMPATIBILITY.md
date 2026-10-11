@@ -38,6 +38,7 @@ the official Fork 2.23.2 and drives it under the desktop's window manager.
 | Lubuntu 26.04, LXQt 2.3 (openbox, pcmanfm-qt, qterminal, Kvantum) | ❌ 13/17 (4 src bugs, fixes proposed); ✅ 17/17 with the fixes | ❌ stops at 03 (Fork starts dark); ✅ 9/9 with the fixes | local `scripts/ci-e2e-de.sh lxqt [--fork]`, 2026-10-11; [qa/de-fixes/lxqt.md](qa/de-fixes/lxqt.md) |
 | Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, Dolphin, Konsole) | ❌ 17/18 (a dark colour scheme named without "dark" waits for the fix in [qa/de-fixes/kde.md](qa/de-fixes/kde.md)) | ✅ 9/9 | local `scripts/ci-e2e-de.sh kde [--fork]`, 2026-10-11 |
 | Ubuntu 26.04, GNOME 50 (mutter + Xwayland, Nautilus, Ptyxis) | ❌ 12/14 (3 src bugs, fixes proposed); ✅ 14/14 with the fixes | ❌ stops at 07 (Nautilus shows no "Open in Fork"); ✅ 9/9 with the fixes | local `scripts/ci-e2e-de.sh gnome [--fork]`, 2026-10-11; [qa/de-fixes/gnome.md](qa/de-fixes/gnome.md) |
+| Ubuntu Budgie 26.04, Budgie 10.10 (labwc + Xwayland, Nemo, xfce4-terminal) | ❌ 13/14 (Nemo's folder menu, fix proposed); ✅ 14/14 with the fix | ❌ stops at 06 (folder opened from Fork without a systemd user manager); ✅ 9/9 with the fixes | local `scripts/ci-e2e-de.sh budgie [--fork]`, 2026-10-11; [qa/de-fixes/budgie.md](qa/de-fixes/budgie.md) |
 
 Known desktop behaviour (not a fork-linux bug): on Xubuntu, XFCE's own Ctrl+Alt+T shortcut
 shadows Fork's "Open In Shell" key; Fork's Repository menu and Shell button work.

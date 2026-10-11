@@ -82,8 +82,14 @@ def main_window(session: dekit.Session) -> dekit.Window | None:
 
 
 def click(session: dekit.Session, window: dekit.Window, offset: tuple[int, int]) -> None:
-    """Click at ``offset`` inside ``window``."""
-    session.xdotool("mousemove", str(window.x + offset[0]), str(window.y + offset[1]), "click", "1")
+    """Click at ``offset`` inside ``window``: move there, let the pointer settle, then click.
+
+    A hand hovers before it presses; under labwc's Xwayland a press in the same instant as the
+    move once left Fork's Repository > Open In File Explorer without effect.
+    """
+    session.xdotool("mousemove", str(window.x + offset[0]), str(window.y + offset[1]))
+    time.sleep(0.3)
+    session.xdotool("click", "1")
     time.sleep(0.7)
 
 

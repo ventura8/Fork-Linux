@@ -99,6 +99,9 @@ def test_03_fork_runs_under_the_desktops_window_manager(
     session: dekit.Session, desktop: desktops.Desktop, installed: dekit.Installed
 ) -> None:
     demo = forkui.make_repo(session, _repos(session) / "demo")
+    # The desktop's light theme (some desktops, such as Ubuntu Budgie, start dark).
+    for command in desktop.themes[desktops.LIGHT]:
+        session.run(command)
     forkui.launch(session, demo)
     window = forkui.wait_main_window(session, first_run=True)
     time.sleep(5)
@@ -108,6 +111,9 @@ def test_03_fork_runs_under_the_desktops_window_manager(
     assert f"StartupWMClass={window.wm_class[-1]}" in installed.menu_file.read_text(encoding="utf-8")
     if desktop.frames_undecorated:
         assert session.parent(window.id) != session.root_window(), "the window manager did not frame Fork"
+    else:  # unframed (its own title bar), but still one of the windows the window manager manages
+        managed = session.run(["xprop", "-root", "_NET_CLIENT_LIST"]).stdout.rpartition("#")[2]
+        assert hex(int(window.id)) in managed.replace(",", " ").split(), "the window manager does not manage Fork"
     shot = forkui.drawn_screenshot(session, "03-main")
     assert session.image_stat(shot, "mean") > LIGHT_MEAN, "the desktop is light"
     assert len(forkui.fork_pids(forkui.prefix(session))) == 1

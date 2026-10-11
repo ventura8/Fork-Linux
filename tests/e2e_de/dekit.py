@@ -45,6 +45,39 @@ T = TypeVar("T")
 # $XDG_RUNTIME_DIR, and the variables the session takes from it.
 SESSION_ENV = "session.env"
 COMPOSITOR_VARS = ("DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY")
+# A key of Session.keys that selects a context-menu item by its label.
+MENU_ITEM = "menu-item:"
+# The keyboard position of a showing menu's item (argv[1]): shown menu items, check / radio items
+# and submenus that are sensitive count, as GTK's Down key visits them; prints nothing until found.
+ATSPI_MENU_ITEM = """
+import sys, gi
+gi.require_version("Atspi", "2.0")
+from gi.repository import Atspi
+ITEMS = {"menu item", "check menu item", "radio menu item", "menu"}
+def menus(node, depth=0):
+    if node is None or depth > 12:
+        return
+    if node.get_role_name() == "menu" and node.get_state_set().contains(Atspi.StateType.SHOWING):
+        yield node
+    for index in range(node.get_child_count()):
+        yield from menus(node.get_child_at_index(index), depth + 1)
+desktop = Atspi.get_desktop(0)
+for app in (desktop.get_child_at_index(i) for i in range(desktop.get_child_count())):
+    for menu in menus(app):
+        position = 0
+        for child in (menu.get_child_at_index(i) for i in range(menu.get_child_count())):
+            # Hidden items (GtkUIManager keeps every action in the menu) do not count.
+            if child is None or child.get_role_name() not in ITEMS:
+                continue
+            states = child.get_state_set()
+            if not states.contains(Atspi.StateType.SHOWING):
+                continue
+            if states.contains(Atspi.StateType.SENSITIVE):
+                position += 1
+            if child.get_name() == sys.argv[1]:
+                print(position)
+                sys.exit(0)
+"""
 # Variables of the container's own environment that the session keeps.
 KEPT = ("PATH", "LANG", "USER", "LOGNAME", "TZ", "FL_E2E_SEED", "FL_E2E_WINETRICKS_CACHE", "FL_E2E_FORK_VERSION")
 
@@ -418,10 +451,29 @@ class Session:
         time.sleep(0.5)
 
     def keys(self, keys: Iterable[str], delay: float = 0.4) -> None:
-        """Press ``keys`` one after another on the focused window."""
+        """Press ``keys`` one after another on the focused window.
+
+        ``menu-item:LABEL`` (:data:`MENU_ITEM`) presses Down until the open context menu's item
+        LABEL is selected: its position comes from the menu itself, read over AT-SPI, for menus
+        whose order varies between runs (Nemo's actions).
+        """
         for key in keys:
-            self.xdotool("key", key)
+            if key.startswith(MENU_ITEM):
+                for _down in range(self.menu_item_position(key[len(MENU_ITEM):])):
+                    self.xdotool("key", "Down")
+                    time.sleep(delay)
+            else:
+                self.xdotool("key", key)
             time.sleep(delay)
+
+    def menu_item_position(self, label: str) -> int:
+        """How many Down presses select ``label`` in the showing context menu (AT-SPI; the
+        application needs its accessibility bridge, ``NO_AT_BRIDGE`` not 1)."""
+        found = wait_for(
+            lambda: self.run(["python3", "-I", "-c", ATSPI_MENU_ITEM, label], check=False).stdout.strip() or None,
+            START_TIMEOUT, f"the menu item {label!r} over AT-SPI",
+        )
+        return int(found)
 
     def screenshot(self, name: str, window: Window | None = None) -> Path:
         """The screen (or ``window``) as ``shots/<name>.png`` in the scratch root, never the repository."""

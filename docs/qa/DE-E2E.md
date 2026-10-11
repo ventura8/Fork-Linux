@@ -18,8 +18,9 @@ root under `/var/tmp/fork-linux-e2e/`, the read-only seed for the real-Fork tier
 | Lubuntu 26.04, LXQt 2.3 (lxqt-session + openbox, pcmanfm-qt 2.3 + its FileManager1, qterminal, panel menu via GMenu, Kvantum Lubuntu / KvArcDark, Fusion palettes, Global Screen Scaling) | `fork-linux-e2e-de-lxqt:26.04` | ❌ 13/17 until [de-fixes/lxqt.md](de-fixes/lxqt.md) is applied (theme `light` and `light:dark-panel-theme`, PCManFM "Open in Fork", qterminal); ✅ 17/17 with it | ❌ stops at 03 (Fork starts dark on the light Lubuntu desktop); ✅ 9/9 with the patch (setup 294 s from the seed, tier 351 s) | local `scripts/ci-e2e-de.sh lxqt [--fork]`, 2026-10-11 |
 | Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, kcminit + kded6, Dolphin 25.12 + its FileManager1 and our service menu, Konsole, Kickoff's menu through kbuildsycoca6, Kubuntu / Kubuntu Dark / Breeze Dark global themes and colour schemes) | `fork-linux-e2e-de-kde:26.04` | ❌ 17/18: the `dark:custom-colors` theme case fails until the `theme.py` fix in [de-fixes/kde.md](de-fixes/kde.md) lands (18/18 with it) | ✅ 9/9 (setup 308 s from the seed, tier 369 s) | local `scripts/ci-e2e-de.sh kde [--fork]`, 2026-10-11 |
 | Ubuntu 26.04, GNOME 50 (mutter 50 headless Wayland + rootless Xwayland, gsd-xsettings, Nautilus 50 + python3-nautilus and its FileManager1, Ptyxis via xdg-terminal-exec, gnome-shell's app grid, Yaru / Yaru-dark + color-scheme) | `fork-linux-e2e-de-gnome:26.04` | ❌ 12/14 (3 src bugs, fixes proposed); ✅ 14/14 with the fixes | ❌ stops at 07 (Nautilus shows no "Open in Fork"); ✅ 9/9 with the fixes (setup 266-357 s from the seed, tier 325-431 s) | local `scripts/ci-e2e-de.sh gnome [--fork]`, 2026-10-11; [de-fixes/gnome.md](de-fixes/gnome.md) |
+| Ubuntu Budgie 26.04, Budgie 10.10 (labwc 0.9 headless Wayland + rootless Xwayland, budgie-daemon, Nemo 6.4 + its FileManager1 service, xfce4-terminal, the panel menus' libbudgie-appindexer, Pocillo / Pocillo-dark + the Dark theme switch, display scale and text scaling) | `fork-linux-e2e-de-budgie:26.04` | ❌ 13/14: Nemo shows no "Open in Fork" inside a folder until fix 1 in [de-fixes/budgie.md](de-fixes/budgie.md) lands; ✅ 14/14 with it | ❌ stops at 06 (the Nemo that Open In File Explorer starts inside Wine's sandbox aborts; 01-05 pass); ✅ 9/9 with both fixes (setup 256-267 s from the seed, tier 332 s) | local `scripts/ci-e2e-de.sh budgie [--fork]`, 2026-10-11 |
 
-Cinnamon, MATE and Budgie follow the same pattern: one
+Cinnamon and MATE follow the same pattern: one
 `docker/Dockerfile.e2e.de.<desktop>` plus one entry in `tests/e2e_de/desktops.py` (see "Adding a
 desktop").
 
@@ -76,8 +77,9 @@ process of the session carries `FL_E2E_DE_SESSION` or its `DISPLAY`; `stop()` en
 
 Steps in order (a failed step fails the rest fast): 01 `fork-linux setup` (seeded downloads,
 re-verified) completes; 02 `doctor --deep` has no failure or warning; 03 Fork's main window
-(`WM_CLASS` fork.exe, the menu entry's `StartupWMClass`) is managed and framed by the desktop's
-window manager, its screenshot is not uniform, settings say light; 04 `fork <repo>` hands a second
+(`WM_CLASS` fork.exe, the menu entry's `StartupWMClass`) is managed by the desktop's window manager
+(framed, or in its `_NET_CLIENT_LIST` when it does not frame Fork's undecorated window) on the
+desktop's light theme, its screenshot is not uniform, settings say light; 04 `fork <repo>` hands a second
 tab to the running Fork (one process); 05 Repository > Open In Shell opens the desktop's terminal
 in the repository; 06 Repository > Open In File Explorer opens the desktop's file manager on it;
 07 the file manager's "Open in Fork" reaches the running Fork (the processes seen opening the
@@ -257,6 +259,63 @@ with `Theme=1` and a dark window;
 - The menu entry is checked as gnome-shell's app grid lists it: Gio's desktop entries that should
   be shown, in an `org.gnome.desktop.app-folders` folder only when one claims it; ours is on the
   top level (`Desktop.menu_folder=()`).
+
+## Budgie facts the recipe relies on
+
+- Budgie 10.10 (Ubuntu Budgie 26.04) is Wayland only: budgie-wm and the X11 session are gone,
+  labwc is the window manager (`startbudgielabwc`: Budgie's own copy of labwc's `rc.xml` and
+  `menu.xml` in `~/.config/budgie-desktop/labwc`). The tier runs labwc on its headless backend
+  (`WLR_BACKENDS=headless`, `WLR_RENDERER=pixman`, one output set to 1920x1080 with
+  `wlr-randr`) with the same copied configuration; X11 programs, Wine and Fork included, run on
+  labwc's rootless Xwayland, whose X window manager names itself `wlroots wm`. labwc runs its
+  startup command without a shell (it splits the words itself), so the hand-over of `DISPLAY`
+  and `WAYLAND_DISPLAY` (`dekit.SESSION_ENV`) is a small script. Xwayland drops the first XTEST
+  event it gets: the hand-over presses Shift once before the session uses xdotool.
+- labwc draws server-side decorations and never reparents X windows: Fork's main window (its
+  own title bar) is in `_NET_CLIENT_LIST` but stays a child of the root window
+  (`frames_undecorated=False`; step 03 then checks the client list).
+- budgie-session cannot run in the container (it aborts without a system bus), so the tier
+  starts the components fork-linux talks to: budgie-daemon (its `BudgieDaemon` component, on
+  GDK's Wayland backend), Nemo's FileManager1 service and the portals. budgie-daemon turns
+  Budgie Desktop Settings > Style > "Dark theme" (`com.solus-project.budgie-panel dark-theme`)
+  into `org.gnome.desktop.interface color-scheme` (`prefer-dark` / `prefer-light`); the Widgets
+  theme alone (`gtk-theme`) does not change the color scheme. Budgie 10.10 runs no XSETTINGS
+  daemon (no `gsd-xsettings` in its session): Xwayland programs get no `Xft.dpi`.
+- Ubuntu Budgie starts **dark** (`budgie-desktop-environment`'s `:Budgie` overrides:
+  Pocillo-dark, `prefer-dark`, `dark-theme=true`); the tier's light theme is "Dark theme" off
+  with the Pocillo widgets, and step 03 sets the desktop's light theme before it launches Fork.
+  fork-linux reads `color-scheme` first, then the `gtk-theme` name (`theme._gnome_family`).
+- Scaling: Budgie Control Center > Displays (as `wdisplays` and `wlr-randr`) sets labwc's
+  output scale; labwc then draws Xwayland's programs scaled up (Xwayland's screen becomes
+  960x540 at scale 2), so fork-linux must not scale Fork again and answers 100 %. Budgie Desktop
+  Settings > Fonts > Text scaling and Budgie Control Center > Accessibility > Large Text set
+  `text-scaling-factor`, which fork-linux reads (125 % and 200 %).
+- The panel's menus (Budgie Menu; Ubuntu Budgie's AppMenu groups the same way) list what
+  `libbudgie-appindexer` indexes: Gio's desktop entries, grouped by their main category with the
+  names of `desktop-directories` (Development is "Programming"). The library has no
+  introspection data: the tier calls it with ctypes (its lists are Gee lists).
+- GDK_BACKEND is `x11` in the tier (Budgie sets `wayland,x11`) so xdotool sees Nemo,
+  xfce4-terminal and zenity on Xwayland; fork-linux never reads GDK_BACKEND.
+- `xdg-open` takes Budgie for GNOME (`GNOME_DESKTOP_SESSION_ID`) and runs `gio open`; folders go
+  to Nemo through Budgie's `defaults.list` (`/usr/share/budgie-desktop/applications`).
+- Nemo's D-Bus service (`nemo --no-default-window`) quits about 10 s after its last window, so
+  `org.freedesktop.FileManager1` is usually only activatable. A Nemo that `xdg-open` starts from
+  a program Wine started (no systemd user manager in the container) inherits Wine's seccomp
+  filter, its glycin image loaders are killed with SIGSYS and it aborts: see fix 2 in
+  [de-fixes/budgie.md](de-fixes/budgie.md). Nemo shows our action only on a selected item
+  (`Selection=s`), not in a folder's own menu: fix 1 there.
+- Nemo orders the actions of its context menu by the order it loaded their folders (system ones
+  first, the user's last, but a folder that changes while Nemo runs moves to the end), so "Open
+  in Fork" is the third or the fifth item of a Budgie folder's menu. The recipe's keys select it
+  by label (`menu-item:Open in Fork`): `dekit` asks the open menu over AT-SPI (Budgie's session
+  runs with accessibility, `NO_AT_BRIDGE=0`) how many Down presses reach it.
+- Once, Repository > Open In File Explorer did nothing on Budgie (the menu closed, the bus log
+  shows no FileManager1 activation; not seen again, not root-caused): `forkui.click` now moves
+  the pointer, waits 0.3 s and then clicks, as a hand does, instead of pressing in the same
+  instant as the move.
+- Ubuntu Budgie's terminal is xfce4-terminal (`org.gnome.desktop.default-applications.terminal`,
+  labwc's Ctrl+Alt+T); fork-linux reaches it because no terminal earlier in its list is
+  installed (it does not read Budgie's setting; see de-fixes/budgie.md).
 
 ## Adding a desktop
 

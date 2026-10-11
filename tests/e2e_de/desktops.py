@@ -33,7 +33,8 @@ MENU_GARCON = "garcon"
 MENU_KSYCOCA = "kbuildsycoca"
 MENU_LXQT_PANEL = "lxqt-panel"
 MENU_GNOME_SHELL = "gnome-shell"
-MENU_READERS = (MENU_GARCON, MENU_KSYCOCA, MENU_LXQT_PANEL, MENU_GNOME_SHELL)
+MENU_BUDGIE = "budgie-appindexer"
+MENU_READERS = (MENU_GARCON, MENU_KSYCOCA, MENU_LXQT_PANEL, MENU_GNOME_SHELL, MENU_BUDGIE)
 
 # How the desktop picks the web browser that xdg-open hands http(s) links to.
 BROWSER_XFCE_HELPERS = "xfce-helpers"
@@ -524,4 +525,144 @@ GNOME = Desktop(
     ),
 )
 
-DESKTOPS: dict[str, Desktop] = {desktop.key: desktop for desktop in (XFCE, KDE, LXQT, GNOME)}
+# Budgie Desktop Settings > Style: the "Dark theme" switch (com.solus-project.budgie-panel
+# dark-theme), which budgie-daemon turns into org.gnome.desktop.interface color-scheme, and
+# Widgets (gtk-theme). The command returns once budgie-daemon has published the color scheme.
+_BUDGIE_STYLE = """
+import sys, time, gi
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio
+panel = Gio.Settings.new("com.solus-project.budgie-panel")
+interface = Gio.Settings.new("org.gnome.desktop.interface")
+dark, widgets = sys.argv[1], sys.argv[2]
+for settings, key, value in ((panel, "dark-theme", dark), (interface, "gtk-theme", widgets)):
+    if value == "default":
+        settings.reset(key)
+    elif key == "dark-theme":
+        settings.set_boolean(key, value == "true")
+    elif value:
+        settings.set_string(key, value)
+Gio.Settings.sync()
+wanted = "prefer-dark" if panel.get_boolean("dark-theme") else "prefer-light"
+deadline = time.monotonic() + 10
+while interface.get_string("color-scheme") != wanted:
+    if time.monotonic() > deadline:
+        sys.exit(f"budgie-daemon did not set color-scheme to {wanted}")
+    time.sleep(0.1)
+"""
+
+
+def _budgie_style(dark: str, widgets: str) -> Command:
+    """Dark theme switch ("true", "false", "default") and Widgets theme ("" leaves it, "default")."""
+    return ("python3", "-I", "-c", _BUDGIE_STYLE, dark, widgets)
+
+
+def _budgie_interface(key: str, value: str) -> Command:
+    """Budgie Desktop Settings > Fonts > Text scaling; Budgie Control Center > Accessibility > Large Text."""
+    return ("gsettings", "set", "org.gnome.desktop.interface", key, value)
+
+
+def _labwc_output_scale(scale: str) -> Command:
+    """Budgie Control Center > Displays > Scale, as wdisplays / wlr-randr apply it to labwc's output."""
+    return ("wlr-randr", "--output", "HEADLESS-1", "--scale", scale)
+
+
+# startbudgielabwc: Budgie's own copy of labwc's configuration, then labwc. The tier runs it on
+# the headless backend with one 1920x1080 output (pixman: no GPU in the container); its startup
+# command hands the session its Xwayland (dekit.SESSION_ENV) as budgie-session's would see it.
+_LABWC = """
+config="$XDG_CONFIG_HOME/budgie-desktop/labwc"
+mkdir -p "$config"
+for file in rc.xml menu.xml; do
+    [ -f "$config/$file" ] || cp /usr/share/budgie-desktop/labwc/"$file" "$config/$file"
+done
+# labwc splits its startup command into words itself (no shell): the hand-over is a script.
+printf '%s\n' "$1" > "$config/fl-e2e-hand-over.sh"
+WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 \
+    exec labwc --config-dir "$config" -s "sh $config/fl-e2e-hand-over.sh"
+"""
+# Xwayland drops the first XTEST event it gets (xdotool's first key would be lost): one Shift
+# press warms it up before the session uses it.
+_LABWC_HAND_OVER = (
+    "wlr-randr --output HEADLESS-1 --custom-mode 1920x1080 && xdotool key shift"
+    ' && env | grep -E "^(DISPLAY|WAYLAND_DISPLAY)=" > "$XDG_RUNTIME_DIR/session.env.new"'
+    " && dbus-update-activation-environment DISPLAY WAYLAND_DISPLAY"
+    ' && mv "$XDG_RUNTIME_DIR/session.env.new" "$XDG_RUNTIME_DIR/session.env"'
+)
+
+BUDGIE = Desktop(
+    key="budgie",
+    title="Ubuntu Budgie 26.04 (Budgie 10.10: labwc + Xwayland, budgie-daemon, Nemo, xfce4-terminal, Pocillo)",
+    # What sddm + startbudgielabwc export for the "Budgie Desktop" session (Wayland only since
+    # 10.10; DesktopNames=Budgie, so budgie-desktop-environment's ":Budgie" gschema overrides
+    # apply). GDK_BACKEND=x11 is the tier's (Budgie sets wayland,x11): GTK apps then open on
+    # Xwayland, where xdotool sees them. fork-linux never reads GDK_BACKEND.
+    session_env={
+        "XDG_CURRENT_DESKTOP": "Budgie",
+        "DESKTOP_SESSION": "budgie-desktop",
+        "XDG_SESSION_DESKTOP": "budgie-desktop",
+        "XDG_SESSION_TYPE": "wayland",
+        "XDG_DATA_DIRS": "/usr/share/budgie-desktop:/usr/local/share/:/usr/share/",
+        "QT_QPA_PLATFORMTHEME": "gtk3",
+        "CLUTTER_BACKEND": "gdk",
+        "GNOME_DESKTOP_SESSION_ID": "this-is-deprecated",
+        "MOZ_ENABLE_WAYLAND": "1",
+        "GDK_BACKEND": "x11",
+        # Budgie's session runs with accessibility on (the tier reads Nemo's menu over AT-SPI).
+        "NO_AT_BRIDGE": "0",
+    },
+    # budgie-session's BudgieDaemon component: notifications, OSD, screenshots, and the style
+    # switch (dark-theme -> color-scheme). Budgie 10.10 runs no XSETTINGS daemon: Xwayland
+    # programs get no Xft.dpi.
+    settings_daemon=("env", "GDK_BACKEND=wayland", "budgie-daemon"),
+    settings_ready=("gdbus", "wait", "--session", "--timeout", "2", "org.budgie_desktop.Notifications"),
+    window_manager=("sh", "-c", _LABWC, "sh", _LABWC_HAND_OVER),
+    wm_name="wlroots wm",
+    wayland_compositor=True,
+    # Nemo's D-Bus service (nemo.FileManager1.service) owns org.freedesktop.FileManager1.
+    file_manager="nemo",
+    file_manager_service=("nemo", "--no-default-window"),
+    file_manager_class="Nemo",
+    provides_file_manager1=True,
+    integration=NEMO_ACTION,
+    # The panel's menus (Budgie Menu, Ubuntu Budgie's AppMenu) group Gio's desktop entries by
+    # their main category, through libbudgie-appindexer.
+    menu_reader=MENU_BUDGIE,
+    menu_folder=("Programming",),
+    # Ubuntu Budgie's terminal (org.gnome.desktop.default-applications.terminal:Budgie).
+    terminal="xfce4-terminal",
+    terminal_class="Xfce4-terminal",
+    themes={
+        LIGHT: (_budgie_style("false", "Pocillo"),),
+        # Ubuntu Budgie's defaults: Pocillo-dark with the Dark theme switch on (prefer-dark).
+        DARK: (_budgie_style("default", "default"),),
+    },
+    scales=(
+        ScaleCase("default", 100),
+        # labwc scales Xwayland's programs up itself (their screen becomes 960x540): fork-linux
+        # must not scale Fork again.
+        ScaleCase("display-scale-2-xwayland-upscaled", 100, (_labwc_output_scale("2"),)),
+        ScaleCase("large-text-125", 125, (_budgie_interface("text-scaling-factor", "1.25"),)),
+        ScaleCase("text-scaling-2", 200, (_budgie_interface("text-scaling-factor", "2.0"),)),
+    ),
+    reset=(
+        _budgie_style("default", "default"),
+        ("gsettings", "reset", "org.gnome.desktop.interface", "text-scaling-factor"),
+        _labwc_output_scale("1"),
+    ),
+    browser=BROWSER_XDG_MIME,
+    # Nemo's context menu of the folder it shows (no item selected): Create New Folder, Create New
+    # Document, then the actions, Budgie's (Change Desktop Background, Desktop Settings) and ours
+    # in an order that varies with the order Nemo loaded their folders: found by label.
+    open_in_fork_keys=("Menu", "menu-item:Open in Fork", "Return"),
+    # labwc (wlroots' XWM) never reparents X windows: it draws server-side decorations itself.
+    frames_undecorated=False,
+    packages=(
+        "labwc", "xwayland", "wlr-randr", "budgie-core", "budgie-desktop", "budgie-desktop-environment",
+        "ubuntu-budgie-themes", "nemo", "xfce4-terminal", "dconf-gsettings-backend", "at-spi2-core",
+        "gir1.2-atspi-2.0",
+    ),
+)
+
+
+DESKTOPS: dict[str, Desktop] = {desktop.key: desktop for desktop in (XFCE, KDE, LXQT, GNOME, BUDGIE)}
