@@ -48,7 +48,21 @@ def test_sync_dry_run_then_for_real(capsys: pytest.CaptureFixture[str], host_ssh
     result = run_json(capsys, "ssh", "sync", "--mode", "copy", "--no-config")
     assert result["dry_run"] is False
     assert any(path.endswith("id_ed25519") for path in result["copied"])
-    assert set(result) == {"dry_run", "linked", "copied", "dropped_directives", "config_path", "skipped", "removed"}
+    assert set(result) == {
+        "dry_run", "linked", "copied", "dropped_directives", "config_path", "skipped", "removed", "unchanged"
+    }
+    # Already shared: a dry run and a real run both say that nothing changes.
+    code, out, _err = run_cli(capsys, "ssh", "sync", "--mode", "copy", "--no-config", "--dry-run")
+    assert "would link" not in out
+    assert "would copy" not in out
+    assert "nothing would change: " in out
+    assert "already shared" in out
+    assert "nothing changed: " in run_cli(capsys, "ssh", "sync", "--mode", "copy", "--no-config")[1]
+    run_cli(capsys, "ssh", "sync")
+    code, out, _err = run_cli(capsys, "ssh", "sync", "--dry-run")
+    assert "would write config" not in out
+    assert "would link" not in out
+    assert "nothing would change: " in out
 
 
 def test_sync_reports_nothing(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:

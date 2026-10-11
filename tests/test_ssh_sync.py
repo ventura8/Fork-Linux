@@ -375,11 +375,15 @@ def test_sync_link_mode(paths: Paths, host: Path) -> None:
     assert stat.S_IMODE((wine / "config").stat().st_mode) == 0o600
     manifest = json.loads((wine / ssh_sync.MANIFEST).read_text(encoding="utf-8"))
     assert manifest == {"schema": 1, "files": sorted([*names, "config"])}
-    # A second run changes nothing but still reports the same state.
+    # A second run changes nothing and says so.
     again = ssh_sync.sync(paths, USER, host)
-    assert again.linked == report.linked
+    assert again.linked == []
+    assert again.unchanged == [*report.linked, wine / "config"]
+    assert again.config_path == wine / "config"
     assert again.removed == []
     assert again.skipped == []
+    dry = ssh_sync.sync(paths, USER, host, dry_run=True)
+    assert (dry.linked, dry.unchanged) == ([], again.unchanged)
 
 
 def test_sync_copy_mode_then_link_mode(paths: Paths, host: Path) -> None:
@@ -394,8 +398,20 @@ def test_sync_copy_mode_then_link_mode(paths: Paths, host: Path) -> None:
     assert stat.S_IMODE((wine / "id_rsa").stat().st_mode) == 0o600
     assert stat.S_IMODE((wine / "id_rsa.pub").stat().st_mode) == 0o644
     assert (wine / "id_rsa").read_text(encoding="utf-8") == "PRIVATE id_rsa\n"
+    # Copies that are current are not rewritten; a changed key or mode is.
+    os.chmod(wine / "id_rsa.pub", 0o600)
+    (host / ".ssh" / "id_ed25519").write_text("NEW KEY\n", encoding="utf-8")
+    again = ssh_sync.sync(paths, USER, host, mode="copy", include_config=False)
+    assert again.copied == [wine / "id_ed25519", wine / "id_rsa.pub"]
+    current = ("id_ed25519-cert.pub", "id_ed25519.pub", "id_rsa", "known_hosts")
+    assert again.unchanged == [wine / name for name in current]
+    assert stat.S_IMODE((wine / "id_rsa.pub").stat().st_mode) == 0o644
     ssh_sync.sync(paths, USER, host, mode="link", include_config=False)
     assert (wine / "id_rsa").is_symlink()
+    # A link where a copy belongs is replaced.
+    back = ssh_sync.sync(paths, USER, host, mode="copy", include_config=False)
+    assert wine / "id_rsa" in back.copied
+    assert not (wine / "id_rsa").is_symlink()
 
 
 def test_sync_replaces_a_symlinked_ssh_dir(paths: Paths, host: Path) -> None:

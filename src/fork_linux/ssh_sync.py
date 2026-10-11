@@ -79,6 +79,8 @@ class SyncReport:
     config_path: Path | None = None
     skipped: list[Path] = field(default_factory=list)
     removed: list[Path] = field(default_factory=list)
+    # Already exactly as this sync would make them (nothing is written).
+    unchanged: list[Path] = field(default_factory=list)
 
 
 def _split_args(value: str) -> list[str]:
@@ -353,11 +355,24 @@ def _place_link(source: Path, dest: Path) -> None:
     os.replace(temp, dest)
 
 
+def _copy_mode(dest: Path) -> int:
+    """``0644`` for a public key, else ``0600``."""
+    return PUBLIC_MODE if dest.name.endswith(".pub") else PRIVATE_MODE
+
+
 def _place_copy(source: Path, dest: Path) -> None:
     """Atomically copy ``source`` to ``dest`` (``0600``, or ``0644`` for public keys)."""
     fsutil.ensure_dir(dest.parent, DIR_MODE)
-    mode = PUBLIC_MODE if dest.name.endswith(".pub") else PRIVATE_MODE
-    fsutil.atomic_write(dest, source.read_bytes(), mode=mode)
+    fsutil.atomic_write(dest, source.read_bytes(), mode=_copy_mode(dest))
+
+
+def _in_place(source: Path, dest: Path, *, link: bool) -> bool:
+    """True when ``dest`` already is the link to (or the private copy of) ``source`` a sync would make."""
+    if link:
+        return dest.is_symlink() and os.readlink(dest) == str(source)
+    if dest.is_symlink() or not dest.is_file():
+        return False
+    return stat.S_IMODE(dest.stat().st_mode) == _copy_mode(dest) and dest.read_bytes() == source.read_bytes()
 
 
 class _Syncer:
@@ -388,7 +403,9 @@ class _Syncer:
             self.report.skipped.append(dest)
             return
         self.current.add(rel)
-        if link:
+        if _in_place(source, dest, link=link):
+            self.report.unchanged.append(dest)
+        elif link:
             self.report.linked.append(dest)
             if not self.dry_run:
                 _place_link(source, dest)
@@ -408,6 +425,9 @@ class _Syncer:
             return
         self.current.add("config")
         self.report.config_path = dest
+        if _same_text(dest, text):
+            self.report.unchanged.append(dest)
+            return
         if self.dry_run:
             return
         if foreign:
@@ -435,6 +455,13 @@ class _Syncer:
             return
         data = {"schema": 1, "files": sorted(self.current)}
         fsutil.atomic_write(self.wine_ssh / MANIFEST, json.dumps(data, indent=2) + "\n", mode=PRIVATE_MODE)
+
+
+def _same_text(path: Path, text: str) -> bool:
+    """True when ``path`` is a regular file holding exactly ``text``."""
+    if path.is_symlink() or not path.is_file():
+        return False
+    return path.read_text(encoding="utf-8", errors="replace") == text
 
 
 def _generated(path: Path) -> bool:

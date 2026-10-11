@@ -57,6 +57,7 @@ def _report_dict(report: ssh_sync.SyncReport) -> dict[str, Any]:
         "config_path": None if report.config_path is None else str(report.config_path),
         "skipped": [str(path) for path in report.skipped],
         "removed": [str(path) for path in report.removed],
+        "unchanged": [str(path) for path in report.unchanged],
     }
 
 
@@ -84,12 +85,21 @@ def _print_sync(data: dict[str, Any], *, dry_run: bool) -> None:
     for key in ("linked", "copied", "removed", "skipped"):
         for path in data[key]:
             print(f"{labels[key]}: {path}")
-    if data["config_path"]:
+    config_changed = bool(data["config_path"]) and data["config_path"] not in data["unchanged"]
+    if config_changed:
         print(f"{labels['config_path']}: {data['config_path']}")
     for item in data["dropped_directives"]:
         print(f"commented out: {item['directive']} ({item['reason']})")
-    if not any(data[key] for key in ("linked", "copied", "removed", "skipped", "config_path")):
-        print("nothing to share" if not dry_run else "nothing would change")
+    if not config_changed and not any(data[key] for key in ("linked", "copied", "removed", "skipped")):
+        print(_nothing(dry_run, len(data["unchanged"])))
+
+
+def _nothing(dry_run: bool, unchanged: int) -> str:
+    """The line for a sync that changed nothing (``unchanged`` files were already shared)."""
+    if not unchanged:
+        return "nothing would change" if dry_run else "nothing to share"
+    verdict = "nothing would change" if dry_run else "nothing changed"
+    return f"{verdict}: {unchanged} file(s) already shared"
 
 
 def run_status(args: argparse.Namespace, ctx: AppContext) -> int:
