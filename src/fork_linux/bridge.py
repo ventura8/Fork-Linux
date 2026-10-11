@@ -491,13 +491,17 @@ def _start(ctx: Any, *, debug: bool) -> Daemon:
         finally:
             stdout.close()
     finally:
-        # The daemon unlinks the file once it read the token; never leave it behind.
-        if os.path.lexists(token_file):
-            token_file.unlink()
+        _drop_token_file(token_file)
     env = _fork_env(ctx, port, token, personas, info.wine)
     if debug:
         env[LOG_ENV] = str(_new_log(paths, LOG_PREFIX + "calls-", ".jsonl"))
     return Daemon(proc.pid, port, env, log_file=log_file, proc=proc)
+
+
+def _drop_token_file(token_file: Path) -> None:
+    """The daemon unlinks the file once it read the token; never leave it behind."""
+    if os.path.lexists(token_file):
+        token_file.unlink()
 
 
 def start_daemon(ctx: Any, *, debug: bool = False) -> Daemon | None:

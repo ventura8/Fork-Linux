@@ -486,7 +486,8 @@ def check_disk(ctx: DoctorCtx) -> Result:
 
 def _other_dialog(name: str) -> str:
     """The dialog tool that can stand in for ``name``."""
-    return next(other for other in hostdeps.DIALOG_TOOLS if other != name)
+    # A list, not a generator: Python 3.10 traces an unfinished generator as a missed branch.
+    return [other for other in hostdeps.DIALOG_TOOLS if other != name][0]
 
 
 def check_tools(ctx: DoctorCtx) -> Result:
