@@ -1,7 +1,8 @@
 """Fork for Linux (unofficial) upgrades with real Wine and the official Fork (docs/qa/UPDATE-SCENARIOS.md, A*).
 
-One prefix, set up by the release under test, "N-1" (this tree), with Fork 2.23.1 (trust on
-first use against Fork's feed) so that Fork can change its own version later. An app upgrade
+One prefix of its own (``<root>/app-upgrade``, never another module's), set up by the release
+under test, "N-1" (this tree), with Fork 2.23.1 (trust on first use against Fork's feed) so that
+Fork can change its own version later. An app upgrade
 is a copy of this tree's ``fork_linux`` package with a higher ``VERSION`` and the changes the
 scenario names (a step revision, the manifest's revisions), started through the same
 ``fork-linux`` command on ``PATH`` and with the same helper directory, like a package that
@@ -38,6 +39,7 @@ import re
 import shutil
 import subprocess
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -233,6 +235,17 @@ def _log_text(e2e: Any) -> str:
         if folder.is_dir()
         for path in sorted(folder.glob("*.log"))
     )
+
+
+@pytest.fixture(scope="module")
+def e2e(e2e: Any) -> Iterator[Any]:
+    """This module's own environment in ``<root>/app-upgrade``: a fresh home and prefix with Fork 2.23.1,
+    never the prefix another module of the session set up (seeded with the session's verified caches)."""
+    env = e2e.child("app-upgrade")
+    try:
+        yield env
+    finally:
+        env.stop_wine()
 
 
 @pytest.fixture(scope="module")

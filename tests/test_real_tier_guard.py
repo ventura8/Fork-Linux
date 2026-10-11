@@ -124,56 +124,6 @@ def test_pytest_on_the_e2e_tier_refuses_on_the_host_and_creates_nothing(tmp_path
     assert list(tmpdir.iterdir()) == []
 
 
-@pytest.mark.parametrize(
-    "nodeids",
-    [
-        [],
-        ["tests/e2e/test_real_fork.py::test_01"],
-        ["tests/e2e/test_fork_update.py::test_00", "tests/e2e/test_fork_update.py::test_f1"],
-    ],
-)
-def test_mixed_scenarios_allows_one_module(nodeids: list[str]) -> None:
-    assert real_tier.mixed_scenarios(nodeids) is None
-
-
-def test_mixed_scenarios_refuses_several_modules() -> None:
-    reason = real_tier.mixed_scenarios(
-        ["tests/e2e/test_real_fork.py::test_01", "tests/e2e/test_fork_update.py::test_00",
-         "tests/e2e/test_real_fork.py::test_02"]
-    )
-    assert reason is not None
-    assert "collected 2: tests/e2e/test_fork_update.py, tests/e2e/test_real_fork.py" in reason
-    assert "scripts/e2e-docker.sh --name NAME pytest tests/e2e/test_fork_update.py" in reason
-    assert "scripts/ci-e2e-wine.sh" in reason
-
-
-def test_pytest_on_the_e2e_tier_runs_one_module_per_session(tmp_path: Path) -> None:
-    """The real tests/e2e/conftest.py: two switched-on modules in one session stop it with status 2
-    before anything runs (in a container); on the host the container gate stops it first."""
-    env = {key: value for key, value in os.environ.items() if not key.startswith(("FL_E2E_", "FL_REAL_"))}
-    env.update(
-        {
-            "FL_E2E_FORK": "1",
-            "FL_E2E_FORK_UPDATES": "1",
-            "FL_E2E_ROOT": str(tmp_path / "root"),
-            "HOME": str(tmp_path / "home"),
-            "PYTHONDONTWRITEBYTECODE": "1",
-        }
-    )
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-o", "addopts=", "--collect-only", "-q",
-         "tests/e2e/test_real_fork.py", "tests/e2e/test_fork_update.py"],
-        cwd=str(REPO), env=env, capture_output=True, text=True, timeout=120, check=False,
-    )
-    assert result.returncode == 2, result.stdout + result.stderr
-    if real_tier.in_container():
-        assert "the real tier runs one test module per session" in result.stdout + result.stderr
-    else:
-        assert "refusing to run the real Wine / Fork tier on the host" in result.stderr
-    assert not (tmp_path / "root").exists()
-    assert not (tmp_path / "home").exists()
-
-
 # -- home directories -----------------------------------------------------------------------------
 
 

@@ -85,23 +85,6 @@ def enforce(env: Mapping[str, str] | None = None, markers: Iterable[str] = CONTA
         pytest.exit(reason, returncode=2)
 
 
-def mixed_scenarios(nodeids: Iterable[str]) -> str | None:
-    """Why a real-tier session collecting ``nodeids`` must stop, or None when it may go on.
-
-    Each module of ``tests/e2e`` is one scenario whose steps build on the session's root (its
-    prefix, Fork install and caches), so a session runs the tests of one module only; CI gives
-    every module a fresh scratch root of its own (``scripts/ci-e2e-wine.sh``).
-    """
-    modules = sorted({nodeid.split("::", 1)[0] for nodeid in nodeids})
-    if len(modules) < 2:
-        return None
-    return (
-        f"the real tier runs one test module per session, each in a scratch root of its own; this session "
-        f"collected {len(modules)}: {', '.join(modules)}. Run them one by one, e.g. "
-        f"'{RUNNER} --name NAME pytest {modules[0]}' (CI: scripts/ci-e2e-wine.sh does this)."
-    )
-
-
 def home_dirs(env: Mapping[str, str]) -> list[Path]:
     """``$HOME`` and the passwd home of this uid, as given and resolved."""
     found: list[str] = []

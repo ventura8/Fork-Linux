@@ -15,7 +15,7 @@
 #
 # Every test module of tests/e2e is one scenario whose steps build on each other, so each runs
 # in a pytest session and a fresh scratch root of its own (one container per module, the root
-# deleted afterwards; tests/e2e/conftest.py refuses a session that mixes modules). Logs go to
+# deleted afterwards), and one module's failure never touches another's. Logs go to
 # logs/e2e-wine/<module>/ (pytest.log + the root's text logs, paths relative to the root):
 #   test_real_fork.py        always: setup, Fork's window, doctor, snapshot / rollback, purge
 #   test_fork_update.py      FL_E2E_FORK_UPDATES=1: Fork 2.23.1 updating itself and through
