@@ -33,7 +33,7 @@ CONTRACT = {
     "ssh": {"sync": "auto", "mode": "link"},
     "git": {
         "config_overlay": "translate",
-        "env_overrides": "core.filemode=false, core.autocrlf=false",
+        "env_overrides": "core.filemode=false, core.autocrlf=false, core.checkStat=minimal",
         "safe_directory_all": "false",
         "bridge": "off",
         "bridge_mode": "bridge",

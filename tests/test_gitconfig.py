@@ -453,11 +453,13 @@ def _config(tmp_path: Path, **values: str) -> Config:
 
 def test_env_overrides_defaults(tmp_path: Path) -> None:
     assert gitconfig.env_overrides(_config(tmp_path)) == {
-        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_COUNT": "3",
         "GIT_CONFIG_KEY_0": "core.filemode",
         "GIT_CONFIG_VALUE_0": "false",
         "GIT_CONFIG_KEY_1": "core.autocrlf",
         "GIT_CONFIG_VALUE_1": "false",
+        "GIT_CONFIG_KEY_2": "core.checkStat",
+        "GIT_CONFIG_VALUE_2": "minimal",
     }
 
 
@@ -473,7 +475,8 @@ def test_env_overrides_safe_directory(tmp_path: Path) -> None:
 
 
 def test_env_overrides_for_native_git_drop_the_bundled_only_keys(tmp_path: Path) -> None:
-    config = _config(tmp_path, env_overrides="core.FileMode=false, core.autocrlf=false, core.symlinks=true, a.b=c")
+    overrides = "core.FileMode=false, core.autocrlf=false, core.symlinks=true, core.checkStat=minimal, a.b=c"
+    config = _config(tmp_path, env_overrides=overrides)
     assert gitconfig.env_overrides(config, native=True, git_version=(2, 53, 0)) == {
         "GIT_CONFIG_COUNT": "2",
         "GIT_CONFIG_KEY_0": "a.b",

@@ -147,9 +147,10 @@ def test_build_spec_defaults(ctx: bootstrap.Ctx, tmp_path: Path) -> None:
     assert env["WINEDEBUG"] == "-all"
     assert env["WINEDLLOVERRIDES"] == "winemenubuilder.exe=d"
     assert env["WINEHOME"] == f"C:\\users\\{USER}"
-    assert env["GIT_CONFIG_COUNT"] == "2"
+    assert env["GIT_CONFIG_COUNT"] == "3"
     assert env["GIT_CONFIG_KEY_0"] == "core.filemode"
     assert env["GIT_CONFIG_VALUE_0"] == "false"
+    assert (env["GIT_CONFIG_KEY_2"], env["GIT_CONFIG_VALUE_2"]) == ("core.checkStat", "minimal")
     assert env["HOME"] == ctx.env["HOME"]
 
 
@@ -204,7 +205,7 @@ def test_build_spec_includes_bridge_env_and_drops_the_bundled_git_overlay(ctx: b
         return [env[f"GIT_CONFIG_KEY_{n}"] for n in range(int(env.get("GIT_CONFIG_COUNT", "0")))]
 
     plain = launcher.build_spec(ctx, []).env
-    assert keys(plain)[:2] == ["core.filemode", "core.autocrlf"]
+    assert keys(plain)[:3] == ["core.filemode", "core.autocrlf", "core.checkStat"]
     assert "FORKGITINSTANCE" not in plain
     bridged = {"FORKGITINSTANCE": "C:\\fork-linux\\gitInstance", "FL_BRIDGE_PORT": "4242"}
     env = launcher.build_spec(ctx, [], bridge_env=bridged).env
@@ -212,9 +213,10 @@ def test_build_spec_includes_bridge_env_and_drops_the_bundled_git_overlay(ctx: b
     assert env["FL_BRIDGE_PORT"] == "4242"
     assert "core.filemode" not in keys(env)
     assert "core.autocrlf" not in keys(env)
+    assert "core.checkStat" not in keys(env)
     # Record mode forwards to bundled git: the overlay stays.
     env = launcher.build_spec(ctx, [], bridge_env={**bridged, "FL_BRIDGE_MODE": "record"}).env
-    assert keys(env)[:2] == ["core.filemode", "core.autocrlf"]
+    assert keys(env)[:3] == ["core.filemode", "core.autocrlf", "core.checkStat"]
 
 
 # -- pre_launch -----------------------------------------------------------------------------

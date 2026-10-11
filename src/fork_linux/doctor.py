@@ -1529,7 +1529,8 @@ def check_git_selftest(ctx: DoctorCtx) -> Result:
         return Result(
             "warn",
             f"{version or 'git'}: a fresh repository shows changes ({status.splitlines()[0]})",
-            "keep core.filemode=false and core.autocrlf=false in git.env_overrides; " + HOOK_LIMITATION,
+            "keep core.filemode=false, core.autocrlf=false and core.checkStat=minimal in git.env_overrides; "
+            + HOOK_LIMITATION,
         )
     level = "ok" if info.staging else "warn"
     return Result(level, f"{version or 'git'} works; a fresh repository is clean", HOOK_LIMITATION)
