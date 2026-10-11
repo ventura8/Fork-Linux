@@ -17,7 +17,8 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 - The coverage stage runs `scripts/ci-c-coverage.sh` and then `scripts/check-coverage.py` (every file >= 90%) on the
   host side; `FL_CI_C_COVERAGE=0` skips both (check.yml runs them as steps of the coverage job).
 - Caching: `FL_CI_DOCKER_CACHE=gha|local|none`, `FL_CI_FORCE_BUILD=1`, `FL_CI_PARALLEL_BUILD=1` in the matrix.
-- Real-Fork image `fork-linux-ci-e2e-wine:26.04` (`docker/Dockerfile.e2e.wine`): CI via `scripts/ci-e2e-wine.sh`, locally
+- Real-Fork image `fork-linux-ci-e2e-wine:26.04` (`docker/Dockerfile.e2e.wine`): CI via `scripts/ci-e2e-wine.sh` (e2e-wine.yml: one job per
+  `tests/e2e` module), locally
   only via `scripts/e2e-docker.sh` (hard rule 18; shared code in `scripts/lib-e2e-docker.sh`). `ci-docker.sh --inside`
   refuses outside a container.
 - When you change an image, script or cell: update AGENTS.md §4.8, this skill and `tests/test_docker.py` in the same change.

@@ -42,6 +42,13 @@ jobs:
           FL_CI_STAGE: lint
         run: ./scripts/ci-docker.sh
 
+      # Every user-facing scenario has a real-tier test (or a pending branch that brings one),
+      # and docs/qa/E2E-SCENARIOS.md matches tests/e2e/scenarios.json (AGENTS.md §4.5).
+      - name: Scenario registry gate (scripts/gen-scenarios-doc.py)
+        run: |
+          python3 scripts/gen-scenarios-doc.py validate
+          python3 scripts/gen-scenarios-doc.py check
+
   coverage:
     runs-on: ubuntu-26.04
     steps:

@@ -2,9 +2,9 @@
 name: E2E (real Fork under Wine)
 
 # The real tier: managed Wine + .NET + the official Fork installer under Xvfb, every scenario of
-# docs/qa/E2E-SCENARIOS.md in five parallel shards (each about 20-40 minutes, ~2.5 GB of
-# downloads made on the runner). Weekly, on demand, and on same-repo PRs
-# from release branches (feature/vX.Y.Z). Uploads logs only: no screenshots (they show Fork's
+# docs/qa/E2E-SCENARIOS.md in parallel shards, one per module (each sets up its own prefix
+# and takes about 10-40 minutes, ~2.5 GB of downloads made on the runner). Weekly, on demand,
+# and on same-repo PRs from release branches (feature/vX.Y.Z). Uploads logs only: no screenshots (they show Fork's
 # logo), no binaries, and the Fork installer is never cached (AGENTS.md hard rules 1, 4).
 on:
   schedule:
@@ -28,29 +28,50 @@ jobs:
        startsWith(github.head_ref, 'feature/v'))
     runs-on: ubuntu-26.04
     timeout-minutes: 90
-    # One shard per job (each sets up its own prefix): every module of tests/e2e is in exactly
-    # one shard (tests/test_workflows.py), and each shard stays well under the timeout.
+    # One job per module of tests/e2e, grouped by area in its name: each job is its own runner
+    # with its own scratch root and prefix, so no module depends on what another left behind,
+    # and each stays well under the timeout. Every module is in exactly one job
+    # (tests/test_workflows.py).
     strategy:
       fail-fast: false
       matrix:
         include:
-          - shard: core
-            tests: >-
-              tests/e2e/test_real_setup_errors.py tests/e2e/test_real_fork.py
-              tests/e2e/test_real_launch.py tests/e2e/test_real_display.py
-              tests/e2e/test_real_doctor.py tests/e2e/test_real_snapshots.py
-          - shard: git-ui
-            tests: >-
-              tests/e2e/test_real_git_history.py tests/e2e/test_real_git_changes.py
-              tests/e2e/test_real_git_branches.py tests/e2e/test_real_git_advanced.py
-          - shard: remotes-integration
-            tests: >-
-              tests/e2e/test_real_git_remotes.py tests/e2e/test_git_ops_remote_ssh.py
-              tests/e2e/test_real_integration.py
-          - shard: bridge
-            tests: tests/e2e/test_real_bridge.py tests/e2e/test_git_ops_remote_bridge.py
-          - shard: setup-uninstall
-            tests: tests/e2e/test_real_setup_variants.py tests/e2e/test_real_uninstall.py
+          - shard: setup-real-setup-errors
+            tests: tests/e2e/test_real_setup_errors.py
+          - shard: setup-real-fork
+            tests: tests/e2e/test_real_fork.py
+          - shard: setup-real-setup-variants
+            tests: tests/e2e/test_real_setup_variants.py
+          - shard: setup-real-uninstall
+            tests: tests/e2e/test_real_uninstall.py
+          - shard: launch-real-launch
+            tests: tests/e2e/test_real_launch.py
+          - shard: launch-real-display
+            tests: tests/e2e/test_real_display.py
+          - shard: doctor-real-doctor
+            tests: tests/e2e/test_real_doctor.py
+          - shard: snapshots-real-snapshots
+            tests: tests/e2e/test_real_snapshots.py
+          - shard: git-real-git-history
+            tests: tests/e2e/test_real_git_history.py
+          - shard: git-real-git-changes
+            tests: tests/e2e/test_real_git_changes.py
+          - shard: git-real-git-branches
+            tests: tests/e2e/test_real_git_branches.py
+          - shard: git-real-git-advanced
+            tests: tests/e2e/test_real_git_advanced.py
+          - shard: git-git-ops-local
+            tests: tests/e2e/test_git_ops_local.py
+          - shard: remotes-real-git-remotes
+            tests: tests/e2e/test_real_git_remotes.py
+          - shard: remotes-git-ops-remote-ssh
+            tests: tests/e2e/test_git_ops_remote_ssh.py
+          - shard: bridge-real-bridge
+            tests: tests/e2e/test_real_bridge.py
+          - shard: bridge-git-ops-remote-bridge
+            tests: tests/e2e/test_git_ops_remote_bridge.py
+          - shard: integration-real-integration
+            tests: tests/e2e/test_real_integration.py
     steps:
       - name: Checkout source
         uses: actions/checkout@v7.0.1

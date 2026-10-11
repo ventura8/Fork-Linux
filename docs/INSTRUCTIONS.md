@@ -85,6 +85,9 @@ The real tier covers every user-facing scenario listed in
 `tests/e2e/scenarios.json`: a new feature or fix adds its scenario there and a test in
 `tests/e2e/test_real_*.py` that names it on a `Scenarios:` docstring line, then
 `python3 scripts/gen-scenarios-doc.py write`. The bridge scenarios need `scripts/build-bridge.sh` first.
+CI checks the registry on every pull request (check.yml, `gen-scenarios-doc.py validate` and `check`)
+and runs the real tier weekly in `e2e-wine.yml`, one parallel job per module, each with its own prefix;
+locally, `./scripts/ci-e2e-wine.sh tests/e2e/test_real_doctor.py` runs one such job.
 
 Read every `logs/ci-packaging/<format>.log` after a packaging run (exit 0 is not enough).
 

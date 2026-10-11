@@ -158,11 +158,20 @@ def test_e2e_wine_uploads_logs_only() -> None:
     assert "actions/cache" not in E2E
 
 
+def test_check_runs_the_scenario_registry_gate() -> None:
+    assert "python3 scripts/gen-scenarios-doc.py validate" in CHECK
+    assert "python3 scripts/gen-scenarios-doc.py check" in CHECK
+    assert "python3 scripts/check-coverage.py --min 90 --min-python-line 100 --min-python-branch 100" in CHECK
+
+
 def test_e2e_wine_shards_cover_every_real_tier_module_once() -> None:
     named = re.findall(r"tests/e2e/test_\w+\.py", E2E)
     modules = sorted(f"tests/e2e/{path.name}" for path in (ROOT / "tests" / "e2e").glob("test_*.py"))
     assert sorted(named) == modules
     assert len(set(named)) == len(named)
+    # One module per shard: each runs in its own job, scratch root and prefix.
+    shards = re.findall(r"tests: (.+)", E2E)
+    assert shards and all(re.fullmatch(r"tests/e2e/test_\w+\.py", shard) for shard in shards)
     assert "fail-fast: false" in E2E
     # The bridge scenarios need the shims: built before the tier runs.
     assert E2E.index("./scripts/build-bridge.sh") < E2E.index("./scripts/ci-e2e-wine.sh")
