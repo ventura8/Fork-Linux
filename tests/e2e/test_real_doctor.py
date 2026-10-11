@@ -1,5 +1,5 @@
 """``fork-linux doctor`` on the real install: each ``--fix`` path, repository fixes with consent
-and undo, missing host libraries, the network checks and the status commands.
+and undo, missing host libraries, the network checks, the status and log commands and ``ssh sync``.
 
 Every test breaks one thing the way it happens on a real machine, checks that doctor names it,
 lets ``doctor --fix`` repair it and checks the result. Fork stays closed (fixes that touch Fork's
@@ -12,6 +12,7 @@ import json
 import os
 import re
 import select
+import stat
 import subprocess
 import sys
 import time
@@ -22,6 +23,8 @@ import pytest
 from fork_driver import git, make_repo, windows_path
 
 from fixtures import real_tier
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 if os.environ.get("FL_E2E_FORK") != "1":
     pytest.skip("requires FL_E2E_FORK=1 (the real install in a container)", allow_module_level=True)
@@ -215,7 +218,8 @@ def test_network_checks_reach_the_download_hosts(closed: Any) -> None:
 
 
 def test_status_version_and_about(closed: Any) -> None:
-    """``status``, ``version`` and ``about`` describe the install and credit Fork's developers.
+    """``status``, ``version`` / ``--version`` and ``about`` / ``credits`` describe the install and credit
+    Fork's developers.
 
     Scenarios: D-STATUS
     """
@@ -223,11 +227,16 @@ def test_status_version_and_about(closed: Any) -> None:
     status = json.loads(e2e.cli("status", "--json").stdout)
     assert status["setup_complete"] is True
     assert status["prefix_exists"] is True
-    version = e2e.cli("version").stdout
-    assert version.strip()
+    expected = (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    # The tier runs the source checkout, which reports VERSION with a "-dev" suffix.
+    version = json.loads(e2e.cli("version", "--json").stdout)["fork_linux"]
+    assert version in (expected, f"{expected}-dev"), version
+    assert e2e.cli("version").stdout.startswith(f"fork-linux {version} ")
+    assert e2e.cli("--version").stdout.startswith(f"fork-linux {version}")
     about = e2e.cli("about").stdout
     assert "Dan Pristupov" in about and "https://git-fork.com/buy" in about
     assert "not affiliated" in about.lower()
+    assert e2e.cli("credits").stdout == about
 
 
 def test_logs_show_and_follow(closed: Any) -> None:
@@ -286,3 +295,96 @@ def test_config_get_set_unset_list_path_edit(closed: Any) -> None:
     assert "# edited by the E2E editor" in path.read_text(encoding="utf-8")
     e2e.cli("config", "unset", "snapshots.keep")
     assert e2e.cli("config", "get", "snapshots.keep").stdout.strip() == "2"
+    assert "# edited by the E2E editor" in path.read_text(encoding="utf-8"), "set and unset must keep comments"
+
+
+def test_repo_fix_can_leave_filemode_or_symlinks_alone(closed: Any) -> None:
+    """``repo fix --no-filemode`` only hides the symlinks, ``--no-symlinks`` only sets ``core.filemode``;
+    ``repo undo`` reverts each.
+
+    Scenarios: D-REPO-FIX-PARTIAL
+    """
+    e2e = closed
+    repo = make_repo(e2e.repos / "repo-fix-partial", {".gitignore": "*.tmp\n", "README.md": "# partial\n"})
+    (repo / "link.md").symlink_to("README.md")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "link")
+    git(repo, "config", "core.filemode", "true")
+    e2e.cli("repo", "fix", str(repo), "--yes", "--no-filemode")
+    assert git(repo, "config", "core.filemode") == "true"
+    assert git(repo, "ls-files", "-v", "link.md").startswith("S ")
+    e2e.cli("repo", "undo", str(repo))
+    assert git(repo, "ls-files", "-v", "link.md").startswith("H ")
+    e2e.cli("repo", "fix", str(repo), "--yes", "--no-symlinks")
+    assert git(repo, "config", "core.filemode") == "false"
+    assert git(repo, "ls-files", "-v", "link.md").startswith("H ")
+    e2e.cli("repo", "undo", str(repo))
+    assert git(repo, "config", "core.filemode") == "true"
+
+
+def test_logs_of_each_source(closed: Any) -> None:
+    """``logs --path`` names fork-linux's, Wine's, Fork's and Fork's updater's logs; ``logs --setup`` and
+    ``logs --velopack`` show the end of theirs.
+
+    Scenarios: D-LOGS-SOURCES
+    """
+    e2e = closed
+    e2e.fork.start(make_repo(e2e.repos / "logs-sources", {".gitignore": "*.tmp\n"}))
+    e2e.fork.close()
+    located = json.loads(e2e.cli("logs", "--all", "--path", "--json").stdout)
+    logs_dir = e2e.home / ".local" / "state" / "fork-linux" / "logs"
+    fork_dir = e2e.fork.local_dir / "Fork"
+    assert located["fork"] == [str(fork_dir / "logs" / "fork.log")], located
+    assert located["velopack"] == [str(fork_dir / "velopack.log")], located
+    assert [Path(path).parent for path in located["setup"] + located["wine"]] == [logs_dir, logs_dir], located
+    assert Path(located["wine"][0]).name.startswith("wine-"), located
+    own = Path(located["setup"][0])
+    assert own.name.startswith(("fork-linux.log", "setup-")), located
+    last = own.read_text(encoding="utf-8", errors="replace").strip().splitlines()[-1]
+    assert last in e2e.cli("logs", "--setup").stdout
+    velopack = (fork_dir / "velopack.log").read_text(encoding="utf-8", errors="replace").strip().splitlines()[-1]
+    assert velopack in e2e.cli("logs", "--velopack").stdout
+
+
+def test_ssh_sync_modes_dry_run_and_config(closed: Any) -> None:
+    """``ssh sync --mode copy --no-config`` shares a private copy of a key and leaves the config out; ``--dry-run``
+    only reports; a plain sync links the key and translates the config; ``ssh status`` shows both; a key
+    deleted from ``~/.ssh`` leaves the prefix too.
+
+    Scenarios: I-SSH-SYNC-OPTIONS
+    """
+    e2e = closed
+    host_ssh = e2e.home / ".ssh"
+    host_ssh.mkdir(mode=0o700, exist_ok=True)
+    key = host_ssh / "id_e2e_sync"
+    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "e2e-sync", "-f", str(key)],
+                   capture_output=True, timeout=60, check=True)
+    config = host_ssh / "config"
+    config.write_text(f"Host e2e-sync\n  HostName 127.0.0.1\n  IdentityFile {key}\n  ControlMaster auto\n",
+                      encoding="utf-8")
+    wine_ssh = e2e.prefix / "drive_c" / "users" / e2e.fork.user / ".ssh"
+    shared, wine_config = wine_ssh / key.name, wine_ssh / "config"
+    try:
+        copied = json.loads(e2e.cli("ssh", "sync", "--mode", "copy", "--no-config", "--json").stdout)
+        assert str(shared) in copied["copied"] and copied["config_path"] is None, copied
+        assert not shared.is_symlink() and shared.read_bytes() == key.read_bytes()
+        assert stat.S_IMODE(shared.stat().st_mode) == 0o600
+        assert not wine_config.exists()
+        dry = json.loads(e2e.cli("ssh", "sync", "--dry-run", "--json").stdout)
+        assert dry["dry_run"] is True and str(shared) in dry["linked"], dry
+        assert not shared.is_symlink() and not wine_config.exists(), "a dry run must change nothing"
+        synced = json.loads(e2e.cli("ssh", "sync", "--json").stdout)
+        assert str(shared) in synced["linked"], synced
+        assert shared.is_symlink() and os.readlink(shared) == str(key)
+        text = wine_config.read_text(encoding="utf-8")
+        assert text.startswith("# GENERATED by fork-linux") and "# fork-linux: dropped" in text, text
+        assert "~/.ssh/id_e2e_sync" in text, text
+        status = json.loads(e2e.cli("ssh", "status", "--json").stdout)
+        assert status["perms_ok"] is True and status["config"] == "current", status
+        assert {key.name, "config"} <= set(status["managed"]), status
+    finally:
+        for path in (key, key.with_name(key.name + ".pub"), config):
+            path.unlink(missing_ok=True)
+    removed = json.loads(e2e.cli("ssh", "sync", "--json").stdout)
+    assert str(shared) in removed["removed"] and not os.path.lexists(shared), removed
+    assert not os.path.lexists(wine_config)

@@ -69,6 +69,31 @@ def test_setup_repairs_one_step(closed: Any) -> None:
     assert report["complete"] is True
 
 
+def test_list_steps_and_from_step(closed: Any) -> None:
+    """``setup --list-steps`` lists every step in order with its state; ``--from-step STEP`` re-runs that step
+    and the ones after it; an unknown step is refused (exit 2) before anything runs.
+
+    Scenarios: S-LIST-STEPS, S-FROM-STEP
+    """
+    e2e = closed
+    listed = json.loads(e2e.cli("setup", "--list-steps", "--json").stdout)
+    ids = [row["id"] for row in listed["steps"]]
+    assert ids[:3] == ["preflight", "consent", "wine_runtime"] and ids[-1] == "finalize", ids
+    assert listed["complete"] is True
+    assert {row["status"] for row in listed["steps"]} <= {"done", "always"}, listed["steps"]
+    text = e2e.cli("setup", "--list-steps").stdout.splitlines()
+    assert [line.split()[1] for line in text] == ids, text
+    unknown = e2e.cli("setup", "--only", "no_such_step", check=False)
+    assert unknown.returncode == 2 and "unknown setup step(s): no_such_step" in unknown.stderr, unknown.stderr
+    assert "ssh_sync" in unknown.stderr, "the refusal lists the steps"
+    report = json.loads(e2e.cli(*e2e.setup_args(), "--from-step", "ssh_sync", "--no-launch", "--json").stdout)
+    later = ids[ids.index("ssh_sync"):]
+    assert set(later) <= set(report["ran"]), report
+    assert not set(report["ran"]) & {"wine_runtime", "dotnet", "fork_install", "fork_settings"}, report
+    assert report["complete"] is True
+    assert not fork_pids(e2e.prefix), "setup never starts Fork"
+
+
 class _Terminal:
     """fork-linux on a pseudo-terminal (the reset question needs a person to answer it)."""
 
@@ -271,9 +296,10 @@ def test_flatpak_provider_outside_the_flatpak_is_refused(closed: Any) -> None:
 
 
 def test_a_second_prefix_is_adopted_and_kept_apart(closed: Any) -> None:
-    """``FORK_LINUX_PREFIX`` with ``FORK_LINUX_ADOPT_PREFIX=1`` makes a prefix outside the data dir ours.
+    """``FORK_LINUX_PREFIX`` with ``FORK_LINUX_ADOPT_PREFIX=1`` makes a prefix outside the data dir ours;
+    ``--prefix DIR`` selects it as well.
 
-    Scenarios: S-CUSTOM-PREFIX
+    Scenarios: S-CUSTOM-PREFIX, S-PREFIX-OPTION
     """
     e2e = closed
     prefix2 = e2e.root / "prefix2"
@@ -285,6 +311,12 @@ def test_a_second_prefix_is_adopted_and_kept_apart(closed: Any) -> None:
     assert refused.returncode == 2
     assert json.loads(e2e.cli("status", "--json", extra=extra).stdout)["prefix"] == str(prefix2)
     assert json.loads(e2e.cli("status", "--json").stdout)["prefix"] == str(e2e.prefix)
+    # The global --prefix option selects a prefix too (and wins over FORK_LINUX_PREFIX); ~/.wine never.
+    assert json.loads(e2e.cli("--prefix", str(prefix2), "status", "--json").stdout)["prefix"] == str(prefix2)
+    chosen = e2e.cli("--prefix", str(e2e.prefix), "status", "--json", extra=extra)
+    assert json.loads(chosen.stdout)["prefix"] == str(e2e.prefix)
+    wine = e2e.cli("--prefix", str(e2e.home / ".wine"), "status", check=False)
+    assert wine.returncode == 2 and "refusing to use" in wine.stderr, wine.stderr
 
 
 def test_dotnet472_prefix_runs_fork(closed: Any) -> None:

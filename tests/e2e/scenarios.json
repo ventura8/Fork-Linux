@@ -105,6 +105,19 @@
     ]
   },
   {
+    "id": "S-INTEGRITY",
+    "area": "setup",
+    "title": "A download whose sha256 does not match the manifest is deleted and nothing is installed (exit 13); the next run verifies it",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_errors.py::test_a_download_with_the_wrong_checksum_is_deleted"
+    ]
+  },
+  {
     "id": "S-RESET",
     "area": "setup",
     "title": "--reset warns about license activations, keeps the prefix on no, rebuilds it on yes",
@@ -238,6 +251,32 @@
     ]
   },
   {
+    "id": "S-LIST-STEPS",
+    "area": "setup",
+    "title": "setup --list-steps lists every step in order with its state; an unknown step is refused (exit 2) before anything runs",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_list_steps_and_from_step"
+    ]
+  },
+  {
+    "id": "S-FROM-STEP",
+    "area": "setup",
+    "title": "setup --from-step STEP re-runs that step and the ones after it, and never starts Fork",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_list_steps_and_from_step"
+    ]
+  },
+  {
     "id": "S-WINETRICKS-CACHE",
     "area": "setup",
     "title": "winetricks' own cache is reused for .NET and fonts and never changed",
@@ -254,6 +293,19 @@
     "id": "S-CUSTOM-PREFIX",
     "area": "setup",
     "title": "A prefix outside the data directory (FORK_LINUX_PREFIX + adopt) is ours and kept apart",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_a_second_prefix_is_adopted_and_kept_apart"
+    ]
+  },
+  {
+    "id": "S-PREFIX-OPTION",
+    "area": "setup",
+    "title": "The global --prefix DIR option selects a prefix of ours (over FORK_LINUX_PREFIX); ~/.wine is refused",
     "tiers": [
       "real-fork"
     ],
@@ -308,6 +360,23 @@
       "packaging:appimage:assert_installed",
       "packaging:flatpak:assert_installed",
       "packaging:tarball:assert_installed"
+    ]
+  },
+  {
+    "id": "S-ROOT-REFUSED",
+    "area": "setup",
+    "title": "Run as root, fork-linux refuses (exit 19) before it creates or downloads anything; --allow-root lets a command run",
+    "tiers": [
+      "packaging"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "packaging:deb:check_root_refused",
+      "packaging:deb-jammy:check_root_refused",
+      "packaging:rpm-fedora:check_root_refused",
+      "packaging:rpm-opensuse:check_root_refused",
+      "packaging:arch:check_root_refused"
     ]
   },
   {
@@ -1026,6 +1095,32 @@
     ]
   },
   {
+    "id": "G-APPLY-PATCH",
+    "area": "git",
+    "title": "Apply Patch with a patch picked as H:\\...; files Linux git indexed are not refused as changed",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_local.py::test_apply_a_patch_from_the_home_drive"
+    ]
+  },
+  {
+    "id": "G-INIT-REPO",
+    "area": "git",
+    "title": "File > Init New Repository on a folder in the Linux home; native git uses the repository",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_local.py::test_init_a_new_repository_in_the_home"
+    ]
+  },
+  {
     "id": "G-CONFLICT-MERGER",
     "area": "git",
     "title": "Resolve a merge conflict in Fork's own merger",
@@ -1092,6 +1187,19 @@
     "tests": [
       "tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_linux_path",
       "tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_linux_path"
+    ]
+  },
+  {
+    "id": "G-REMOTE-ADD",
+    "area": "git",
+    "title": "Remotes > Add New Remote with a Linux path; native git fetches from it",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_local.py::test_add_a_remote_from_the_sidebar"
     ]
   },
   {
@@ -1412,6 +1520,32 @@
     ]
   },
   {
+    "id": "I-CLIPBOARD-OUT",
+    "area": "integration",
+    "title": "Copy Full Path / Copy Path in Fork reach the Linux clipboard (the full path as Fork sees it, Z:\\...)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_copy_path_reaches_the_linux_clipboard"
+    ]
+  },
+  {
+    "id": "I-OPEN-REPO-DIALOG",
+    "area": "integration",
+    "title": "File > Open Repository with an H:\\ path opens the tab; fork-linux's repository checks find it at its Linux path",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_open_repository_dialog_takes_a_home_drive_path"
+    ]
+  },
+  {
     "id": "I-PREFERENCES-PERSIST",
     "area": "integration",
     "title": "Preferences survive a restart",
@@ -1435,6 +1569,19 @@
     "pending_merge": false,
     "tests": [
       "tests/e2e/test_real_integration.py::test_fork_settings_from_the_command_line"
+    ]
+  },
+  {
+    "id": "I-SETTINGS-FILE",
+    "area": "integration",
+    "title": "fork-linux settings path/show/backup/unset; restore FILE brings a backup back (unset refused while Fork runs)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_fork_settings_file_show_backup_and_unset"
     ]
   },
   {
@@ -1490,6 +1637,19 @@
     ]
   },
   {
+    "id": "I-DESKTOP-PARTIAL",
+    "area": "integration",
+    "title": "desktop install --no-menu --no-icons adds only the file-manager action; desktop status lists it",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_desktop_install_without_menu_and_icons"
+    ]
+  },
+  {
     "id": "I-GIT-BASH",
     "area": "integration",
     "title": "Git Bash as Fork's terminal (it exits at once under Wine): doctor warns; unset, the Linux terminal is back",
@@ -1513,6 +1673,19 @@
     "pending_merge": false,
     "tests": [
       "tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_ssh_with_a_shared_key"
+    ]
+  },
+  {
+    "id": "I-SSH-SYNC-OPTIONS",
+    "area": "integration",
+    "title": "ssh sync --mode copy, --no-config and --dry-run; a plain sync links keys and translates the config; a deleted key leaves the prefix",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_ssh_sync_modes_dry_run_and_config"
     ]
   },
   {
@@ -1847,6 +2020,19 @@
     ]
   },
   {
+    "id": "D-REPO-FIX-PARTIAL",
+    "area": "doctor",
+    "title": "repo fix --no-filemode / --no-symlinks change only the other fix; repo undo reverts each",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_repo_fix_can_leave_filemode_or_symlinks_alone"
+    ]
+  },
+  {
     "id": "D-LOGS-BUNDLE",
     "area": "doctor",
     "title": "logs --bundle is redacted and leaves out accounts.json",
@@ -1873,6 +2059,19 @@
     ]
   },
   {
+    "id": "D-LOGS-SOURCES",
+    "area": "doctor",
+    "title": "logs --path names each log (fork-linux, Wine, Fork, Fork's updater); logs --setup and --velopack show theirs",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_logs_of_each_source"
+    ]
+  },
+  {
     "id": "D-NETWORK",
     "area": "doctor",
     "title": "doctor --network reaches the download hosts",
@@ -1888,7 +2087,7 @@
   {
     "id": "D-STATUS",
     "area": "doctor",
-    "title": "status, version and about",
+    "title": "status, version / --version and about / credits",
     "tiers": [
       "real-fork"
     ],

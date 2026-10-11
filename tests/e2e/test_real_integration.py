@@ -38,6 +38,8 @@ HELP_WEBSITE = 78
 HELP_ISSUES = 111
 FILE_MENU_OPEN = 24
 FILE_MENU_SHOW = 47
+FILE_MENU_COPY_PATH = 314
+FILE_MENU_COPY_FULL_PATH = 337
 PREFS_SHOW_MARKS = (189, 326)
 CREATE_PATCH_SAVE = (475, 205)
 
@@ -169,7 +171,7 @@ def test_open_file_uses_the_linux_default_app(desk: Any, installed: Any) -> None
 
 
 def test_open_in_shell_runs_the_linux_terminal(desk: Any, installed: Any) -> None:
-    """Repository > Open In Shell (Ctrl+Alt+T) and the Shell button open the Linux terminal there.
+    """Repository > Open In Shell (Ctrl+Alt+T) opens the Linux terminal in the repository.
 
     Scenarios: I-CONSOLE-TERMINAL
     """
@@ -201,6 +203,48 @@ def test_home_drive_in_a_file_dialog(desk: Any, installed: Any) -> None:
     patch = installed.home / "patches" / "initial.patch"
     wait_until(lambda: patch.is_file() and patch.stat().st_size > 0, 60, "the patch in ~/patches")
     assert git(repo, "rev-parse", "HEAD")[:7] in patch.read_text(encoding="utf-8", errors="replace")
+
+
+def test_copy_path_reaches_the_linux_clipboard(desk: Any, installed: Any) -> None:
+    """A file's Copy Full Path puts the path Fork sees (``Z:\\...``) on the Linux clipboard; Copy Path the path
+    inside the repository.
+
+    Scenarios: I-CLIPBOARD-OUT
+    """
+    ui, _log, _extra = desk
+    repo = _repo(installed, "clipboard")
+    ui.open(repo)
+    ui.local_changes()
+    ui.click(ui.unstaged_row(0))
+    _popup_item(ui, lambda: ui.click(ui.unstaged_row(0), button=3), FILE_MENU_COPY_FULL_PATH)
+    full = windows_path(repo / "notes.txt")
+    wait_until(lambda: ui.screen.clipboard() == full, 30, f"{full} on the clipboard")
+    _popup_item(ui, lambda: ui.click(ui.unstaged_row(0), button=3), FILE_MENU_COPY_PATH)
+    wait_until(lambda: ui.screen.clipboard() == "notes.txt", 30, "notes.txt on the clipboard")
+
+
+def test_open_repository_dialog_takes_a_home_drive_path(desk: Any, installed: Any) -> None:
+    """File > Open Repository with ``H:\\<folder>`` opens the repository as a tab; Fork keeps it under ``H:``, and
+    fork-linux's repository checks still find it at its Linux path.
+
+    Scenarios: I-OPEN-REPO-DIALOG
+    """
+    ui, _log, extra = desk
+    repo = make_repo(installed.home / "open-dialog", {".gitignore": "*.tmp\n"})
+    git(repo, "config", "core.filemode", "true")
+    ui.open(_repo(installed, "open-dialog-anchor"))
+    ui.quick_launch("Open Repository")
+    dialog = ui.wait_dialog("Open Repository...")
+    ui.screen.type("H:\\open-dialog", settle=0.5)
+    ui.screen.key("Return", settle=2.0)
+    ui.screen.wait_gone(dialog)
+    time.sleep(2)
+    ui.fork.close()
+    known = {path for workspace in ui.fork.settings()["Workspaces"]["All"] for path in workspace["Repositories"]}
+    assert "H:\\open-dialog" in known, known
+    report = json.loads(installed.cli("repo", "check", "--json").stdout)
+    assert str(repo) in json.dumps(report), report
+    ui.fork.start(_repo(installed, "open-dialog-after"), extra=extra)
 
 
 def test_preferences_survive_a_restart(desk: Any, installed: Any) -> None:
@@ -241,6 +285,33 @@ def test_fork_settings_from_the_command_line(desk: Any, installed: Any) -> None:
     installed.cli("settings", "apply-defaults")
     assert json.loads(installed.cli("settings", "get", "DisableHardwareAcceleration").stdout) is True
     ui.fork.start(_repo(installed, "settings-cli"), extra=extra)
+
+
+def test_fork_settings_file_show_backup_and_unset(desk: Any, installed: Any) -> None:
+    """``settings path`` and ``show`` print Fork's settings.json; ``backup`` keeps a copy that ``restore FILE``
+    brings back; ``unset`` removes a key (refused while Fork runs; a key that is not there exits 20).
+
+    Scenarios: I-SETTINGS-FILE
+    """
+    ui, _log, extra = desk
+    if not ui.fork.main_window():
+        ui.fork.start(_repo(installed, "settings-file-first"), extra=extra)
+    refused = installed.cli("settings", "unset", "CommitSubjectLowLimit", check=False)
+    assert refused.returncode == 15, refused.stderr
+    ui.fork.close()
+    assert Path(installed.cli("settings", "path").stdout.strip()) == installed.fork.settings_path()
+    shown = json.loads(installed.cli("settings", "show", "--json").stdout)
+    assert shown == installed.fork.settings()
+    backup = Path(json.loads(installed.cli("settings", "backup", "--json").stdout)["backup"])
+    assert json.loads(backup.read_text(encoding="utf-8-sig")) == shown
+    installed.cli("settings", "set", "CommitSubjectLowLimit", "42")
+    installed.cli("settings", "unset", "CommitSubjectLowLimit")
+    assert "CommitSubjectLowLimit" not in installed.fork.settings()
+    missing = installed.cli("settings", "unset", "CommitSubjectLowLimit", check=False)
+    assert missing.returncode == 20, missing.stderr
+    installed.cli("settings", "restore", str(backup))
+    assert installed.fork.settings() == shown
+    ui.fork.start(_repo(installed, "settings-file"), extra=extra)
 
 
 def _desktop_exec(entry: Path) -> list[str]:
@@ -344,6 +415,25 @@ def test_desktop_remove_deletes_exactly_what_was_installed(desk: Any, installed:
     assert not [path for path in files if path.exists()], "desktop remove left files behind"
     assert keep.is_file()
     assert sorted(_folders(installed) - folders) == [], "desktop remove left the folders it created behind"
+
+
+def test_desktop_install_without_menu_and_icons(desk: Any, installed: Any) -> None:
+    """``desktop install --no-menu --no-icons`` adds only the file-manager action; ``desktop status`` lists it.
+
+    Scenarios: I-DESKTOP-PARTIAL
+    """
+    _ui, _log, _extra = desk
+    installed.cli("desktop", "remove")
+    installed.cli("desktop", "install", "--no-menu", "--no-icons", "--file-managers", "thunar")
+    status = json.loads(installed.cli("desktop", "status", "--json").stdout)
+    kinds = {entry["kind"] for entry in status["entries"]}
+    assert status["installed"] is True and kinds and not kinds & {"menu", "icon"}, status["entries"]
+    share = installed.home / ".local" / "share"
+    assert not (share / "applications" / f"{APP_ID}.desktop").exists()
+    assert not list((share / "icons").glob(f"**/{APP_ID}.*"))
+    assert "--from-file-manager" in (installed.home / ".config" / "Thunar" / "uca.xml").read_text(encoding="utf-8")
+    installed.cli("desktop", "remove")
+    assert json.loads(installed.cli("desktop", "status", "--json").stdout)["entries"] == []
 
 
 def _folders(e2e: Any) -> set[Path]:

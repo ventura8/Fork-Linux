@@ -14,19 +14,19 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 
 | Area | Scenarios | In this repository | Pending merge |
 |---|---|---|---|
-| Setup | 23 | 23 | 0 |
+| Setup | 28 | 28 | 0 |
 | Launch | 16 | 16 | 0 |
-| Git operations through Fork's UI | 62 | 62 | 0 |
-| OS integration | 22 | 22 | 0 |
+| Git operations through Fork's UI | 65 | 65 | 0 |
+| OS integration | 27 | 27 | 0 |
 | Native-git bridge | 9 | 9 | 0 |
-| Doctor and repository fixes | 13 | 13 | 0 |
+| Doctor and repository fixes | 15 | 15 | 0 |
 | Uninstall | 8 | 8 | 0 |
 | Snapshots and rollback | 7 | 7 | 0 |
 | Fork updates | 13 | 0 | 13 |
 | Fork for Linux upgrades | 12 | 1 | 11 |
 | Desktop environments | 136 | 0 | 136 |
 | Non-Latin font fallback | 1 | 0 | 1 |
-| **Total** | 322 | 161 | 161 |
+| **Total** | 337 | 176 | 161 |
 
 ## Setup
 
@@ -40,6 +40,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | S-RESUME-DOTNET | Setup interrupted in the .NET step resumes there, not from the start | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_reset_rebuilds_offline_and_resumes_after_an_interrupted_dotnet` |
 | S-OFFLINE-CACHE | --offline setup rebuilds a prefix from the download caches alone | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_reset_rebuilds_offline_and_resumes_after_an_interrupted_dotnet` |
 | S-OFFLINE-MISSING | --offline with an empty cache fails (exit 12) and names the missing download | real-fork | this repository | `tests/e2e/test_real_setup_errors.py::test_offline_with_an_empty_cache_names_the_file` |
+| S-INTEGRITY | A download whose sha256 does not match the manifest is deleted and nothing is installed (exit 13); the next run verifies it | real-fork | this repository | `tests/e2e/test_real_setup_errors.py::test_a_download_with_the_wrong_checksum_is_deleted` |
 | S-RESET | --reset warns about license activations, keeps the prefix on no, rebuilds it on yes | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_reset_answered_no_keeps_the_prefix`<br>`tests/e2e/test_real_setup_variants.py::test_reset_rebuilds_offline_and_resumes_after_an_interrupted_dotnet` |
 | S-WINE-SYSTEM | --wine system: the Wine found on PATH runs Fork | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_system_wine_provider` |
 | S-WINE-FLATPAK | --wine flatpak outside the Flatpak build is refused with a clear message — the provider itself needs the org.winehq.Wine BaseApp inside the Flatpak; its detection is unit-tested | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_flatpak_provider_outside_the_flatpak_is_refused` |
@@ -50,11 +51,15 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | S-MISSING-LIBS | A host library Wine needs is missing: doctor names it and its package | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_missing_host_library_is_named_with_its_package` |
 | S-LOCKED | A second setup while one runs exits 16 (LOCKED) | real-fork | this repository | `tests/e2e/test_real_setup_errors.py::test_a_second_setup_while_one_runs_is_locked` |
 | S-STEP-REPAIR | setup --only STEP --force re-runs exactly that step | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_setup_repairs_one_step` |
+| S-LIST-STEPS | setup --list-steps lists every step in order with its state; an unknown step is refused (exit 2) before anything runs | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_list_steps_and_from_step` |
+| S-FROM-STEP | setup --from-step STEP re-runs that step and the ones after it, and never starts Fork | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_list_steps_and_from_step` |
 | S-WINETRICKS-CACHE | winetricks' own cache is reused for .NET and fonts and never changed | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_winetricks_cache_is_reused_and_left_alone` |
 | S-CUSTOM-PREFIX | A prefix outside the data directory (FORK_LINUX_PREFIX + adopt) is ours and kept apart | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_a_second_prefix_is_adopted_and_kept_apart` |
+| S-PREFIX-OPTION | The global --prefix DIR option selects a prefix of ours (over FORK_LINUX_PREFIX); ~/.wine is refused | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_a_second_prefix_is_adopted_and_kept_apart` |
 | S-CONFIG-CLI | fork-linux config get, set (keeping comments), unset, list, path and edit | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_config_get_set_unset_list_path_edit` |
 | S-DOTNET-472 | setup --dotnet dotnet472 builds a prefix with .NET 4.7.2 that runs Fork | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_dotnet472_prefix_runs_fork` |
 | S-PACKAGE-INSTALL | Each package format installs fork-linux for a user: version, menu entry, man pages, shims | packaging | this repository | `packaging:deb:assert_installed`<br>`packaging:deb-jammy:assert_installed`<br>`packaging:rpm-fedora:assert_installed`<br>`packaging:rpm-opensuse:assert_installed`<br>`packaging:arch:assert_installed`<br>`packaging:snap:assert_installed`<br>`packaging:appimage:assert_installed`<br>`packaging:flatpak:assert_installed`<br>`packaging:tarball:assert_installed` |
+| S-ROOT-REFUSED | Run as root, fork-linux refuses (exit 19) before it creates or downloads anything; --allow-root lets a command run | packaging | this repository | `packaging:deb:check_root_refused`<br>`packaging:deb-jammy:check_root_refused`<br>`packaging:rpm-fedora:check_root_refused`<br>`packaging:rpm-opensuse:check_root_refused`<br>`packaging:arch:check_root_refused` |
 
 ## Launch
 
@@ -120,11 +125,14 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | G-STASH-APPLY | Apply a stash | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_stash_save_apply_pop_drop` |
 | G-STASH-POP | Pop a stash (apply and delete) | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_stash_save_apply_pop_drop` |
 | G-STASH-DROP | Delete a stash | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_stash_save_apply_pop_drop` |
+| G-APPLY-PATCH | Apply Patch with a patch picked as H:\...; files Linux git indexed are not refused as changed | real-fork | this repository | `tests/e2e/test_git_ops_local.py::test_apply_a_patch_from_the_home_drive` |
+| G-INIT-REPO | File > Init New Repository on a folder in the Linux home; native git uses the repository | real-fork | this repository | `tests/e2e/test_git_ops_local.py::test_init_a_new_repository_in_the_home` |
 | G-CONFLICT-MERGER | Resolve a merge conflict in Fork's own merger | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_conflict_resolution_in_forks_merger` |
 | G-FETCH-FILE | Fetch from a file:// remote on the Linux side | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url`<br>`tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_file_url` |
 | G-PULL-FILE | Pull from a file:// remote | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url`<br>`tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_file_url` |
 | G-PUSH-FILE | Push to a file:// remote | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url`<br>`tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_file_url` |
 | G-REMOTE-LINUX-PATH | A remote given as a bare Linux path (git clone /path) works | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_linux_path`<br>`tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_linux_path` |
+| G-REMOTE-ADD | Remotes > Add New Remote with a Linux path; native git fetches from it | real-fork | this repository | `tests/e2e/test_git_ops_local.py::test_add_a_remote_from_the_sidebar` |
 | G-TAG-PUSH | Push tags | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_push_tags`<br>`tests/e2e/test_git_ops_remote_bridge.py::test_push_tags` |
 | G-HTTP-BASIC-AUTH | An HTTP remote with a password: Git Credential Manager asks | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_http_with_basic_auth`<br>`tests/e2e/test_git_ops_remote_bridge.py::test_fetch_and_push_over_http_with_basic_auth` |
 | G-HTTP-CREDENTIALS-STORED | The password is stored (DPAPI) and not asked again | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_http_with_basic_auth` |
@@ -154,14 +162,19 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | I-OPEN-FILE | Open a file with the Linux default application | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_file_uses_the_linux_default_app` |
 | I-CONSOLE-TERMINAL | Open In Shell opens the Linux terminal in the repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_in_shell_runs_the_linux_terminal` |
 | I-HOME-DRIVE | File dialogs reach the Linux home as H: | real-fork | this repository | `tests/e2e/test_real_integration.py::test_home_drive_in_a_file_dialog` |
+| I-CLIPBOARD-OUT | Copy Full Path / Copy Path in Fork reach the Linux clipboard (the full path as Fork sees it, Z:\...) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_copy_path_reaches_the_linux_clipboard` |
+| I-OPEN-REPO-DIALOG | File > Open Repository with an H:\ path opens the tab; fork-linux's repository checks find it at its Linux path | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_repository_dialog_takes_a_home_drive_path` |
 | I-PREFERENCES-PERSIST | Preferences survive a restart | real-fork | this repository | `tests/e2e/test_real_integration.py::test_preferences_survive_a_restart` |
 | I-SETTINGS-CLI | fork-linux settings set/get/restore/apply-defaults (refused while Fork runs) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_fork_settings_from_the_command_line` |
+| I-SETTINGS-FILE | fork-linux settings path/show/backup/unset; restore FILE brings a backup back (unset refused while Fork runs) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_fork_settings_file_show_backup_and_unset` |
 | I-DESKTOP-MENU | The menu entry starts Fork; Fork's icon at every size | real-fork | this repository | `tests/e2e/test_real_integration.py::test_menu_entry_with_forks_icon_starts_fork` |
 | I-CLI-ALIAS | desktop install --cli-alias (the AppImage's --install-desktop) links fork into ~/.local/bin | packaging | this repository | `packaging:appimage:appimage_assert` |
 | I-FILE-MANAGER-ACTIONS | Every file manager's Open in Fork action opens the file's repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_file_manager_actions_open_the_files_repository` |
 | I-DESKTOP-REMOVE | desktop remove deletes exactly what desktop install created (with the folders it made) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_desktop_remove_deletes_exactly_what_was_installed` |
+| I-DESKTOP-PARTIAL | desktop install --no-menu --no-icons adds only the file-manager action; desktop status lists it | real-fork | this repository | `tests/e2e/test_real_integration.py::test_desktop_install_without_menu_and_icons` |
 | I-GIT-BASH | Git Bash as Fork's terminal (it exits at once under Wine): doctor warns; unset, the Linux terminal is back | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_git_bash_terminal_is_flagged_and_replaced` |
 | I-SSH-SYNC | ssh sync shares ~/.ssh keys and config with Fork's bundled ssh | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_ssh_with_a_shared_key` |
+| I-SSH-SYNC-OPTIONS | ssh sync --mode copy, --no-config and --dry-run; a plain sync links keys and translates the config; a deleted key leaves the prefix | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_ssh_sync_modes_dry_run_and_config` |
 | I-EXTERNAL-DIFF | Diff in Linux: the Linux diff tool, Fork waits | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_linux_diff_tool_runs_and_fork_waits` |
 | I-EXTERNAL-MERGE | Merge in Linux: the Linux merge tool resolves a conflict | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_linux_merge_tool_resolves_a_conflict`<br>`tests/e2e/test_real_bridge.py::test_linux_merge_tool_without_a_common_base` |
 | I-THEME-LIGHT | Light desktop theme: Fork is light | real-fork | this repository | `tests/e2e/test_real_display.py::test_theme_follows_the_desktop[light]` |
@@ -197,10 +210,12 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | D-FIX-STEP | doctor --fix re-runs the setup step of a broken check | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_fix_reruns_the_setup_step_of_a_broken_check` |
 | D-REPO-CHECK | repo check lists a repository's problems | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_repo_fixes_need_consent_and_undo_reverts_them` |
 | D-REPO-FIX-UNDO | Repository fixes need consent; repo undo reverts them | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_repo_fixes_need_consent_and_undo_reverts_them` |
+| D-REPO-FIX-PARTIAL | repo fix --no-filemode / --no-symlinks change only the other fix; repo undo reverts each | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_repo_fix_can_leave_filemode_or_symlinks_alone` |
 | D-LOGS-BUNDLE | logs --bundle is redacted and leaves out accounts.json | real-fork | this repository | `tests/e2e/test_real_fork.py::test_10_logs_bundle_is_redacted` |
 | D-LOGS-VIEW | logs --all shows fork-linux's and Fork's logs; logs --follow prints new lines | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_logs_show_and_follow` |
+| D-LOGS-SOURCES | logs --path names each log (fork-linux, Wine, Fork, Fork's updater); logs --setup and --velopack show theirs | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_logs_of_each_source` |
 | D-NETWORK | doctor --network reaches the download hosts | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_network_checks_reach_the_download_hosts` |
-| D-STATUS | status, version and about | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_status_version_and_about` |
+| D-STATUS | status, version / --version and about / credits | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_status_version_and_about` |
 | D-NO-WINE | doctor --offline --json works right after a package install, with no Wine | packaging | this repository | `packaging:deb:check_doctor_json`<br>`packaging:deb-jammy:check_doctor_json`<br>`packaging:rpm-fedora:check_doctor_json`<br>`packaging:rpm-opensuse:check_doctor_json`<br>`packaging:arch:check_doctor_json`<br>`packaging:snap:check_doctor_json`<br>`packaging:appimage:check_doctor_json`<br>`packaging:flatpak:check_doctor_json`<br>`packaging:tarball:check_doctor_json` |
 
 ## Uninstall

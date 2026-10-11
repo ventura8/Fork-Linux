@@ -1,12 +1,15 @@
 """Setup's refusals, each for a new user (an empty HOME under ``<root>/variants``): no consent,
-missing host tools or downloader, offline without a cache, a bad Fork version, a held lock.
+missing host tools or downloader, offline without a cache, a bad Fork version, a held lock, a
+download whose checksum does not match.
 
-These run first: none of them downloads anything or needs the main prefix. Gated by
-``FL_E2E_FORK=1``; containers only.
+These run first and need no main prefix; only the checksum test downloads anything (the pinned
+winetricks script, under 1 MB). Gated by ``FL_E2E_FORK=1``; containers only.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import pty
 import select
@@ -27,6 +30,7 @@ real_tier.enforce()
 ACCEPT = ("setup", "--accept-fork-eula", "--no-gui")
 DECLINED = 18
 DOWNLOAD_FAILED = 12
+INTEGRITY_FAILED = 13
 LOCKED = 16
 USAGE = 2
 SETUP_FAILED = 11
@@ -196,3 +200,30 @@ def test_a_second_setup_while_one_runs_is_locked(e2e: Any) -> None:
     assert "lock" in second.stderr.lower()
     assert status == DECLINED
     _nothing_downloaded(user)
+
+
+def test_a_download_with_the_wrong_checksum_is_deleted(e2e: Any) -> None:
+    """A download whose sha256 does not match the manifest fails with exit 13 and is deleted; nothing is
+    installed. With the real checksum the next run downloads and verifies it.
+
+    Scenarios: S-INTEGRITY
+    """
+    from fork_linux import manifest
+
+    pinned = manifest.load().winetricks
+    user = e2e.variant("bad-checksum")
+    override = user.home / ".config" / "fork-linux" / "manifest.local.json"
+    override.parent.mkdir(parents=True, exist_ok=True)
+    wrong = "0" * 64
+    override.write_text(json.dumps({"winetricks": {"sha256": wrong}}), encoding="utf-8")
+    only_winetricks = (*ACCEPT, "--only", "winetricks")
+    failed = user.cli(*only_winetricks, check=False, timeout=300)
+    assert failed.returncode == INTEGRITY_FAILED, failed.stderr
+    assert f"sha256 mismatch for winetricks-{pinned.version}" in failed.stderr, failed.stderr
+    downloads = user.home / ".cache" / "fork-linux" / "downloads"
+    assert not downloads.exists() or not any(downloads.iterdir()), sorted(downloads.iterdir())
+    assert not (user.home / ".local" / "share" / "fork-linux" / "runtimes").exists()
+    override.unlink()
+    user.cli(*only_winetricks, timeout=300)
+    cached = downloads / f"winetricks-{pinned.version}"
+    assert hashlib.sha256(cached.read_bytes()).hexdigest() == pinned.sha256

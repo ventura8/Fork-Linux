@@ -1,5 +1,47 @@
 # E2E results: official Fork 2.23.2 on the managed Wine runtime
 
+## 2026-10-12 (later): completeness review: Fork's menus, every CLI option, new scenarios (`fix/e2e-coverage`)
+
+**Method.** Fork's menu bar, toolbar drop-downs and context menus were walked and screenshotted in a
+real session (`scripts/e2e-docker.sh`, scratch root only; the screenshots show Fork and were deleted
+with the root). Every `fork-linux` command and option, README.md, docs/qa/FUNCTIONALITY-REPORT.md
+and bridge/README.md were compared with `tests/e2e/scenarios.json`. Each module below ran from a
+fresh scratch root, as one e2e-wine.yml job does.
+
+| Module | Result | Time |
+|---|---|---|
+| test_real_setup_errors | 8/8 | 0:03 |
+| test_real_setup_variants | 12/12 | 22:16 |
+| test_real_doctor | 14/15 (a test bug, fixed), then 15/15 | 5:57, rerun 6:01 |
+| test_real_integration | 14/15, then 15/15 | 13:59, rerun 12:54 |
+| test_git_ops_local | 6/6 | 10:28 |
+| test_real_git_changes | 7/7 | 7:47 |
+| test_real_git_branches | 10/10 | 12:06 |
+
+New scenarios: S-INTEGRITY, S-LIST-STEPS, S-FROM-STEP, S-PREFIX-OPTION, S-ROOT-REFUSED (deb,
+deb-jammy, rpm-fedora, rpm-opensuse and arch cells), G-APPLY-PATCH, G-INIT-REPO, G-REMOTE-ADD,
+I-CLIPBOARD-OUT, I-OPEN-REPO-DIALOG, I-SETTINGS-FILE, I-DESKTOP-PARTIAL, I-SSH-SYNC-OPTIONS,
+D-REPO-FIX-PARTIAL and D-LOGS-SOURCES. D-STATUS now checks `version`, `--version` and `credits` too,
+and S-CONFIG-CLI that `set` and `unset` keep the file's comments.
+
+Bugs found and fixed:
+
+1. **Fork's Apply Patch failed on every repository Linux git had indexed** ("error: a.txt: does not
+   match index"). Under Wine, Git for Windows sees no inode, device or owner, so every such file
+   looked changed to `git apply --index`. `git.env_overrides` now also passes
+   `core.checkStat=minimal` to bundled git (never to native git through the bridge).
+2. **`sudo fork-linux ...` wrote bytecode caches into `/usr/share/fork-linux`.** The run was refused
+   (exit 19), but removing the package then left directories behind (dpkg: "not empty so not
+   removed"). The launcher writes no bytecode as root.
+
+The first integration run's failure: Help > Issue Tracker reached `xdg-open` directly instead of
+the portal (`gdbus`), so the test, which only reads portal calls, timed out. Wine's winebrowser falls
+back to its own browser list when it cannot start `fork-linux-open-url`. It happened once, with five
+real tiers on the host; the rerun passed.
+
+Recorded behaviour: Copy Full Path puts the Windows path (`Z:\...`) on the Linux clipboard, and a
+repository opened as `H:\...` stays under `H:` in Fork's tab list (README "Known Wine limitations").
+
 ## 2026-10-12: every real-tier module, one job each, as e2e-wine.yml runs them (`fix/e2e-coverage`)
 
 **Scope.** All 18 modules of `tests/e2e`, each in its own `scripts/e2e-docker.sh --name
