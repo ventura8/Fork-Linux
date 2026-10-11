@@ -13,6 +13,7 @@ import json
 import os
 import signal
 import subprocess
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -53,6 +54,8 @@ MERGE_IN_LINUX = (1028, 400)
 SUBMODULES_HEADER = (90, 380)
 FIRST_SUBMODULE = (120, 402)
 SUBMODULE_MENU_UPDATE = 24
+# Fork's AskPass window (520x185): its text field.
+ASKPASS_FIELD = (335, 91)
 
 
 def _shims_built() -> bool:
@@ -82,9 +85,13 @@ def _daemons() -> list[tuple[int, str]]:
     return processes(lambda cmd: "fl-bridge-helper" in cmd and "--daemon" in cmd)
 
 
-def _bridge_logs(e2e: Any) -> str:
+def _shim_calls(e2e: Any) -> list[dict[str, Any]]:
+    """Every git call the shims recorded (``run --debug`` writes ``bridge-calls-<time>.jsonl``)."""
     logs = e2e.home / ".local" / "state" / "fork-linux" / "logs"
-    return "\n".join(path.read_text(encoding="utf-8", errors="replace") for path in sorted(logs.glob("bridge-*.log")))
+    calls = []
+    for path in sorted(logs.glob("bridge-calls-*.jsonl")):
+        calls += [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return calls
 
 
 def _repo(e2e: Any, name: str, files: dict[str, str] | None = None) -> Path:
@@ -94,9 +101,10 @@ def _repo(e2e: Any, name: str, files: dict[str, str] | None = None) -> Path:
 
 
 def _start(ui: ForkUI, repo: Path, extra: dict[str, str]) -> Any:
+    """Open ``repo`` in the running Fork, or start Fork with ``--debug`` (the shims log every call)."""
     if fork_pids(ui.fork.prefix):
         return ui.open(repo)
-    window = ui.fork.start(repo, extra=extra)
+    window = ui.fork.start(repo, args=("--debug",), extra=extra)
     ui.fork.focus(window)
     return window
 
@@ -124,7 +132,8 @@ def test_enable_starts_the_daemon_and_fork_uses_linux_git(bridged: Any, installe
     ui.commit("committed through the bridge")
     wait_until(lambda: git(repo, "log", "-1", "--format=%s") == "committed through the bridge" or None, 60,
                "the commit")
-    assert "commit" in _bridge_logs(installed)
+    commits = [call for call in _shim_calls(installed) if "commit" in call.get("argv", [])]
+    assert commits and all(call["mode"] == "bridge" for call in commits), commits[-3:]
 
 
 def test_commits_through_fork_keep_exec_bits_and_symlinks(bridged: Any, installed: Any) -> None:
@@ -141,7 +150,11 @@ def test_commits_through_fork_keep_exec_bits_and_symlinks(bridged: Any, installe
     _start(ui, repo, extra)
     ui.refresh()
     ui.local_changes()
-    ui.stage_all_by_double_click(2)
+    # Rows: link.md, run.sh. Fork's own status keeps listing a symlink as changed after it is
+    # staged, so the lower row is staged first.
+    ui.click(ui.unstaged_row(1), repeat=2)
+    time.sleep(1.0)
+    ui.click(ui.unstaged_row(0), repeat=2)
     wait_until(lambda: sorted(git(repo, "diff", "--cached", "--name-only").split()) == ["link.md", "run.sh"]
                or None, 60, "both files to be staged")
     ui.commit("script and link")
@@ -188,17 +201,19 @@ def test_submodule_update_works(bridged: Any, installed: Any) -> None:
     sub = _repo(installed, "bridge-subproj", {"s.txt": "s\n"})
     subprocess.run(["git", "clone", "-q", "--bare", str(sub), str(REMOTES / "bridge-subproj.git")], check=True)
     sup = _repo(installed, "bridge-super")
+    # A top-level submodule path: Fork lists "a/b" under a folder "a" in the sidebar.
     git(sup, "-c", "protocol.file.allow=always", "submodule", "add", "-q", f"file://{REMOTES}/bridge-subproj.git",
-        "libs/sub")
+        "subrepo")
     git(sup, "commit", "-qm", "add submodule")
     subprocess.run(["git", "clone", "-q", "--bare", str(sup), str(REMOTES / "bridge-super.git")], check=True)
     clone = installed.repos / "bridge-super-clone"
     subprocess.run(["git", "clone", "-q", f"file://{REMOTES}/bridge-super.git", str(clone)], check=True)
-    assert not (clone / "libs" / "sub" / "s.txt").exists()
+    assert not (clone / "subrepo" / "s.txt").exists()
     window = _start(ui, clone, extra)
     ui.all_commits()
     ui.screen.click_in(window, *SUBMODULES_HEADER)
     ui.screen.key("Right", settle=1.0)
+    ui.screen.screenshot("submodule-sidebar")
     before = ui.screen.windows()
     ui.screen.click_in(window, *FIRST_SUBMODULE, button=3)
     menu = ui.screen.new_window(before, timeout=10)
@@ -206,7 +221,7 @@ def test_submodule_update_works(bridged: Any, installed: Any) -> None:
     ui.screen.click(menu.x + 60, menu.y + SUBMODULE_MENU_UPDATE, settle=2.0)
     if ui.dialogs():
         ui.screen.key("Return", settle=2.0)
-    wait_until(lambda: (clone / "libs" / "sub" / "s.txt").is_file(), 120, "the submodule checkout")
+    wait_until(lambda: (clone / "subrepo" / "s.txt").is_file(), 120, "the submodule checkout")
 
 
 def test_git_flow_start_feature(bridged: Any, installed: Any) -> None:
@@ -368,8 +383,11 @@ def test_fetch_over_ssh_with_a_passphrase_prompt(bridged: Any, installed: Any) -
         ui.fork.ensure_closed()
         ui.fork.start(work, extra=extra)
         _fetch(ui)
-        prompt = wait_until(lambda: [w for w in ui.dialogs() if w.width > 200], 90, "the passphrase prompt")[0]
+        prompt = wait_until(lambda: [w for w in ui.screen.any_windows() if not w.is_main], 90,
+                            "the passphrase prompt")[0]
         ui.screen.screenshot("ssh-passphrase-prompt", prompt)
+        # Fork's AskPass window does not take the keyboard by itself (no window manager): click its field.
+        ui.screen.click_in(prompt, *ASKPASS_FIELD)
         ui.screen.type("e2e prompt passphrase")
         ui.screen.key("Return", settle=2.0)
         wait_until(lambda: git(work, "rev-parse", "origin/main") == git(seed, "rev-parse", "HEAD"), 90,
@@ -468,7 +486,7 @@ def test_record_mode_forwards_to_bundled_git(bridged: Any, installed: Any) -> No
     ui.click(ui.unstaged_row(0))
     ui.click(STAGE_BUTTON)
     wait_until(lambda: git(repo, "diff", "--cached", "--name-only") == "a.txt" or None, 60, "the staged file")
-    assert "record" in _bridge_logs(installed).lower()
+    assert any(call.get("mode") == "record" for call in _shim_calls(installed))
     ui.fork.close()
     installed.cli("git-bridge", "record", "off")
 

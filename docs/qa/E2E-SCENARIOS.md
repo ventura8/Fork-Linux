@@ -17,7 +17,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | Setup | 21 | 21 | 0 |
 | Launch | 15 | 15 | 0 |
 | Git operations through Fork's UI | 55 | 55 | 0 |
-| OS integration | 20 | 20 | 0 |
+| OS integration | 21 | 21 | 0 |
 | Native-git bridge | 9 | 9 | 0 |
 | Doctor and repository fixes | 12 | 12 | 0 |
 | Uninstall | 7 | 7 | 0 |
@@ -26,7 +26,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | Fork for Linux upgrades | 12 | 0 | 12 |
 | Desktop environments | 70 | 0 | 70 |
 | Non-Latin font fallback | 3 | 0 | 3 |
-| **Total** | 242 | 146 | 96 |
+| **Total** | 243 | 147 | 96 |
 
 ## Setup
 
@@ -149,6 +149,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | I-DESKTOP-MENU | The menu entry starts Fork; Fork's icon at every size | real-fork | this repository | `tests/e2e/test_real_integration.py::test_menu_entry_with_forks_icon_starts_fork` |
 | I-FILE-MANAGER-ACTIONS | Every file manager's Open in Fork action opens the file's repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_file_manager_actions_open_the_files_repository` |
 | I-DESKTOP-REMOVE | desktop remove deletes exactly what desktop install created | real-fork | this repository | `tests/e2e/test_real_integration.py::test_desktop_remove_deletes_exactly_what_was_installed` |
+| I-GIT-BASH | Git Bash as Fork's terminal (it exits at once under Wine): doctor warns; unset, the Linux terminal is back | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_git_bash_terminal_is_flagged_and_replaced` |
 | I-SSH-SYNC | ssh sync shares ~/.ssh keys and config with Fork's bundled ssh | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_ssh_with_a_shared_key` |
 | I-EXTERNAL-DIFF | Diff in Linux: the Linux diff tool, Fork waits | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_linux_diff_tool_runs_and_fork_waits` |
 | I-EXTERNAL-MERGE | Merge in Linux: the Linux merge tool resolves a conflict | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_linux_merge_tool_resolves_a_conflict` |

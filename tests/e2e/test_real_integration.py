@@ -326,10 +326,13 @@ def test_desktop_remove_deletes_exactly_what_was_installed(desk: Any, installed:
     keep.parent.mkdir(parents=True, exist_ok=True)
     keep.write_text("[Desktop Entry]\nType=Application\nName=Other\nExec=true\n", encoding="utf-8")
     installed.cli("desktop", "install", "--file-managers", "all")
+    before = json.loads(installed.cli("desktop", "status", "--json").stdout)
+    files = [Path(entry["path"]) for entry in before["entries"]]
+    assert before["installed"] is True and before["ok"] is True
+    assert {entry["kind"] for entry in before["entries"]} >= {"menu", "icon"}, before["entries"]
+    assert all(path.exists() for path in files)
     installed.cli("desktop", "remove")
-    assert not (share / "applications" / f"{APP_ID}.desktop").exists()
-    assert not list((share / "icons" / "hicolor").glob(f"*/apps/{APP_ID}.*"))
-    assert not list((share / "nemo" / "actions").glob("*.nemo_action")) if (share / "nemo").exists() else True
+    after = json.loads(installed.cli("desktop", "status", "--json").stdout)
+    assert after["installed"] is False and after["entries"] == []
+    assert not [path for path in files if path.exists()], "desktop remove left files behind"
     assert keep.is_file()
-    status = installed.cli("desktop", "status", "--json").stdout
-    assert APP_ID not in status or '"installed": false' in status

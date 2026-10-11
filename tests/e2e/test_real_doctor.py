@@ -48,6 +48,23 @@ def test_fix_resets_a_terminal_tool_without_a_daemon(closed: Any) -> None:
     assert "fl-launch.exe" not in json.dumps(e2e.fork.settings()["ShellTool"])
 
 
+def test_git_bash_terminal_is_flagged_and_replaced(closed: Any) -> None:
+    """Git Bash as Fork's terminal (it exits at once under Wine) is flagged; unset, the Linux one comes back.
+
+    Scenarios: I-GIT-BASH
+    """
+    e2e = closed
+    e2e.cli("settings", "set", "ShellTool", json.dumps({"Type": "GitBash", "ApplicationPath": "", "Arguments": ""}))
+    result = _check(e2e, "fork.tools")
+    assert result["status"] == "warn"
+    assert "Git Bash" in result["detail"]
+    e2e.cli("settings", "unset", "ShellTool")
+    e2e.fork.start(make_repo(e2e.repos / "git-bash", {".gitignore": "*.tmp\n"}))
+    e2e.fork.close()
+    assert "fork-linux-terminal" in json.dumps(e2e.fork.settings()["ShellTool"])
+    assert _check(e2e, "fork.tools")["status"] == "ok"
+
+
 def test_fix_points_the_source_folder_at_the_home(closed: Any) -> None:
     """Fork's clone folder inside the prefix is flagged; --fix points it at the Linux home.
 

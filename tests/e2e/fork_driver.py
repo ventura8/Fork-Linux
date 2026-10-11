@@ -126,6 +126,16 @@ class Screen:
                 found.append(window)
         return found
 
+    def any_windows(self, pattern: str = ".+") -> list[Window]:
+        """Visible windows of any program whose title matches ``pattern`` (a credential prompt, a dialog
+        of another Windows program), smaller than the screen."""
+        found = []
+        for wid in self.xdotool("search", "--onlyvisible", "--name", pattern).split():
+            window = self.window(wid)
+            if window is not None and 60 < window.width < 1600 and window.title:
+                found.append(window)
+        return found
+
     def window(self, wid: str) -> Window | None:
         """The geometry and title of one window (None when it is gone)."""
         shell = self.xdotool("getwindowgeometry", "--shell", wid)

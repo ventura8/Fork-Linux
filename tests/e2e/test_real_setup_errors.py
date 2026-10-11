@@ -62,6 +62,9 @@ def test_no_consent_and_nobody_to_ask_downloads_nothing(e2e: Any) -> None:
     assert result.returncode == DECLINED, result.stderr
     assert "license" in result.stderr.lower()
     assert "--accept-fork-eula" in result.stderr
+    # Picking only a downloading step does not skip the license either.
+    only = user.cli("setup", "--no-gui", "--only", "fork_download", check=False, timeout=120)
+    assert only.returncode == DECLINED, only.stderr
     _nothing_downloaded(user)
 
 

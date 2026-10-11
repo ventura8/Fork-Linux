@@ -29,7 +29,9 @@ real_tier.enforce()
 
 REMOTES = Path("/tmp/fl-e2e-remotes")
 GCM_TITLE = "Git Credential Manager"
-SELECTOR_TITLE = ".*[Cc]redential [Hh]elper.*"
+# Inside Git Credential Manager's prompt (420x312): the user name and password fields.
+GCM_USER_Y = 167
+GCM_PASSWORD_Y = 208
 # Inside Fork's Push dialog and Clone dialog.
 PUSH_ALL_TAGS = (155, 158)
 CLONE_BUTTON = (475, 218)
@@ -138,33 +140,22 @@ def test_push_tags(ui: ForkUI, installed: Any) -> None:
 
 
 def _answer_credentials(ui: ForkUI, user: str, password: str) -> None:
-    """Git Credential Manager's own window (bundled with Fork's git) asks for the account.
+    """Git Credential Manager's own window (the overlay makes it Fork's git's helper) asks for the account.
 
-    The first time, Git for Windows may first ask which credential helper to use (its helper
-    selector, "manager" preselected): that choice is confirmed.
+    Its window takes no keyboard focus by itself (no window manager), so its fields are clicked.
     """
-    window = wait_until(lambda: _any_window(ui, GCM_TITLE) or _any_window(ui, SELECTOR_TITLE), 120,
-                        "Git Credential Manager's prompt")
-    if window.title != GCM_TITLE:
-        ui.screen.screenshot("credential-helper-selector")
-        ui.screen.click_in(window, window.width - 20, 8, settle=0.5)
-        ui.screen.key("Return", settle=2.0)
-        window = wait_until(lambda: _any_window(ui, GCM_TITLE), 120, "Git Credential Manager's prompt")
-    ui.screen.screenshot("gcm-prompt")
-    ui.screen.click_in(window, window.width // 2, 167)
+    window = wait_until(lambda: _any_window(ui, GCM_TITLE), 120, "Git Credential Manager's prompt")
+    ui.screen.screenshot("gcm-prompt", window)
+    ui.screen.click_in(window, window.width // 2, GCM_USER_Y)
     ui.screen.type(user)
-    ui.screen.key("Tab")
+    ui.screen.click_in(window, window.width // 2, GCM_PASSWORD_Y)
     ui.screen.type(password)
     ui.screen.key("Return", settle=2.0)
 
 
 def _any_window(ui: ForkUI, title: str) -> Any:
-    """A visible window of any program whose title matches ``title`` (a regex)."""
-    for wid in ui.screen.xdotool("search", "--onlyvisible", "--name", f"^{title}$").split():
-        window = ui.screen.window(wid)
-        if window is not None and window.width > 100:
-            return window
-    return None
+    """A visible window of any program titled exactly ``title``."""
+    return next((window for window in ui.screen.any_windows(f"^{title}$")), None)
 
 
 def test_fetch_and_push_over_http_with_basic_auth(ui: ForkUI, installed: Any) -> None:

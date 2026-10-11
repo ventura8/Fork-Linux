@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import pty
+import re
 import select
 import signal
 import subprocess
@@ -192,7 +193,7 @@ def test_interrupted_wine_download_resumes(e2e: Any) -> None:
     user.cli("setup", "--accept-fork-eula", "--no-gui", "--only", "wine_runtime", timeout=1200)
     log = "\n".join(path.read_text(encoding="utf-8", errors="replace")
                     for path in (user.home / ".local" / "state" / "fork-linux" / "logs").glob("*.log"))
-    assert "resum" in log.lower(), "the second run did not resume the partial download"
+    assert re.search(r"resuming wine-\S+\.part at byte [1-9]", log), "the partial download was not resumed"
     assert not list(downloads.glob("wine-*.part"))
     assert list((user.home / ".local" / "share" / "fork-linux" / "runtimes" / "wine").glob("*/.complete"))
 

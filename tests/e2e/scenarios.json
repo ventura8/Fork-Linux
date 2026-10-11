@@ -1339,6 +1339,19 @@
     ]
   },
   {
+    "id": "I-GIT-BASH",
+    "area": "integration",
+    "title": "Git Bash as Fork's terminal (it exits at once under Wine): doctor warns; unset, the Linux terminal is back",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_git_bash_terminal_is_flagged_and_replaced"
+    ]
+  },
+  {
     "id": "I-SSH-SYNC",
     "area": "integration",
     "title": "ssh sync shares ~/.ssh keys and config with Fork's bundled ssh",
