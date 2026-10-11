@@ -185,13 +185,11 @@ def test_07_file_managers_open_in_fork_reaches_the_running_fork(
         lambda w: w.has_class(desktop.file_manager_class) and third.name in w.name, f"{desktop.file_manager} on {third}"
     )
     assert _opening(third) == []
-    session.activate(window)
-    time.sleep(1)
-    session.keys(desktop.open_in_fork_keys)
     try:
         # `or None`: wait_for returns any value but None/False at once, an empty list included.
-        started = dekit.wait_for(
-            lambda: _opening(third) or None, 60, "the file manager to start fork-linux on the repository"
+        started = session.context_action(
+            window, desktop.open_in_fork_keys, lambda: _opening(third) or None,
+            "the file manager to start fork-linux on the repository",
         )
     finally:
         session.screenshot("07-after-keys")

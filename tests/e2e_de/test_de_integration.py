@@ -560,9 +560,12 @@ def test_file_manager_runs_open_in_fork(
     window = session.wait_window(
         lambda w: w.has_class(desktop.file_manager_class) and repo.name in w.name, f"a {desktop.file_manager} window"
     )
-    session.activate(window)
-    time.sleep(1)
-    session.keys(desktop.open_in_fork_keys)
+    session.context_action(
+        window,
+        desktop.open_in_fork_keys,
+        lambda: next((shown for shown in session.windows() if _consent_window(shown)), None),
+        "fork-linux's license question after the file manager's \"Open in Fork\"",
+    )
     askers = _decline_consent(session)
     assert any(OPEN_ACTION in cmdline and str(repo) in cmdline for cmdline in askers), askers
 

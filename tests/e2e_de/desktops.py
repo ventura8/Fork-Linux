@@ -673,6 +673,19 @@ BUDGIE = Desktop(
 )
 
 
+def _xft_dpi(dpi: int) -> Command:
+    """Wait (30 s at most) until csd-xsettings has published ``Xft.dpi`` ``dpi``.
+
+    A scale setting reaches ``Xft.dpi`` asynchronously: a case asks fork-linux only once the
+    desktop shows its new value, never the previous case's (MATE: :func:`_mate_xft_dpi`).
+    """
+    script = (
+        'for _ in $(seq 300); do xrdb -query | grep -qE "^Xft\\.dpi:[[:space:]]+$1$" && exit 0; sleep 0.1; done;'
+        ' echo "Xft.dpi is not $1: $(xrdb -query | grep Xft.dpi)" >&2; exit 1'
+    )
+    return ("sh", "-c", script, "sh", str(dpi))
+
+
 def _mate_set(schema: str, key: str, value: str) -> Command:
     """``gsettings set`` of one MATE key, as MATE's Control Center dialogs write it."""
     return ("gsettings", "set", schema, key, value)
@@ -697,8 +710,10 @@ def _mate_theme(gtk: str, marco: str) -> tuple[Command, ...]:
 # 1 on the tier's 96 DPI screen). When the scale changes, mate-settings-daemon restarts the window
 # manager ("marco --replace"), and the replaced marco never exits (marco 1.26.2's meta_quit finds
 # no main loop: "g_main_loop_is_running: assertion 'loop != NULL' failed"), so stale marcos pile
-# up. The command waits for the new marco (40 s, within Session.run's 60 s) and ends the replaced
-# ones, as their own exit would have.
+# up. The command waits for the new marco (25 s) and ends the replaced ones, as their own exit
+# would have. Now and then mate-settings-daemon then held the X server for minutes (see
+# docs/qa/DE-E2E.md): when no window manager answers 10 s later, the settings daemon is ended
+# (the session starts it again), then marco if need be (all within Session.run's 60 s).
 _MATE_WINDOW_SCALING = """
 import os, signal, subprocess, sys, time
 KEY = ("org.mate.interface", "window-scaling-factor")
@@ -708,7 +723,7 @@ def scale():
 def wm_check():
     try:
         root = subprocess.run(["xprop", "-root", "_NET_SUPPORTING_WM_CHECK"], capture_output=True, text=True,
-                              timeout=5).stdout
+                              timeout=3).stdout
     except subprocess.TimeoutExpired:
         return None
     return root.rpartition("#")[2].strip()
@@ -724,16 +739,79 @@ def marcos():
         if text[text.find("(") + 1 : text.rfind(")")] == "marco" and fields[0] != "Z":
             found.append((int(fields[19]), int(pid)))
     return [pid for _started, pid in sorted(found)]
+def settled(seconds):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if wm_check() not in (None, "") and marcos():
+            return True
+        time.sleep(0.5)
+    return False
 before, check = scale(), wm_check()
 subprocess.run(["gsettings", "set", *KEY, sys.argv[1]] if sys.argv[1:] else ["gsettings", "reset", *KEY], check=True)
-deadline = time.monotonic() + 40
-while scale() != before and wm_check() in (check, None):
-    if time.monotonic() > deadline:
-        sys.exit("no new marco after 40 s (the X server is held: dekit's X queries wait for it)")
+deadline = time.monotonic() + 25
+while scale() != before and wm_check() in (check, None) and time.monotonic() < deadline:
     time.sleep(0.2)
 for pid in marcos()[:-1]:
     os.kill(pid, signal.SIGTERM)
+if scale() != before and not settled(10):
+    # mate-settings-daemon holds the X server (a grab): end it, the session starts it again
+    # (see _MATE_SETTINGS_DAEMON); then a marco that still does not answer is started again,
+    # as mate-session starts its window manager again. logs/settings-daemon-stalls.txt says so.
+    with open(os.path.join(os.environ["HOME"], "..", "logs", "settings-daemon-stalls.txt"), "a",
+              encoding="utf-8") as log:
+        log.write(f"no window manager answered after window-scaling-factor {sys.argv[1:] or 'reset'}\\n")
+    subprocess.run(["pkill", "-KILL", "-x", "mate-settings-d"], check=False)
+    if not settled(15):
+        for pid in marcos():
+            os.kill(pid, signal.SIGKILL)
+        subprocess.Popen(["marco", "--replace"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+        if not settled(15):
+            sys.exit("no window manager answers after the window scaling change")
 """
+
+
+# mate-session restarts mate-settings-daemon when it dies (X-MATE-AutoRestart=true in its autostart
+# entry). In the container it now and then segfaulted in libmate-desktop (a NULL read at 0x78)
+# right after a window-scaling change, and Xft.dpi then stayed where it was: the session restarts
+# it the same way and says so in logs/settings-daemon.log.
+_MATE_SETTINGS_DAEMON = (
+    "while :; do /usr/libexec/mate-settings-daemon; echo \"mate-settings-daemon exited ($?):"
+    " restarting it as mate-session does (X-MATE-AutoRestart)\" >&2; sleep 1; done"
+)
+
+
+# Wait (40 s at most) until mate-settings-daemon has published Xft.dpi ARGV[1]. Now and then the
+# daemon held the X server (a grab) for minutes while it updated Xft.dpi, and xrdb got no answer:
+# then it is ended and the session starts it again (_MATE_SETTINGS_DAEMON), which publishes the
+# current settings; logs/settings-daemon-stalls.txt says so.
+_MATE_XFT_DPI = """
+import os, subprocess, sys, time
+def published():
+    try:
+        out = subprocess.run(["xrdb", "-query"], capture_output=True, text=True, timeout=5).stdout
+    except subprocess.TimeoutExpired:
+        return None
+    return next((line.split(":", 1)[1].strip() for line in out.splitlines() if line.startswith("Xft.dpi:")), "")
+deadline, ended = time.monotonic() + 40, False
+while time.monotonic() < deadline:
+    value = published()
+    if value == sys.argv[1]:
+        sys.exit(0)
+    if value is None and not ended:
+        with open(os.path.join(os.environ["HOME"], "..", "logs", "settings-daemon-stalls.txt"), "a",
+                  encoding="utf-8") as log:
+            log.write(f"the X server did not answer xrdb while Xft.dpi was to become {sys.argv[1]}\\n")
+        subprocess.run(["pkill", "-KILL", "-x", "mate-settings-d"], check=False)
+        ended = True
+    time.sleep(0.2)
+sys.exit(f"Xft.dpi is not {sys.argv[1]}: {published()!r}")
+"""
+
+
+def _mate_xft_dpi(dpi: int) -> Command:
+    """Wait until mate-settings-daemon has published ``Xft.dpi`` ``dpi`` (ending a stuck daemon)."""
+    return ("python3", "-I", "-c", _MATE_XFT_DPI, str(dpi))
 
 
 def _mate_window_scaling(*value: str) -> Command:
@@ -758,7 +836,7 @@ MATE = Desktop(
         "COMPIZ_CONFIG_PROFILE": "mate",
         "QT_QPA_PLATFORMTHEME": "gtk2",
     },
-    settings_daemon=("/usr/libexec/mate-settings-daemon",),
+    settings_daemon=("sh", "-c", _MATE_SETTINGS_DAEMON),
     window_manager=("marco", "--replace"),
     wm_name="Metacity (Marco)",
     # mate-session's file manager (and the FileManager1 D-Bus service Caja ships) is
@@ -786,16 +864,19 @@ MATE = Desktop(
     # Control Center > Appearance > Fonts > Details: Resolution (dots per inch); Window Scaling
     # (org.mate.interface window-scaling-factor, 0 = auto).
     scales=(
-        ScaleCase("default", 100),
-        ScaleCase("window-scaling-2", 200, (_mate_window_scaling("2"),)),
-        ScaleCase("font-dpi-144", 150, (_mate_set(_MATE_FONTS, "dpi", "144.0"),)),
-        ScaleCase("font-dpi-192", 200, (_mate_set(_MATE_FONTS, "dpi", "192.0"),)),
+        # Each case waits for mate-settings-daemon's Xft.dpi (font DPI x window scaling): once a
+        # case ran on the previous case's 144 (fork-linux answered 150 for font-dpi-192).
+        ScaleCase("default", 100, (_mate_xft_dpi(96),)),
+        ScaleCase("window-scaling-2", 200, (_mate_window_scaling("2"), _mate_xft_dpi(192))),
+        ScaleCase("font-dpi-144", 150, (_mate_set(_MATE_FONTS, "dpi", "144.0"), _mate_xft_dpi(144))),
+        ScaleCase("font-dpi-192", 200, (_mate_set(_MATE_FONTS, "dpi", "192.0"), _mate_xft_dpi(192))),
     ),
     reset=(
         _mate_reset(_MATE_INTERFACE, "gtk-theme"),
         _mate_reset(_MARCO, "theme"),
         _mate_window_scaling(),
         _mate_reset(_MATE_FONTS, "dpi"),
+        _mate_xft_dpi(96),
     ),
     browser=BROWSER_XDG_MIME,
     # Caja's folder context menu: Create Folder, Create Document, Caja-Actions actions (the submenu
@@ -852,15 +933,6 @@ if logical_monitors[0][2] != scale:
 
 def _ui_scale(scale: str) -> Command:
     return ("python3", "-I", "-c", _MUFFIN_UI_SCALE, scale)
-
-
-def _xft_dpi(dpi: int) -> Command:
-    """Wait (10 s at most) until csd-xsettings has published ``Xft.dpi`` ``dpi``."""
-    script = (
-        'for _ in $(seq 100); do xrdb -query | grep -qE "^Xft\\.dpi:[[:space:]]+$1$" && exit 0; sleep 0.1; done;'
-        ' echo "Xft.dpi is not $1: $(xrdb -query | grep Xft.dpi)" >&2; exit 1'
-    )
-    return ("sh", "-c", script, "sh", str(dpi))
 
 
 def _text_scaling(factor: str) -> Command:

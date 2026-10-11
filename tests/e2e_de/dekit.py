@@ -38,11 +38,15 @@ import desktops
 SCREEN = "1920x1080x24"
 SESSION_MARKER = "FL_E2E_DE_SESSION"
 FILE_MANAGER1 = "org.freedesktop.FileManager1"
-START_TIMEOUT = 30.0
+# How long a session component may take to come up (an upper bound: every wait returns as soon as
+# it is there). 30 s was too short for kcminit + kded6 on a host busy with other desktop sessions.
+START_TIMEOUT = 60.0
 # How long a query of the X server may take. While a client holds a server grab the server answers
 # nobody else: on MATE the window manager now and then held one for a minute or more (marco waiting
 # for an image loader, see docs/qa/DE-E2E.md). A query then waits for the server instead of failing.
 X_TIMEOUT = 300.0
+# How often a context-menu action whose keys did nothing is tried (see Session.context_action).
+CONTEXT_ATTEMPTS = 3
 POLL = 0.3
 T = TypeVar("T")
 # The file a Wayland compositor writes its Xwayland's variables to (KEY=VALUE lines), in
@@ -493,6 +497,35 @@ class Session:
             else:
                 self.xdotool("key", key)
             time.sleep(delay)
+
+    def context_action(
+        self, window: Window, keys: Iterable[str], started: Callable[[], T | None], what: str,
+        timeout: float = 90.0,
+    ) -> T:
+        """Press ``keys`` (a path through a context menu) on ``window`` until ``started`` answers.
+
+        A user whose keys did nothing tries again: a file manager window that was just mapped can
+        let the keys pass (once on GNOME, Nautilus showed its folder and no menu, so nothing
+        started). The keys are pressed again, after Escape closes a menu that may still be open,
+        only while no new window appeared (no other menu item ran); each retry is noted in
+        ``logs/context-menu.txt``. Up to :data:`CONTEXT_ATTEMPTS` tries share ``timeout``.
+        """
+        keys = tuple(keys)
+        for attempt in range(1, CONTEXT_ATTEMPTS + 1):
+            self.activate(window)
+            time.sleep(1)
+            before = {shown.id for shown in self.windows()}
+            try:
+                self.keys(keys)
+                return wait_for(started, timeout / CONTEXT_ATTEMPTS, what)
+            except SessionError as exc:
+                appeared = [shown.name for shown in self.windows() if shown.id not in before]
+                if attempt == CONTEXT_ATTEMPTS or appeared:
+                    raise SessionError(f"{exc} (try {attempt}, new windows: {appeared})") from None
+                with open(self.logs / "context-menu.txt", "a", encoding="utf-8") as log:
+                    log.write(f"try {attempt}: {exc}; pressing Escape and the keys again\n")
+            self.keys(["Escape"])
+        raise SessionError(f"no tries left for {what}")
 
     def menu_item_position(self, label: str) -> int:
         """How many Down presses select ``label`` in the showing context menu (AT-SPI; the
