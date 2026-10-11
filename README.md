@@ -169,10 +169,11 @@ What fork-linux connects for you:
 Known Wine limitations:
 
 - **Hooks that start other programs are silently skipped** by Fork's bundled git under Wine (its `sh` dies after the first program, and the commit still succeeds). `fork-linux doctor` lists affected repositories; commit there from a terminal, or enable the git bridge (see [Git bridge](#git-bridge-experimental-opt-in)), which runs them with Linux git.
+- **Git LFS**: *Initialize* and commits work with Fork's bundled git, but a push runs LFS's pre-push hook through that same `sh`, which now and then hangs under Wine (the push never ends). Enable the git bridge for LFS repositories: Linux git (with your distribution's `git-lfs`) runs the hook.
 - **Symlinks** look like modified files to Fork (and committing them through Fork's git turns them into plain files); **submodule update / init** does nothing; **Git Bash** exits at once. Use a terminal for these; the git bridge fixes submodules and symlink-preserving commits.
 - **Git Flow**: *Initialize* works, but *Start Feature* (git-flow's shell scripts) silently does nothing with Fork's bundled git. With the git bridge it runs with your Linux git: install your distribution's `git-flow` package.
 - **Spell checking** does nothing under Wine; keep it disabled.
-- **GitHub account sign-in (OAuth) can crash Fork under Wine.** Use a GitHub personal access token instead. For HTTPS remotes Fork's git uses Git Credential Manager: it asks once for the user name and password (or token) and keeps them with DPAPI inside the prefix.
+- **GitHub account sign-in (OAuth) can crash Fork under Wine.** Use a GitHub personal access token instead. For HTTPS remotes Fork's git uses Git Credential Manager: it asks once for the user name and password (or token) and keeps them with DPAPI inside the prefix. When its window cannot open under Wine (now and then on the first prompt after Fork starts), Fork's own prompt asks instead, and the account is kept just the same.
 - **Wayland**: Fork runs through XWayland by default; Wine's native Wayland driver is opt-in and experimental.
 - **License activations**: each new Wine prefix may count as a new machine for your Fork license (3 per license). **Deactivate the license in Fork before `fork-linux uninstall --purge`** or before deleting the prefix.
 
