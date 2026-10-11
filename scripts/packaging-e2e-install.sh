@@ -59,12 +59,19 @@ SEED_MARKERS=""
 # The setup markers the remove of this format clears (set per format) and those it did clear.
 REMOVE_FORGETS=""
 FORGOTTEN=""
+# Steps the next launch re-runs because the scenario changed their inputs (appimage_moved).
+NEXT_ALSO=""
+# A format's own scenario, run by cycle once N is installed over N-1 again (every marker recorded).
+AFTER_UPGRADES=""
 
 fail() {
 	echo "E2E FAIL (${FORMAT}): $*" >&2
 	exit 1
 }
 
+# An "upgrade" between equal versions tests nothing: N-1 must sort strictly below N.
+[[ "${PREV_VERSION}" != "${VERSION}" && "$(printf '%s\n' "${VERSION}" "${PREV_VERSION}" | sort -V | head -n 1)" == "${PREV_VERSION}" ]] ||
+	fail "the previous release ${PREV_VERSION} is not older than ${VERSION}: the upgrade would test nothing"
 [[ "$(id -u)" == 0 ]] || fail "run as root inside the packaging image (the program itself runs as ${TESTER})"
 
 # ---------------------------------------------------------------------- tester + markers
@@ -141,10 +148,12 @@ assert_remove_cleared() {
 	assert_seeded
 }
 
-# check_next_launch CMD...: what the installed release's next launch would re-run.
+# check_next_launch CMD...: what the installed release's next launch would re-run (plus the
+# steps in NEXT_ALSO, comma-separated: what the scenario changed on purpose).
 check_next_launch() {
 	[[ -n "${SEED_VERSION}" ]] || seed_setup_state "$@"
 	local changed="${FORGOTTEN}"
+	[[ -z "${NEXT_ALSO}" ]] || changed="${changed:+${changed},}${NEXT_ALSO}"
 	# fl-shim.exe and fl-launch.exe carry the release's version (VERSIONINFO), so another
 	# release than the one that set up copies its shims again; every other step stays done.
 	[[ "${REL_VERSION}" == "${SEED_VERSION}" ]] || changed="${changed:+${changed},}host_shims"
@@ -345,6 +354,9 @@ cycle() {
 	shift 3
 	upgrade_from_previous "${install_fn}" "${assert_fn}"
 	downgrade_to_previous "${install_fn}" "${assert_fn}"
+	if [[ -n "${AFTER_UPGRADES}" ]]; then
+		"${AFTER_UPGRADES}"
+	fi
 	echo "==> E2E upgrade in place (${FORMAT})"
 	"${install_fn}"
 	"${assert_fn}"
@@ -529,6 +541,47 @@ appimage_assert() {
 	[[ "${out}" == *"${REL_VERSION}"* ]] || fail "fork --version printed '${out}'"
 }
 
+# appimage_moved: (N installed over N-1, every marker recorded) the AppImage file is moved and
+# renamed (scenario A9, a name with spaces). Its next start from the new place re-runs
+# desktop_entry (the menu entry's command changed) besides what the upgrade itself re-runs;
+# the helper paths Wine's registry and Fork's settings keep are the stable launchers in
+# <data_dir>/helpers, which follow the file, so no other step re-runs; --install-desktop from
+# the new place re-points the menu entry and the fork / fork-linux links.
+appimage_moved() {
+	local moved="${TESTER_HOME}/Apps/Fork Linux (moved).AppImage" helpers name desktop out
+	desktop="${TESTER_HOME}/.local/share/applications/${APP_ID}.desktop"
+	helpers="${TESTER_HOME}/.local/share/fork-linux/helpers"
+	echo "==> E2E AppImage moved and renamed (${FORMAT} ${REL_VERSION})"
+	as_tester mkdir -p "${TESTER_HOME}/Apps"
+	as_tester mv "${TESTER_HOME}/Applications/fork-linux.AppImage" "${moved}"
+	NEXT_ALSO="desktop_entry"
+	check_next_launch env APPIMAGE="${moved}" "${moved}"
+	# The launchers Wine's registry and Fork's settings name (fork-linux-host's appears with the bridge).
+	for name in fork-linux-terminal fork-linux-explorer fork-linux-open-url; do
+		[[ -x "${helpers}/${name}" ]] || fail "no stable helper launcher ${helpers}/${name}"
+		grep -qF -- "exec '${moved}' --libexec ${name} " "${helpers}/${name}" ||
+			fail "${helpers}/${name} does not run the moved AppImage"
+		if grep -qF -- "${TESTER_HOME}/Applications/fork-linux.AppImage" "${helpers}/${name}"; then
+			fail "${helpers}/${name} still names the old AppImage path"
+		fi
+	done
+	out="$(as_tester "${moved}" --libexec fork-linux-host --help)" || fail "the moved AppImage's --libexec failed"
+	[[ "${out}" == *"usage: fork-linux-host"* ]] || fail "the moved AppImage's --libexec printed '${out}'"
+	echo "ok  the stable helper launchers run the moved AppImage"
+	as_tester env APPIMAGE="${moved}" "${moved}" --install-desktop
+	grep -qF -- "Fork Linux (moved).AppImage" "${desktop}" || fail "the menu entry does not start the moved AppImage"
+	check_menu_command "${desktop}"
+	[[ "$(readlink "${TESTER_HOME}/.local/bin/fork")" == "${moved}" ]] || fail "${TESTER_HOME}/.local/bin/fork does not lead to the moved AppImage"
+	out="$(as_tester "${TESTER_HOME}/.local/bin/fork" --version)" || fail "fork --version (link to the moved AppImage) failed"
+	[[ "${out}" == *"${REL_VERSION}"* ]] || fail "fork --version printed '${out}'"
+	echo "ok  menu entry and links follow the moved AppImage"
+	assert_markers
+	assert_seeded
+	NEXT_ALSO=""
+	# The cycle goes on with a fresh install at the usual place, which points everything back there.
+	as_tester rm -f "${moved}"
+}
+
 FLATPAK_ROOT="/var/lib/flatpak/app/${APP_ID}/current/active/files"
 flatpak_install() {
 	local bundle
@@ -560,6 +613,40 @@ snap_assert() {
 	[[ "${out}" == *"${REL_VERSION}"* ]] || fail "fork --version printed '${out}'"
 }
 
+# snap_revision: the revision of fork-linux snapd runs now ("x1", "x2"... for local snaps).
+snap_revision() {
+	snap list fork-linux | awk '$1 == "fork-linux" { print $3 }'
+}
+
+# snap_revert: a refresh the user takes back (scenario A10). N is installed (the cycle ended
+# with it); N-1 arrives as a new revision, 'snap revert' goes back to N's revision and
+# 'snap revert --revision' forward to N-1's again, then back to N: every revision runs its own
+# version, the helper paths fork-linux stored go through /snap/fork-linux/current, so the next
+# launch re-runs only what the version change needs, and the user's data stays.
+snap_revert() {
+	local n_rev n1_rev
+	n_rev="$(snap_revision)"
+	[[ -n "${n_rev}" ]] || fail "no installed fork-linux snap revision"
+	echo "==> E2E snap refresh to N-1 as a new revision (from ${n_rev})"
+	use_release "${PREV_ART}" "${PREV_VERSION}"
+	snap_install
+	n1_rev="$(snap_revision)"
+	[[ "${n1_rev}" != "${n_rev}" ]] || fail "installing ${PREV_VERSION} did not create a new revision"
+	snap_assert
+	echo "==> E2E snap revert (${n1_rev} -> ${n_rev})"
+	snap revert fork-linux
+	[[ "$(snap_revision)" == "${n_rev}" ]] || fail "snap revert did not go back to revision ${n_rev}"
+	use_release "${ART}" "${VERSION}"
+	snap_assert
+	echo "==> E2E snap revert --revision ${n1_rev}, then ${n_rev}"
+	snap revert --revision "${n1_rev}" fork-linux
+	use_release "${PREV_ART}" "${PREV_VERSION}"
+	snap_assert
+	snap revert --revision "${n_rev}" fork-linux
+	use_release "${ART}" "${VERSION}"
+	snap_assert
+}
+
 # Container base images drop documentation at install time (dpkg path-exclude, dnf
 # tsflags=nodocs, zypper excludedocs, pacman NoExtract); a real system keeps man pages, so
 # the E2E does too.
@@ -588,9 +675,12 @@ case "${FORMAT}" in
 		cycle tarball_install tarball_remove tarball_assert "${TESTER_HOME}/.local/opt/fork-linux" "${TESTER_HOME}/.local" ;;
 	appimage)
 		REMOVE_FORGETS="desktop_entry,icon"
+		AFTER_UPGRADES=appimage_moved
 		cycle appimage_install appimage_remove appimage_assert "${TESTER_HOME}/.local" ;;
 	flatpak) cycle flatpak_install flatpak_remove flatpak_assert "${FLATPAK_ROOT}" ;;
-	snap) cycle snap_install snap_remove snap_assert "${SNAP_ROOT}" ;;
+	snap)
+		cycle snap_install snap_remove snap_assert "${SNAP_ROOT}"
+		snap_revert ;;
 	*) fail "unknown format ${FORMAT}" ;;
 esac
 assert_markers

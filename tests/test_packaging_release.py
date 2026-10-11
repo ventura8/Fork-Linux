@@ -465,6 +465,57 @@ def test_a9_appimage_update_information() -> None:
     assert "artifacts/*.AppImage.zsync" in _text(ROOT / ".github" / "workflows" / "release.yml")
 
 
+def test_a9_appimage_cell_moves_and_renames_the_image() -> None:
+    """The AppImage cell ends by moving and renaming the image: one step re-runs, everything follows it."""
+    e2e = _text(ROOT / "scripts" / "packaging-e2e-install.sh")
+    assert re.search(r'AFTER_UPGRADES=appimage_moved\n\t\tcycle appimage_install appimage_remove appimage_assert', e2e)
+    cycle = e2e[e2e.index("cycle() {"):]
+    assert cycle.index("downgrade_to_previous") < cycle.index('"${AFTER_UPGRADES}"') < cycle.index("upgrade in place")
+    moved = e2e[e2e.index("appimage_moved() {"):]
+    moved = moved[:moved.index("\n}\n")]
+    assert 'local moved="${TESTER_HOME}/Apps/Fork Linux (moved).AppImage"' in moved
+    assert 'NEXT_ALSO="desktop_entry"' in moved
+    assert 'check_next_launch env APPIMAGE="${moved}" "${moved}"' in moved
+    assert "for name in fork-linux-terminal fork-linux-explorer fork-linux-open-url; do" in moved
+    assert '''grep -qF -- "exec '${moved}' --libexec ${name} "''' in moved
+    assert '"${moved}" --install-desktop' in moved
+    assert 'check_menu_command "${desktop}"' in moved
+    assert "assert_seeded" in moved
+
+
+def test_a10_snap_cell_reverts_a_refresh() -> None:
+    """The snap cell ends with a refresh taken back: 'snap revert' back and 'snap revert --revision' forward."""
+    e2e = _text(ROOT / "scripts" / "packaging-e2e-install.sh")
+    assert re.search(r'cycle snap_install snap_remove snap_assert "[^"]*"\n\t\tsnap_revert ;;', e2e)
+    revert = e2e[e2e.index("snap_revert() {"):]
+    revert = revert[:revert.index("\n}\n")]
+    steps = ["snap_install", "snap revert fork-linux", 'snap revert --revision "${n1_rev}" fork-linux',
+             'snap revert --revision "${n_rev}" fork-linux']
+    positions = [revert.index(step) for step in steps]
+    assert positions == sorted(positions)
+    assert revert.count("snap_assert") == 4
+    assert 'fail "snap revert did not go back to revision ${n_rev}"' in revert
+
+
+@pytest.mark.parametrize("previous", [VERSION, "99.0.0"])
+def test_packaging_e2e_refuses_a_previous_release_that_is_not_older(previous: str, tmp_path: Path) -> None:
+    """An N-1 -> N "upgrade" between equal versions (or from a newer one) would test nothing."""
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "FL_ARTIFACTS_DIR": str(tmp_path / "n"),
+        "FL_PREVIOUS_ARTIFACTS_DIR": str(tmp_path / "n-1"),
+        "FL_PREVIOUS_VERSION": previous,
+    }
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "packaging-e2e-install.sh"), "deb"],
+        cwd=str(tmp_path), env=env, capture_output=True, text=True, timeout=60, check=False,
+    )
+    assert result.returncode == 1
+    message = f"the previous release {previous} is not older than {VERSION}: the upgrade would test nothing"
+    assert message in result.stderr
+    assert not (tmp_path / "n").exists()
+
+
 def test_a18_package_versions_sort_upwards() -> None:
     """Every upgrade path is an upgrade for dpkg: N-1 < N < N's PPA builds (by series) < N+1."""
     if shutil.which("dpkg") is None:
