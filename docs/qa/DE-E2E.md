@@ -79,7 +79,8 @@ re-verified) completes; 02 `doctor --deep` has no failure or warning; 03 Fork's 
 window manager, its screenshot is not uniform, settings say light; 04 `fork <repo>` hands a second
 tab to the running Fork (one process); 05 Repository > Open In Shell opens the desktop's terminal
 in the repository; 06 Repository > Open In File Explorer opens the desktop's file manager on it;
-07 the file manager's "Open in Fork" reaches the running Fork; 08 after closing, Fork kept all three
+07 the file manager's "Open in Fork" reaches the running Fork (the processes seen opening the
+repository go to `logs/07-opening.txt`); 08 after closing, Fork kept all three
 tabs and the terminal it opened still runs, and with the desktop switched to dark it relaunches
 with `Theme=1` and a dark window;
 09 `doctor --deep` after use has no failure.

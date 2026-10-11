@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -145,9 +146,9 @@ def test_06_open_in_file_explorer_opens_the_desktops_file_manager(
     session.screenshot("06-file-manager", window)
 
 
-def _opening(repo: Path) -> list[int]:
-    """Processes opening ``repo`` in Fork: the file manager's ``fork-linux open --from-file-manager``,
-    then the Fork.exe that hands the (Windows) path over to the running Fork."""
+def _opening(repo: Path) -> list[str]:
+    """Command lines of the processes opening ``repo`` in Fork: the file manager's ``fork-linux open
+    --from-file-manager``, then the Fork.exe that hands the (Windows) path over to the running Fork."""
     linux, windows = str(repo).encode(), _windows_path(repo).encode()
     found = []
     for entry in os.listdir("/proc"):
@@ -158,7 +159,7 @@ def _opening(repo: Path) -> list[int]:
         except OSError:
             continue
         if windows in cmdline or (b"--from-file-manager" in cmdline and linux in cmdline):
-            found.append(int(entry))
+            found.append(f"{entry}: {shlex.join(os.fsdecode(arg) for arg in cmdline.split(bytes(1)) if arg)}")
     return found
 
 
@@ -178,7 +179,14 @@ def test_07_file_managers_open_in_fork_reaches_the_running_fork(
     session.activate(window)
     time.sleep(1)
     session.keys(desktop.open_in_fork_keys)
-    dekit.wait_for(lambda: _opening(third), 60, "the file manager to start fork-linux on the repository")
+    try:
+        # `or None`: wait_for returns any value but None/False at once, an empty list included.
+        started = dekit.wait_for(
+            lambda: _opening(third) or None, 60, "the file manager to start fork-linux on the repository"
+        )
+    finally:
+        session.screenshot("07-after-keys")
+    (session.logs / "07-opening.txt").write_text("\n".join(started) + "\n", encoding="utf-8")
     dekit.wait_for(lambda: not _opening(third), 60, "fork-linux to hand the repository over and exit")
     assert len(forkui.fork_pids(forkui.prefix(session))) == 1, "Open in Fork must reach the running Fork"
 
