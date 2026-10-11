@@ -236,6 +236,9 @@ def test_fork_settings_from_the_command_line(desk: Any, installed: Any) -> None:
     assert json.loads(installed.cli("settings", "get", "CommitSubjectLowLimit").stdout) == 40
     installed.cli("settings", "restore")
     assert json.loads(installed.cli("settings", "get", "CommitSubjectLowLimit").stdout) != 40
+    installed.cli("settings", "set", "DisableHardwareAcceleration", "false")
+    installed.cli("settings", "apply-defaults")
+    assert json.loads(installed.cli("settings", "get", "DisableHardwareAcceleration").stdout) is True
     ui.fork.start(_repo(installed, "settings-cli"), extra=extra)
 
 
@@ -250,7 +253,12 @@ def test_menu_entry_with_forks_icon_starts_fork(desk: Any, installed: Any) -> No
     Scenarios: I-DESKTOP-MENU
     """
     ui, _log, extra = desk
-    installed.cli("desktop", "install", "--file-managers", "none")
+    installed.cli("desktop", "install", "--file-managers", "none", "--cli-alias")
+    alias = installed.home / ".local" / "bin" / "fork"
+    assert alias.exists(), "desktop install --cli-alias links fork into ~/.local/bin"
+    assert installed.cli("version").stdout.strip() in subprocess.run(
+        [str(alias), "--version"], env=installed.env, capture_output=True, text=True, timeout=60, check=True
+    ).stdout
     applications = installed.home / ".local" / "share" / "applications"
     entry = applications / f"{APP_ID}.desktop"
     assert entry.is_file()

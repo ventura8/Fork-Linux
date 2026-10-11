@@ -40,6 +40,7 @@ SETTINGS = frozenset(
         "FL_E2E_SLOTS",
         "FL_E2E_LOCK_DIR",
         "FL_E2E_IMAGE",
+        "FL_E2E_REUSE",
     }
 )
 

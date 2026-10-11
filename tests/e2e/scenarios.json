@@ -264,6 +264,32 @@
     ]
   },
   {
+    "id": "S-CONFIG-CLI",
+    "area": "setup",
+    "title": "fork-linux config get, set (keeping comments), unset, list, path and edit",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_config_get_set_unset_list_path_edit"
+    ]
+  },
+  {
+    "id": "S-DOTNET-472",
+    "area": "setup",
+    "title": "setup --dotnet dotnet472 builds a prefix with .NET 4.7.2 that runs Fork",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/font-fallback-472",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e/test_real_font_fallback.py::test_non_latin_text_falls_back[dotnet472]"
+    ]
+  },
+  {
     "id": "S-PACKAGE-INSTALL",
     "area": "setup",
     "title": "Each package format installs fork-linux for a user: version, menu entry, man pages, shims",
@@ -404,7 +430,7 @@
   {
     "id": "L-DEBUG-LOGS",
     "area": "launch",
-    "title": "run --debug writes Wine's errors to a new wine-<time>.log",
+    "title": "run --debug writes Wine's errors to a new wine-<time>.log; --wine-debug picks the channels",
     "tiers": [
       "real-fork"
     ],
@@ -1289,7 +1315,7 @@
   {
     "id": "I-SETTINGS-CLI",
     "area": "integration",
-    "title": "fork-linux settings set/get/restore (refused while Fork runs)",
+    "title": "fork-linux settings set/get/restore/apply-defaults (refused while Fork runs)",
     "tiers": [
       "real-fork"
     ],
@@ -1302,7 +1328,7 @@
   {
     "id": "I-DESKTOP-MENU",
     "area": "integration",
-    "title": "The menu entry starts Fork; Fork's icon at every size",
+    "title": "The menu entry starts Fork; Fork's icon at every size; --cli-alias links fork into ~/.local/bin",
     "tiers": [
       "real-fork"
     ],
@@ -1705,6 +1731,19 @@
     "pending_merge": false,
     "tests": [
       "tests/e2e/test_real_fork.py::test_10_logs_bundle_is_redacted"
+    ]
+  },
+  {
+    "id": "D-LOGS-VIEW",
+    "area": "doctor",
+    "title": "logs --all shows fork-linux's and Fork's logs; logs --follow prints new lines",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_logs_show_and_follow"
     ]
   },
   {

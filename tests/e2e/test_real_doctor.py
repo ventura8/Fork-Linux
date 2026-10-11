@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import json
 import os
+import select
 import subprocess
+import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -224,3 +227,58 @@ def test_status_version_and_about(closed: Any) -> None:
     about = e2e.cli("about").stdout
     assert "Dan Pristupov" in about and "https://git-fork.com/buy" in about
     assert "not affiliated" in about.lower()
+
+
+def test_logs_show_and_follow(closed: Any) -> None:
+    """``logs --all`` shows fork-linux's and Fork's logs; ``logs --fork --follow`` prints new lines.
+
+    Scenarios: D-LOGS-VIEW
+    """
+    e2e = closed
+    shown = e2e.cli("logs", "--all").stdout
+    assert "Start IPC server" in shown, "Fork's own fork.log is part of --all"
+    fork_log = e2e.fork.local_dir / "Fork" / "logs" / "fork.log"
+    follow = subprocess.Popen([sys.executable, "-m", "fork_linux", "logs", "--fork", "--follow"], env=e2e.env,
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, start_new_session=True)
+    try:
+        time.sleep(2)
+        marker = f"E2E followed line {time.time_ns()}"
+        with open(fork_log, "a", encoding="utf-8") as handle:
+            handle.write(marker + "\n")
+        assert _read_until(follow, marker, 30)
+    finally:
+        follow.terminate()
+        follow.wait(timeout=30)
+
+
+def _read_until(process: subprocess.Popen[str], text: str, timeout: float) -> bool:
+    """True once ``process`` printed a line containing ``text`` (within ``timeout`` seconds)."""
+    assert process.stdout is not None
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        ready, _, _ = select.select([process.stdout], [], [], 0.5)
+        if ready and text in process.stdout.readline():
+            return True
+    return False
+
+
+def test_config_get_set_unset_list_path_edit(closed: Any) -> None:
+    """``config`` reads, changes (keeping comments) and resets fork-linux's settings; ``edit`` opens it.
+
+    Scenarios: S-CONFIG-CLI
+    """
+    e2e = closed
+    path = Path(e2e.cli("config", "path").stdout.strip())
+    e2e.cli("config", "set", "snapshots.keep", "3")
+    assert e2e.cli("config", "get", "snapshots.keep").stdout.strip() == "3"
+    listed = e2e.cli("config", "list").stdout
+    assert any(line.startswith("snapshots.keep") and line.rstrip().endswith("3") for line in listed.splitlines())
+    refused = e2e.cli("config", "set", "snapshots.keep", "many", check=False)
+    assert refused.returncode == 2
+    editor = e2e.root / "e2e-editor.sh"
+    editor.write_text('#!/bin/sh\nprintf "\\n# edited by the E2E editor\\n" >>"$1"\n', encoding="utf-8")
+    editor.chmod(0o755)
+    e2e.cli("config", "edit", extra={"EDITOR": str(editor), "VISUAL": str(editor)})
+    assert "# edited by the E2E editor" in path.read_text(encoding="utf-8")
+    e2e.cli("config", "unset", "snapshots.keep")
+    assert e2e.cli("config", "get", "snapshots.keep").stdout.strip() == "2"

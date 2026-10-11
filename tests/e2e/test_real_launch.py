@@ -136,10 +136,14 @@ def test_debug_launch_writes_a_wine_log(closed: Any) -> None:
     """
     e2e = closed
     before = set(_log_dir(e2e).glob("wine-2*.log"))
-    e2e.fork.start(_repo(e2e, "launch-debug"), args=("--debug",))
+    e2e.fork.start(_repo(e2e, "launch-debug"), args=("--debug", "--wine-debug", "err+all,fixme-all,+loaddll"))
     created = sorted(set(_log_dir(e2e).glob("wine-2*.log")) - before)
     assert created, "--debug wrote no wine-<time>.log"
     wait_until(lambda: created[-1].stat().st_size > 0, 30, "Wine debug output")
+    pid = fork_pids(e2e.prefix)[0]
+    environ = Path("/proc", str(pid), "environ").read_bytes().split(b"\0")
+    assert b"WINEDEBUG=err+all,fixme-all,+loaddll" in environ
+    assert "loaddll" in created[-1].read_text(encoding="utf-8", errors="replace")
     assert "wine" in e2e.cli("logs", "--wine", "--path").stdout
 
 

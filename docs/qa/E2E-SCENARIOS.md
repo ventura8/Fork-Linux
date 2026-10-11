@@ -14,19 +14,19 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 
 | Area | Scenarios | In this repository | Pending merge |
 |---|---|---|---|
-| Setup | 21 | 21 | 0 |
+| Setup | 23 | 22 | 1 |
 | Launch | 15 | 15 | 0 |
 | Git operations through Fork's UI | 55 | 55 | 0 |
 | OS integration | 21 | 21 | 0 |
 | Native-git bridge | 9 | 9 | 0 |
-| Doctor and repository fixes | 12 | 12 | 0 |
+| Doctor and repository fixes | 13 | 13 | 0 |
 | Uninstall | 7 | 7 | 0 |
 | Snapshots and rollback | 7 | 7 | 0 |
 | Fork updates | 11 | 0 | 11 |
 | Fork for Linux upgrades | 12 | 0 | 12 |
 | Desktop environments | 70 | 0 | 70 |
 | Non-Latin font fallback | 3 | 0 | 3 |
-| **Total** | 243 | 147 | 96 |
+| **Total** | 246 | 149 | 97 |
 
 ## Setup
 
@@ -52,6 +52,8 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | S-STEP-REPAIR | setup --only STEP --force re-runs exactly that step | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_setup_repairs_one_step` |
 | S-WINETRICKS-CACHE | winetricks' own cache is reused for .NET and fonts and never changed | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_winetricks_cache_is_reused_and_left_alone` |
 | S-CUSTOM-PREFIX | A prefix outside the data directory (FORK_LINUX_PREFIX + adopt) is ours and kept apart | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_a_second_prefix_is_adopted_and_kept_apart` |
+| S-CONFIG-CLI | fork-linux config get, set (keeping comments), unset, list, path and edit | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_config_get_set_unset_list_path_edit` |
+| S-DOTNET-472 | setup --dotnet dotnet472 builds a prefix with .NET 4.7.2 that runs Fork | real-fork | `fix/font-fallback-472` (pending merge) | `tests/e2e/test_real_font_fallback.py::test_non_latin_text_falls_back[dotnet472]` |
 | S-PACKAGE-INSTALL | Each package format installs fork-linux for a user: version, menu entry, man pages, shims | packaging | this repository | `packaging:deb:assert_installed`<br>`packaging:deb-jammy:assert_installed`<br>`packaging:rpm-fedora:assert_installed`<br>`packaging:rpm-opensuse:assert_installed`<br>`packaging:arch:assert_installed`<br>`packaging:snap:assert_installed`<br>`packaging:appimage:assert_installed`<br>`packaging:flatpak:assert_installed`<br>`packaging:tarball:assert_installed` |
 
 ## Launch
@@ -67,7 +69,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | L-OPEN | fork-linux open PATH opens a repository in the running Fork | real-fork | this repository | `tests/e2e/test_real_launch.py::test_open_command_adds_a_tab` |
 | L-BAD-PATH | A path that does not exist is a usage error (exit 2); Fork does not start | real-fork | this repository | `tests/e2e/test_real_launch.py::test_missing_path_is_a_usage_error` |
 | L-FORK-LOG-HISTORY | The previous session's fork.log is kept as fork-<time>.log | real-fork | this repository | `tests/e2e/test_real_launch.py::test_previous_fork_log_is_kept` |
-| L-DEBUG-LOGS | run --debug writes Wine's errors to a new wine-<time>.log | real-fork | this repository | `tests/e2e/test_real_launch.py::test_debug_launch_writes_a_wine_log` |
+| L-DEBUG-LOGS | run --debug writes Wine's errors to a new wine-<time>.log; --wine-debug picks the channels | real-fork | this repository | `tests/e2e/test_real_launch.py::test_debug_launch_writes_a_wine_log` |
 | L-DRIVER-X11 | --x11 keeps Wine on the X display in a Wayland session | real-fork | this repository | `tests/e2e/test_real_launch.py::test_x11_driver` |
 | L-DRIVER-WAYLAND | --wayland runs Fork with Wine's Wayland driver | real-fork | this repository | `tests/e2e/test_real_launch.py::test_wayland_driver` |
 | L-NO-SETUP | run --no-setup with an incomplete setup exits 10 | real-fork | this repository | `tests/e2e/test_real_launch.py::test_no_setup_refuses_pending_steps` |
@@ -145,8 +147,8 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | I-CONSOLE-TERMINAL | Open In Shell opens the Linux terminal in the repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_in_shell_runs_the_linux_terminal` |
 | I-HOME-DRIVE | File dialogs reach the Linux home as H: | real-fork | this repository | `tests/e2e/test_real_integration.py::test_home_drive_in_a_file_dialog` |
 | I-PREFERENCES-PERSIST | Preferences survive a restart | real-fork | this repository | `tests/e2e/test_real_integration.py::test_preferences_survive_a_restart` |
-| I-SETTINGS-CLI | fork-linux settings set/get/restore (refused while Fork runs) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_fork_settings_from_the_command_line` |
-| I-DESKTOP-MENU | The menu entry starts Fork; Fork's icon at every size | real-fork | this repository | `tests/e2e/test_real_integration.py::test_menu_entry_with_forks_icon_starts_fork` |
+| I-SETTINGS-CLI | fork-linux settings set/get/restore/apply-defaults (refused while Fork runs) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_fork_settings_from_the_command_line` |
+| I-DESKTOP-MENU | The menu entry starts Fork; Fork's icon at every size; --cli-alias links fork into ~/.local/bin | real-fork | this repository | `tests/e2e/test_real_integration.py::test_menu_entry_with_forks_icon_starts_fork` |
 | I-FILE-MANAGER-ACTIONS | Every file manager's Open in Fork action opens the file's repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_file_manager_actions_open_the_files_repository` |
 | I-DESKTOP-REMOVE | desktop remove deletes exactly what desktop install created | real-fork | this repository | `tests/e2e/test_real_integration.py::test_desktop_remove_deletes_exactly_what_was_installed` |
 | I-GIT-BASH | Git Bash as Fork's terminal (it exits at once under Wine): doctor warns; unset, the Linux terminal is back | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_git_bash_terminal_is_flagged_and_replaced` |
@@ -187,6 +189,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | D-REPO-CHECK | repo check lists a repository's problems | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_repo_fixes_need_consent_and_undo_reverts_them` |
 | D-REPO-FIX-UNDO | Repository fixes need consent; repo undo reverts them | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_repo_fixes_need_consent_and_undo_reverts_them` |
 | D-LOGS-BUNDLE | logs --bundle is redacted and leaves out accounts.json | real-fork | this repository | `tests/e2e/test_real_fork.py::test_10_logs_bundle_is_redacted` |
+| D-LOGS-VIEW | logs --all shows fork-linux's and Fork's logs; logs --follow prints new lines | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_logs_show_and_follow` |
 | D-NETWORK | doctor --network reaches the download hosts | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_network_checks_reach_the_download_hosts` |
 | D-STATUS | status, version and about | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_status_version_and_about` |
 | D-NO-WINE | doctor --offline --json works right after a package install, with no Wine | packaging | this repository | `packaging:deb:check_doctor_json`<br>`packaging:deb-jammy:check_doctor_json`<br>`packaging:rpm-fedora:check_doctor_json`<br>`packaging:rpm-opensuse:check_doctor_json`<br>`packaging:arch:check_doctor_json`<br>`packaging:snap:check_doctor_json`<br>`packaging:appimage:check_doctor_json`<br>`packaging:flatpak:check_doctor_json`<br>`packaging:tarball:check_doctor_json` |
