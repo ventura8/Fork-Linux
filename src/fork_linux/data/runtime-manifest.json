@@ -1,11 +1,24 @@
 {
   "schema": 1,
-  "revision": "2026.10.2",
+  "revision": "2026.10.3",
   "bootstrap_revision": 1,
   "wine": {
-    "default": "kron4ek-11.0-staging-wow64",
+    "_comment": "Default: the newest Kron4ek staging WoW64 build Fork runs on, E2E-tested on 2026-10-11 in a fresh prefix and in a prefix the previous pin (11.0) created (tests/e2e/RESULTS.md). Kron4ek 11.19 staging is not taken: Fork 2.23.2 (and 2.23.1) exits at start on it with System.IO.FileLoadException 0x80131047 'The given assembly name or codebase was invalid', fresh or upgraded prefix, any locale; a bisection over 11.0..11.19 found 11.18 the newest good build. 11.0 stays listed so 'fork-linux config set wine.build kron4ek-11.0-staging-wow64' goes back to it.",
+    "default": "kron4ek-11.18-staging-wow64",
     "min_system_version": "9.0",
     "builds": {
+      "kron4ek-11.18-staging-wow64": {
+        "version": "11.18",
+        "flavor": "staging",
+        "arch": "x86_64",
+        "wow64": true,
+        "url": "https://github.com/Kron4ek/Wine-Builds/releases/download/11.18/wine-11.18-staging-amd64-wow64.tar.xz",
+        "sha256": "15f312effe798838d4877a37126509618b3f98759744b37aeda0c6f55875d99a",
+        "size": 101346404,
+        "strip_components": 1,
+        "min_glibc": "2.27",
+        "status": "known-good"
+      },
       "kron4ek-11.0-staging-wow64": {
         "version": "11.0",
         "flavor": "staging",
@@ -61,7 +74,7 @@
         "sha256": "fee9b2bf84aca6297d7b7e10b29a09c624ac16a82486f2c04136f5ebaf8f079e",
         "full_nupkg_sha256": "B70E7BE92B73BAEAB9FEE700AD352AE9E261DAFCDED0D10E5C94133F639B1C1F",
         "status": "known-good",
-        "tested_with": ["kron4ek-11.0-staging-wow64"]
+        "tested_with": ["kron4ek-11.18-staging-wow64", "kron4ek-11.0-staging-wow64"]
       }
     },
     "known_bad": {}

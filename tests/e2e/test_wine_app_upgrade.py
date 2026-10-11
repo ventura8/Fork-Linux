@@ -12,9 +12,9 @@ replaces its files in place. The tests run in order and build on each other:
   alone, downloads nothing and records the new revisions;
 * A5: N+1 (another step revision) is installed while Fork runs: ``fork <repo>`` hands over to
   the running Fork without touching the prefix; the step runs on the next launch after Fork closed;
-* A4: the managed Wine pin changes to another Kron4ek build (11.19 staging) (a test-only manifest override,
-  pinned by URL, size and sha256): the old build's wineserver is stopped with its own binary,
-  the prefix is updated by the new build and Fork runs on it; going back downloads nothing;
+* A4: the managed Wine build changes to another Kron4ek build (the previous pin, 11.0 staging, still
+  listed in the manifest): the old build's wineserver is stopped with its own binary, the prefix is
+  updated by the new build (``host_integration`` follows) and Fork runs on it; going back downloads nothing;
 * A11: ``uninstall`` without ``--purge``, then the next launch: only the icon and the menu
   entry come back; Fork, its settings and its first-run answers stay;
 * A6: with the git bridge on, an upgrade replaces ``fl-bridge-helper`` and the shims while the
@@ -77,24 +77,13 @@ READY_TITLE = "Fork update is ready to be installed"
 FILE_MENU_CHECK_FOR_UPDATES = (60, 260)  # inside the File menu popup (Alt+F)
 READY_RESTART = (91, -35)  # "Restart and Update" (negative: from the far edge)
 WINE_A = manifest_mod.load().wine_default
-# The other Kron4ek build of A4 (https://github.com/Kron4ek/Wine-Builds/releases/tag/11.19), the newest
-# when this was written. It is not a build Fork is known to work on: Fork 2.23.1 does not start on it in
-# a prefix 11.0 created (System.IO.FileLoadException in WPF's BAML reader, 2026-10-11), so the test checks
-# the switch and Wine on B, and Fork again after switching back. (11.1 hung for 5 minutes updating the
-# same prefix: a "This application could not be started" .NET dialog under wine.inf's Wow64Install.)
-WINE_B_ID = "kron4ek-11.19-staging-wow64"
-WINE_B = {
-    "version": "11.19",
-    "flavor": "staging",
-    "arch": "x86_64",
-    "wow64": True,
-    "url": "https://github.com/Kron4ek/Wine-Builds/releases/download/11.19/wine-11.19-staging-amd64-wow64.tar.xz",
-    "sha256": "c89f69cf22f6664e3791210fa3b40c6e9e6d2e27a9aaa466f5a26d9c56664a09",
-    "size": 101336808,
-    "strip_components": 1,
-    "min_glibc": "2.27",
-    "status": "testing",
-}
+# The other build of A4: the previous default, still listed in the manifest (so going there needs no
+# override). Kron4ek 11.19, the newest build when the pin moved to 11.18, is not one Fork runs on:
+# Fork 2.23.1 and 2.23.2 exit at start (System.IO.FileLoadException 0x80131047 in WPF, 2026-10-11,
+# tests/e2e/RESULTS.md). (11.1 hung for 5 minutes updating the same prefix: a "This application could
+# not be started" .NET dialog under wine.inf's Wow64Install.)
+WINE_B_ID = "kron4ek-11.0-staging-wow64"
+WINE_B = manifest_mod.load().wine_build(WINE_B_ID)
 # Steps that download or install something big: a Wine pin change never re-runs them.
 HEAVY_STEPS = {"winetricks", "dotnet", "fonts", "ui_font", "fork_download", "fork_install"}
 BRIDGE_FILES = ("fl-bridge-helper", "fl-shim.exe", "fl-launch.exe")
@@ -328,8 +317,6 @@ def test_03_a5_upgrade_while_fork_runs(e2e: Any, releases: Releases) -> None:
 
 def test_04_a4_wine_pin_change_and_revert(e2e: Any, releases: Releases) -> None:
     """Scenarios: A4"""
-    override = e2e.home / ".config" / "fork-linux" / "manifest.local.json"
-    override.write_text(json.dumps({"wine": {"builds": {WINE_B_ID: WINE_B}}}), encoding="utf-8")
     releases.cli("config", "set", "wine.build", WINE_B_ID)
     old_root = _runtime_root(e2e, WINE_A.id)
     # Wine's services can keep the previous build's server alive after Fork closed: a persistent one.
@@ -340,13 +327,14 @@ def test_04_a4_wine_pin_change_and_revert(e2e: Any, releases: Releases) -> None:
     _wait_until(lambda: server.resolve() in _wineservers(e2e).values(), 30, "the old build's wineserver")
     downloads = _downloads(e2e)
     report = releases.json("setup", "--no-gui")
-    assert report["ran"] == ["preflight", "wine_runtime", "prefix_init", "finalize"]
+    # wine.inf takes .js back for its JSFile: host_integration follows every Wine change.
+    assert report["ran"] == ["preflight", "wine_runtime", "prefix_init", "host_integration", "finalize"]
     assert server.resolve() not in _wineservers(e2e).values(), "the old build's wineserver was stopped"
     # Downloaded now, or verified again from the cache of an earlier run (--keep keeps home/.cache).
-    assert _downloads(e2e).get(Path(WINE_B["url"]).name) == WINE_B["size"]
-    assert set(_downloads(e2e)) - set(downloads) <= {Path(WINE_B["url"]).name}
+    assert _downloads(e2e).get(Path(WINE_B.url).name) == WINE_B.size
+    assert set(_downloads(e2e)) - set(downloads) <= {Path(WINE_B.url).name}
     complete = _runtime_root(e2e, WINE_B_ID) / wine_provider.COMPLETE_MARKER
-    assert complete.read_text(encoding="utf-8").strip() == WINE_B["sha256"]
+    assert complete.read_text(encoding="utf-8").strip() == WINE_B.sha256
     assert _runtimes(e2e) == sorted([WINE_A.id, WINE_B_ID]), "the previous build stays on disk"
     new_root = _runtime_root(e2e, WINE_B_ID).resolve()
     assert releases.json("status")["wine_build"] == WINE_B_ID
@@ -356,6 +344,10 @@ def test_04_a4_wine_pin_change_and_revert(e2e: Any, releases: Releases) -> None:
                           capture_output=True, text=True, timeout=120, check=False)
     assert on_b.returncode == 0, on_b.stderr
     subprocess.run([str(new_root / "bin" / "wineserver"), "-k"], env=b_env, timeout=60, check=False)
+    _open_fork(releases, e2e.repos / "demo", name="04-a4-on-the-other-build")
+    (pid,) = ui.fork_pids(e2e.prefix)
+    assert Path(_fork_env(pid)["WINESERVER"]).resolve().parent.parent == new_root
+    ui.close_fork(e2e, e2e.prefix)
 
     releases.cli("config", "unset", "wine.build")
     downloads = _downloads(e2e)
@@ -369,7 +361,6 @@ def test_04_a4_wine_pin_change_and_revert(e2e: Any, releases: Releases) -> None:
     (pid,) = ui.fork_pids(e2e.prefix)
     assert Path(_fork_env(pid)["WINESERVER"]).resolve().parent.parent == old_root.resolve()
     ui.close_fork(e2e, e2e.prefix)
-    override.unlink()
 
 
 def test_05_a11_uninstall_then_reinstall_keeps_the_prefix(e2e: Any, releases: Releases) -> None:

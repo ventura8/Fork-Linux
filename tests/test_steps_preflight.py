@@ -110,7 +110,7 @@ def test_consent_text_credits_the_developers_and_lists_downloads(xdg: Path) -> N
     ctx = make_ctx()
     text = consent.text(ctx)
     for needed in (APP_NAME, "Dan Pristupov and Tanya Pristupova", credits.LINKS["license"], credits.LINKS["buy"],
-                   "NOT affiliated", "Wine 11.0 (staging)", "75 MB", "winetricks 20260125", "0.8 MB",
+                   "NOT affiliated", "Wine 11.18 (staging)", "101 MB", "winetricks 20260125", "0.8 MB",
                    "Fork 2.23.2 installer from cdn.fork.dev: 76 MB", ".NET Framework 4.8", "core fonts",
                    "about 3 GB", "minutes"):
         assert needed in text

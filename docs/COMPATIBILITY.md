@@ -55,3 +55,13 @@ fork-linux has to create `~/.local/share/applications`, its menu entry shows aft
 ## Real Fork under Wine
 
 Not yet recorded by CI for v1.0.0; see `tests/e2e/RESULTS.md` for the manual runs.
+
+Managed Wine builds (Kron4ek staging WoW64) with Fork 2.23.2, `scripts/e2e-docker.sh` on an Ubuntu 26.04
+host, 2026-10-11 (details: `tests/e2e/RESULTS.md`, "Wine pin 11.0 -> 11.18"):
+
+| Build | Fresh prefix | Prefix of the previous pin (11.0) moved to it | Evidence |
+|---|---|---|---|
+| `kron4ek-11.0-staging-wow64` (previous pin) | ✅ | — | real tier, 2026-10-09 |
+| `kron4ek-11.18-staging-wow64` (**default**) | ✅ | ✅ (Fork starts, commits) | `test_real_fork.py` 7/7, `test_fork_update.py` 13/13, `test_wine_app_upgrade.py` 6/6 (A6 skipped), pin-upgrade scenario 3/3 |
+| `kron4ek-11.19-staging-wow64` | ❌ | ❌ | Fork exits at start: `System.IO.FileLoadException` 0x80131047 (C.UTF-8 and en_US.UTF-8) |
+| 11.9, 11.14, 11.16, 11.17 | — | ✅ (Fork's main window) | bisection probes in one prefix |

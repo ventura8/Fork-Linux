@@ -150,13 +150,19 @@ def test_markers_and_the_ones_a_remove_cleared(seeded: Path, capsys: pytest.Capt
     assert "no step markers" in err
 
 
+def _default_wine_version() -> str:
+    """The version of the manifest's default Wine build (the stand-in reports it)."""
+    data = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    return str(data["wine"]["builds"][data["wine"]["default"]]["version"])
+
+
 def test_the_stand_in_wine_answers_version_only(seeded: Path, capsys: pytest.CaptureFixture[str]) -> None:
     status = seeded / "status.json"
     data_dir = Path(json.loads(status.read_text(encoding="utf-8"))["prefix"]).parent
     (wine,) = data_dir.glob("runtimes/wine/*/bin/wine")
     assert os.access(wine, os.X_OK)
     version = subprocess.run([str(wine), "--version"], capture_output=True, text=True, check=False, timeout=30)
-    assert (version.returncode, version.stdout) == (0, "wine-11.0 (Staging)\n")
+    assert (version.returncode, version.stdout) == (0, f"wine-{_default_wine_version()} (Staging)\n")
     assert _tool(capsys, "digest", status)[0] == 0
     ran = subprocess.run([str(wine), "wineboot", "--init"], capture_output=True, check=False, timeout=30)
     assert ran.returncode == 97
@@ -177,7 +183,7 @@ def test_a_runtime_without_staging_says_so(xdg: Path, tmp_path: Path, monkeypatc
     status.write_text(json.dumps({"prefix": str(tmp_path / "p" / "prefix"), "state_file": "s", "fork_linux": "1"}))
     layout = state_tool.prepare(status, custom)
     wine = layout.runtime(manifest["wine"]["default"]) / "bin" / "wine"
-    assert 'echo "wine-11.0"' in wine.read_text(encoding="utf-8")
+    assert f'echo "wine-{build["version"]}"' in wine.read_text(encoding="utf-8")
 
 
 def test_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

@@ -107,6 +107,7 @@ MODULE_ORDER = (
     # Prefixes of their own (E2E.child), seeded from the session's caches before uninstall --purge.
     "test_fork_update.py",
     "test_wine_app_upgrade.py",
+    "test_wine_pin_upgrade.py",
     "test_real_setup_variants.py",
     "test_real_uninstall.py",
 )

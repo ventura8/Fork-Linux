@@ -542,7 +542,7 @@ def test_resolve_managed_installed(paths: Paths) -> None:
     assert info.wine == root / "bin" / "wine"
     assert info.staging is True
     assert info.wow64 is True
-    assert info.version == "11.0"
+    assert info.version == pinned.wine_default.version
     assert runner.calls == []
 
 
@@ -561,12 +561,12 @@ def test_resolve_managed_installs_when_allowed(paths: Paths, monkeypatch: pytest
         return _install_complete(paths_, build)
 
     monkeypatch.setattr(wine_provider, "install_managed", fake_install)
-    progress = print
+    progress, pinned = print, _manifest()
     info = wine_provider.resolve(
-        _config(paths), _manifest(), paths, RecordingRunner(), {}, install=True, offline=True, progress=progress
+        _config(paths), pinned, paths, RecordingRunner(), {}, install=True, offline=True, progress=progress
     )
     assert info.provider == "managed"
-    assert calls == [{"build": BUILD_ID, "offline": True, "progress": progress}]
+    assert calls == [{"build": pinned.wine_default.id, "offline": True, "progress": progress}]
 
 
 def test_resolve_managed_configured_build(paths: Paths) -> None:

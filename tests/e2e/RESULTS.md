@@ -582,3 +582,48 @@ the new first-run flow.
 - **The KIO service menu and the FMA action file do not pass `desktop-file-validate`.** This is
   expected: they are KDE and FMA formats, not freedesktop Application entries. Only the menu entry
   is validated.
+
+## Wine pin 11.0 -> 11.18 (2026-10-11)
+
+Runtime pin audit for v1.0.0, all runs through `scripts/e2e-docker.sh` (Ubuntu 26.04 host, image
+`fork-linux-ci-e2e-wine:26.04`, `LANG=C.UTF-8`), seeded caches re-verified by size and sha256.
+Newest upstream releases that day: Kron4ek Wine-Builds **11.19**, winetricks **20260125**, Selawik
+**1.01**, Fork **2.23.2** (Fork's `releases.win.json`; `cdn.fork.dev` has no 2.23.3 / 2.24.0).
+winetricks, Selawik and Fork were already pinned to them (sizes and sha256 re-checked against
+fresh downloads; `dotnet48`, `dotnet472`, `dotnet40` and `corefonts` are unchanged verbs).
+
+**Kron4ek 11.19 staging fails.** Fork 2.23.2 exits at start, before its main window, with
+`System.IO.FileLoadException: The given assembly name or codebase was invalid. (Exception from
+HRESULT: 0x80131047)` (in `Fork.UI.CustomWindow..ctor` → `SetResourceReference`; `fork.log`
+first says "Cannot initialize TextEditorContextMenu style"), both in a fresh prefix
+(`test_real_fork.py`: setup and doctor pass, `test_03` finds no window) and in a prefix 11.0
+created and then moved to 11.19. The same with `LANG=en_US.UTF-8` (an image with that locale), so
+the user's locale is not the trigger. Wine 11.19 updated its Unicode tables to 18.0.0 and its
+locale data (`ANNOUNCE.md`); the cause is upstream, nothing of ours. Fork 2.23.1 fails the same
+way (docs/qa/UPDATE-SCENARIOS.md UPD-26).
+
+**Bisection** (one prefix set up on 11.0 with Fork 2.23.2, each probe pins the next build with a
+manifest override and a new `revision`, runs `setup` - the A4 path - and starts Fork): 11.9 ✅,
+11.14 ✅, 11.16 ✅, 11.17 ✅, 11.18 ✅ (and once more after the last switch); first bad: 11.19.
+Each switch took 15-35 s (`wine_runtime`, `prefix_init` with `wineboot -u`), not minutes.
+
+**Kron4ek 11.18 staging passes** (`wine-11.18-staging-amd64-wow64.tar.xz`, 101,346,404 bytes,
+sha256 `15f312ef…5875d99a`, equal to the release's `sha256sums.txt` and the GitHub asset digest;
+its Unix libraries need the same host libraries as 11.0 and nothing newer than glibc 2.25):
+
+| Run | Result |
+|---|---|
+| `test_real_fork.py`, fresh prefix | 7 passed (630 s) |
+| `test_fork_update.py` (`FL_E2E_FORK_UPDATES=1`): Fork 2.23.1 updating itself (Velopack) and through `update --fork`, bridge on, commits through Fork | 13 passed (1219 s) |
+| `test_wine_app_upgrade.py` (`FL_E2E_APP_UPGRADE=1`), A4 with B = 11.0: switch to the old pin and back | 6 passed, A6 skipped (no `FL_E2E_BRIDGE_BUILDS`) (853 s) |
+| Existing prefix: setup on 11.0 with Fork 2.23.2, first run, a commit through Fork; then the pin moves to 11.18 (new `revision` and `wine.default`); `setup` re-ran `wine_runtime`, `prefix_init` (15 s); Fork starts, two commits through Fork in two repositories | 3 passed (405 s) |
+| After the fix below, with this commit merged with the update tiers' branch: the existing-prefix scenario as an app upgrade (setup under the previous release's manifest - revision 2026.10.2, default 11.0 - then this release's packaged manifest); `setup` re-ran `wine_runtime`, `prefix_init`, `host_integration` (19 s), `doctor --deep` has no failures and no `prefix.integration` warning; Fork starts and commits twice | 3 passed (426 s) |
+| Same tree: `test_real_fork.py` | 7 passed (358 s) |
+| Same tree: `test_wine_app_upgrade.py`, A4 with B = the listed 11.0 build (no override), Fork also opened on B | 6 passed, A6 skipped (947 s) |
+
+**Found by the existing-prefix run (fixed):** Wine's `wine.inf` registers `.js` for its own
+`JSFile` again when it updates the prefix, replacing our `ForkLinux.File` association, and setup
+checked `host_integration` before `prefix_init` ran: `doctor` warned "1 of 107 file-manager / open
+redirects are missing" after every Wine change, until a later setup happened to notice. The step's
+inputs now include the Wine build, so a Wine change re-runs it after `prefix_init`
+(`tests/test_steps_integration.py::test_integration_inputs_follow_the_wine_build`).

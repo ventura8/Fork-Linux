@@ -2708,6 +2708,21 @@
     ]
   },
   {
+    "id": "A24",
+    "area": "app-upgrade",
+    "title": "An upgrade moves the managed Wine pin: a prefix the previous pin (11.0) set up and used follows to the new pin, re-running only the Wine-dependent steps; doctor stays healthy and Fork starts and commits on the new build",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_wine_pin_upgrade.py::test_01_setup_on_the_previous_pin_and_commit",
+      "tests/e2e/test_wine_pin_upgrade.py::test_02_the_upgrade_moves_the_prefix_to_the_new_pin",
+      "tests/e2e/test_wine_pin_upgrade.py::test_03_fork_starts_and_commits_on_the_new_pin"
+    ]
+  },
+  {
     "id": "DE-XFCE-SESSION",
     "area": "desktop",
     "title": "Xfce: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",

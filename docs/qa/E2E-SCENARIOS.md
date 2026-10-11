@@ -23,10 +23,10 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | Uninstall | 8 | 8 | 0 |
 | Snapshots and rollback | 7 | 7 | 0 |
 | Fork updates | 13 | 0 | 0 |
-| Fork for Linux upgrades | 12 | 1 | 0 |
+| Fork for Linux upgrades | 13 | 2 | 0 |
 | Desktop environments | 136 | 0 | 0 |
 | Non-Latin font fallback | 1 | 0 | 0 |
-| **Total** | 339 | 176 | 0 |
+| **Total** | 340 | 177 | 0 |
 
 ## Setup
 
@@ -279,6 +279,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | A11 | Uninstall then reinstall keeps the prefix (no new license activation) | real-fork | `fix/update-tests` | `tests/e2e/test_wine_app_upgrade.py::test_05_a11_uninstall_then_reinstall_keeps_the_prefix` |
 | A12 | An app upgrade and a Fork self-update in the same session | real-fork | `fix/update-tests` | `tests/e2e/test_wine_app_upgrade.py::test_07_a12_app_upgrade_and_fork_self_update_on_one_launch` |
 | A17 | No maintainer scripts: installing, upgrading and removing a package never touches a home directory | packaging | this repository | `packaging:deb:assert_markers`<br>`packaging:deb-jammy:assert_markers`<br>`packaging:rpm-fedora:assert_markers`<br>`packaging:rpm-opensuse:assert_markers`<br>`packaging:arch:assert_markers`<br>`packaging:snap:assert_markers`<br>`packaging:appimage:assert_markers`<br>`packaging:flatpak:assert_markers`<br>`packaging:tarball:assert_markers` |
+| A24 | An upgrade moves the managed Wine pin: a prefix the previous pin (11.0) set up and used follows to the new pin, re-running only the Wine-dependent steps; doctor stays healthy and Fork starts and commits on the new build | real-fork | this repository | `tests/e2e/test_wine_pin_upgrade.py::test_01_setup_on_the_previous_pin_and_commit`<br>`tests/e2e/test_wine_pin_upgrade.py::test_02_the_upgrade_moves_the_prefix_to_the_new_pin`<br>`tests/e2e/test_wine_pin_upgrade.py::test_03_fork_starts_and_commits_on_the_new_pin` |
 
 ## Desktop environments
 

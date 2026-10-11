@@ -82,6 +82,8 @@ jobs:
             tests: tests/e2e/test_fork_update.py
           - shard: updates-wine-app-upgrade
             tests: tests/e2e/test_wine_app_upgrade.py
+          - shard: updates-wine-pin-upgrade
+            tests: tests/e2e/test_wine_pin_upgrade.py
     steps:
       - name: Checkout source
         uses: actions/checkout@v7.0.1
