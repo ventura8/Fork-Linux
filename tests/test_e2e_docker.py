@@ -57,6 +57,7 @@ if args[:1] == ["run"]:
             if not os.path.lexists(link):
                 os.symlink("/etc/hostname", link)
     print("fake container output")
+    print(os.environ.get("FAKE_RUN_OUTPUT", ""))
     sys.exit(int(os.environ.get("FAKE_RUN_RC", "0")))
 sys.exit(0)
 """
@@ -619,6 +620,24 @@ def test_ci_e2e_wine_runs_each_module_in_a_scratch_root_of_its_own(box: Box) -> 
     for module in ("test_real_fork", "test_fork_update", "test_wine_app_upgrade"):
         assert f"tests/e2e/{module}.py exit 3" in result.stdout
         assert (logs / module / "pytest.log").is_file()
+
+
+def test_ci_e2e_wine_fails_a_module_that_skipped_a_test(box: Box) -> None:
+    """A skip in CI is a scenario that silently did not run: the module fails although pytest passed."""
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    skipped = "SKIPPED [1] tests/e2e/test_real_fork.py:26: requires FL_E2E_FORK=1"
+    result = box.run(script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_OUTPUT=f"1 passed\n{skipped}")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "tests/e2e/test_real_fork.py skipped tests; every scenario of a requested tier must run" in result.stderr
+    assert skipped in result.stderr
+    assert "tests/e2e/test_real_fork.py exit 1" in result.stdout
+    (argv,) = box.docker_runs()
+    assert "-rs" in argv
+    passed = box.run(script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_OUTPUT="1 passed")
+    assert passed.returncode == 0, passed.stdout + passed.stderr
+    failed = box.run(script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_OUTPUT=skipped, FAKE_RUN_RC="4")
+    assert failed.returncode == 4, "pytest's own failure status wins"
 
 
 def test_ci_e2e_wine_refuses_a_tmpdir_in_home(box: Box) -> None:

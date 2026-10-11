@@ -28,6 +28,8 @@
 #                            scripts/build-version-variant.sh --tree-only) into a directory of
 #                            their own, mounted read-only (FL_E2E_BRIDGE_BUILDS=/bridge-builds)
 # Every module runs even when an earlier one failed; the exit status is the first failure's.
+# A skipped test fails its module: every tier this script runs was asked for, and its tools and
+# builds are made first, so a skip means a scenario silently did not run (pytest -rs lists why).
 #
 # Usage: ./scripts/ci-e2e-wine.sh [pytest args...]   (added to every module's run)
 set -euo pipefail
@@ -132,8 +134,13 @@ run_module() {
 		"${mounts[@]}" \
 		-w /src \
 		"${IMAGE}" \
-		python3 -m pytest -v -p no:cacheprovider --basetemp=/e2e/pytest "tests/e2e/${module}" "$@" \
+		python3 -m pytest -v -rs -p no:cacheprovider --basetemp=/e2e/pytest "tests/e2e/${module}" "$@" \
 		9>&- 2>&1 | tee "${logs}/pytest.log" 9>&- || status=$?
+	if ((status == 0)) && grep -q '^SKIPPED ' "${logs}/pytest.log"; then
+		echo "==> e2e-wine: tests/e2e/${module} skipped tests; every scenario of a requested tier must run:" >&2
+		grep '^SKIPPED ' "${logs}/pytest.log" >&2
+		status=1
+	fi
 	# Logs only: text files from the scratch root, never images, executables or archives.
 	fl_e2e_copy_logs "${SCRATCH}" "${logs}"
 	fl_e2e_wipe "${SCRATCH}"
