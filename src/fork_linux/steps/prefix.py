@@ -155,7 +155,8 @@ def run_prefix_init(ctx: Ctx) -> None:
             f"wineboot exited with code {result.returncode}",
             hint="run 'fork-linux doctor' to check the Wine runtime and host libraries",
         )
-    winecmd.wineserver(ctx.runner, env, info, "-w")
+    if not winecmd.settle(ctx.runner, env, info):
+        ctx.ui.warn(winecmd.SETTLE_WARNING)
     os.chmod(ctx.paths.prefix, 0o700)
 
 

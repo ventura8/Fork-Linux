@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from fork_linux import bootstrap, feeds, fork_install, fork_userdata, snapshots, updates, wine_provider
+from fork_linux import bootstrap, feeds, fork_install, fork_userdata, snapshots, updates, wine_provider, winecmd
 from fork_linux.commands import update as update_cmd
 from fork_linux.errors import DownloadFailed, ForkLinuxError, SetupFailed
 from fork_linux.locking import FileLock
@@ -549,6 +549,17 @@ def test_wine_switch(capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, ma
     assert boot.state.get(WINE_BUILD) == default
     assert boot.state.get("wine.provider") == "managed"
     assert boot.cache["steps"] == [None]
+
+
+def test_wine_switch_stops_a_prefix_that_stays_busy(
+    capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, managed: list[Path]
+) -> None:
+    boot.runner.responses["wineserver"] = [0, 1, 0]  # -k of the old build, -w times out, -k
+    code, out, _err = run_cli(capsys, "update", "--wine")
+    assert code == 0, out
+    assert [argv[-1] for argv in boot.runner.argvs] == ["-k", "-u", "-w", "-k"]
+    assert winecmd.SETTLE_WARNING in boot.ui.kinds("warn")
+    assert boot.state.get(WINE_BUILD) == boot.manifest.wine_default.id
 
 
 def test_wine_already_current(capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, managed: list[Path]) -> None:

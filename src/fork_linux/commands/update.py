@@ -267,7 +267,8 @@ def _switch_wine(ctx: bootstrap.Ctx) -> dict[str, Any]:
             hint=f"see {ctx.log_file}; the previous Wine build is kept"
             + (f" ({old.build_id})" if old is not None and old.build_id else ""),
         )
-    winecmd.wineserver(ctx.runner, env, new, "-w")
+    if not winecmd.settle(ctx.runner, env, new):
+        ctx.ui.warn(winecmd.SETTLE_WARNING)
     ctx.state.set(WINE_PROVIDER, MANAGED)
     ctx.state.set(WINE_BUILD, target.id)
     ctx.state.set("wine.root", str(new.root))

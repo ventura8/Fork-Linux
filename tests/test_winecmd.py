@@ -283,6 +283,23 @@ def test_wineserver_kill_tolerates_failure(info: WineInfo) -> None:
     assert runner.calls[0]["timeout"] == 10
 
 
+def test_settle_waits_for_an_idle_prefix(info: WineInfo) -> None:
+    runner = RecordingRunner()
+    assert winecmd.settle(runner, {"A": "1"}, info) is True
+    (call,) = runner.calls
+    assert call["argv"] == [str(info.wineserver), "-w"]
+    assert call["timeout"] == winecmd.SETTLE_TIMEOUT
+
+
+def test_settle_stops_a_prefix_that_stays_busy(info: WineInfo, caplog: pytest.LogCaptureFixture) -> None:
+    """A dialog Wine left open while it updated the prefix: the server is stopped, not waited for."""
+    runner = RecordingRunner({"wineserver": [1, 0]})
+    assert winecmd.settle(runner, {}, info, timeout=7) is False
+    assert runner.argvs == [[str(info.wineserver), "-w"], [str(info.wineserver), "-k"]]
+    assert runner.calls[0]["timeout"] == 7
+    assert "did not go idle after wineboot" in caplog.text
+
+
 def test_wineserver_rejects_other_flags(info: WineInfo) -> None:
     runner = RecordingRunner()
     with pytest.raises(ValueError, match="unsupported wineserver flag"):
