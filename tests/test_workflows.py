@@ -162,6 +162,14 @@ def test_check_runs_the_scenario_registry_gate() -> None:
     assert "python3 scripts/gen-scenarios-doc.py validate" in CHECK
     assert "python3 scripts/gen-scenarios-doc.py check" in CHECK
     assert "python3 scripts/check-coverage.py --min 90 --min-python-line 100 --min-python-branch 100" in CHECK
+    # The registry gate runs on every pull request, even after a failed lint stage.
+    lint = _job(CHECK, "lint")
+    gate = lint[lint.index("- name: Scenario registry gate") :]
+    assert "if: ${{ !cancelled() }}" in gate
+    # The per-file gate has no condition: pull requests from forks are gated too.
+    coverage = _job(CHECK, "coverage")
+    step = coverage[coverage.index("- name: Per-file coverage gate") :]
+    assert "\n        if:" not in step[: step.index("\n      - name:")]
 
 
 def test_e2e_wine_shards_cover_every_real_tier_module_once() -> None:
@@ -173,6 +181,15 @@ def test_e2e_wine_shards_cover_every_real_tier_module_once() -> None:
     shards = re.findall(r"tests: (.+)", E2E)
     assert shards and all(re.fullmatch(r"tests/e2e/test_\w+\.py", shard) for shard in shards)
     assert "fail-fast: false" in E2E
+    # Each job is named <area>-<module> and stays under the 90-minute bar.
+    names = re.findall(r"- shard: (\S+)", E2E)
+    assert len(names) == len(shards) == len(set(names))
+    for name, shard in zip(names, shards, strict=True):
+        module = shard.removeprefix("tests/e2e/test_").removesuffix(".py").replace("_", "-")
+        assert name.endswith(f"-{module}") and name != module, name
+    assert "timeout-minutes: 90" in E2E
+    # Weekly, on demand and on pull requests from the release branches.
+    assert "startsWith(github.head_ref, 'feature/v')" in E2E
     # The bridge scenarios need the shims: built before the tier runs.
     assert E2E.index("./scripts/build-bridge.sh") < E2E.index("./scripts/ci-e2e-wine.sh")
     assert UPSTREAM.index("./scripts/build-bridge.sh") < UPSTREAM.index("./scripts/ci-e2e-wine.sh")

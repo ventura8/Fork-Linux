@@ -83,11 +83,14 @@ Runbook: [`.agents/skills/e2e-docker/SKILL.md`](../.agents/skills/e2e-docker/SKI
 The real tier covers every user-facing scenario listed in
 [`docs/qa/E2E-SCENARIOS.md`](qa/E2E-SCENARIOS.md), generated from the registry
 `tests/e2e/scenarios.json`: a new feature or fix adds its scenario there and a test in
-`tests/e2e/test_real_*.py` that names it on a `Scenarios:` docstring line, then
+`tests/e2e/test_*.py` that names it on a `Scenarios:` docstring line, then
 `python3 scripts/gen-scenarios-doc.py write`. The bridge scenarios need `scripts/build-bridge.sh` first.
-CI checks the registry on every pull request (check.yml, `gen-scenarios-doc.py validate` and `check`)
-and runs the real tier weekly in `e2e-wine.yml`, one parallel job per module, each with its own prefix;
-locally, `./scripts/ci-e2e-wine.sh tests/e2e/test_real_doctor.py` runs one such job.
+CI checks the registry on every pull request (check.yml, `gen-scenarios-doc.py validate` and `check`,
+even when the lint stage failed) next to the per-file coverage gate (`scripts/check-coverage.py`), and
+runs the real tier in `e2e-wine.yml` weekly, on demand and on pull requests from release branches
+(`feature/vX.Y.Z`): one parallel job per module, named `<area>-<module>`, each with its own runner,
+scratch root and prefix and under 90 minutes; locally,
+`./scripts/ci-e2e-wine.sh tests/e2e/test_real_doctor.py` runs one such job.
 
 Read every `logs/ci-packaging/<format>.log` after a packaging run (exit 0 is not enough).
 

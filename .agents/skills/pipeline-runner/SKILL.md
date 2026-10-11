@@ -21,5 +21,5 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
    `ci-docker.sh`, the real tier through `./scripts/e2e-docker.sh --name <run> pytest tests/e2e`
    (or `./scripts/ci-e2e-wine.sh tests/e2e/<module>.py`, one module per scratch root as e2e-wine.yml's
    jobs do). check.yml's lint job also runs the scenario registry gate (`gen-scenarios-doc.py validate`
-   and `check`) and the coverage job the per-file gate (`scripts/check-coverage.py`). Never `ci-docker.sh --inside`, `ci-c-coverage.sh --no-docker`
+   and `check`, even when the lint stage failed) and the coverage job the per-file gate (`scripts/check-coverage.py`). Never `ci-docker.sh --inside`, `ci-c-coverage.sh --no-docker`
    or `FL_E2E_FORK=1` / `FL_REAL_WINE=1` pytest on the host — they refuse.

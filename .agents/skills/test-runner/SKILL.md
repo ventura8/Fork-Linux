@@ -14,7 +14,9 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 - E2E scenario registry: `tests/test_e2e_scenarios.py` checks `tests/e2e/scenarios.json` against the test tree
   (every scenario has an existing test, every real-tier test has its `Scenarios:` line) and the generated
   `docs/qa/E2E-SCENARIOS.md`; after changing either run `python3 scripts/gen-scenarios-doc.py write`. Every
-  user-facing change needs a scenario id and a real-tier test (AGENTS.md §4.5); check.yml runs `validate` + `check`.
+  user-facing change needs a scenario id and a real-tier test (AGENTS.md §4.5); check.yml runs `validate` + `check`
+  on every pull request, even after a failed lint stage. A scenario of an unmerged branch carries `pending_merge`
+  (`gen-scenarios-doc.py pending` checks it there; after the merge `declare BRANCH`, `clear-pending BRANCH`, `write`).
 - Python 3.10: `FL_CI_STAGE=compat FL_CI_CELL=jammy ./scripts/ci-docker.sh`.
 - Coverage gates: `FL_CI_STAGE=coverage ./scripts/ci-docker.sh` (90% overall, 100% branch on the critical modules,
   ASan/UBSan native tests, then the C coverage report in its container and the per-file gate: every file >= 90%,

@@ -43,8 +43,10 @@ jobs:
         run: ./scripts/ci-docker.sh
 
       # Every user-facing scenario has a real-tier test (or a pending branch that brings one),
-      # and docs/qa/E2E-SCENARIOS.md matches tests/e2e/scenarios.json (AGENTS.md §4.5).
+      # and docs/qa/E2E-SCENARIOS.md matches tests/e2e/scenarios.json (AGENTS.md §4.5). It runs
+      # even when the lint stage failed, so a pull request always gets its verdict.
       - name: Scenario registry gate (scripts/gen-scenarios-doc.py)
+        if: ${{ !cancelled() }}
         run: |
           python3 scripts/gen-scenarios-doc.py validate
           python3 scripts/gen-scenarios-doc.py check
