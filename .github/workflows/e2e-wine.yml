@@ -2,7 +2,8 @@
 name: E2E (real Fork under Wine)
 
 # The real tier: managed Wine + .NET + the official Fork installer under Xvfb (about 20
-# minutes, ~2.5 GB of downloads made on the runner). Weekly, on demand, and on same-repo PRs
+# minutes, ~2.5 GB of downloads made on the runner), then the Fork-update tier (Fork 2.23.1
+# updating itself and through fork-linux, another ~20 minutes). Weekly, on demand, and on same-repo PRs
 # from release branches (feature/vX.Y.Z). Uploads logs only: no screenshots (they show Fork's
 # logo), no binaries, and the Fork installer is never cached (AGENTS.md hard rules 1, 4).
 on:
@@ -26,14 +27,16 @@ jobs:
       (github.event.pull_request.head.repo.full_name == github.repository &&
        startsWith(github.head_ref, 'feature/v'))
     runs-on: ubuntu-26.04
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - name: Checkout source
         uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - name: Real setup + Fork window + doctor + snapshot/rollback (Xvfb)
+      - name: Real setup + Fork window + doctor + snapshot/rollback + Fork updates (Xvfb)
+        env:
+          FL_E2E_FORK_UPDATES: '1'
         run: ./scripts/ci-e2e-wine.sh
 
       - name: Keep the logs (text only)

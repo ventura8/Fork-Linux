@@ -13,6 +13,10 @@
 # source tree and that root. It shares scripts/lib-e2e-docker.sh (scratch checks, host-wide
 # slots, image build, logs-only copy) with scripts/e2e-docker.sh, the local runner.
 #
+# FL_E2E_FORK_UPDATES=1 adds the Fork-update tier (tests/e2e/test_fork_update.py: Fork 2.23.1
+# updating itself and through fork-linux, in a prefix of its own); its bridge scenarios need the
+# bridge, which is built first (scripts/build-bridge.sh, in its own CI image) when it is missing.
+#
 # Usage: ./scripts/ci-e2e-wine.sh [pytest args...]
 set -euo pipefail
 
@@ -36,6 +40,9 @@ trap 'docker rm -f "${CONTAINER}" >/dev/null 2>&1 9>&- || true; fl_e2e_wipe "${S
 mkdir -p -- "${SCRATCH}/root" "${SCRATCH}/home" "${LOG_DIR}"
 
 fl_e2e_build_image "${ROOT}" "${IMAGE}"
+if [[ "${FL_E2E_FORK_UPDATES:-0}" == "1" && ! -x "${ROOT}/build-bridge/bridge/fl-bridge-helper" ]]; then
+	"${ROOT}/scripts/build-bridge.sh"
+fi
 # Host-wide slots shared with scripts/e2e-docker.sh (FL_E2E_SLOTS, default 3).
 BASE="$(fl_e2e_base)"
 LOCK_DIR="$(fl_e2e_check_dir "${FL_E2E_LOCK_DIR:-${BASE}/locks}" "lock directory")" || exit $?
@@ -57,6 +64,7 @@ docker run --rm --init \
 	-e FL_E2E_FORK=1 \
 	-e FL_E2E_ROOT=/e2e/root \
 	-e FL_E2E_FORK_VERSION \
+	-e FL_E2E_FORK_UPDATES \
 	-e PYTHONDONTWRITEBYTECODE=1 \
 	-v "${ROOT}:/src:ro" \
 	-v "${SCRATCH}:/e2e:rw" \

@@ -19,6 +19,8 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md) (§1 rule 18, §4.8 `scripts/e2
 scripts/e2e-docker.sh --name my-run pytest tests/e2e                     # the whole real tier
 scripts/e2e-docker.sh --name my-run pytest tests/e2e -k doctor           # any pytest args
 scripts/e2e-docker.sh --name my-run --keep pytest tests/e2e              # reuse the previous scratch root
+FL_E2E_FORK_UPDATES=1 scripts/e2e-docker.sh --name upd-fork pytest tests/e2e/test_fork_update.py
+                                                     # Fork 2.23.1 updating, F rows (docs/qa/UPDATE-SCENARIOS.md)
 scripts/e2e-docker.sh --name explore --keep shell -- bash                # interactive (TTY), Xvfb on :99
 scripts/e2e-docker.sh --name explore --keep shell -- xdotool search --class fork.exe
 scripts/e2e-docker.sh --name trace --ptrace shell -- strace -f -o /e2e/trace.txt python3 -m fork_linux doctor
@@ -34,6 +36,14 @@ scripts/e2e-docker.sh --name shim --image fork-linux-ci-bridge:26.04 shell -- ba
   it carries `.fl-e2e-scratch`); with `--keep` it is reused (the conftest keeps
   `root/home/.cache`, everything else of the E2E root is rebuilt).
 - `--ptrace` adds only `CAP_SYS_PTRACE`. Never `--privileged`.
+- `tests/e2e/test_fork_update.py` (gated by `FL_E2E_FORK_UPDATES=1` as well) installs Fork 2.23.1
+  from `cdn.fork.dev` in a prefix of its own (`root/fork-update`) and lets it update to the tested
+  version through Fork's own updater (Velopack: File > Check for Updates..., Restart and Update; a
+  staged package applied at the next start) and through `fork-linux update --fork`. Its bridge
+  scenarios (F7, F19, F23) need `build-bridge/` in the worktree (`scripts/build-bridge.sh` first;
+  they skip without it). Dialogs and desktop notifications go to stand-in `zenity` / `notify-send`
+  scripts that record them in `root/fork-update/logs/desktop-ui.log`; what Fork did is read from
+  its `velopack.log`, `/proc`, the bridge daemon's log and native git.
 
 ## What the container sees
 

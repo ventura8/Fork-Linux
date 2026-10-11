@@ -46,6 +46,44 @@ Result: **7 passed in 314.75 s**. It ran from a fresh prefix, with only the cach
 | `test_07_snapshot_and_rollback`: rollback refused while running (exit 15), snapshot create, `rollback --to-version 2.23.2 --no-pin`, Fork launches again | 11.7 s |
 | `test_10_logs_bundle_and_purge_second_prefix`: bundle has no `accounts.json` and secrets are redacted; uninstall, then `--purge --yes` with `FORK_LINUX_PREFIX=prefix2`; `~/.wine` untouched | 1.0 s |
 
+## Fork-update tier (`tests/e2e/test_fork_update.py`)
+
+Date: 2026-10-11, in `fork-linux-ci-e2e-wine:26.04` (Python 3.14, Wine `kron4ek-11.0-staging-wow64`,
+Xvfb 1600x1000), seeded with Wine, winetricks, Selawik and the .NET / core-font cache; Fork 2.23.1
+came from `https://cdn.fork.dev/win/Fork-2.23.1.exe`, the updates from Fork's own feed. Bridge built
+with `scripts/build-bridge.sh`.
+
+```
+scripts/build-bridge.sh
+FL_E2E_FORK_UPDATES=1 scripts/e2e-docker.sh --name upd-tier pytest --durations=0 tests/e2e/test_fork_update.py
+```
+
+Result: **12 passed in 675 s**, twice in a row from a fresh prefix (`<root>/fork-update`). What Fork
+did is read from its `velopack.log`, `/proc`, the bridge daemon's log and native git; dialogs and
+notifications went to stand-in `zenity` / `notify-send` scripts that record them.
+
+| Test | Time |
+|---|---|
+| `test_00_setup_installs_fork_n_minus_1`: `setup --fork-version 2.23.1 --allow-untested` (trust on first use); the installed full nupkg equals the feed's SHA256 | 287.8 s |
+| `test_f9_stable_channel_reads_the_stable_feed`: channel Stable, `update --check` names `--latest`; File > Check for Updates... reads `/win/stable/releases.win.json` (2.21.1), "No Updates Available"; the first launch kept a 2.23.1 snapshot | 44.4 s |
+| `test_f5_known_bad_override_warns_and_doctor_fails`: override marks 2.23.1 known-bad: doctor exit 17 with the rollback hint, `update --check` warns, `--fork-version 2.23.1` refused (exit 2), `fork` shows the warning and starts Fork | 15.1 s |
+| `test_f6_staged_update_reported_and_dropped_when_pinned`: Check for Updates stages 2.23.2 (Close, no restart); doctor and `update --check` report it; pinned, the next launch deletes it before Fork starts (no "Auto apply"), puts 2.23.1's package back (the feed's SHA256) and turns Fork's update check off | 42.4 s |
+| `test_f1_in_app_update_keeps_env_and_notifies`: Restart and Update; the new Fork keeps our environment (Wine adds only `WINESERVERSOCKET`, `WINEPRELOADRESERVE`, `GNUTLS_SYSTEM_PRIORITY_FILE`); the next launch sends "Fork updated 2.23.1 -> 2.23.2" through `notify-send` without waiting for it, re-runs the icon step, snapshots 2.23.2; doctor ok / ok / info | 45.6 s |
+| `test_f10_fork_path_during_restart_and_update`: `fork <path>` during the apply waited for Velopack and reached the restarted Fork (one Fork, the tab open); `update --fork` and `rollback` refused with exit 15 ("Fork is running" / "Fork is updating itself"); afterwards the fast path opens a tab | 7.2 s |
+| `test_f4_rollback_pins_and_blocks_the_in_app_update`: `rollback --to-version 2.23.1` pins it, `ApplicationUpdateType = 2` (0 saved); Fork's own check reads the Stable feed and offers nothing; a relaunch stays on 2.23.1; unpinning brings 0 back | 47.0 s |
+| `test_f7_bridge_survives_the_self_restart`: bridge on, Restart and Update: same daemon pid and port, the restarted Fork stages and commits through it (native git), the daemon exits `prefix-idle` after Fork | 63.4 s |
+| `test_f2_cli_update_preserves_user_data`: refused while Fork runs (15); `update --fork` 2.23.1 -> 2.23.2 keeps `settings.json`, `accounts.json`, `custom-commands.json`, Fork's logs and ForkData byte for byte; copy snapshot without `accounts.json`; the three steps re-ran | 17.7 s |
+| `test_f19_update_fork_keeps_the_bridge_working`: the next `fork` starts one daemon, no first-run dialog; stage + commit through native git | 38.6 s |
+| `test_f3_update_fork_latest_verifies_against_the_feed`: `update --fork --latest` installs the feed's newest version, its package equals the feed's SHA256, `fork.request = latest`, user files kept | 8.3 s |
+| `test_f23_staged_update_applied_at_the_next_start`: a staged 2.23.2 is applied by Velopack as Fork starts ("Auto apply"): the path opens in the new Fork, which is the only one, uses the launch's bridge daemon and port; the next launch notices the update | 57.1 s |
+
+Found by this tier and fixed (with unit tests): the official installer deletes Fork's whole
+`AppData\Local\Fork`, so `update --fork` lost the user's settings, accounts, custom commands, logs and
+unpacked git (UPD-23); after the pin dropped a staged update, the installed version's package
+(deleted by Velopack when it staged the update) was missing (UPD-24). Observed, not ours: once the
+delta package failed to apply in Velopack ("invalid Zip archive"), which then downloaded the full
+package by itself.
+
 ## Manual scenario (timings and outcomes)
 
 | # | Step | Outcome | Time |

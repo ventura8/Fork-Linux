@@ -158,6 +158,16 @@ def test_e2e_wine_uploads_logs_only() -> None:
     assert "actions/cache" not in E2E
 
 
+def test_e2e_wine_runs_the_fork_update_tier() -> None:
+    """e2e-wine.yml switches the Fork-update tier on; the script forwards the switch and builds the bridge."""
+    assert "FL_E2E_FORK_UPDATES: '1'" in E2E
+    script = (ROOT / "scripts" / "ci-e2e-wine.sh").read_text(encoding="utf-8")
+    assert "-e FL_E2E_FORK_UPDATES " in script
+    build = script.index('"${ROOT}/scripts/build-bridge.sh"')
+    assert script.index('FL_E2E_FORK_UPDATES:-0}" == "1"') < build < script.index("docker run --rm --init")
+    assert (ROOT / "tests" / "e2e" / "test_fork_update.py").is_file()
+
+
 def test_upstream_watch_flow() -> None:
     assert "schedule:" in UPSTREAM
     order = [

@@ -123,23 +123,29 @@ def _clean_path(path: str, real_home: str) -> str:
     return os.pathsep.join(keep)
 
 
-_FAILED: list[str] = []
+# The first failed step of each module (its scenario): ``{module file: test name}``.
+_FAILED: dict[str, str] = {}
+
+
+def _module_of(item: pytest.Item) -> str:
+    return item.nodeid.split("::", 1)[0]
 
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> Iterator[None]:
-    """Remember the first failed step: the scenario's steps build on each other."""
+    """Remember the first failed step of a module: the steps of its scenario build on each other."""
     outcome = yield
     report = outcome.get_result()
     if report.when == "call" and report.failed:
-        _FAILED.append(item.name)
+        _FAILED.setdefault(_module_of(item), item.name)
 
 
 @pytest.fixture(autouse=True)
-def _in_order() -> None:
-    """Fail fast once an earlier step of the scenario has failed."""
-    if _FAILED:
-        pytest.fail(f"an earlier E2E step failed ({_FAILED[0]})")
+def _in_order(request: pytest.FixtureRequest) -> None:
+    """Fail fast once an earlier step of the same scenario (module) has failed."""
+    failed = _FAILED.get(_module_of(request.node))
+    if failed is not None:
+        pytest.fail(f"an earlier E2E step failed ({failed})")
 
 
 class E2E:
