@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 from fork_driver import git, make_repo, remotes_dir, wait_until, windows_path
-from fork_ui import ASKPASS_FIELD, ForkUI
+from fork_ui import ForkUI
 from git_servers import HttpGitServer, SshServer
 
 from fixtures import real_tier
@@ -165,11 +165,7 @@ def _answer_credentials(ui: ForkUI, repo: str, user: str, password: str) -> str:
         ui.screen.key("Return", settle=2.0)
         return kind
     for answer in (user, password):
-        window = wait_until(lambda: _any_window(ui, re.escape(repo)), 60, "Fork's credential prompt")
-        ui.screen.click_in(window, *ASKPASS_FIELD)
-        ui.screen.type(answer)
-        ui.screen.key("Return", settle=1.0)
-        ui.screen.wait_gone(window)
+        ui.answer_askpass(repo, answer, timeout=60)
     return kind
 
 

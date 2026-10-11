@@ -20,7 +20,7 @@ from typing import Any
 
 import pytest
 from fork_driver import fork_pids, git, processes, remotes_dir, wait_until, windows_path
-from fork_ui import ASKPASS_FIELD, STAGE_BUTTON, ForkUI, new_repo
+from fork_ui import STAGE_BUTTON, ForkUI, new_repo
 from git_servers import HttpGitServer, SshServer
 
 from fixtures import real_tier
@@ -411,13 +411,8 @@ def test_fetch_over_ssh_with_a_passphrase_prompt(bridged: Any, installed: Any) -
         ui.fork.ensure_closed()
         ui.fork.start(work, extra=extra)
         _fetch(ui)
-        prompt = wait_until(lambda: [w for w in ui.screen.any_windows() if not w.is_main], 90,
-                            "the passphrase prompt")[0]
-        ui.screen.screenshot("ssh-passphrase-prompt", prompt)
-        # Fork's AskPass window does not take the keyboard by itself (no window manager): click its field.
-        ui.screen.click_in(prompt, *ASKPASS_FIELD)
-        ui.screen.type("e2e prompt passphrase")
-        ui.screen.key("Return", settle=2.0)
+        ui.screen.screenshot("ssh-passphrase-prompt", ui.askpass(work.name))
+        ui.answer_askpass(work.name, "e2e prompt passphrase")
         wait_until(lambda: git(work, "rev-parse", "origin/main") == git(seed, "rev-parse", "HEAD"), 90,
                    "the fetch after the passphrase")
     finally:

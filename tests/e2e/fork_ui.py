@@ -12,6 +12,7 @@ Every effect is verified with native git by the tests, never by reading pixels a
 
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 
@@ -60,6 +61,8 @@ MENU_TEXT_X = 60
 SUBMENU_FIRST_ITEM = 21
 # The lower pane of All Commits: its Changes tab.
 CHANGES_TAB = (450, 534)
+# Double-clicks on an unstaged row before giving up on staging it.
+STAGE_ATTEMPTS = 3
 # Fork's AskPass window (520x185, titled with the repository's name): its text field.
 ASKPASS_FIELD = (335, 91)
 
@@ -208,11 +211,45 @@ class ForkUI:
         """Click at an offset inside the main window."""
         self.screen.click_in(self.window(), *offset, button=button, repeat=repeat)
 
-    def stage_all_by_double_click(self, count: int) -> None:
-        """Stage ``count`` unstaged files: a double-click stages the top one, the next moves up."""
-        for _index in range(count):
+    def askpass(self, repo: str, timeout: float = 90) -> Window:
+        """Fork's own prompt (AskPass: a user name, a password, a key's passphrase) for repository ``repo``.
+
+        It is titled with the repository's name; a Fetch or Push dialog that is still closing is not it.
+        """
+        pattern = f"^{re.escape(repo)}$"
+        return wait_until(lambda: next(iter(self.screen.any_windows(pattern)), None), timeout,
+                          f"Fork's prompt for {repo}")
+
+    def answer_askpass(self, repo: str, answer: str, timeout: float = 90) -> None:
+        """Type ``answer`` into Fork's prompt for ``repo`` and confirm it.
+
+        The prompt does not take the keyboard by itself (no window manager): its field is clicked first.
+        """
+        window = self.askpass(repo, timeout)
+        self.screen.click_in(window, *ASKPASS_FIELD, settle=0.8)
+        self.screen.type(answer)
+        self.screen.key("Return", settle=1.0)
+        self.screen.wait_gone(window)
+
+    def stage_all_by_double_click(self, repo: Path, count: int) -> None:
+        """Stage ``count`` unstaged files: a double-click stages the top one, the next moves up.
+
+        Each one is confirmed by git; a double-click that lands while Fork still redraws the list after
+        the previous one only selects the row, so it is repeated (at most :data:`STAGE_ATTEMPTS` times).
+        """
+        for staged in range(1, count + 1):
+            self._double_click_until_staged(repo, staged)
+
+    def _double_click_until_staged(self, repo: Path, staged: int) -> None:
+        for attempt in range(1, STAGE_ATTEMPTS + 1):
             self.click(self.unstaged_row(0), repeat=2)
-            time.sleep(1.0)
+            try:
+                wait_until(lambda: len(git(repo, "diff", "--cached", "--name-only").split()) >= staged or None,
+                           20, f"{staged} staged file(s)")
+                return
+            except DriverError:
+                if attempt == STAGE_ATTEMPTS:
+                    raise
 
     def commit_subject_and_commit(self) -> None:
         """Commit with the message Fork has filled in (a template, a merge message): Ctrl+Enter.
