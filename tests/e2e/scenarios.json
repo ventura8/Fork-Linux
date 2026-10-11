@@ -283,10 +283,10 @@
     "tiers": [
       "real-fork"
     ],
-    "provided_by": "fix/font-fallback-472",
-    "pending_merge": true,
+    "provided_by": "this-branch",
+    "pending_merge": false,
     "tests": [
-      "tests/e2e/test_real_font_fallback.py::test_non_latin_text_falls_back[dotnet472]"
+      "tests/e2e/test_real_setup_variants.py::test_dotnet472_prefix_runs_fork"
     ]
   },
   {
@@ -2071,6 +2071,7 @@
     "provided_by": "fix/update-tests",
     "pending_merge": true,
     "tests": [
+      "tests/e2e/test_fork_update.py::test_00_setup_installs_fork_n_minus_1",
       "tests/e2e/test_fork_update.py::test_f2_cli_update_preserves_user_data"
     ]
   },
@@ -2097,6 +2098,7 @@
     "provided_by": "fix/update-tests",
     "pending_merge": true,
     "tests": [
+      "tests/e2e/test_real_fork.py::test_07_snapshot_and_rollback",
       "tests/e2e/test_fork_update.py::test_f4_rollback_pins_and_blocks_the_in_app_update"
     ]
   },
@@ -2131,31 +2133,20 @@
     "area": "fork-update",
     "title": "The native-git bridge survives Fork's own restart after an update",
     "tiers": [
-      "real-fork"
+      "real-fork",
+      "e2e-wine-docker"
     ],
     "provided_by": "fix/update-tests",
     "pending_merge": true,
     "tests": [
+      "tests/bridge/test_daemon_protocol.py::test_watch_prefix_outlives_its_parent",
       "tests/e2e/test_fork_update.py::test_f7_bridge_survives_the_self_restart"
-    ]
-  },
-  {
-    "id": "F8",
-    "area": "fork-update",
-    "title": "Update while offline or with a broken feed: a clear error, nothing changed",
-    "tiers": [
-      "real-fork"
-    ],
-    "provided_by": "fix/update-tests",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e/test_fork_update.py::test_f8_offline_or_broken_feed_changes_nothing"
     ]
   },
   {
     "id": "F9",
     "area": "fork-update",
-    "title": "Stable and Develop channels in update --check",
+    "title": "Fork's own channel (Develop, Stable, Off) in update --check",
     "tiers": [
       "real-fork"
     ],
@@ -2179,16 +2170,29 @@
     ]
   },
   {
-    "id": "F11",
+    "id": "F19",
     "area": "fork-update",
-    "title": "An interrupted update download resumes; no half-installed Fork",
+    "title": "Git bridge on, then update --fork: the new Fork's git goes through the bridge",
     "tiers": [
       "real-fork"
     ],
     "provided_by": "fix/update-tests",
     "pending_merge": true,
     "tests": [
-      "tests/e2e/test_fork_update.py::test_f11_interrupted_update_download_resumes"
+      "tests/e2e/test_fork_update.py::test_f19_update_fork_keeps_the_bridge_working"
+    ]
+  },
+  {
+    "id": "F23",
+    "area": "fork-update",
+    "title": "A staged update applied by Velopack when Fork starts opens the launch's path in the new Fork",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e/test_fork_update.py::test_f23_staged_update_applied_at_the_next_start"
     ]
   },
   {
@@ -2235,7 +2239,8 @@
     "provided_by": "fix/update-tests",
     "pending_merge": true,
     "tests": [
-      "tests/e2e/test_app_upgrade.py::test_a3_step_rev_bump_reruns_only_that_step"
+      "tests/e2e/test_wine_app_upgrade.py::test_01_setup_with_the_previous_fork",
+      "tests/e2e/test_wine_app_upgrade.py::test_02_a3_upgrade_reruns_only_the_bumped_step"
     ]
   },
   {
@@ -2248,7 +2253,7 @@
     "provided_by": "fix/update-tests",
     "pending_merge": true,
     "tests": [
-      "tests/e2e/test_app_upgrade.py::test_a4_wine_pin_change_and_revert"
+      "tests/e2e/test_wine_app_upgrade.py::test_04_a4_wine_pin_change_and_revert"
     ]
   },
   {
@@ -2261,7 +2266,7 @@
     "provided_by": "fix/update-tests",
     "pending_merge": true,
     "tests": [
-      "tests/e2e/test_app_upgrade.py::test_a5_upgrade_while_fork_runs"
+      "tests/e2e/test_wine_app_upgrade.py::test_03_a5_upgrade_while_fork_runs"
     ]
   },
   {
@@ -2274,20 +2279,7 @@
     "provided_by": "fix/update-tests",
     "pending_merge": true,
     "tests": [
-      "tests/e2e/test_app_upgrade.py::test_a6_bridge_binaries_replaced_while_the_daemon_runs"
-    ]
-  },
-  {
-    "id": "A7",
-    "area": "app-upgrade",
-    "title": "A newer state.json schema is refused with a hint",
-    "tiers": [
-      "real-fork"
-    ],
-    "provided_by": "fix/update-tests",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e/test_app_upgrade.py::test_a7_newer_state_schema_is_refused_with_a_hint"
+      "tests/e2e/test_wine_app_upgrade.py::test_06_a6_bridge_binaries_replaced_while_the_daemon_runs"
     ]
   },
   {
@@ -2321,7 +2313,7 @@
     "provided_by": "fix/update-tests",
     "pending_merge": true,
     "tests": [
-      "packaging:appimage:appimage_update_info"
+      "packaging:appimage:check_appimage_update_info"
     ]
   },
   {
@@ -2348,7 +2340,7 @@
     "provided_by": "fix/update-tests",
     "pending_merge": true,
     "tests": [
-      "tests/e2e/test_app_upgrade.py::test_a11_uninstall_reinstall_keeps_the_prefix"
+      "tests/e2e/test_wine_app_upgrade.py::test_05_a11_uninstall_then_reinstall_keeps_the_prefix"
     ]
   },
   {
@@ -2361,267 +2353,7 @@
     "provided_by": "fix/update-tests",
     "pending_merge": true,
     "tests": [
-      "tests/e2e/test_app_upgrade.py::test_a12_app_upgrade_and_fork_self_update"
-    ]
-  },
-  {
-    "id": "DE-GNOME-INSTALL",
-    "area": "desktop",
-    "title": "Gnome: fork-linux installs from the release tarball",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_install_from_the_tarball[gnome]"
-    ]
-  },
-  {
-    "id": "DE-GNOME-MENU",
-    "area": "desktop",
-    "title": "Gnome: the menu entry is found by the desktop's menu",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_visible[gnome]"
-    ]
-  },
-  {
-    "id": "DE-GNOME-FILE-MANAGER-ACTION",
-    "area": "desktop",
-    "title": "Gnome: the file manager loads the Open in Fork action",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_file_manager_loads_the_action[gnome]"
-    ]
-  },
-  {
-    "id": "DE-GNOME-THEME",
-    "area": "desktop",
-    "title": "Gnome: light and dark theme detection",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_theme_detection[gnome]"
-    ]
-  },
-  {
-    "id": "DE-GNOME-SCALE",
-    "area": "desktop",
-    "title": "Gnome: 100% and 200% scaling detection",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_scaling_detection[gnome]"
-    ]
-  },
-  {
-    "id": "DE-GNOME-TERMINAL",
-    "area": "desktop",
-    "title": "Gnome: the desktop's terminal opens in a folder",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_folder[gnome]"
-    ]
-  },
-  {
-    "id": "DE-GNOME-FILE-MANAGER-REVEAL",
-    "area": "desktop",
-    "title": "Gnome: the desktop's file manager shows a file",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_file_manager_reveals_a_file[gnome]"
-    ]
-  },
-  {
-    "id": "DE-GNOME-DEFAULT-APPS",
-    "area": "desktop",
-    "title": "Gnome: files and URLs reach the desktop's default applications",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_default_applications[gnome]"
-    ]
-  },
-  {
-    "id": "DE-GNOME-DOCTOR",
-    "area": "desktop",
-    "title": "Gnome: doctor on the desktop",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_doctor_runs[gnome]"
-    ]
-  },
-  {
-    "id": "DE-GNOME-FORK",
-    "area": "desktop",
-    "title": "Gnome: the official Fork on the desktop: window, theme, terminal, file manager, second tab",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_fork.py::test_fork_on_the_desktop[gnome]"
-    ]
-  },
-  {
-    "id": "DE-KDE-INSTALL",
-    "area": "desktop",
-    "title": "KDE: fork-linux installs from the release tarball",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_install_from_the_tarball[kde]"
-    ]
-  },
-  {
-    "id": "DE-KDE-MENU",
-    "area": "desktop",
-    "title": "KDE: the menu entry is found by the desktop's menu",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_visible[kde]"
-    ]
-  },
-  {
-    "id": "DE-KDE-FILE-MANAGER-ACTION",
-    "area": "desktop",
-    "title": "KDE: the file manager loads the Open in Fork action",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_file_manager_loads_the_action[kde]"
-    ]
-  },
-  {
-    "id": "DE-KDE-THEME",
-    "area": "desktop",
-    "title": "KDE: light and dark theme detection",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_theme_detection[kde]"
-    ]
-  },
-  {
-    "id": "DE-KDE-SCALE",
-    "area": "desktop",
-    "title": "KDE: 100% and 200% scaling detection",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_scaling_detection[kde]"
-    ]
-  },
-  {
-    "id": "DE-KDE-TERMINAL",
-    "area": "desktop",
-    "title": "KDE: the desktop's terminal opens in a folder",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_folder[kde]"
-    ]
-  },
-  {
-    "id": "DE-KDE-FILE-MANAGER-REVEAL",
-    "area": "desktop",
-    "title": "KDE: the desktop's file manager shows a file",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_file_manager_reveals_a_file[kde]"
-    ]
-  },
-  {
-    "id": "DE-KDE-DEFAULT-APPS",
-    "area": "desktop",
-    "title": "KDE: files and URLs reach the desktop's default applications",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_default_applications[kde]"
-    ]
-  },
-  {
-    "id": "DE-KDE-DOCTOR",
-    "area": "desktop",
-    "title": "KDE: doctor on the desktop",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_integration.py::test_doctor_runs[kde]"
-    ]
-  },
-  {
-    "id": "DE-KDE-FORK",
-    "area": "desktop",
-    "title": "KDE: the official Fork on the desktop: window, theme, terminal, file manager, second tab",
-    "tiers": [
-      "de"
-    ],
-    "provided_by": "fix/de-e2e",
-    "pending_merge": true,
-    "tests": [
-      "tests/e2e_de/test_de_fork.py::test_fork_on_the_desktop[kde]"
+      "tests/e2e/test_wine_app_upgrade.py::test_07_a12_app_upgrade_and_fork_self_update_on_one_launch"
     ]
   },
   {
@@ -2634,59 +2366,59 @@
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_install_from_the_tarball[xfce]"
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
     ]
   },
   {
     "id": "DE-XFCE-MENU",
     "area": "desktop",
-    "title": "Xfce: the menu entry is found by the desktop's menu",
+    "title": "Xfce: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_visible[xfce]"
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
     ]
   },
   {
     "id": "DE-XFCE-FILE-MANAGER-ACTION",
     "area": "desktop",
-    "title": "Xfce: the file manager loads the Open in Fork action",
+    "title": "Xfce: the file manager's Open in Fork runs fork-linux",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_file_manager_loads_the_action[xfce]"
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
     ]
   },
   {
     "id": "DE-XFCE-THEME",
     "area": "desktop",
-    "title": "Xfce: light and dark theme detection",
+    "title": "Xfce: the light and dark themes are detected",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_theme_detection[xfce]"
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
     ]
   },
   {
     "id": "DE-XFCE-SCALE",
     "area": "desktop",
-    "title": "Xfce: 100% and 200% scaling detection",
+    "title": "Xfce: the desktop's scaling is detected",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_scaling_detection[xfce]"
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
     ]
   },
   {
@@ -2699,7 +2431,7 @@
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_folder[xfce]"
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
     ]
   },
   {
@@ -2712,7 +2444,7 @@
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_file_manager_reveals_a_file[xfce]"
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
     ]
   },
   {
@@ -2725,293 +2457,747 @@
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_default_applications[xfce]"
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
     ]
   },
   {
     "id": "DE-XFCE-DOCTOR",
     "area": "desktop",
-    "title": "Xfce: doctor on the desktop",
+    "title": "Xfce: doctor fails only for what setup installs",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_doctor_runs[xfce]"
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
     ]
   },
   {
-    "id": "DE-XFCE-FORK",
+    "id": "DE-XFCE-FORK-SETUP",
     "area": "desktop",
-    "title": "Xfce: the official Fork on the desktop: window, theme, terminal, file manager, second tab",
+    "title": "Xfce: setup completes and doctor --deep has no failures, before and after use",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_fork.py::test_fork_on_the_desktop[xfce]"
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
     ]
   },
   {
-    "id": "DE-CINNAMON-INSTALL",
+    "id": "DE-XFCE-FORK-WINDOW",
     "area": "desktop",
-    "title": "Cinnamon: fork-linux installs from the release tarball",
+    "title": "Xfce: the official Fork runs under the desktop's window manager",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_install_from_the_tarball[cinnamon]"
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
     ]
   },
   {
-    "id": "DE-CINNAMON-MENU",
+    "id": "DE-XFCE-FORK-SECOND-TAB",
     "area": "desktop",
-    "title": "Cinnamon: the menu entry is found by the desktop's menu",
+    "title": "Xfce: the fork command opens a second tab in the running Fork",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_visible[cinnamon]"
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
     ]
   },
   {
-    "id": "DE-CINNAMON-FILE-MANAGER-ACTION",
+    "id": "DE-XFCE-FORK-SHELL",
     "area": "desktop",
-    "title": "Cinnamon: the file manager loads the Open in Fork action",
+    "title": "Xfce: Fork's Open In Shell opens the desktop's terminal",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_file_manager_loads_the_action[cinnamon]"
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
     ]
   },
   {
-    "id": "DE-CINNAMON-THEME",
+    "id": "DE-XFCE-FORK-EXPLORER",
     "area": "desktop",
-    "title": "Cinnamon: light and dark theme detection",
+    "title": "Xfce: Fork's Open In File Explorer opens the desktop's file manager",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_theme_detection[cinnamon]"
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
     ]
   },
   {
-    "id": "DE-CINNAMON-SCALE",
+    "id": "DE-XFCE-FORK-OPEN-IN-FORK",
     "area": "desktop",
-    "title": "Cinnamon: 100% and 200% scaling detection",
+    "title": "Xfce: the file manager's Open in Fork reaches the running Fork",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_scaling_detection[cinnamon]"
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
     ]
   },
   {
-    "id": "DE-CINNAMON-TERMINAL",
+    "id": "DE-XFCE-FORK-DARK",
     "area": "desktop",
-    "title": "Cinnamon: the desktop's terminal opens in a folder",
+    "title": "Xfce: the tabs are kept and a dark desktop relaunches Fork dark",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_folder[cinnamon]"
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
     ]
   },
   {
-    "id": "DE-CINNAMON-FILE-MANAGER-REVEAL",
+    "id": "DE-KDE-INSTALL",
     "area": "desktop",
-    "title": "Cinnamon: the desktop's file manager shows a file",
+    "title": "KDE Plasma: fork-linux installs from the release tarball",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_file_manager_reveals_a_file[cinnamon]"
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
     ]
   },
   {
-    "id": "DE-CINNAMON-DEFAULT-APPS",
+    "id": "DE-KDE-MENU",
     "area": "desktop",
-    "title": "Cinnamon: files and URLs reach the desktop's default applications",
+    "title": "KDE Plasma: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_default_applications[cinnamon]"
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
     ]
   },
   {
-    "id": "DE-CINNAMON-DOCTOR",
+    "id": "DE-KDE-FILE-MANAGER-ACTION",
     "area": "desktop",
-    "title": "Cinnamon: doctor on the desktop",
+    "title": "KDE Plasma: the file manager's Open in Fork runs fork-linux",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_doctor_runs[cinnamon]"
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
     ]
   },
   {
-    "id": "DE-CINNAMON-FORK",
+    "id": "DE-KDE-THEME",
     "area": "desktop",
-    "title": "Cinnamon: the official Fork on the desktop: window, theme, terminal, file manager, second tab",
+    "title": "KDE Plasma: the light and dark themes are detected",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_fork.py::test_fork_on_the_desktop[cinnamon]"
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
     ]
   },
   {
-    "id": "DE-MATE-INSTALL",
+    "id": "DE-KDE-SCALE",
     "area": "desktop",
-    "title": "MATE: fork-linux installs from the release tarball",
+    "title": "KDE Plasma: the desktop's scaling is detected",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_install_from_the_tarball[mate]"
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
     ]
   },
   {
-    "id": "DE-MATE-MENU",
+    "id": "DE-KDE-TERMINAL",
     "area": "desktop",
-    "title": "MATE: the menu entry is found by the desktop's menu",
+    "title": "KDE Plasma: the desktop's terminal opens in a folder",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_visible[mate]"
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
     ]
   },
   {
-    "id": "DE-MATE-FILE-MANAGER-ACTION",
+    "id": "DE-KDE-FILE-MANAGER-REVEAL",
     "area": "desktop",
-    "title": "MATE: the file manager loads the Open in Fork action",
+    "title": "KDE Plasma: the desktop's file manager shows a file",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_file_manager_loads_the_action[mate]"
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
     ]
   },
   {
-    "id": "DE-MATE-THEME",
+    "id": "DE-KDE-DEFAULT-APPS",
     "area": "desktop",
-    "title": "MATE: light and dark theme detection",
+    "title": "KDE Plasma: files and URLs reach the desktop's default applications",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_theme_detection[mate]"
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
     ]
   },
   {
-    "id": "DE-MATE-SCALE",
+    "id": "DE-KDE-DOCTOR",
     "area": "desktop",
-    "title": "MATE: 100% and 200% scaling detection",
+    "title": "KDE Plasma: doctor fails only for what setup installs",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_scaling_detection[mate]"
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
     ]
   },
   {
-    "id": "DE-MATE-TERMINAL",
+    "id": "DE-KDE-FORK-SETUP",
     "area": "desktop",
-    "title": "MATE: the desktop's terminal opens in a folder",
+    "title": "KDE Plasma: setup completes and doctor --deep has no failures, before and after use",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_folder[mate]"
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
     ]
   },
   {
-    "id": "DE-MATE-FILE-MANAGER-REVEAL",
+    "id": "DE-KDE-FORK-WINDOW",
     "area": "desktop",
-    "title": "MATE: the desktop's file manager shows a file",
+    "title": "KDE Plasma: the official Fork runs under the desktop's window manager",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_file_manager_reveals_a_file[mate]"
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
     ]
   },
   {
-    "id": "DE-MATE-DEFAULT-APPS",
+    "id": "DE-KDE-FORK-SECOND-TAB",
     "area": "desktop",
-    "title": "MATE: files and URLs reach the desktop's default applications",
+    "title": "KDE Plasma: the fork command opens a second tab in the running Fork",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_default_applications[mate]"
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
     ]
   },
   {
-    "id": "DE-MATE-DOCTOR",
+    "id": "DE-KDE-FORK-SHELL",
     "area": "desktop",
-    "title": "MATE: doctor on the desktop",
+    "title": "KDE Plasma: Fork's Open In Shell opens the desktop's terminal",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_doctor_runs[mate]"
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
     ]
   },
   {
-    "id": "DE-MATE-FORK",
+    "id": "DE-KDE-FORK-EXPLORER",
     "area": "desktop",
-    "title": "MATE: the official Fork on the desktop: window, theme, terminal, file manager, second tab",
+    "title": "KDE Plasma: Fork's Open In File Explorer opens the desktop's file manager",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_fork.py::test_fork_on_the_desktop[mate]"
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
+    ]
+  },
+  {
+    "id": "DE-KDE-FORK-OPEN-IN-FORK",
+    "area": "desktop",
+    "title": "KDE Plasma: the file manager's Open in Fork reaches the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
+    ]
+  },
+  {
+    "id": "DE-KDE-FORK-DARK",
+    "area": "desktop",
+    "title": "KDE Plasma: the tabs are kept and a dark desktop relaunches Fork dark",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
+    ]
+  },
+  {
+    "id": "DE-LXQT-INSTALL",
+    "area": "desktop",
+    "title": "LXQt: fork-linux installs from the release tarball",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
+    ]
+  },
+  {
+    "id": "DE-LXQT-MENU",
+    "area": "desktop",
+    "title": "LXQt: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FILE-MANAGER-ACTION",
+    "area": "desktop",
+    "title": "LXQt: the file manager's Open in Fork runs fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
+    ]
+  },
+  {
+    "id": "DE-LXQT-THEME",
+    "area": "desktop",
+    "title": "LXQt: the light and dark themes are detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-LXQT-SCALE",
+    "area": "desktop",
+    "title": "LXQt: the desktop's scaling is detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-LXQT-TERMINAL",
+    "area": "desktop",
+    "title": "LXQt: the desktop's terminal opens in a folder",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FILE-MANAGER-REVEAL",
+    "area": "desktop",
+    "title": "LXQt: the desktop's file manager shows a file",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
+    ]
+  },
+  {
+    "id": "DE-LXQT-DEFAULT-APPS",
+    "area": "desktop",
+    "title": "LXQt: files and URLs reach the desktop's default applications",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
+    ]
+  },
+  {
+    "id": "DE-LXQT-DOCTOR",
+    "area": "desktop",
+    "title": "LXQt: doctor fails only for what setup installs",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FORK-SETUP",
+    "area": "desktop",
+    "title": "LXQt: setup completes and doctor --deep has no failures, before and after use",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FORK-WINDOW",
+    "area": "desktop",
+    "title": "LXQt: the official Fork runs under the desktop's window manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FORK-SECOND-TAB",
+    "area": "desktop",
+    "title": "LXQt: the fork command opens a second tab in the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FORK-SHELL",
+    "area": "desktop",
+    "title": "LXQt: Fork's Open In Shell opens the desktop's terminal",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FORK-EXPLORER",
+    "area": "desktop",
+    "title": "LXQt: Fork's Open In File Explorer opens the desktop's file manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FORK-OPEN-IN-FORK",
+    "area": "desktop",
+    "title": "LXQt: the file manager's Open in Fork reaches the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FORK-DARK",
+    "area": "desktop",
+    "title": "LXQt: the tabs are kept and a dark desktop relaunches Fork dark",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
+    ]
+  },
+  {
+    "id": "DE-GNOME-INSTALL",
+    "area": "desktop",
+    "title": "GNOME: fork-linux installs from the release tarball",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
+    ]
+  },
+  {
+    "id": "DE-GNOME-MENU",
+    "area": "desktop",
+    "title": "GNOME: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FILE-MANAGER-ACTION",
+    "area": "desktop",
+    "title": "GNOME: the file manager's Open in Fork runs fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
+    ]
+  },
+  {
+    "id": "DE-GNOME-THEME",
+    "area": "desktop",
+    "title": "GNOME: the light and dark themes are detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-GNOME-SCALE",
+    "area": "desktop",
+    "title": "GNOME: the desktop's scaling is detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-GNOME-TERMINAL",
+    "area": "desktop",
+    "title": "GNOME: the desktop's terminal opens in a folder",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FILE-MANAGER-REVEAL",
+    "area": "desktop",
+    "title": "GNOME: the desktop's file manager shows a file",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
+    ]
+  },
+  {
+    "id": "DE-GNOME-DEFAULT-APPS",
+    "area": "desktop",
+    "title": "GNOME: files and URLs reach the desktop's default applications",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
+    ]
+  },
+  {
+    "id": "DE-GNOME-DOCTOR",
+    "area": "desktop",
+    "title": "GNOME: doctor fails only for what setup installs",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FORK-SETUP",
+    "area": "desktop",
+    "title": "GNOME: setup completes and doctor --deep has no failures, before and after use",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FORK-WINDOW",
+    "area": "desktop",
+    "title": "GNOME: the official Fork runs under the desktop's window manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FORK-SECOND-TAB",
+    "area": "desktop",
+    "title": "GNOME: the fork command opens a second tab in the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FORK-SHELL",
+    "area": "desktop",
+    "title": "GNOME: Fork's Open In Shell opens the desktop's terminal",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FORK-EXPLORER",
+    "area": "desktop",
+    "title": "GNOME: Fork's Open In File Explorer opens the desktop's file manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FORK-OPEN-IN-FORK",
+    "area": "desktop",
+    "title": "GNOME: the file manager's Open in Fork reaches the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FORK-DARK",
+    "area": "desktop",
+    "title": "GNOME: the tabs are kept and a dark desktop relaunches Fork dark",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
     ]
   },
   {
@@ -3024,59 +3210,59 @@
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_install_from_the_tarball[budgie]"
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
     ]
   },
   {
     "id": "DE-BUDGIE-MENU",
     "area": "desktop",
-    "title": "Budgie: the menu entry is found by the desktop's menu",
+    "title": "Budgie: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_visible[budgie]"
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
     ]
   },
   {
     "id": "DE-BUDGIE-FILE-MANAGER-ACTION",
     "area": "desktop",
-    "title": "Budgie: the file manager loads the Open in Fork action",
+    "title": "Budgie: the file manager's Open in Fork runs fork-linux",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_file_manager_loads_the_action[budgie]"
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
     ]
   },
   {
     "id": "DE-BUDGIE-THEME",
     "area": "desktop",
-    "title": "Budgie: light and dark theme detection",
+    "title": "Budgie: the light and dark themes are detected",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_theme_detection[budgie]"
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
     ]
   },
   {
     "id": "DE-BUDGIE-SCALE",
     "area": "desktop",
-    "title": "Budgie: 100% and 200% scaling detection",
+    "title": "Budgie: the desktop's scaling is detected",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_scaling_detection[budgie]"
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
     ]
   },
   {
@@ -3089,7 +3275,7 @@
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_folder[budgie]"
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
     ]
   },
   {
@@ -3102,7 +3288,7 @@
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_file_manager_reveals_a_file[budgie]"
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
     ]
   },
   {
@@ -3115,202 +3301,549 @@
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_default_applications[budgie]"
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
     ]
   },
   {
     "id": "DE-BUDGIE-DOCTOR",
     "area": "desktop",
-    "title": "Budgie: doctor on the desktop",
+    "title": "Budgie: doctor fails only for what setup installs",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_doctor_runs[budgie]"
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
     ]
   },
   {
-    "id": "DE-BUDGIE-FORK",
+    "id": "DE-BUDGIE-FORK-SETUP",
     "area": "desktop",
-    "title": "Budgie: the official Fork on the desktop: window, theme, terminal, file manager, second tab",
+    "title": "Budgie: setup completes and doctor --deep has no failures, before and after use",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_fork.py::test_fork_on_the_desktop[budgie]"
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
     ]
   },
   {
-    "id": "DE-LXQT-INSTALL",
+    "id": "DE-BUDGIE-FORK-WINDOW",
     "area": "desktop",
-    "title": "Lxqt: fork-linux installs from the release tarball",
+    "title": "Budgie: the official Fork runs under the desktop's window manager",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_install_from_the_tarball[lxqt]"
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
     ]
   },
   {
-    "id": "DE-LXQT-MENU",
+    "id": "DE-BUDGIE-FORK-SECOND-TAB",
     "area": "desktop",
-    "title": "Lxqt: the menu entry is found by the desktop's menu",
+    "title": "Budgie: the fork command opens a second tab in the running Fork",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_visible[lxqt]"
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
     ]
   },
   {
-    "id": "DE-LXQT-FILE-MANAGER-ACTION",
+    "id": "DE-BUDGIE-FORK-SHELL",
     "area": "desktop",
-    "title": "Lxqt: the file manager loads the Open in Fork action",
+    "title": "Budgie: Fork's Open In Shell opens the desktop's terminal",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_file_manager_loads_the_action[lxqt]"
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
     ]
   },
   {
-    "id": "DE-LXQT-THEME",
+    "id": "DE-BUDGIE-FORK-EXPLORER",
     "area": "desktop",
-    "title": "Lxqt: light and dark theme detection",
+    "title": "Budgie: Fork's Open In File Explorer opens the desktop's file manager",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_theme_detection[lxqt]"
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
     ]
   },
   {
-    "id": "DE-LXQT-SCALE",
+    "id": "DE-BUDGIE-FORK-OPEN-IN-FORK",
     "area": "desktop",
-    "title": "Lxqt: 100% and 200% scaling detection",
+    "title": "Budgie: the file manager's Open in Fork reaches the running Fork",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_scaling_detection[lxqt]"
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
     ]
   },
   {
-    "id": "DE-LXQT-TERMINAL",
+    "id": "DE-BUDGIE-FORK-DARK",
     "area": "desktop",
-    "title": "Lxqt: the desktop's terminal opens in a folder",
+    "title": "Budgie: the tabs are kept and a dark desktop relaunches Fork dark",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_folder[lxqt]"
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
     ]
   },
   {
-    "id": "DE-LXQT-FILE-MANAGER-REVEAL",
+    "id": "DE-MATE-INSTALL",
     "area": "desktop",
-    "title": "Lxqt: the desktop's file manager shows a file",
+    "title": "MATE: fork-linux installs from the release tarball",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_file_manager_reveals_a_file[lxqt]"
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
     ]
   },
   {
-    "id": "DE-LXQT-DEFAULT-APPS",
+    "id": "DE-MATE-MENU",
     "area": "desktop",
-    "title": "Lxqt: files and URLs reach the desktop's default applications",
+    "title": "MATE: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_default_applications[lxqt]"
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
     ]
   },
   {
-    "id": "DE-LXQT-DOCTOR",
+    "id": "DE-MATE-FILE-MANAGER-ACTION",
     "area": "desktop",
-    "title": "Lxqt: doctor on the desktop",
+    "title": "MATE: the file manager's Open in Fork runs fork-linux",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_integration.py::test_doctor_runs[lxqt]"
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
     ]
   },
   {
-    "id": "DE-LXQT-FORK",
+    "id": "DE-MATE-THEME",
     "area": "desktop",
-    "title": "Lxqt: the official Fork on the desktop: window, theme, terminal, file manager, second tab",
+    "title": "MATE: the light and dark themes are detected",
     "tiers": [
       "de"
     ],
     "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e_de/test_de_fork.py::test_fork_on_the_desktop[lxqt]"
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
     ]
   },
   {
-    "id": "FF-NON-LATIN-48",
-    "area": "font-fallback",
-    "title": "Non-Latin text (CJK, Cyrillic) falls back to a host font on the .NET 4.8 prefix",
+    "id": "DE-MATE-SCALE",
+    "area": "desktop",
+    "title": "MATE: the desktop's scaling is detected",
     "tiers": [
-      "real-fork"
+      "de"
     ],
-    "provided_by": "fix/font-fallback-472",
+    "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e/test_real_font_fallback.py::test_non_latin_text_falls_back[dotnet48]"
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
     ]
   },
   {
-    "id": "FF-NON-LATIN-472",
-    "area": "font-fallback",
-    "title": "Non-Latin text falls back to a host font on a .NET 4.7.2 prefix",
+    "id": "DE-MATE-TERMINAL",
+    "area": "desktop",
+    "title": "MATE: the desktop's terminal opens in a folder",
     "tiers": [
-      "real-fork"
+      "de"
     ],
-    "provided_by": "fix/font-fallback-472",
+    "provided_by": "fix/de-e2e",
     "pending_merge": true,
     "tests": [
-      "tests/e2e/test_real_font_fallback.py::test_non_latin_text_falls_back[dotnet472]"
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
+    ]
+  },
+  {
+    "id": "DE-MATE-FILE-MANAGER-REVEAL",
+    "area": "desktop",
+    "title": "MATE: the desktop's file manager shows a file",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
+    ]
+  },
+  {
+    "id": "DE-MATE-DEFAULT-APPS",
+    "area": "desktop",
+    "title": "MATE: files and URLs reach the desktop's default applications",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
+    ]
+  },
+  {
+    "id": "DE-MATE-DOCTOR",
+    "area": "desktop",
+    "title": "MATE: doctor fails only for what setup installs",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
+    ]
+  },
+  {
+    "id": "DE-MATE-FORK-SETUP",
+    "area": "desktop",
+    "title": "MATE: setup completes and doctor --deep has no failures, before and after use",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
+    ]
+  },
+  {
+    "id": "DE-MATE-FORK-WINDOW",
+    "area": "desktop",
+    "title": "MATE: the official Fork runs under the desktop's window manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
+    ]
+  },
+  {
+    "id": "DE-MATE-FORK-SECOND-TAB",
+    "area": "desktop",
+    "title": "MATE: the fork command opens a second tab in the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
+    ]
+  },
+  {
+    "id": "DE-MATE-FORK-SHELL",
+    "area": "desktop",
+    "title": "MATE: Fork's Open In Shell opens the desktop's terminal",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
+    ]
+  },
+  {
+    "id": "DE-MATE-FORK-EXPLORER",
+    "area": "desktop",
+    "title": "MATE: Fork's Open In File Explorer opens the desktop's file manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
+    ]
+  },
+  {
+    "id": "DE-MATE-FORK-OPEN-IN-FORK",
+    "area": "desktop",
+    "title": "MATE: the file manager's Open in Fork reaches the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
+    ]
+  },
+  {
+    "id": "DE-MATE-FORK-DARK",
+    "area": "desktop",
+    "title": "MATE: the tabs are kept and a dark desktop relaunches Fork dark",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-INSTALL",
+    "area": "desktop",
+    "title": "Cinnamon: fork-linux installs from the release tarball",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-MENU",
+    "area": "desktop",
+    "title": "Cinnamon: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FILE-MANAGER-ACTION",
+    "area": "desktop",
+    "title": "Cinnamon: the file manager's Open in Fork runs fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-THEME",
+    "area": "desktop",
+    "title": "Cinnamon: the light and dark themes are detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-SCALE",
+    "area": "desktop",
+    "title": "Cinnamon: the desktop's scaling is detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-TERMINAL",
+    "area": "desktop",
+    "title": "Cinnamon: the desktop's terminal opens in a folder",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FILE-MANAGER-REVEAL",
+    "area": "desktop",
+    "title": "Cinnamon: the desktop's file manager shows a file",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-DEFAULT-APPS",
+    "area": "desktop",
+    "title": "Cinnamon: files and URLs reach the desktop's default applications",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-DOCTOR",
+    "area": "desktop",
+    "title": "Cinnamon: doctor fails only for what setup installs",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FORK-SETUP",
+    "area": "desktop",
+    "title": "Cinnamon: setup completes and doctor --deep has no failures, before and after use",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FORK-WINDOW",
+    "area": "desktop",
+    "title": "Cinnamon: the official Fork runs under the desktop's window manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FORK-SECOND-TAB",
+    "area": "desktop",
+    "title": "Cinnamon: the fork command opens a second tab in the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FORK-SHELL",
+    "area": "desktop",
+    "title": "Cinnamon: Fork's Open In Shell opens the desktop's terminal",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FORK-EXPLORER",
+    "area": "desktop",
+    "title": "Cinnamon: Fork's Open In File Explorer opens the desktop's file manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FORK-OPEN-IN-FORK",
+    "area": "desktop",
+    "title": "Cinnamon: the file manager's Open in Fork reaches the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FORK-DARK",
+    "area": "desktop",
+    "title": "Cinnamon: the tabs are kept and a dark desktop relaunches Fork dark",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
     ]
   },
   {
     "id": "FF-DOCTOR",
     "area": "font-fallback",
-    "title": "doctor's font-fallback check matches what WPF reads",
+    "title": "doctor's font-fallback check reports the host fonts mapped in WPF's composite font",
     "tiers": [
       "real-fork"
     ],
     "provided_by": "fix/font-fallback-472",
     "pending_merge": true,
     "tests": [
-      "tests/e2e/test_real_font_fallback.py::test_doctor_font_fallback_matches"
+      "tests/e2e/test_real_fork.py::test_02_doctor_has_no_failures"
     ]
   }
 ]

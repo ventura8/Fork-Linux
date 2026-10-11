@@ -31,6 +31,9 @@ real_tier.enforce()
 
 DECLINED = 18
 SETUP_TIMEOUT = 3600.0
+# .NET Framework release numbers: 4.7.2 is 461808 (461814 on older Windows), 4.8 starts at 528040.
+DOTNET_472 = 461808
+DOTNET_48 = 528040
 
 
 def _files(directory: Path) -> dict[str, tuple[int, int]]:
@@ -282,6 +285,24 @@ def test_a_second_prefix_is_adopted_and_kept_apart(closed: Any) -> None:
     assert refused.returncode == 2
     assert json.loads(e2e.cli("status", "--json", extra=extra).stdout)["prefix"] == str(prefix2)
     assert json.loads(e2e.cli("status", "--json").stdout)["prefix"] == str(e2e.prefix)
+
+
+def test_dotnet472_prefix_runs_fork(closed: Any) -> None:
+    """``setup --dotnet dotnet472`` builds a prefix with .NET Framework 4.7.2 (not 4.8) in which Fork starts.
+
+    Scenarios: S-DOTNET-472
+    """
+    user = closed.variant("dotnet472")
+    user.cli(*user.setup_args(), "--dotnet", "dotnet472", timeout=SETUP_TIMEOUT)
+    report = json.loads(user.cli("doctor", "--json", check=False).stdout)
+    dotnet = next(check for check in report["checks"] if check["id"] == "prefix.dotnet")
+    release = int(re.search(r"release (\d+)", dotnet["detail"]).group(1))
+    assert DOTNET_472 <= release < DOTNET_48, dotnet
+    try:
+        assert user.fork.start(make_repo(user.repos / "dotnet472-repo", {".gitignore": "*.tmp\n"})).is_main
+        user.screen.screenshot("dotnet472-fork")
+    finally:
+        user.fork.ensure_closed()
 
 
 def test_latest_installs_the_newest_fork(closed: Any) -> None:

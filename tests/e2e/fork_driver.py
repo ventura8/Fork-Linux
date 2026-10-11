@@ -14,6 +14,7 @@ copied into the repository (AGENTS.md hard rule 4).
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import json
 import os
@@ -206,9 +207,29 @@ class Screen:
         time.sleep(settle)
 
     def type(self, text: str, settle: float = 0.4) -> None:
-        """Type text (Unicode included) into the focused control."""
-        self.xdotool("type", "--delay", "35", "--", text, check=True)
+        """Type text into the focused control; text beyond ASCII is pasted (Ctrl+V) instead.
+
+        ``xdotool type`` maps a spare keycode for each non-ASCII character and now and then loses one
+        (a commit subject came out without its last CJK character); the clipboard keeps every byte.
+        """
+        if text.isascii():
+            self.xdotool("type", "--delay", "35", "--", text, check=True)
+        else:
+            self.paste(text)
         time.sleep(settle)
+
+    def paste(self, text: str) -> None:
+        """Paste ``text`` into the focused control through the clipboard (``xclip`` owns it meanwhile)."""
+        owner = subprocess.Popen(["xclip", "-quiet", "-selection", "clipboard"], env=self.env,
+                                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # -quiet: xclip reads the text, then stays in the foreground serving the clipboard until killed.
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            owner.communicate(text.encode("utf-8"), timeout=0.5)
+        try:
+            self.key("ctrl+v", settle=1.0)
+        finally:
+            owner.kill()
+            owner.wait()
 
     def release_keys(self) -> None:
         """Release modifiers and keys a vanished window may have left pressed."""
