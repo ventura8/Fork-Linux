@@ -409,7 +409,7 @@ def test_sync_without_host_config(paths: Paths, pathmap: PathMap, tmp_path: Path
     user_dir = paths.wine_user_dir(USER)
     assert changed == [gitconfig.overlay_path(paths, USER), user_dir / ".gitconfig"]
     assert gitconfig.overlay_path(paths, USER).read_text(encoding="utf-8") == gitconfig.HEADER + (
-        gitconfig.MANAGED_HEADER + "[credential]\n\tcredentialStore = dpapi\n"
+        gitconfig.MANAGED_HEADER + "[credential]\n\thelper =\n\thelper = manager\n\tcredentialStore = dpapi\n"
     )
     assert (user_dir / ".gitconfig").read_text(encoding="utf-8") == BLOCK
 
@@ -580,7 +580,7 @@ def test_sync_translates_each_host_file_against_the_host_home(
         + gitconfig.MANAGED_HEADER
         + '[url "file:///Z:/home/"]\n\tinsteadOf = file:///home/\n'
         + '[url "Z:/home/"]\n\tinsteadOf = /home/\n'
-        + "[credential]\n\tcredentialStore = dpapi\n"
+        + "[credential]\n\thelper =\n\thelper = manager\n\tcredentialStore = dpapi\n"
     )
 
 
@@ -599,7 +599,7 @@ def test_managed_text_skips_unreachable_tops(tmp_path: Path) -> None:
     text = gitconfig.managed_text(only_home, ["home", "mnt"])
     assert '[url "file:///H:/"]\n\tinsteadOf = file:///home/\n[url "H:/"]\n\tinsteadOf = /home/\n' in text
     assert "mnt" not in text
-    assert text.endswith("[credential]\n\tcredentialStore = dpapi\n")
+    assert text.endswith("[credential]\n\thelper =\n\thelper = manager\n\tcredentialStore = dpapi\n")
 
 
 def _git_runner(stdout: str = "git version 2.53.0\n", code: int = 0) -> RecordingRunner:
