@@ -159,7 +159,8 @@ def _any_window(ui: ForkUI, title: str) -> Any:
 
 
 def test_fetch_and_push_over_http_with_basic_auth(ui: ForkUI, installed: Any) -> None:
-    """An HTTP remote with a password: Git Credential Manager asks once, keeps it (DPAPI), push works.
+    """An HTTP remote with a password: Git Credential Manager asks once and keeps it (DPAPI): the pull and
+    the push that follow ask nothing.
 
     Scenarios: G-HTTP-BASIC-AUTH, G-HTTP-CREDENTIALS-STORED
     """
@@ -175,6 +176,9 @@ def test_fetch_and_push_over_http_with_basic_auth(ui: ForkUI, installed: Any) ->
         _accept(ui, "Fetch")
         _answer_credentials(ui, server.user, server.password)
         wait_until(lambda: git(work, "rev-parse", "origin/main") == theirs, 90, "the fetch over HTTP")
+        ui.keys("ctrl+shift+l", settle=1.0)
+        _accept(ui, "Pull")
+        wait_until(lambda: git(work, "rev-parse", "main") == theirs, 90, "the pull over HTTP")
         ours = _new_commit(work, "ours.txt", "our work")
         ui.refresh()
         ui.keys("ctrl+shift+p", settle=1.0)

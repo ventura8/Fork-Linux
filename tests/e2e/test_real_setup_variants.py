@@ -218,13 +218,15 @@ def test_custom_wine_path_and_back(closed: Any) -> None:
     custom = e2e.root / "custom-wine"
     if not custom.exists():
         custom.symlink_to(_managed_wine(e2e).parent.parent, target_is_directory=True)
-    e2e.cli(*e2e.setup_args(), "--wine", str(custom / "bin" / "wine"), timeout=SETUP_TIMEOUT)
-    status = json.loads(e2e.cli("status", "--json").stdout)
-    assert status["wine_provider"] == str(custom / "bin" / "wine")
-    e2e.fork.start(make_repo(e2e.repos / "custom-wine-repo", {".gitignore": "*.tmp\n"}))
-    assert _fork_wine_binary(e2e).startswith(str(custom))
-    e2e.fork.close()
-    e2e.cli(*e2e.setup_args(), "--wine", "managed", timeout=SETUP_TIMEOUT)
+    try:
+        e2e.cli(*e2e.setup_args(), "--wine", str(custom / "bin" / "wine"), timeout=SETUP_TIMEOUT)
+        assert json.loads(e2e.cli("status", "--json").stdout)["wine_provider"] == "custom"
+        assert e2e.cli("config", "get", "wine.provider").stdout.strip() == str(custom / "bin" / "wine")
+        e2e.fork.start(make_repo(e2e.repos / "custom-wine-repo", {".gitignore": "*.tmp\n"}))
+        assert _fork_wine_binary(e2e).startswith(str(custom))
+        e2e.fork.close()
+    finally:
+        e2e.cli(*e2e.setup_args(), "--wine", "managed", timeout=SETUP_TIMEOUT)
     assert json.loads(e2e.cli("status", "--json").stdout)["wine_provider"] == "managed"
 
 
@@ -246,7 +248,7 @@ def test_system_wine_provider(closed: Any) -> None:
     report = json.loads(e2e.cli("doctor", "--json", "--check", "wine", extra=extra, check=False).stdout)
     assert not [check for check in report["checks"] if check["status"] == "fail"], report
     e2e.fork.start(make_repo(e2e.repos / "system-wine-repo", {".gitignore": "*.tmp\n"}), extra=extra)
-    assert _fork_wine_binary(e2e).startswith(str(bin_dir)) or _fork_wine_binary(e2e).startswith(str(managed))
+    assert _fork_wine_binary(e2e).startswith(str(bin_dir)), "Fork runs with the wine found on PATH"
     e2e.fork.close()
     e2e.cli(*e2e.setup_args(), "--wine", "managed", timeout=SETUP_TIMEOUT)
 
@@ -258,9 +260,11 @@ def test_flatpak_provider_outside_the_flatpak_is_refused(closed: Any) -> None:
     """
     e2e = closed
     result = e2e.cli("setup", "--accept-fork-eula", "--no-gui", "--wine", "flatpak", check=False)
-    assert result.returncode != 0
+    assert result.returncode == 14, result.stderr
     assert "Flatpak" in result.stderr
-    assert json.loads(e2e.cli("status", "--json").stdout)["wine_provider"] == "managed"
+    # The refused choice is not saved: setup and Fork keep working with the managed Wine.
+    assert e2e.cli("config", "get", "wine.provider").stdout.strip() == "managed"
+    assert e2e.setup_complete()
 
 
 def test_a_second_prefix_is_adopted_and_kept_apart(closed: Any) -> None:

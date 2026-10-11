@@ -53,7 +53,8 @@ CONFLICTED_FILE = (420, 186)
 MERGE_IN_LINUX = (1028, 400)
 SUBMODULES_HEADER = (90, 380)
 FIRST_SUBMODULE = (120, 402)
-SUBMODULE_MENU_UPDATE = 24
+# The submodule's menu: Open, Open Git Bash, Open In Shell, Show in File Explorer, History, Update...
+SUBMODULE_MENU_UPDATE = 169
 # Fork's AskPass window (520x185): its text field.
 ASKPASS_FIELD = (335, 91)
 
