@@ -1,11 +1,11 @@
 ---
 name: pipeline-runner
-description: Full local gate: lint, coverage, bridge, compat x7, desktop integration x7, packaging x9; fix until green.
+description: Full local gate: lint, coverage, bridge, compat x7, desktop integration x8, packaging x9; fix until green.
 ---
 
 # Pipeline Runner
 
-Full local gate: lint, coverage, bridge, compat x7, desktop integration x7, packaging x9; fix until green.
+Full local gate: lint, coverage, bridge, compat x7, desktop integration x8, packaging x9; fix until green.
 
 Canonical rules: [AGENTS.md](../../../AGENTS.md).
 

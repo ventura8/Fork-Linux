@@ -50,6 +50,7 @@ EXPECTED = {
     "Dockerfile.e2e.de.budgie": "fork-linux-e2e-de-budgie:26.04",
     "Dockerfile.e2e.de.lxqt": "fork-linux-e2e-de-lxqt:26.04",
     "Dockerfile.e2e.de.kde": "fork-linux-e2e-de-kde:26.04",
+    "Dockerfile.e2e.de.kdewayland": "fork-linux-e2e-de-kdewayland:26.04",
     "Dockerfile.e2e.de.gnome": "fork-linux-e2e-de-gnome:26.04",
     "Dockerfile.e2e.de.cinnamon": "fork-linux-e2e-de-cinnamon:26.04",
 }

@@ -41,8 +41,6 @@ DIAGNOSTICS = (
 # The git-instance dialog's one button stays centred 41 px above its bottom edge.
 GIT_INSTANCE_BUTTON_FROM_BOTTOM = 41
 SEED_PATTERNS = ("wine-*.tar.xz", "Fork-*.exe", "winetricks-*", "selawik-*.zip")
-# A screenshot whose standard deviation is below this is one flat colour (nothing drawn).
-MIN_STDDEV = 0.02
 
 
 def seed_caches(home: Path) -> None:
@@ -137,7 +135,7 @@ def drawn_screenshot(session: dekit.Session, name: str, timeout: float = 60) -> 
         if window is None:
             return None
         shot = session.screenshot(name, window)
-        if session.image_stat(shot, "standard_deviation") > MIN_STDDEV:
+        if session.image_stat(shot, "standard_deviation") > dekit.DRAWN_STDDEV:
             return shot
         time.sleep(2)
         return None

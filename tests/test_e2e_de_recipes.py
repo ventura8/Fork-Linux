@@ -135,6 +135,9 @@ def test_recipe_is_complete(key: str) -> None:
         assert recipe.session_env.get(name), name
     assert recipe.open_in_fork_keys and recipe.open_in_fork_keys[-1] == "Return"
     assert recipe.settings_daemon
+    # The session checks that the desktop's own programs run (dekit.Session.start).
+    assert recipe.components and all(recipe.components)
+    assert recipe.portal == "" or recipe.portal.startswith("xdg-desktop-portal-")
     # An empty window manager or file-manager service: the session manager starts it.
     for command in (recipe.settings_daemon, recipe.window_manager, recipe.file_manager_service):
         assert all(isinstance(word, str) and word for word in command)

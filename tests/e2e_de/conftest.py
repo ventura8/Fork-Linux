@@ -49,7 +49,9 @@ def _require_tools(desktop: desktops.Desktop) -> None:
     wanted = (*TOOLS, desktop.settings_daemon[0], *desktop.window_manager[:1], desktop.terminal)
     missing = [tool for tool in wanted if shutil.which(tool) is None]
     if missing:
-        pytest.skip(f"the desktop tier needs {', '.join(missing)} on PATH (run it in docker/Dockerfile.e2e.de.*)")
+        # FL_E2E_DE names a desktop: this is its image, and a missing program is a broken image,
+        # never a reason to skip every test (the tier would pass having checked nothing).
+        pytest.fail(f"the desktop tier needs {', '.join(missing)} on PATH (docker/Dockerfile.e2e.de.{desktop.key})")
 
 
 @pytest.fixture(scope="session")
@@ -101,6 +103,27 @@ def installed(session: dekit.Session) -> dekit.Installed:
         host_helper=prefix / "lib" / "fork-linux" / "fork-linux-host",
         menu_file=session.home / ".local" / "share" / "applications" / "io.github.ventura8.ForkLinux.desktop",
     )
+
+
+# A desktop run checks every test it collected: a test that skips itself there (a program that went
+# missing, a gate) would let the tier pass having checked nothing, so a skip fails the run.
+_SKIPPED: list[str] = []
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    """Remember every test that skipped."""
+    if report.skipped:
+        _SKIPPED.append(report.nodeid)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """With ``FL_E2E_DE`` set, a run in which a test skipped fails."""
+    if os.environ.get("FL_E2E_DE") and _SKIPPED and exitstatus == 0:
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+        reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+        if reporter is not None:
+            reporter.write_line(f"desktop tier: {len(_SKIPPED)} test(s) skipped, which fails the run: {_SKIPPED}")
 
 
 # The real-Fork module's steps build on each other: after a failed step the later ones fail fast.

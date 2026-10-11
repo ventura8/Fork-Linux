@@ -48,7 +48,7 @@ Each desktop is one `docker/Dockerfile.e2e.de.<desktop>` plus one entry in
   root: the session's daemons, fork-linux's logs, the setup log; never `drive_c`, never images).
   Screenshots stay in `/var/tmp/fork-linux-e2e/<NAME>/root/shots/` (they show Fork's logo).
 - CI: `check.yml` job `e2e-de` runs every desktop's integration tier on every pull request (a
-  7-cell matrix, `fail-fast: false`, images built with the Actions cache, `FL_CI_DOCKER_CACHE=gha`);
+  8-cell matrix, `fail-fast: false`, images built with the Actions cache, `FL_CI_DOCKER_CACHE=gha`);
   `e2e-wine.yml` job `e2e-de` runs every desktop's real-Fork tier weekly, on demand and on
   release-branch PRs, with fresh downloads (no seed, nothing cached). Both upload `logs/e2e-de/`
   only. Locally `scripts/ci-pipeline.sh` runs the integration matrix as its `e2e-de` stage.
@@ -67,20 +67,44 @@ process of the session carries `FL_E2E_DE_SESSION` or its `DISPLAY`; `stop()` en
 A recipe may run its own X server instead of Xvfb (`Desktop.x_server`, the session's display is
 appended): Cinnamon's muffin rejects Xvfb's only RandR mode (no refresh rate) and could not apply
 a user interface scale, so the Cinnamon image runs Xorg with the dummy driver, rootless.
+A Wayland desktop (`Desktop.wayland_compositor`: GNOME Shell, Budgie's labwc) starts its
+compositor right after the bus instead of an X server; the session moves to the compositor's
+rootless Xwayland, whose `DISPLAY` / `XAUTHORITY` / `WAYLAND_DISPLAY` labwc's startup command
+writes to `$XDG_RUNTIME_DIR/session.env`, and which the session reads from the Xwayland process
+itself for gnome-shell (`hands_over_xwayland=False`, no startup command), then puts into the D-Bus
+activation environment as gnome-session does. gnome-shell aborts without a system bus
+(`Desktop.system_bus`): it gets a private one with no services (`dekit.SYSTEM_BUS_CONFIG`).
+
+Once up, the session checks that the desktop's **own** programs run (`Desktop.components`, by
+executable or `argv[0]` name: the shell or window manager, the settings daemon, the file-manager
+service that stays up; for example GNOME: `gnome-shell`, `Xwayland`, `gsd-xsettings`; Cinnamon:
+`cinnamon`, `Xorg`, `csd-xsettings`, `csd-settings-remap`) and lists every process of the session
+(pid, parent, executable, command line) in `logs/session-processes.txt`, again when the portal
+started and before it stops: the logs show which window manager, file manager, terminal and
+portal processes really ran. At the end of each tier the same components must still be the
+processes the last start found (`Session.components_gone`; `Desktop.restarted` names the ones the
+desktop or the tier starts again on purpose: Thunar after `thunar -q`, MATE's marco and settings
+daemon), so a component that crashed and was started again fails the tier.
+
+Nothing skips silently: with `FL_E2E_DE` set, a run in which any test skipped fails
+(`tests/e2e_de/conftest.py`), and a program the tier needs that is missing from the image fails
+the session instead of skipping it.
 
 ## Integration tier (`test_de_integration.py`, no Wine)
 
 | Test | What the desktop itself shows |
 |---|---|
+| the desktop's own programs | its window manager's EWMH name (`Desktop.wm_name`), its components (above) still running, and `org.freedesktop.portal.Settings` answered by the backend its `<desktop>-portals.conf` picks (`Desktop.portal`: gnome, kde, xapp, gtk; Lubuntu installs none that answers it) |
 | install from the release tarball | `install.sh --from-tarball --no-deps`: `fork-linux --version` is `VERSION`, `desktop status` is ok |
-| menu entry | `desktop-file-validate`; the desktop's menu library lists it under Development (XFCE: garcon, the panel's library, through `python3-gi`; KDE: `kbuildsycoca6 --menutest`, the menu KService builds for Kickoff); the desktop's own launcher (`Desktop.menu_launcher`: `gio launch`; KDE: `kioclient exec`, KIO's application launcher) starts fork-linux, which asks its first-run license question (zenity), then declined |
+| menu entry | `desktop-file-validate`; the desktop's menu lists it under Development (XFCE: garcon, the panel's library, through `python3-gi`; KDE: `kbuildsycoca6 --menutest`, the menu KService builds for Kickoff; GNOME: the running GNOME Shell's own app grid, through its Eval); the desktop's own launcher (`Desktop.menu_launcher`: `gio launch`; KDE: `kioclient exec`, KIO's application launcher; GNOME Shell and Cinnamon: their own `App.open_new_window`, as a click in their menus) starts fork-linux, which asks its first-run license question (zenity), then declined. On Cinnamon and MATE (`menu_after_login`) install.sh had to create `~/.local/share/applications`, which their menus do not watch: fork-linux says so (`MENU_RELOGIN`) and the session restarts first, as the user logs out and in |
 | file manager "Open in Fork" | the action is installed next to the desktop's own (XFCE: Xubuntu's "Open Terminal Here" kept in `uca.xml`; KDE: an executable service menu in `~/.local/share/kio/servicemenus` for `inode/directory`); the file manager's real context menu (keys from the recipe) runs `fork-linux open --from-file-manager <folder>` |
-| theme light / dark | the desktop's own setting (XFCE: `/Net/ThemeName` Greybird / Greybird-dark; KDE: the Global Themes Kubuntu, Kubuntu Dark and Breeze Dark, Colors on their own, a dark scheme named without "dark") -> `theme.detect` of the installed package |
+| theme light / dark | the desktop's own setting (XFCE: `/Net/ThemeName` Greybird / Greybird-dark; KDE: the Global Themes Kubuntu, Kubuntu Dark and Breeze Dark, Colors on their own, a dark scheme named without "dark") -> `theme.detect` of the installed package; and when the desktop's portal states a preference (`color-scheme` 1 dark, 2 light; 0 is none), it is the same (every answer in `logs/portal-color-scheme.txt`: KDE's, Budgie's and GNOME's / Cinnamon's dark mode state one, XFCE's and MATE's gtk backend never does) |
 | scale per case | XFCE: default 100 %, Window Scaling 2x 200 %, custom DPI 192 200 %; KDE: default 100 %, global scale 200 % and 150 %, Force font DPI 192 200 % -> `display.scale_percent` |
-| terminal | `fork-linux-host terminal DIR` opens the desktop's terminal (window class) with a shell whose cwd is DIR (`/proc`) |
+| terminal | `fork-linux-host terminal DIR` opens the desktop's terminal (window class, and the window's process is that terminal's program) with a shell whose cwd is DIR (`/proc`) |
 | reveal | `fork-linux-host reveal FILE` -> FileManager1 -> a file-manager window on its folder |
 | open file / open URL | `fork-linux-host open` -> xdg-open -> the default application (a stub registered with `xdg-mime`; XFCE hands web links to its own preferred browser, so the stub is also the `helpers.rc` WebBrowser; KDE asks kdeglobals' `BrowserApplication` first, so the stub is also named there, as Default Applications does) |
 | doctor | only `wine.present`, `prefix.exists`, `fork.installed` fail before setup; no warnings |
+| kept running | none of the desktop's own programs crashed or was started again during the tier (above) |
 
 ## Real-Fork tier (`test_de_fork.py`, `FL_E2E_DE_FORK=1`)
 
@@ -95,7 +119,8 @@ in the repository; 06 Repository > Open In File Explorer opens the desktop's fil
 repository go to `logs/07-opening.txt`); 08 after closing, Fork kept all three
 tabs and the terminal it opened still runs, and with the desktop switched to dark it relaunches
 with `Theme=1` and a dark window;
-09 `doctor --deep` after use has no failure.
+09 `doctor --deep` after use has no failure, and none of the desktop's own programs crashed during
+Fork's run.
 
 ## XFCE facts the recipe relies on
 
@@ -178,7 +203,40 @@ with `Theme=1` and a dark window;
   with kdialog added and `[ui] progress = kdialog`: the license question is a kdialog window
   titled "Fork license agreement", Escape declines it and fork-linux exits with "Fork's license
   agreement was declined; nothing was downloaded".
-- Not covered: Plasma on Wayland (kwin_wayland + Xwayland), Kubuntu 26.04's default session.
+- xdg-desktop-portal-kde answers `org.freedesktop.appearance color-scheme` for every theme case
+  (2 light, 1 dark, also for the scheme named without "dark"), and fork-linux agrees with it in
+  each (`logs/portal-color-scheme.txt`).
+- Plasma on Wayland, Kubuntu 26.04's default session, is its own desktop of the tier (`kdewayland`, below).
+
+## KDE Plasma on Wayland facts the recipe relies on (`kdewayland`)
+
+- Kubuntu 26.04 logs in to Plasma on Wayland by default (sddm's "Plasma", `startplasma-wayland`).
+  The recipe is the X11 one (`kde`) with Wayland's own window manager and scale: `kwin_wayland`
+  on its virtual backend (`--virtual`, one 1920x1080 output `Virtual-0`, software rendering) with
+  its own rootless Xwayland, where Wine and Fork run; its `--exit-with-session` command hands the
+  session `DISPLAY` and `WAYLAND_DISPLAY` (`dekit.SESSION_ENV`) and the D-Bus activation
+  environment, as startplasma does; `XDG_SESSION_TYPE=wayland`, `DESKTOP_SESSION=plasma`.
+- `kwin_wayland` carries the file capability `cap_sys_nice`, and a container without
+  `CAP_SYS_NICE` cannot execute such a file (EPERM): the image installs a plain copy (kwin then
+  logs that it has no real-time priority). kwin also wants `/tmp/.X11-unix` to exist.
+- `QT_QPA_PLATFORM=xcb` and `GDK_BACKEND=x11` are the tier's own: Dolphin, Konsole and zenity then
+  open on Xwayland, where xdotool sees them. kwin runs on its own platform, and kscreen-doctor on
+  Qt's Wayland platform (libkscreen picks its KWin backend there).
+- kwin asks for the portal while it starts, before `DISPLAY` is in the activation environment,
+  and xdg-desktop-portal-kde (on xcb) aborts without it; xdg-desktop-portal then offers no
+  Settings for the rest of the session. The hand-over ends that early portal; the next request
+  starts it again with the session's environment (in a Plasma session it starts after startplasma
+  exported it). xdg-desktop-portal-kde then answers every theme case, and fork-linux agrees.
+- Scale: System Settings > Display Configuration > Scale sets the output's scale through
+  libkscreen's KWin backend (the tier runs `kscreen-doctor output.Virtual-0.scale.<s>`, libkscreen's
+  own tool). With "Legacy applications (X11): Apply scaling themselves" (Plasma's default) KWin
+  publishes `Xft.dpi` = 96 x the scale to its Xwayland (200 % 192, 150 % 144), which fork-linux
+  reads (`display._from_xrdb`); kcmfonts' `forceFontDPI` is an X11-session setting. "Scaled by the
+  system" did not change Xwayland's scale or `Xft.dpi` in this headless session (kwinrc
+  `[Xwayland] XwaylandClientsScale=false`, also from kwin's start), so it is not a tier case.
+- Everything else (menu, Dolphin's service menu, Konsole, themes, the browser) is Plasma's own and
+  behaves as on X11.
+
 
 ## LXQt (Lubuntu) facts the recipe relies on
 
@@ -233,11 +291,19 @@ with `Theme=1` and a dark window;
   (`--workdir`) and LXQt's own (`DESKTOP_TERMINALS["LXQT"]`). Lubuntu's global shortcuts
   bind Ctrl+Alt+T to qterminal, so as on XFCE the desktop takes Fork's "Open In Shell" key, and
   the tier uses Fork's menu.
+- Portals: `lxqt-portals.conf` picks lxqt, then kde, then gtk, and Lubuntu installs only
+  xdg-desktop-portal-lxqt, a file chooser: nothing answers `org.freedesktop.portal.Settings`, so
+  no portal tells applications Lubuntu's colour scheme (`Desktop.portal=""`; the tier checks that
+  it stays unanswered).
 - `xdg-open` on LXQt runs `qtxdg-mat open`, which follows `xdg-mime default` (`mimeapps.list`) for
   files and links alike. Lubuntu's `session.conf` sets `BROWSER=firefox`, which `xdg-open` does
   not use on LXQt.
 - Lubuntu installs `fonts-dejavu-core` (`lubuntu-desktop`), and the image does too. Without it,
   `doctor` warns `host.fonts`.
+- Lubuntu's panel menu (fancymenu) names featherpad and lubuntu-update-notifier as favorites, and
+  lxqt-panel 2.3 crashes (SIGSEGV) about 15 s after it starts when a favorite's desktop file is
+  missing; lxqt-session then starts it again, every 15 s. The image installs both, as
+  lubuntu-desktop does, and the tier's "kept running" check would catch such a crash loop.
 - Flaky spot, seen once in three LXQt real-Fork runs: `fork-linux setup` failed in its `fonts` step
   because Wine could not start `C:\windows\syswow64\regedit.exe` ("ShellExecuteEx failed")
   for one font, twice in a row (after 7 and after 3 fonts had registered). fork-linux retries
@@ -246,17 +312,34 @@ with `Theme=1` and a dark window;
 
 ## GNOME facts the recipe relies on
 
-- mutter 50 has no X11 mode (no `--x11`, `--replace`, `--nested`): the recipe runs `mutter
-  --wayland --headless --virtual-monitor 1920x1080` with its own rootless Xwayland (`:0`, with an
-  `XAUTHORITY` file), and no Xvfb (`Desktop.wayland_compositor`). The command mutter runs after
-  `--` hands `DISPLAY`, `XAUTHORITY` and `WAYLAND_DISPLAY` to the session (`session.env`) and to
-  D-Bus activation, as gnome-shell does through gnome-session.
+- The window manager is **GNOME Shell 50** itself, in Ubuntu's session mode (`--mode=ubuntu`:
+  the Yaru shell theme and Ubuntu's extensions, the dock and the desktop icons among them; from
+  `ubuntu-session`), on mutter's headless backend (`--wayland --headless --virtual-monitor
+  1920x1080`; GNOME 50 has no X11 session) with its own rootless Xwayland (`:0`, with an
+  `XAUTHORITY` file), and no Xvfb (`Desktop.wayland_compositor`). Its check window names it
+  "GNOME Shell". gnome-session cannot run in the container (no systemd user manager), so the tier
+  starts gnome-shell as gnome-session's `org.gnome.Shell@wayland` unit would. Until 2026-10-11
+  the tier ran mutter's own `mutter` binary instead, which is not what an Ubuntu session runs.
+- gnome-shell aborts at start without a system bus (its time-limits manager connects to it): the
+  session gives it a private one with no services (`Desktop.system_bus`); it then logs that GDM,
+  logind, polkit and accountsservice are missing and carries on. It has no startup command, so
+  the session reads `DISPLAY` and `XAUTHORITY` from its Xwayland's command line and
+  `WAYLAND_DISPLAY` from its socket, and updates the D-Bus activation environment, as
+  gnome-session does with what gnome-shell hands it.
+- gnome-shell runs with `--unsafe-mode`, which opens its `org.gnome.Shell.Eval`: the tier reads
+  the menu from the running shell's own app grid (`AppDisplay`, laid out again as the shell does
+  when apps change), launches our entry with the shell's `App.open_new_window` (a click on its
+  icon), and presses "Keep Changes" in the shell's "Keep these display settings?" dialog after a
+  scale change (`desktops._display_config_scale`; without it the shell reverts the scale after
+  20 s).
 - `GDK_BACKEND=x11` is the tier's own: Nautilus, Ptyxis and zenity then open on Xwayland, where
   xdotool sees them. Wine (Fork) is an X client anyway.
 - The root window of a rootless Xwayland cannot be captured: a screenshot is a window capture, or
   for the whole screen every visible window pasted at its position on black.
-- mutter frames only decorated X windows: Fork draws its own title bar and stays unframed
-  (`frames_undecorated=False`); it is still managed (mutter's `_NET_SUPPORTING_WM_CHECK`).
+- GNOME Shell (mutter) frames only decorated X windows: Fork draws its own title bar and stays
+  unframed (`frames_undecorated=False`); it is still managed (in `_NET_CLIENT_LIST`).
+- Ubuntu's desktop-icons extension (DING) draws the desktop as an X window ("Desktop Icons 1",
+  `WM_CLASS` gjs) under `GDK_BACKEND=x11`: it is part of the screen in whole-screen screenshots.
 - Flaky spot, seen once in four GNOME real-Fork runs of the final tree: step 08 clicked Fork's
   close button right after step 07 had handed the third repository over, and Fork was still
   running 60 s later (the screenshot after 07 shows Fork with two tabs, Nautilus over it; no
@@ -275,9 +358,10 @@ with `Theme=1` and a dark window;
   sets the variable like gnome-session. Without it xdg-open falls back to its generic mode, where
   `file --mime-type` ignores shared-mime-info globs and a file does not reach its default app.
 - Scale: Settings > Displays > Scale is mutter's monitor configuration
-  (`org.gnome.Mutter.DisplayConfig.ApplyMonitorsConfig`, `~/.config/monitors.xml`), not
-  `scaling-factor` (0); gsd-xsettings publishes `Xft.dpi` = 96 x display scale x text scaling
-  (100 % 96, 200 % 192, Large Text 120, both 240). fork-linux asked GNOME's gsettings first and
+  (`org.gnome.Mutter.DisplayConfig.ApplyMonitorsConfig`, `~/.config/monitors.xml`, then the
+  shell's "Keep Changes"), not `scaling-factor` (0); gsd-xsettings publishes `Xft.dpi` = 96 x
+  display scale x text scaling (100 % 96, 200 % 192, Large Text 120, both 240; each case waits for
+  its value). fork-linux asked GNOME's gsettings first and
   read 200 % + Large Text as 125 %; GNOME's own probe is now `Xft.dpi` (`DESKTOP_PROBES["gnome"]`),
   with the gsettings as the fallback when there is no `Xft.dpi`.
 - Nautilus 50 loads nautilus-python extensions against API 4.1 only (`Nautilus-4.1.typelib`) and
@@ -295,9 +379,11 @@ with `Theme=1` and a dark window;
   (`dekit.children_cwds` walks all descendants). Without a systemd user manager its agent
   starts every shell through `systemd-run --user --scope` and fails, so the image diverts
   `systemd-run` (on a real desktop the user manager is there).
-- The menu entry is checked as gnome-shell's app grid lists it: Gio's desktop entries that should
-  be shown, in an `org.gnome.desktop.app-folders` folder only when one claims it; ours is on the
-  top level (`Desktop.menu_folder=()`).
+- The menu entry is checked in GNOME Shell's own app grid: ours is an icon on the top level, in
+  no folder (`Desktop.menu_folder=()`). GNOME Shell (GIO's app info monitor) notices a new
+  `~/.local/share/applications` while it runs.
+- xdg-desktop-portal-gnome answers `org.freedesktop.appearance color-scheme`: 0 (no preference)
+  for Ubuntu's light style (`color-scheme` `default`), 1 for dark, as fork-linux reads it.
 
 ## Budgie facts the recipe relies on
 
@@ -431,7 +517,14 @@ with `Theme=1` and a dark window;
 - mate-panel's Applications menu (libmate-menu on `mate-applications.menu`) lists
   `Categories=Development` entries in its "Development" menu, shown as "Programming". The
   MateMenu binding has no `TreeEntry.get_app_info`; the reader takes the command from the
-  entry's desktop file.
+  entry's desktop file. Like Cinnamon's CMenu, libmate-menu watches only the application folders
+  that existed when the session started (its tree's `changed` never fires for a
+  `~/.local/share/applications` created later): install.sh warns "log out and back in"
+  (`MENU_RELOGIN`) and the tier restarts the session before it reads the menu
+  (`menu_after_login`). mate-panel itself does not run in the tier; the reader is a new libmate-menu
+  tree, which is what the panel loads at the next login.
+- MATE's portal backend is xdg-desktop-portal-gtk (`mate-portals.conf`), which reads GNOME's
+  `color-scheme`; MATE never writes it, so the portal states no preference for any MATE theme.
 - `xdg-open` on MATE runs `gio open`, so web links follow `mimeapps.list` (the user's entry
   wins over `mate-mimeapps.list`, which names firefox). Nothing in the image binds Ctrl+Alt+T
   (marco's `run-command-terminal` is disabled, mate-settings-daemon's media keys have no
@@ -450,12 +543,26 @@ with `Theme=1` and a dark window;
 - The settings daemon is what cinnamon-session's autostart starts for settings: csd-xsettings
   (XSETTINGS, `Xft.dpi`) and csd-settings-remap, which copies Cinnamon's interface keys (theme,
   text scaling factor, ...) into `org.gnome.desktop.interface` for GNOME applications.
+- The window manager is **cinnamon** itself (`cinnamon --replace`, what cinnamon-session's
+  cinnamon-launcher runs): the panel, the menu applet and the window manager on libmuffin, drawn
+  with Mesa's software GL on the dummy Xorg. Until 2026-10-11 the tier ran muffin's own `muffin`
+  binary instead, which is not what a Cinnamon session runs.
+- Cinnamon's menu (CMenu, like MATE's libmate-menu) watches only the application folders that
+  existed when the session started: an entry written into a `~/.local/share/applications` created
+  later never shows up (checked with Cinnamon's own `AppSystem` and with CMenu's `changed` signal;
+  GIO, which GNOME Shell and Budgie use, and XFCE's garcon notice the new folder). The tier's home
+  is new, so install.sh creates the folder: fork-linux now warns "log out and back in"
+  (`MENU_RELOGIN`) when it had to create it on Cinnamon or MATE, and the tier checks the warning
+  and restarts the session before it reads the menu (`menu_after_login`). Our entry is then
+  launched with the menu applet's own `App.open_new_window`, through Cinnamon's `org.Cinnamon.Eval`.
 - Xvfb cannot host a Cinnamon UI scale: its only RandR mode has no refresh rate, muffin refuses it
   ("Invalid mode 1920x1080 (-nan)") and keeps its monitor configuration unscaled. The recipe runs
   Xorg with the dummy driver instead (`Desktop.x_server`, rootless, one 1920x1080@60 monitor from
   `/etc/X11/fl-e2e-dummy.conf`). System Settings > Display > User interface scale is a monitor
   configuration of muffin's `org.cinnamon.Muffin.DisplayConfig` (`ApplyMonitorsConfig`, as
-  Cinnamon's display panel does); the legacy `scaling-factor` key is not applied live.
+  Cinnamon's display panel does, then "Keep changes" in cinnamon's "Keep these display settings?"
+  dialog, which otherwise reverts the scale after its countdown); the legacy `scaling-factor` key
+  is not applied live.
   csd-xsettings then publishes `Xft.dpi` = 96 x scale x text scaling factor (96, 192, 144 for text
   1.5, 240 for scale 2 with text 1.25); each scale case waits for that value.
 - Dark mode: Themes > Settings > Dark mode (and the Light / Dark buttons of the simplified Themes
@@ -467,7 +574,7 @@ with `Theme=1` and a dark window;
   `org.gnome.desktop.interface`, so asking GNOME's keys first read scale 2 with text 1.25 as 125 %
   while every X client got 240 DPI; Cinnamon's own probe is now `Xft.dpi`
   (`DESKTOP_PROBES["cinnamon"]`).
-- muffin names itself "Mutter (Muffin)" and, like mutter, frames only decorated windows: Fork's
+- cinnamon's window manager names itself "Mutter (Muffin)" and, like mutter, frames only decorated windows: Fork's
   undecorated main window stays a child of the root window (`frames_undecorated=False`).
   Started without a user action, a relaunched Fork may open behind the window the user used last
   (focus-stealing prevention): step 08 activates it before its screenshot, as a click would.
@@ -515,7 +622,9 @@ with `Theme=1` and a dark window;
    settings daemon) starts it; `session_exports` names variables the session manager hands
    its applications; `scale_restarts_session` restarts the session for each scale case;
    theme cases beyond `light` / `dark` are named `light:<how>` / `dark:<how>`; `menu_folder` is
-   the menu folder that lists our entry.
+   the menu folder that lists our entry; `components` are the desktop's own programs the session
+   checks (and `restarted` the ones that may be started again), `portal` the xdg-desktop-portal
+   backend that answers its Settings.
 3. `tests/test_docker.py` `EXPECTED`; the desktop in the `desktop` matrix of the `e2e-de` jobs
    of `.github/workflows/check.yml` and `e2e-wine.yml` (and in `DESKTOPS` of
    `tests/test_workflows.py`); `tests/test_e2e_de_recipes.py` keeps images, recipes, checkers and

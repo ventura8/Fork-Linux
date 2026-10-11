@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 # Every job starts at once (no needs: gates, AGENTS.md §4.8): lint + coverage + bridge +
-# 7 compat cells + 7 desktop integration cells + 9 packaging cells. ./scripts/ci-pipeline.sh
+# 7 compat cells + 8 desktop integration cells + 9 packaging cells. ./scripts/ci-pipeline.sh
 # runs the same scripts locally.
 jobs:
   lint:
@@ -151,7 +151,7 @@ jobs:
       fail-fast: false
       max-parallel: 20
       matrix:
-        desktop: [xfce, gnome, kde, cinnamon, mate, budgie, lxqt]
+        desktop: [xfce, gnome, kde, kdewayland, cinnamon, mate, budgie, lxqt]
     steps:
       - name: Checkout source
         uses: actions/checkout@v7.0.1

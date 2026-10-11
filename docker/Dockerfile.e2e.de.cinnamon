@@ -4,7 +4,8 @@
 # scripts/ci-e2e-de.sh cinnamon [--fork] runs tests/e2e_de in here (FL_E2E_DE=cinnamon) as the
 # invoking unprivileged user, with the source bind-mounted read-only at /src (no COPY) and one
 # scratch root at /e2e. tests/e2e_de/desktops.py starts the session: Xorg (dummy driver),
-# dbus-daemon, csd-settings-remap and csd-xsettings, muffin and Nemo's FileManager1 service, with
+# dbus-daemon, csd-settings-remap and csd-xsettings, cinnamon (the shell: panel, menu applet and
+# window manager on libmuffin, rendered by Mesa's software GL) and Nemo's FileManager1 service, with
 # Ubuntu Cinnamon's own defaults (ubuntucinnamon-environment: Yaru-cinnamon themes, gschema
 # overrides). gnome-terminal (Cinnamon's default terminal) comes with xdg-terminal-exec, as its
 # Recommends bring it on Ubuntu Cinnamon; xfce4-terminal is the terminal the tier's user picked in
@@ -31,15 +32,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libfreetype6 libfontconfig1 libgnutls30t64 libx11-6 libxext6 libxrender1 libxi6 \
     libxrandr2 libxcursor1 libxcomposite1 libxinerama1 libxfixes3 libgl1 \
     libvulkan1 libdbus-1-3 libasound2t64 libpulse0 libxkbcommon0 libwayland-client0 libegl1 \
-    muffin cinnamon-settings-daemon cinnamon-desktop-data nemo ubuntucinnamon-environment \
+    cinnamon cinnamon-settings-daemon cinnamon-desktop-data nemo ubuntucinnamon-environment \
     yaru-cinnamon-theme-gtk gir1.2-cmenu-3.0 dconf-cli dconf-service libgl1-mesa-dri \
     gnome-terminal xdg-terminal-exec xfce4-terminal xserver-xorg-core xserver-xorg-video-dummy \
     xdg-desktop-portal xdg-desktop-portal-xapp xdg-desktop-portal-gtk
 
 # The session's X server (tests/e2e_de/desktops.py, CINNAMON.x_server): Xorg with the dummy
 # driver, rootless, one 1920x1080 monitor at 60 Hz. Xvfb's only RandR mode has no refresh rate,
-# which muffin rejects ("Invalid mode 1920x1080 (-nan)"), so it could never apply a user
-# interface scale.
+# which muffin (Cinnamon's window manager library) rejects ("Invalid mode 1920x1080 (-nan)"), so
+# it could never apply a user interface scale.
 RUN printf '%s\n' \
     'Section "ServerFlags"' \
     '    Option "AutoAddDevices" "false"' \

@@ -19,7 +19,7 @@ When running the Docker CI gate (`scripts/ci-pipeline.sh` / `ci-docker.sh` / `ci
 | `ci-lint.log` | Lint stage (`FL_CI_STAGE=lint`) |
 | `ci-coverage.log` | Coverage stage (`FL_CI_STAGE=coverage`) |
 | `ci-bridge.log` | Bridge stage (`FL_CI_STAGE=bridge`) |
-| `ci-e2e-de.log` | Desktop integration stage of `ci-pipeline.sh` (`./scripts/ci-e2e-de-matrix.sh`, 7 desktops) |
+| `ci-e2e-de.log` | Desktop integration stage of `ci-pipeline.sh` (`./scripts/ci-e2e-de-matrix.sh`, 8 desktops) |
 | `ci-matrix-summary.log` | Compat matrix launcher summary |
 | `ci-matrix/<cell>.log` | Per-distro compat cell (`jammy`, `noble`, `resolute`, `debian13`, `fedora44`, `leap16`, `arch`) |
 | `ci-packaging-summary.log` | Packaging matrix launcher summary |

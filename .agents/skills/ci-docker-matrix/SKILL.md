@@ -19,7 +19,7 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
   only via `scripts/e2e-docker.sh` (hard rule 18; shared code in `scripts/lib-e2e-docker.sh`). `ci-docker.sh --inside`
   refuses outside a container.
 - Desktop E2E images `fork-linux-e2e-de-<desktop>:26.04` (`docker/Dockerfile.e2e.de.<desktop>`, present: `xfce`, `gnome`, `kde`,
-  `cinnamon`, `mate`, `budgie`, `lxqt`): `scripts/ci-e2e-de.sh <desktop> [--fork]` / `scripts/ci-e2e-de-matrix.sh [--fork]`,
+  `kdewayland`, `cinnamon`, `mate`, `budgie`, `lxqt`): `scripts/ci-e2e-de.sh <desktop> [--fork]` / `scripts/ci-e2e-de-matrix.sh [--fork]`,
   same library and rules as `e2e-docker.sh`; one recipe per image in `tests/e2e_de/desktops.py`. CI: `check.yml` job
   `e2e-de` (integration, every PR, `FL_CI_DOCKER_CACHE=gha`) and `e2e-wine.yml` job `e2e-de` (real Fork, fresh downloads);
   `tests/test_e2e_de_recipes.py` keeps images, recipes, checkers and both matrices in step. Runbook: `docs/qa/DE-E2E.md`.

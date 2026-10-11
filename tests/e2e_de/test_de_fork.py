@@ -138,7 +138,7 @@ def test_05_open_in_shell_opens_the_desktops_terminal(session: dekit.Session, de
     window = session.wait_window(
         lambda w: w.id not in before and w.has_class(desktop.terminal_class), f"a new {desktop.terminal} window", 60
     )
-    session.screenshot("05-terminal", window)
+    session.evidence("05-terminal", window)
     dekit.wait_for(lambda: str(active) in dekit.children_cwds(window.pid or 0), 30, f"a shell in {active}")
 
 
@@ -151,7 +151,7 @@ def test_06_open_in_file_explorer_opens_the_desktops_file_manager(
         lambda w: w.id not in before and w.has_class(desktop.file_manager_class) and ACTIVE in w.name,
         f"a {desktop.file_manager} window showing the repository", 60,
     )
-    session.screenshot("06-file-manager", window)
+    session.evidence("06-file-manager", window)
 
 
 def _opening(repo: Path) -> list[str]:
@@ -229,3 +229,5 @@ def test_09_doctor_after_use_has_no_failures(session: dekit.Session) -> None:
     report = json.loads(session.run(["fork-linux", "doctor", "--deep", "--json"], timeout=300).stdout)
     failed = [check for check in report["checks"] if check["status"] == "fail"]
     assert failed == [], failed
+    # The desktop held up through Fork's whole run: none of its own programs crashed.
+    assert session.components_gone() == [], dekit.PROCESS_LOG

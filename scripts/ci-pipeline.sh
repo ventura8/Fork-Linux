@@ -4,7 +4,7 @@
 #   2) coverage   scripts/ci-docker.sh FL_CI_STAGE=coverage (Python gates + C coverage report)
 #   3) bridge     scripts/ci-docker.sh FL_CI_STAGE=bridge (MinGW/musl, repro, Wine tier)
 #   4) compat     scripts/ci-matrix.sh (7 cells in parallel)
-#   5) e2e-de     scripts/ci-e2e-de-matrix.sh (the desktop integration tier, 7 desktops in
+#   5) e2e-de     scripts/ci-e2e-de-matrix.sh (the desktop integration tier, 8 desktops in
 #                 parallel; no Wine: the real-Fork tier per desktop is ci-e2e-de-matrix.sh --fork)
 #   6) packaging  scripts/ci-packaging-matrix.sh (9 formats in parallel)
 # The same scripts run in .github/workflows/check.yml. Output is tee'd under logs/
@@ -30,4 +30,4 @@ stage matrix ./scripts/ci-matrix.sh
 stage e2e-de ./scripts/ci-e2e-de-matrix.sh
 stage packaging ./scripts/ci-packaging-matrix.sh
 
-echo "==> pipeline: all stages passed (lint, coverage, bridge, compat x7, desktop integration x7, packaging x9)"
+echo "==> pipeline: all stages passed (lint, coverage, bridge, compat x7, desktop integration x8, packaging x9)"

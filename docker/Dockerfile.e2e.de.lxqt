@@ -6,7 +6,10 @@
 # root at /e2e. tests/e2e_de/desktops.py starts the session: dbus-daemon, Xvfb and
 # lxqt-session, which (like Lubuntu's "startlxqt") starts openbox, the panel and pcmanfm-qt's
 # desktop (its FileManager1 service), with Lubuntu's own defaults (lubuntu-default-settings:
-# XDG_CONFIG_DIRS=/usr/share/lubuntu:/etc/xdg, openbox, the Lubuntu Arc / kvantum theme).
+# XDG_CONFIG_DIRS=/usr/share/lubuntu:/etc/xdg, openbox, the Lubuntu Arc / kvantum theme), and the
+# programs the panel's menu names as favorites (featherpad, lubuntu-update-notifier, as
+# lubuntu-desktop installs them): lxqt-panel's fancymenu crashes about 15 s after it starts when a
+# favorite's desktop file is missing.
 # The real-Fork tier (FL_E2E_DE_FORK=1) downloads the managed Wine runtime, winetricks' verbs
 # and the official Fork installer at run time (or copies them from a read-only local seed);
 # nothing is baked into the image or cached, and only text logs leave the container (no
@@ -31,7 +34,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libvulkan1 libdbus-1-3 libasound2t64 libpulse0 libxkbcommon0 libwayland-client0 libegl1 \
     lxqt-session lxqt-config lxqt-panel lxqt-qtplugin lxqt-themes lxqt-menu-data lxqt-globalkeys \
     lxqt-notificationd openbox pcmanfm-qt qterminal qtxdg-tools qt-style-kvantum \
-    lubuntu-default-settings fonts-dejavu-core gir1.2-gmenu-3.0 xdg-desktop-portal xdg-desktop-portal-lxqt
+    lubuntu-default-settings fonts-dejavu-core gir1.2-gmenu-3.0 xdg-desktop-portal xdg-desktop-portal-lxqt \
+    featherpad lubuntu-update-notifier
 
 WORKDIR /src
 CMD ["python3", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/e2e_de"]

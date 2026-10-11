@@ -27,7 +27,7 @@ COMPAT_CELLS = ["jammy", "noble", "resolute", "debian13", "fedora44", "leap16", 
 FORMATS = ["deb", "deb-jammy", "rpm-fedora", "rpm-opensuse", "arch", "snap", "appimage", "flatpak", "tarball"]
 # The desktop E2E tier: one docker/Dockerfile.e2e.de.<desktop> each (tests/test_e2e_de_recipes.py
 # checks the images, the recipes and these matrices against each other).
-DESKTOPS = ["xfce", "gnome", "kde", "cinnamon", "mate", "budgie", "lxqt"]
+DESKTOPS = ["xfce", "gnome", "kde", "kdewayland", "cinnamon", "mate", "budgie", "lxqt"]
 FORK_PR_GUARD = (
     "github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository"
 )

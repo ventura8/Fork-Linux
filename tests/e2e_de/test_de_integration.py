@@ -43,6 +43,16 @@ STUB_MIME = "text/x-fl-e2e"
 STUB_SUFFIX = ".fle2e"
 STUB_URL = "https://example.invalid/fl-e2e?from=fork-linux-host"
 LAUNCH_TIMEOUT = 60.0
+MENU_TIMEOUT = 30.0
+# org.freedesktop.portal.Settings: what the desktop tells applications about its colour scheme.
+PORTAL_COLOR_SCHEME = (
+    "gdbus", "call", "--session", "--dest", "org.freedesktop.portal.Desktop",
+    "--object-path", "/org/freedesktop/portal/desktop", "--method", "org.freedesktop.portal.Settings.ReadOne",
+    "org.freedesktop.appearance", "color-scheme",
+)
+# Its answers: 0 no preference, 1 prefer dark, 2 prefer light.
+PORTAL_PREFERS = {"dark": 1, "light": 2}
+PORTAL_TIMEOUT = 15.0
 # What `fork-linux doctor` must fail on before setup ran: Wine, the prefix and Fork itself.
 NOT_SET_UP = {"wine.present", "prefix.exists", "fork.installed"}
 
@@ -253,34 +263,28 @@ def _lxqt_panel_entries(session: dekit.Session) -> list[dict[str, object]]:
     return json.loads(session.run(["python3", "-I", "-c", LXQT_PANEL_READER]).stdout)
 
 
-# gnome-shell's app grid (Shell.AppSystem): every desktop entry Gio lists that should be shown; an
-# app sits in a folder of org.gnome.desktop.app-folders when the folder names it or one of its
-# categories (and does not exclude it), else on the top level.
-GNOME_SHELL_READER = """
-import json, gi
-gi.require_version("Gio", "2.0")
-from gi.repository import Gio
-SCHEMA = "org.gnome.desktop.app-folders"
-folders = []
-for folder in Gio.Settings.new(SCHEMA).get_strv("folder-children"):
-    settings = Gio.Settings.new_with_path(SCHEMA + ".folder", f"/org/gnome/desktop/app-folders/folders/{folder}/")
-    folders.append((folder, settings.get_strv("apps"), settings.get_strv("categories"),
-                    settings.get_strv("excluded-apps")))
-found = []
-for app in Gio.AppInfo.get_all():
-    if not app.should_show():
-        continue
-    app_id, categories = app.get_id(), (app.get_categories() or "").split(";")
-    path = [name for name, apps, wanted, excluded in folders
-            if app_id in apps or (set(wanted) & set(categories) and app_id not in excluded)][:1]
-    found.append({"path": path, "id": app_id, "command": app.get_commandline()})
-print(json.dumps(found))
+# GNOME Shell's app grid (Activities > Show Apps): the shell's own AppDisplay, asked through its
+# Eval to lay its icons out again, as it does when apps change. An entry is an app icon on the top
+# level or one inside a folder icon (the folder's name is the path).
+GNOME_SHELL_GRID = """
+const grid = Main.overview._overview._controls._appDisplay;
+grid._redisplay();
+const system = Shell.AppSystem.get_default();
+const found = [];
+for (const item of grid._orderedItems) {
+    const folder = Boolean(item.getAppIds);
+    for (const id of folder ? item.getAppIds() : [item.id]) {
+        const app = system.lookup_app(id);
+        found.push({path: folder ? [item.name] : [], id, command: app ? app.get_app_info().get_commandline() : ''});
+    }
+}
+JSON.stringify(found);
 """
 
 
 def _gnome_shell_entries(session: dekit.Session) -> list[dict[str, object]]:
-    """Every app of GNOME's app grid as gnome-shell finds it (Gio's desktop entries, app folders)."""
-    return json.loads(session.run(["python3", "-I", "-c", GNOME_SHELL_READER]).stdout)
+    """Every app of GNOME Shell's app grid, as the running shell lays it out."""
+    return json.loads(session.run(["python3", "-I", "-c", desktops.shell_eval("gnome", GNOME_SHELL_GRID)]).stdout)
 
 
 # Budgie's panel menus (Budgie Menu; Ubuntu Budgie's AppMenu groups the same way) list what
@@ -523,7 +527,39 @@ INTEGRATION_CHECKS: dict[str, Callable[[dekit.Session, dekit.Installed], None]] 
 }
 
 
+# -- the desktop's colour scheme as its portal tells applications -----------------------------
+
+
+def _portal_color_scheme(session: dekit.Session) -> int | None:
+    """``org.freedesktop.appearance color-scheme`` from the desktop's xdg-desktop-portal backend
+    (0 no preference, 1 dark, 2 light); None while the portal does not answer."""
+    result = session.run(PORTAL_COLOR_SCHEME, check=False, timeout=30)
+    digits = "".join(char for char in result.stdout.partition("uint32")[2] if char.isdigit())
+    return int(digits) if result.returncode == 0 and digits else None
+
+
+def _portal_agrees(session: dekit.Session, wanted: str) -> int | None:
+    """The portal's answer once it is ``wanted`` or no preference (0); None while it says the opposite."""
+    answer = _portal_color_scheme(session)
+    return answer if answer in (0, PORTAL_PREFERS[wanted]) else None
+
+
 # -- the tests -----------------------------------------------------------------------------------
+
+
+def test_the_desktops_own_programs_run(session: dekit.Session, desktop: desktops.Desktop) -> None:
+    """The session is the desktop's own: its window manager answers the EWMH check, its shell,
+    settings daemon and file-manager service run (logs/session-processes.txt lists every process),
+    and the portal hands applications the colour scheme through the desktop's own backend."""
+    assert session.window_manager_name() == desktop.wm_name
+    for program in desktop.components:
+        assert session.running(program), f"{program} does not run ({dekit.PROCESS_LOG})"
+    if not desktop.portal:  # nothing answers it (the recipe says why)
+        assert _portal_color_scheme(session) is None
+        return
+    dekit.wait_for(lambda: _portal_color_scheme(session) is not None, PORTAL_TIMEOUT, "the settings portal")
+    dekit.wait_for(lambda: session.running(desktop.portal), PORTAL_TIMEOUT, f"the portal backend {desktop.portal}")
+    session.record_processes("portal started")
 
 
 def test_install_from_the_release_tarball(session: dekit.Session, installed: dekit.Installed) -> None:
@@ -535,20 +571,6 @@ def test_install_from_the_release_tarball(session: dekit.Session, installed: dek
     kinds = {entry["kind"] for entry in status["entries"]}
     assert {"menu", "icon"} <= kinds
     assert installed.host_helper.is_file()
-
-
-def test_menu_entry_is_valid_listed_and_starts_fork_linux(
-    session: dekit.Session, desktop: desktops.Desktop, installed: dekit.Installed
-) -> None:
-    menu_file = installed.menu_file
-    session.run(["desktop-file-validate", str(menu_file)])
-    entries = [entry for entry in MENU_READERS[desktop.menu_reader](session) if entry["id"] == menu_file.name]
-    assert entries, f"{desktop.menu_reader} does not list {menu_file.name}"
-    assert entries[0]["path"] == list(desktop.menu_folder), entries
-    assert str(entries[0]["command"]).startswith(str(session.home / ".local" / "bin" / "fork-linux"))
-    session.spawn("menu-launch", [*desktop.menu_launcher, str(menu_file)])
-    askers = _decline_consent(session)
-    assert any(" run" in cmdline for cmdline in askers), askers
 
 
 def test_file_manager_runs_open_in_fork(
@@ -570,6 +592,29 @@ def test_file_manager_runs_open_in_fork(
     assert any(OPEN_ACTION in cmdline and str(repo) in cmdline for cmdline in askers), askers
 
 
+def test_menu_entry_is_valid_listed_and_starts_fork_linux(
+    session: dekit.Session, desktop: desktops.Desktop, installed: dekit.Installed
+) -> None:
+    menu_file = installed.menu_file
+    session.run(["desktop-file-validate", str(menu_file)])
+    if desktop.menu_after_login:
+        # install.sh created ~/.local/share/applications in this session, which this desktop's menu
+        # does not watch: fork-linux says so, and the user logs out and back in.
+        assert "log out and back in to see" in installed.output, installed.output
+        session.restart()
+    reader = MENU_READERS[desktop.menu_reader]
+    # A menu notices a new entry by itself (file monitors, an index): ask until it lists ours.
+    entries = dekit.wait_for(
+        lambda: [entry for entry in reader(session) if entry["id"] == menu_file.name] or None,
+        MENU_TIMEOUT, f"{desktop.menu_reader} to list {menu_file.name}",
+    )
+    assert entries[0]["path"] == list(desktop.menu_folder), entries
+    assert str(entries[0]["command"]).startswith(str(session.home / ".local" / "bin" / "fork-linux"))
+    session.spawn("menu-launch", [*desktop.menu_launcher, str(menu_file)])
+    askers = _decline_consent(session)
+    assert any(" run" in cmdline for cmdline in askers), askers
+
+
 def _theme_ids(desktop_key: str) -> list[str]:
     """The recipe's theme cases: light and dark, plus ``light:<how>`` / ``dark:<how>`` for other ways
     the desktop's own settings make it light or dark."""
@@ -586,6 +631,15 @@ def test_theme_detection_follows_the_desktop(
     code = "import os; from pathlib import Path; from fork_linux import theme; from fork_linux.procrun import Runner\n"
     code += "print(theme.detect(os.environ, Runner(), Path.home()))"
     assert _installed_python(session, installed, code) == wanted
+    # What the desktop itself tells applications (GTK 4, Qt, browsers) through its portal: when it
+    # states a preference, it is the same. Every answer goes to logs/portal-color-scheme.txt.
+    if not desktop.portal:
+        return
+    try:
+        dekit.wait_for(lambda: _portal_agrees(session, wanted), PORTAL_TIMEOUT, f"the portal to say {wanted} too")
+    finally:
+        with open(session.logs / "portal-color-scheme.txt", "a", encoding="utf-8") as log:
+            log.write(f"{case_id}: fork-linux {wanted}, portal {_portal_color_scheme(session)}\n")
 
 
 def _scale_ids(desktop_key: str) -> list[str]:
@@ -628,12 +682,12 @@ def test_terminal_opens_in_the_directory(
     dekit.wait_for(
         lambda: str(target) in dekit.children_cwds(window.pid or 0), 30, f"a shell of {desktop.terminal} in {target}"
     )
-    # The window's process is the terminal (gnome-terminal's windows belong to gnome-terminal-server).
-    program = os.path.basename(os.readlink(f"/proc/{window.pid}/exe"))
-    assert dekit.pids_of(desktop.terminal) or program.startswith(desktop.terminal), (
-        f"{desktop.terminal} is not the terminal that opened ({program})"
+    # The window belongs to the desktop's terminal program itself, not to another terminal that
+    # happens to share its window class.
+    assert desktop.terminal in dekit.program_names(window.pid), (
+        f"{desktop.terminal} is not the terminal that opened ({dekit.program_names(window.pid)})"
     )
-    session.screenshot("terminal", window)
+    session.evidence("terminal", window)
 
 
 def test_reveal_shows_the_file_in_the_file_manager(
@@ -650,7 +704,7 @@ def test_reveal_shows_the_file_in_the_file_manager(
     window = session.wait_window(
         lambda w: w.has_class(desktop.file_manager_class) and folder.name in w.name, "the file manager showing it"
     )
-    session.screenshot("reveal", window)
+    session.evidence("reveal", window)
 
 
 def test_open_file_reaches_the_default_application(
@@ -674,3 +728,10 @@ def test_doctor_fails_only_for_what_setup_installs(session: dekit.Session, insta
     warned = {check["id"] for check in report["checks"] if check["status"] == "warn"}
     assert failed == NOT_SET_UP, report
     assert warned == set(), report
+
+
+def test_the_desktops_own_programs_kept_running(session: dekit.Session) -> None:
+    """None of the desktop's own programs crashed while the tier used the desktop: a panel or a
+    settings daemon that dies and is started again would leave the tier checking a desktop that
+    does not hold up (Lubuntu's panel did, without the programs its menu names as favorites)."""
+    assert session.components_gone() == [], dekit.PROCESS_LOG

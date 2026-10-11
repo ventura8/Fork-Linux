@@ -112,11 +112,48 @@ class Desktop:
     # Xvfb's one RandR mode has no refresh rate, so a window manager that applies a scale through
     # its own monitor configuration (Cinnamon's muffin) needs a server with real modes.
     x_server: Command = ()
+    # The desktop's own programs that must run once the session is up (executable or argv[0]
+    # names): its shell or window manager, its settings daemon, a file-manager service that
+    # stays up. dekit.Session checks them; logs/session-processes.txt lists what ran.
+    components: tuple[str, ...] = ()
+    # Components the desktop or the tier starts again on purpose while the tier runs (the session
+    # checks at the end that every other component is still the process it started).
+    restarted: tuple[str, ...] = ()
+    # The xdg-desktop-portal backend the desktop's <desktop>-portals.conf picks for
+    # org.freedesktop.portal.Settings (started on demand), which applications ask for the
+    # desktop's colour scheme; "" when the desktop installs none that answers it (Lubuntu).
+    portal: str = ""
+    # The shell needs a system bus (gnome-shell aborts without one): a private one, no services.
+    system_bus: bool = False
+    # The desktop's menu watches only the application folders that existed at login (Cinnamon's
+    # CMenu, MATE's libmate-menu): in the tier's new home install.sh creates
+    # ~/.local/share/applications, says the entry shows after the next login, and the user logs
+    # out and in (the session restarts) before the menu is read.
+    menu_after_login: bool = False
+    # Settings the tier's user has made before logging in (run once the session bus is up, before
+    # the desktop's own programs start).
+    prepare: tuple[Command, ...] = ()
+    # The compositor's startup command writes dekit.SESSION_ENV; otherwise (gnome-shell, which
+    # has no startup command) the session reads DISPLAY and XAUTHORITY from its Xwayland.
+    hands_over_xwayland: bool = True
 
 
 def _xsettings(prop: str, kind: str, value: str) -> Command:
     """``xfconf-query`` setting (creating if needed) one xsettings property, as XFCE's dialogs do."""
     return ("xfconf-query", "-c", "xsettings", "-p", prop, "-n", "-t", kind, "-s", value)
+
+
+def _xft_dpi(dpi: int) -> Command:
+    """Wait (30 s at most) until gsd-xsettings / csd-xsettings has published ``Xft.dpi`` ``dpi``.
+
+    A scale setting reaches ``Xft.dpi`` asynchronously: a case asks fork-linux only once the
+    desktop shows its new value, never the previous case's (MATE: :func:`_mate_xft_dpi`).
+    """
+    script = (
+        'for _ in $(seq 300); do xrdb -query | grep -qE "^Xft\\.dpi:[[:space:]]+$1$" && exit 0; sleep 0.1; done;'
+        ' echo "Xft.dpi is not $1: $(xrdb -query | grep Xft.dpi)" >&2; exit 1'
+    )
+    return ("sh", "-c", script, "sh", str(dpi))
 
 
 XFCE = Desktop(
@@ -169,6 +206,11 @@ XFCE = Desktop(
     # Open Terminal Here, Find in this folder, Open in Fork.
     open_in_fork_keys=("Menu", "Down", "Down", "Down", "Down", "Down", "Return"),
     settings_ready=("sh", "-c", "xrdb -query | grep -q '^Xft.dpi:'"),
+    components=("xfsettingsd", "xfwm4", "thunar"),
+    # Thunar quits when told to (`thunar -q`, as fork-linux tells a user after changing uca.xml).
+    restarted=("thunar",),
+    # xfce-portals.conf: Settings from xapp, else gtk; Xubuntu installs only xdg-desktop-portal-gtk.
+    portal="xdg-desktop-portal-gtk",
     packages=("xfwm4", "xfce4-settings", "xfconf", "thunar", "xfce4-terminal", "exo-utils", "xubuntu-default-settings"),
 )
 
@@ -279,12 +321,111 @@ KDE = Desktop(
         "sh", "-c",
         "xrdb -query | grep -q '^Xft.dpi:' && gdbus introspect --session --dest org.kde.kded6 --object-path /kded",
     ),
+    components=("kded6", "kwin_x11", "dolphin"),
+    portal="xdg-desktop-portal-kde",
     packages=(
         "kwin-x11", "kded6", "plasma-workspace", "plasma-session-x11", "dolphin", "konsole", "kde-cli-tools",
         "libkf6config-bin", "libkf6service-bin", "breeze", "kubuntu-settings-desktop", "xdg-desktop-portal-kde",
     ),
 )
 
+
+
+# startplasma-wayland runs kwin_wayland_wrapper, which runs kwin_wayland with its own Xwayland. The
+# tier runs kwin_wayland on its virtual backend (one 1920x1080 output, software rendering) on the
+# Qt platform it brings itself (not the tier's xcb), and its --exit-with-session command hands the
+# session its Xwayland (dekit.SESSION_ENV) and the D-Bus activation environment, as startplasma
+# does. Xwayland drops the first XTEST event it gets: one Shift press warms it up first. kwin asks
+# for the portal while it starts, before DISPLAY is in the activation environment, and
+# xdg-desktop-portal-kde (on the tier's xcb) aborts without it, so the portal would offer no
+# Settings for the whole session: the hand-over ends that early portal, and the next request starts
+# it again with the session's environment, as in a Plasma session, where it starts after startplasma
+# exported it.
+_KWIN_WAYLAND = """
+printf '%s\n' "$1" > "$XDG_RUNTIME_DIR/fl-e2e-hand-over.sh"
+exec env -u QT_QPA_PLATFORM kwin_wayland --virtual --xwayland --width 1920 --height 1080 \\
+    --exit-with-session "sh $XDG_RUNTIME_DIR/fl-e2e-hand-over.sh"
+"""
+_KWIN_HAND_OVER = (
+    "xdotool key shift"
+    ' && env | grep -E "^(DISPLAY|XAUTHORITY|WAYLAND_DISPLAY)=" > "$XDG_RUNTIME_DIR/session.env.new"'
+    " && dbus-update-activation-environment DISPLAY XAUTHORITY WAYLAND_DISPLAY"
+    " && { pkill -x xdg-desktop-por; true; }"
+    ' && mv "$XDG_RUNTIME_DIR/session.env.new" "$XDG_RUNTIME_DIR/session.env" && exec sleep infinity'
+)
+# KWin's virtual output.
+_KWIN_OUTPUT = "Virtual-0"
+
+
+def _kscreen_scale(scale: str) -> Command:
+    """System Settings > Display Configuration > Scale on Wayland: libkscreen's KWin backend sets the
+    output's scale (kscreen-doctor is libkscreen's own tool; it needs Qt's Wayland platform)."""
+    return ("env", "QT_QPA_PLATFORM=wayland", "kscreen-doctor", f"output.{_KWIN_OUTPUT}.scale.{scale}")
+
+
+KDE_WAYLAND = Desktop(
+    key="kdewayland",
+    title="Kubuntu 26.04 (KDE Plasma 6.6 on Wayland, its default session: kwin_wayland + Xwayland, Dolphin, Konsole)",
+    # What sddm + startplasma-wayland export for the "Plasma" session (Kubuntu's default), with
+    # Kubuntu's defaults as on X11. QT_QPA_PLATFORM=xcb and GDK_BACKEND=x11 are the tier's own:
+    # Dolphin, Konsole and zenity then open on Xwayland, where xdotool sees them (Wine is an X
+    # client anyway); fork-linux reads neither.
+    session_env={
+        "XDG_CURRENT_DESKTOP": "KDE",
+        "DESKTOP_SESSION": "plasma",
+        "XDG_SESSION_DESKTOP": "KDE",
+        "XDG_SESSION_TYPE": "wayland",
+        "XDG_MENU_PREFIX": "plasma-",
+        "XDG_CONFIG_DIRS": "{home}/.config/kdedefaults:/etc/xdg:/usr/share/kubuntu-default-settings/kf5-settings",
+        "XDG_DATA_DIRS": "/usr/local/share/:/usr/share/:/var/lib/snapd/desktop",
+        "KDE_FULL_SESSION": "true",
+        "KDE_SESSION_VERSION": "6",
+        "KDE_APPLICATIONS_AS_SCOPE": "1",
+        "QT_QPA_PLATFORM": "xcb",
+        "GDK_BACKEND": "x11",
+    },
+    settings_daemon=KDE.settings_daemon,
+    settings_ready=KDE.settings_ready,
+    window_manager=("sh", "-c", _KWIN_WAYLAND, "sh", _KWIN_HAND_OVER),
+    wm_name="KWin",
+    wayland_compositor=True,
+    file_manager="dolphin",
+    file_manager_service=("dolphin", "--daemon"),
+    file_manager_class="dolphin",
+    provides_file_manager1=True,
+    integration=DOLPHIN_SERVICEMENU,
+    menu_reader=MENU_KSYCOCA,
+    terminal="konsole",
+    terminal_class="konsole",
+    themes=KDE.themes,
+    # Display Configuration > Scale: KWin publishes Xft.dpi = 96 x the output's scale to its
+    # Xwayland ("Legacy applications (X11): Apply scaling themselves", Plasma's default), which
+    # fork-linux reads; each case waits for it.
+    scales=(
+        ScaleCase("default", 100, (_xft_dpi(96),)),
+        ScaleCase("display-scale-200", 200, (_kscreen_scale("2"), _xft_dpi(192))),
+        ScaleCase("display-scale-150", 150, (_kscreen_scale("1.5"), _xft_dpi(144))),
+    ),
+    reset=(
+        _plasma_global_theme("org.kubuntu.desktop"),
+        _kconfig("kdeglobals", "General", "ColorScheme", None),
+        _kscreen_scale("1"),
+        _xft_dpi(96),
+    ),
+    browser=BROWSER_KDE,
+    menu_launcher=KDE.menu_launcher,
+    open_in_fork_keys=KDE.open_in_fork_keys,
+    # On Wayland KWin draws the frames of X windows itself and does not reparent them (kwin_x11
+    # does): Fork's main window is in _NET_CLIENT_LIST and stays a child of the root window.
+    frames_undecorated=False,
+    components=("kwin_wayland", "Xwayland", "kded6", "dolphin"),
+    portal="xdg-desktop-portal-kde",
+    packages=(
+        "kwin-wayland", "xwayland", "kded6", "plasma-workspace", "plasma-session-wayland", "dolphin", "konsole",
+        "kde-cli-tools", "libkf6config-bin", "libkf6service-bin", "libkscreen-bin", "breeze",
+        "kubuntu-settings-desktop", "xdg-desktop-portal-kde",
+    ),
+)
 
 
 # One INI file of LXQt (or Kvantum) changed as its settings dialogs save it through QSettings:
@@ -417,12 +558,57 @@ LXQT = Desktop(
     browser=BROWSER_XDG_MIME,
     # pcmanfm-qt's folder context menu ends with our action and Folder Properties.
     open_in_fork_keys=("Menu", "Up", "Up", "Return"),
+    components=("lxqt-session", "openbox", "pcmanfm-qt", "lxqt-panel"),
+    # lxqt-portals.conf picks lxqt, then kde, then gtk; Lubuntu installs only xdg-desktop-portal-lxqt,
+    # a file chooser: no portal tells applications Lubuntu's colour scheme.
+    portal="",
     packages=(
         "lxqt-session", "lxqt-config", "lxqt-panel", "lxqt-qtplugin", "lxqt-globalkeys", "lxqt-notificationd",
         "openbox", "pcmanfm-qt", "qterminal", "qtxdg-tools", "qt-style-kvantum", "lubuntu-default-settings",
-        "gir1.2-gmenu-3.0",
+        "gir1.2-gmenu-3.0", "featherpad", "lubuntu-update-notifier",
     ),
 )
+
+
+# A display panel's scale (GNOME Settings > Displays, Cinnamon's System Settings > Display): a new
+# monitor configuration with that scale through mutter's / muffin's DisplayConfig, applied
+# persistently (~/.config/monitors.xml or cinnamon-monitors.xml). The shell then asks "Keep these
+# display settings?" and reverts them after a countdown: the command presses that dialog's Keep
+# Changes, through the shell's own Eval (GNOME Shell with --unsafe-mode). The settings daemon
+# (gsd- / csd-xsettings) then publishes Xft.dpi as 96 x the scale x the text scaling factor.
+_DISPLAY_CONFIG_SCALE = """
+import sys, time, gi
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib
+SHELLS = {  # display config bus name, shell bus name, the stage group the shell's dialogs join
+    "gnome": ("org.gnome.Mutter.DisplayConfig", "org.gnome.Shell", "Main.layoutManager.modalDialogGroup"),
+    "cinnamon": ("org.cinnamon.Muffin.DisplayConfig", "org.Cinnamon", "Main.uiGroup"),
+}
+config_name, shell_name, group = SHELLS[sys.argv[1]]
+keep_changes = (f"const dialog = {group}.get_children().find(child => child._onSuccess);"
+                " if (dialog) dialog._onSuccess(); Boolean(dialog)")
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+def call(name, method, args=None):
+    reply = bus.call_sync(name, "/" + name.replace(".", "/"), name, method, args, None, Gio.DBusCallFlags.NONE, -1,
+                          None)
+    return reply.unpack()
+serial, monitors, logical_monitors, _properties = call(config_name, "GetCurrentState")
+scale = float(sys.argv[2])
+if logical_monitors[0][2] != scale:
+    connector, modes = monitors[0][0][0], monitors[0][1]
+    current = next(mode[0] for mode in modes if mode[6].get("is-current"))
+    layout = [(0, 0, scale, 0, True, [(connector, current, {})])]
+    call(config_name, "ApplyMonitorsConfig", GLib.Variant("(uua(iiduba(ssa{sv}))a{sv})", (serial, 2, layout, {})))
+    deadline = time.monotonic() + 15
+    while call(shell_name, "Eval", GLib.Variant("(s)", (keep_changes,))) != (True, "true"):
+        if time.monotonic() > deadline:
+            sys.exit(f"{shell_name} asked nothing about keeping the display settings")
+        time.sleep(0.2)
+"""
+
+
+def _display_config_scale(shell: str, scale: str) -> Command:
+    return ("python3", "-I", "-c", _DISPLAY_CONFIG_SCALE, shell, scale)
 
 
 def _gnome_interface(key: str, value: str) -> Command:
@@ -430,40 +616,62 @@ def _gnome_interface(key: str, value: str) -> Command:
     return ("gsettings", "set", "org.gnome.desktop.interface", key, value)
 
 
-# Settings > Displays > Scale, then "Keep Changes": mutter's DisplayConfig applies the scale to its
-# monitor persistently (~/.config/monitors.xml); gsd-xsettings then republishes Xft.dpi.
-_MUTTER_SCALE = """
-import sys, gi
+def _displays_scale(scale: str) -> Command:
+    """Settings > Displays > Scale, then "Keep Changes" (:func:`_display_config_scale`)."""
+    return _display_config_scale("gnome", scale)
+
+
+# The shells' own D-Bus Eval (GNOME Shell with --unsafe-mode, Cinnamon), by shell.
+SHELL_BUSES = {"gnome": "org.gnome.Shell", "cinnamon": "org.Cinnamon"}
+DESKTOP_ID = "{desktop_id}"
+
+
+def shell_eval(shell: str, code: str, *, until_true: float = 0.0) -> str:
+    """A Python program that runs the JavaScript ``code`` in the shell's Eval and prints the value of
+    its last expression (JSON-decoded), or fails with the shell's error (message and stack).
+
+    :data:`DESKTOP_ID` in ``code`` becomes the file name of ``argv[1]`` (a .desktop file), JSON-quoted.
+    With ``until_true`` the code runs again every 0.5 s until it returns true, for that many seconds
+    at most (a shell reloads its apps a moment after a new desktop file appears).
+    """
+    name = SHELL_BUSES[shell]
+    return f"""
+import json, sys, time, gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
-NAME = PATH = "org.gnome.Mutter.DisplayConfig"
+code = {code!r}
+if len(sys.argv) > 1:
+    code = code.replace({DESKTOP_ID!r}, json.dumps(sys.argv[1].rsplit("/", 1)[-1]))
+# A thrown Error serialises as {{}}: hand its text and stack over instead.
+code = "(() => {{ try {{ return eval(" + json.dumps(code) + "); }} catch (e) {{ throw `${{e}}\\n${{e.stack}}`; }} }})()"
 bus = Gio.bus_get_sync(Gio.BusType.SESSION)
-def call(method, args=None):
-    reply = bus.call_sync(NAME, "/" + PATH.replace(".", "/"), NAME, method, args, None, 0, -1, None)
-    return reply.unpack()
-serial, monitors, _logical, _properties = call("GetCurrentState")
-connector, modes = monitors[0][0][0], monitors[0][1]
-mode = next(item[0] for item in modes if item[6].get("is-current"))
-config = [(0, 0, float(sys.argv[1]), 0, True, [(connector, mode, {})])]
-call("ApplyMonitorsConfig", GLib.Variant("(uua(iiduba(ssa{sv}))a{sv})", (serial, 2, config, {})))
+deadline = time.monotonic() + {until_true!r}
+while True:
+    ok, value = bus.call_sync({name!r}, {"/" + name.replace(".", "/")!r}, {name!r}, "Eval",
+                              GLib.Variant("(s)", (code,)), None, Gio.DBusCallFlags.NONE, -1, None).unpack()
+    if not ok:
+        sys.exit(f"{name}.Eval: {{json.loads(value) if value else value}}")
+    result = json.loads(value) if value else ""
+    if result is True or time.monotonic() >= deadline:
+        break
+    time.sleep(0.5)
+if {until_true!r} and result is not True:
+    sys.exit(f"{name}.Eval: still {{result!r}} after {until_true!r} s")
+print(result)
 """
 
 
-def _mutter_scale(scale: str) -> Command:
-    return ("python3", "-I", "-c", _MUTTER_SCALE, scale)
+def _shell_launcher(shell: str, app_system: str) -> Command:
+    """What a click on an app in the shell's own menu runs: the shell's ``App.open_new_window``
+    (``false`` until the shell's AppSystem knows the desktop file)."""
+    lookup = f"{app_system}.get_default().lookup_app({DESKTOP_ID})"
+    code = f"(app => app ? (app.open_new_window(-1), true) : false)({lookup})"
+    return ("python3", "-I", "-c", shell_eval(shell, code, until_true=30.0))
 
-
-# What gnome-shell hands gnome-session once its Xwayland is up (the session's DISPLAY,
-# XAUTHORITY, WAYLAND_DISPLAY), and the D-Bus activation environment gnome-session updates.
-_MUTTER_HAND_OVER = (
-    'env | grep -E "^(DISPLAY|XAUTHORITY|WAYLAND_DISPLAY)=" > "$XDG_RUNTIME_DIR/session.env.new"'
-    ' && dbus-update-activation-environment DISPLAY XAUTHORITY WAYLAND_DISPLAY'
-    ' && mv "$XDG_RUNTIME_DIR/session.env.new" "$XDG_RUNTIME_DIR/session.env" && exec sleep infinity'
-)
 
 GNOME = Desktop(
     key="gnome",
-    title="Ubuntu 26.04 (GNOME 50: mutter + Xwayland, gsd-xsettings, Nautilus 50, Ptyxis, Yaru)",
+    title="Ubuntu 26.04 (GNOME 50: GNOME Shell + Xwayland, gsd-xsettings, Nautilus 50, Ptyxis, Yaru)",
     # What gdm + gnome-session export for the "Ubuntu" session (Wayland only since GNOME 49);
     # ubuntu-settings' gschema overrides (Yaru) apply to XDG_CURRENT_DESKTOP "ubuntu".
     # GDK_BACKEND=x11 is the tier's: GTK apps then open on Xwayland, where xdotool sees them.
@@ -482,21 +690,31 @@ GNOME = Desktop(
         "GDK_BACKEND": "x11",
     },
     settings_daemon=("/usr/libexec/gsd-xsettings",),
+    # gnome-session's org.gnome.Shell@wayland unit runs gnome-shell; the tier runs it on mutter's
+    # headless backend with one virtual 1920x1080 monitor, in Ubuntu's session mode (its dock,
+    # desktop icons and other Ubuntu extensions), its Eval opened (--unsafe-mode) so the tier can
+    # read the app grid and press the shell's own buttons.
     window_manager=(
-        "mutter", "--wayland", "--headless", "--virtual-monitor", "1920x1080", "--", "sh", "-c", _MUTTER_HAND_OVER,
+        "gnome-shell", "--wayland", "--headless", "--virtual-monitor", "1920x1080", "--mode=ubuntu", "--unsafe-mode",
     ),
-    wm_name="Mutter",
+    wm_name="GNOME Shell",
+    # Ubuntu's desktop icons (DING) run under the tier's GDK_BACKEND=x11 too, and would warn about it
+    # in a window over the screen: its "Don't show this message anymore".
+    prepare=(("gsettings", "set", "org.gnome.shell.extensions.ding", "check-x11wayland", "false"),),
     wayland_compositor=True,
+    hands_over_xwayland=False,
+    system_bus=True,
     # Nautilus's D-Bus service owns org.freedesktop.FileManager1 (and quits when idle).
     file_manager="nautilus",
     file_manager_service=("nautilus", "--gapplication-service"),
     file_manager_class="org.gnome.Nautilus",
     provides_file_manager1=True,
     integration=NAUTILUS_EXTENSION,
-    # gnome-shell's app grid: every app that should be shown, in a folder only when
-    # org.gnome.desktop.app-folders puts it in one (ours is on the top level).
+    # GNOME Shell's own app grid (ours is on the top level, in no folder), and its launcher.
     menu_reader=MENU_GNOME_SHELL,
     menu_folder=(),
+    # Clicking our icon in GNOME Shell's app grid.
+    menu_launcher=_shell_launcher("gnome", "Shell.AppSystem"),
     # Ubuntu 26.04's terminal, which xdg-terminal-exec picks.
     terminal="ptyxis",
     terminal_class="ptyxis",
@@ -505,31 +723,36 @@ GNOME = Desktop(
         LIGHT: (_gnome_interface("color-scheme", "default"), _gnome_interface("gtk-theme", "Yaru")),
         DARK: (_gnome_interface("color-scheme", "prefer-dark"), _gnome_interface("gtk-theme", "Yaru-dark")),
     },
-    # Settings > Displays > Scale; Settings > Accessibility > Large Text (text scaling 1.25).
+    # Settings > Displays > Scale; Settings > Accessibility > Large Text (text scaling 1.25). Each
+    # case waits for gsd-xsettings' Xft.dpi (96 x display scale x text scaling).
     scales=(
-        ScaleCase("default", 100),
-        ScaleCase("display-200", 200, (_mutter_scale("2"),)),
-        ScaleCase("large-text-125", 125, (_gnome_interface("text-scaling-factor", "1.25"),)),
+        ScaleCase("default", 100, (_xft_dpi(96),)),
+        ScaleCase("display-200", 200, (_displays_scale("2"), _xft_dpi(192))),
+        ScaleCase("large-text-125", 125, (_gnome_interface("text-scaling-factor", "1.25"), _xft_dpi(120))),
         ScaleCase(
-            "display-200-large-text-250", 250, (_mutter_scale("2"), _gnome_interface("text-scaling-factor", "1.25"))
+            "display-200-large-text-250", 250,
+            (_displays_scale("2"), _gnome_interface("text-scaling-factor", "1.25"), _xft_dpi(240)),
         ),
     ),
     reset=(
         _gnome_interface("color-scheme", "default"),
         _gnome_interface("gtk-theme", "Yaru"),
         _gnome_interface("text-scaling-factor", "1.0"),
-        _mutter_scale("1"),
+        _displays_scale("1"),
+        _xft_dpi(96),
     ),
     browser=BROWSER_XDG_MIME,
     # Nautilus 50 opens the folder's context menu with the Menu key (not Shift+F10); "Open in Fork"
     # is the second item from the bottom, above Properties.
     open_in_fork_keys=("Menu", "Up", "Up", "Return"),
-    # mutter reparents only decorated X windows: Fork's own title bar leaves it unframed.
+    # GNOME Shell (mutter) reparents only decorated X windows: Fork's own title bar leaves it unframed.
     frames_undecorated=False,
     settings_ready=("sh", "-c", "xrdb -query | grep -q '^Xft.dpi:'"),
+    components=("gnome-shell", "Xwayland", "gsd-xsettings"),
+    portal="xdg-desktop-portal-gnome",
     packages=(
-        "mutter", "xwayland", "gnome-settings-daemon", "ubuntu-settings", "yaru-theme-gtk", "nautilus",
-        "python3-nautilus", "ptyxis", "xdg-terminal-exec", "xdg-desktop-portal-gnome",
+        "gnome-shell", "ubuntu-session", "xwayland", "gnome-settings-daemon", "ubuntu-settings", "yaru-theme-gtk",
+        "nautilus", "python3-nautilus", "ptyxis", "xdg-terminal-exec", "xdg-desktop-portal-gnome",
     ),
 )
 
@@ -665,25 +888,14 @@ BUDGIE = Desktop(
     open_in_fork_keys=("Menu", "menu-item:Open in Fork", "Return"),
     # labwc (wlroots' XWM) never reparents X windows: it draws server-side decorations itself.
     frames_undecorated=False,
+    components=("labwc", "Xwayland", "budgie-daemon"),
+    portal="xdg-desktop-portal-gtk",
     packages=(
         "labwc", "xwayland", "wlr-randr", "budgie-core", "budgie-desktop", "budgie-desktop-environment",
         "ubuntu-budgie-themes", "nemo", "xfce4-terminal", "dconf-gsettings-backend", "at-spi2-core",
         "gir1.2-atspi-2.0",
     ),
 )
-
-
-def _xft_dpi(dpi: int) -> Command:
-    """Wait (30 s at most) until csd-xsettings has published ``Xft.dpi`` ``dpi``.
-
-    A scale setting reaches ``Xft.dpi`` asynchronously: a case asks fork-linux only once the
-    desktop shows its new value, never the previous case's (MATE: :func:`_mate_xft_dpi`).
-    """
-    script = (
-        'for _ in $(seq 300); do xrdb -query | grep -qE "^Xft\\.dpi:[[:space:]]+$1$" && exit 0; sleep 0.1; done;'
-        ' echo "Xft.dpi is not $1: $(xrdb -query | grep Xft.dpi)" >&2; exit 1'
-    )
-    return ("sh", "-c", script, "sh", str(dpi))
 
 
 def _mate_set(schema: str, key: str, value: str) -> Command:
@@ -850,6 +1062,7 @@ MATE = Desktop(
     # Categories=Development under its "Development" menu, shown as "Programming".
     menu_reader=MENU_MATE_PANEL,
     menu_folder=("Programming",),
+    menu_after_login=True,
     terminal="mate-terminal",
     terminal_class="Mate-terminal",
     # Control Center > Appearance > Theme: Ubuntu MATE's Yaru-MATE light and dark, and MATE's own
@@ -886,6 +1099,11 @@ MATE = Desktop(
     # window is managed (client list, WM_STATE) but stays a child of the root window.
     frames_undecorated=False,
     settings_ready=("sh", "-c", "xrdb -query | grep -q '^Xft.dpi:'"),
+    components=("mate-settings-daemon", "marco", "caja"),
+    # A window-scaling change makes mate-settings-daemon start marco again; the tier ends a settings
+    # daemon that holds the X server (see _MATE_XFT_DPI) and the session starts it again.
+    restarted=("mate-settings-daemon", "marco"),
+    portal="xdg-desktop-portal-gtk",
     packages=(
         "marco", "mate-settings-daemon", "mate-desktop-common", "caja", "caja-actions", "mate-terminal",
         "mate-menus", "gir1.2-matemenu-2.0", "mate-themes", "ubuntu-mate-default-settings", "ubuntu-mate-themes",
@@ -908,31 +1126,9 @@ def _cinnamon_reset(schema: str, key: str) -> Command:
     return ("gsettings", "reset", schema, key)
 
 
-# System Settings > Display > User interface scale (Cinnamon 6.4's display panel): a new monitor
-# configuration with that scale through muffin's DisplayConfig, kept ("Keep this configuration").
-# csd-xsettings then publishes Xft.dpi as 96 x the scale x the text scaling factor.
-_MUFFIN_UI_SCALE = """
-import sys, gi
-gi.require_version("Gio", "2.0")
-from gi.repository import Gio, GLib
-BUS_NAME = "org.cinnamon.Muffin.DisplayConfig"
-bus = Gio.bus_get_sync(Gio.BusType.SESSION)
-def display_config(method, parameters=None):
-    reply = bus.call_sync(BUS_NAME, "/org/cinnamon/Muffin/DisplayConfig", BUS_NAME, method, parameters,
-                          None, Gio.DBusCallFlags.NONE, -1, None)
-    return reply.unpack()
-serial, monitors, logical_monitors, _properties = display_config("GetCurrentState")
-scale = float(sys.argv[1])
-if logical_monitors[0][2] != scale:
-    (connector, _vendor, _product, _serial), modes = monitors[0][0], monitors[0][1]
-    current = next(mode[0] for mode in modes if mode[6].get("is-current"))
-    layout = [(0, 0, scale, 0, True, [(connector, current, {})])]
-    display_config("ApplyMonitorsConfig", GLib.Variant("(uua(iiduba(ssa{sv}))a{sv})", (serial, 2, layout, {})))
-"""
-
-
 def _ui_scale(scale: str) -> Command:
-    return ("python3", "-I", "-c", _MUFFIN_UI_SCALE, scale)
+    """System Settings > Display > User interface scale, then "Keep this configuration"."""
+    return _display_config_scale("cinnamon", scale)
 
 
 def _text_scaling(factor: str) -> Command:
@@ -970,7 +1166,7 @@ _XORG_DUMMY = (
 
 CINNAMON = Desktop(
     key="cinnamon",
-    title="Ubuntu Cinnamon 26.04 (Cinnamon 6.4: muffin, csd-xsettings, Nemo 6.4, xfce4-terminal, Yaru-cinnamon)",
+    title="Ubuntu Cinnamon 26.04 (Cinnamon 6.4 on muffin, csd-xsettings, Nemo 6.4, xfce4-terminal, Yaru-cinnamon)",
     # What lightdm + /etc/X11/Xsession.d (60x11-common_xdg_path) and cinnamon-session export for
     # the "Cinnamon" session (cinnamon.session: DesktopName=X-Cinnamon; no XDG_MENU_PREFIX: the
     # menu applet reads cinnamon-applications.menu by name).
@@ -983,7 +1179,9 @@ CINNAMON = Desktop(
     },
     x_server=("sh", "-c", _XORG_DUMMY, "sh"),
     settings_daemon=("sh", "-c", _CINNAMON_SESSION),
-    window_manager=("muffin", "--replace"),
+    # cinnamon-session's cinnamon-launcher runs cinnamon: the shell (panel, menu applet, window
+    # manager on libmuffin), which names itself after muffin.
+    window_manager=("cinnamon", "--replace"),
     wm_name="Mutter (Muffin)",
     # Nemo's D-Bus services (nemo.FileManager1.service, nemo.service) run "nemo --no-default-window".
     file_manager="nemo",
@@ -994,6 +1192,9 @@ CINNAMON = Desktop(
     # The menu applet (CMenu on cinnamon-applications.menu): Categories=Development is "Programming".
     menu_reader=MENU_CINNAMON,
     menu_folder=("Programming",),
+    # Clicking our entry in the menu applet (Cinnamon's own AppSystem).
+    menu_launcher=_shell_launcher("cinnamon", "imports.gi.Cinnamon.AppSystem"),
+    menu_after_login=True,
     # The terminal of System Settings > Preferred Applications (exec of
     # org.cinnamon.desktop.default-applications.terminal), which Nemo's "Open in Terminal" starts.
     terminal="xfce4-terminal",
@@ -1026,8 +1227,10 @@ CINNAMON = Desktop(
     # muffin, like mutter, reparents only decorated windows: Fork draws its own title bar.
     frames_undecorated=False,
     settings_ready=("sh", "-c", "xrdb -query | grep -q '^Xft.dpi:'"),
+    components=("cinnamon", "Xorg", "csd-xsettings", "csd-settings-remap"),
+    portal="xdg-desktop-portal-xapp",
     packages=(
-        "muffin", "cinnamon-settings-daemon", "nemo", "ubuntucinnamon-environment", "yaru-cinnamon-theme-gtk",
+        "cinnamon", "cinnamon-settings-daemon", "nemo", "ubuntucinnamon-environment", "yaru-cinnamon-theme-gtk",
         "gir1.2-cmenu-3.0", "gnome-terminal", "xdg-terminal-exec", "xfce4-terminal", "xdg-desktop-portal-xapp",
         "xserver-xorg-core", "xserver-xorg-video-dummy", "dconf-cli",
     ),
@@ -1035,5 +1238,5 @@ CINNAMON = Desktop(
 
 
 DESKTOPS: dict[str, Desktop] = {
-    desktop.key: desktop for desktop in (XFCE, KDE, LXQT, GNOME, BUDGIE, MATE, CINNAMON)
+    desktop.key: desktop for desktop in (XFCE, KDE, KDE_WAYLAND, LXQT, GNOME, BUDGIE, MATE, CINNAMON)
 }

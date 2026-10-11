@@ -9,12 +9,21 @@ session's ``DISPLAY`` in its environment (the bridge daemon starts its helpers w
 environment, Wine keeps ``DISPLAY``); :meth:`Session.stop` ends exactly those processes (found
 through ``/proc``).
 
-A desktop whose window manager is a Wayland compositor (``Desktop.wayland_compositor``: GNOME's
-mutter 50 has no X11 mode) gets no Xvfb: the compositor starts right after the bus and runs its
-own rootless Xwayland, whose ``DISPLAY``, ``XAUTHORITY`` and ``WAYLAND_DISPLAY`` it hands to the
-session through ``$XDG_RUNTIME_DIR/session.env`` (as gnome-shell hands them to gnome-session). The
+A desktop whose window manager is a Wayland compositor (``Desktop.wayland_compositor``: GNOME
+50's gnome-shell and Budgie 10.10's labwc have no X11 mode) gets no Xvfb: the compositor starts
+right after the bus and runs its own rootless Xwayland, whose ``DISPLAY``, ``XAUTHORITY`` and
+``WAYLAND_DISPLAY`` the session takes either from ``$XDG_RUNTIME_DIR/session.env`` (labwc's
+startup command writes it) or from the Xwayland process itself (gnome-shell, which hands them to
+gnome-session), and puts into the D-Bus activation environment as the session manager does. The
 root window of a rootless Xwayland cannot be captured, so a screenshot there is put together
 from the visible windows.
+
+A recipe that needs a system bus (``Desktop.system_bus``: gnome-shell aborts without one) gets a
+private one with no services on it, in the session's runtime directory.
+
+After it started, the session checks that the desktop's own programs run
+(``Desktop.components``, by program name) and lists the session's processes in
+``logs/session-processes.txt``, again before it stops, so the logs show what really ran.
 
 The session's home, logs and screenshots live in the E2E root, which ``real_tier.prepare_root``
 checked (absolute, symlink-free, never a home directory). Screenshots stay there: they may show
@@ -48,11 +57,31 @@ X_TIMEOUT = 300.0
 # How often a context-menu action whose keys did nothing is tried (see Session.context_action).
 CONTEXT_ATTEMPTS = 3
 POLL = 0.3
+# A screenshot whose standard deviation is below this is one flat colour (nothing drawn yet).
+DRAWN_STDDEV = 0.02
 T = TypeVar("T")
 # The file a Wayland compositor writes its Xwayland's variables to (KEY=VALUE lines), in
 # $XDG_RUNTIME_DIR, and the variables the session takes from it.
 SESSION_ENV = "session.env"
 COMPOSITOR_VARS = ("DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY")
+XWAYLAND = "Xwayland"
+# The private system bus of a recipe that needs one (Desktop.system_bus): one user, no services.
+SYSTEM_BUS_CONFIG = """<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>system</type>
+  <listen>unix:path={socket}</listen>
+  <auth>EXTERNAL</auth>
+  <policy context="default">
+    <allow user="*"/>
+    <allow own="*"/>
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+  </policy>
+</busconfig>
+"""
+# Where the session lists its processes (after each start, before each stop).
+PROCESS_LOG = "session-processes.txt"
 # A key of Session.keys that selects a context-menu item by its label.
 MENU_ITEM = "menu-item:"
 # The keyboard position of a showing menu's item (argv[1]): shown menu items, check / radio items
@@ -199,6 +228,27 @@ def pids_of(program: str) -> list[int]:
     return found
 
 
+def _cmdline(pid: int) -> list[str]:
+    try:
+        raw = Path("/proc", str(pid), "cmdline").read_bytes()
+    except OSError:
+        return []
+    return [os.fsdecode(arg) for arg in raw.split(b"\0") if arg]
+
+
+def program_names(pid: int) -> set[str]:
+    """The names a process goes by: its executable's file name and its ``argv[0]``'s (a program
+    name longer than the 15 bytes ``/proc/<pid>/comm`` keeps, such as xdg-desktop-portal-gnome)."""
+    names = set()
+    try:
+        names.add(os.path.basename(os.readlink(f"/proc/{pid}/exe")))
+    except OSError:
+        pass
+    argv = _cmdline(pid)
+    if argv:
+        names.add(os.path.basename(argv[0]))
+    return names
+
 class Session:
     """A running desktop session on one Xvfb display, built from a :class:`desktops.Desktop`."""
 
@@ -215,6 +265,8 @@ class Session:
         # (the bridge daemon starts its helpers with a clean environment, Wine keeps DISPLAY).
         self._owned = (f"{SESSION_MARKER}={self.session_id}".encode(), f"DISPLAY={display}".encode())
         self._started: list[subprocess.Popen[bytes]] = []
+        # The desktop's own programs as the last start found them (program -> PIDs).
+        self.started_components: dict[str, set[int]] = {}
         for directory in (self.home, self.logs, self.shots):
             directory.mkdir(parents=True, exist_ok=True)
         self.runtime.mkdir(mode=0o700, exist_ok=True)
@@ -289,17 +341,46 @@ class Session:
                 found.append(pid)
         return found
 
+    def running(self, program: str) -> list[int]:
+        """PIDs of this session's processes whose executable or ``argv[0]`` is named ``program``."""
+        return [pid for pid in self.session_pids() if program in program_names(pid)]
+
+    def components_gone(self) -> list[str]:
+        """The desktop's own programs that are no longer the processes the last start found
+        (they crashed, or something started them again), except ``Desktop.restarted``."""
+        return [
+            program for program, pids in self.started_components.items()
+            if program not in self.desktop.restarted and not pids & set(self.running(program))
+        ]
+
+    def record_processes(self, when: str) -> None:
+        """Append the session's processes (pid, parent, executable, command line) to
+        ``logs/session-processes.txt``: the evidence of which programs ran."""
+        lines = [f"== {when} ({time.strftime('%H:%M:%S')}, {self.desktop.key})"]
+        for pid in self.session_pids():
+            try:
+                exe = os.readlink(f"/proc/{pid}/exe")
+            except OSError:
+                exe = "?"
+            lines.append(f"{pid:>7} {_parent_of(pid):>7} {exe} :: {shlex.join(_cmdline(pid))}")
+        with open(self.logs / PROCESS_LOG, "a", encoding="utf-8") as log:
+            log.write("\n".join(lines) + "\n\n")
+
     # --- start / stop -------------------------------------------------------------------------------
 
     def start(self) -> None:
         """The display and the session bus, then the desktop's settings daemon, window manager and file manager."""
         compositor = self.desktop.wayland_compositor
+        if self.desktop.system_bus:
+            self._start_system_bus()
         if compositor:
             self._start_bus()
+            self._prepare()
             self._start_compositor()
         else:
             self._start_xvfb()
             self._start_bus()
+            self._prepare()
         self.spawn("settings-daemon", self.desktop.settings_daemon)
         wait_for(lambda: self.run(self.desktop.settings_ready, check=False).returncode == 0, START_TIMEOUT,
                  f"{self.desktop.settings_daemon[0]} to publish its settings")
@@ -313,6 +394,17 @@ class Session:
         if self.desktop.provides_file_manager1:
             wait_for(lambda: self.name_has_owner(FILE_MANAGER1), START_TIMEOUT, f"{FILE_MANAGER1} on the bus")
         self._take_session_exports()
+        for program in self.desktop.components:
+            self._wait_running(program)
+        self.started_components = {program: set(self.running(program)) for program in self.desktop.components}
+        self.record_processes("after start")
+
+    def _prepare(self) -> None:
+        for command in self.desktop.prepare:
+            self.run(command)
+
+    def _wait_running(self, program: str) -> None:
+        wait_for(lambda: self.running(program), START_TIMEOUT, f"the desktop's own {program} to run")
 
     def _take_session_exports(self) -> None:
         """``Desktop.session_exports`` as the session manager hands them to its applications: read
@@ -351,6 +443,17 @@ class Session:
         self.spawn("dbus", ["dbus-daemon", "--session", "--nofork", "--nopidfile", f"--address=unix:path={bus}"])
         wait_for(lambda: self._dbus("org.freedesktop.DBus.GetId") is not None, START_TIMEOUT, "the session bus")
 
+    def _start_system_bus(self) -> None:
+        """A private system bus without services (``Desktop.system_bus``), for this session only."""
+        socket = self.runtime / "system_bus"
+        if socket.exists():
+            socket.unlink()
+        config = self.runtime / "system-bus.conf"
+        config.write_text(SYSTEM_BUS_CONFIG.format(socket=socket), encoding="utf-8")
+        self.spawn("system-bus", ["dbus-daemon", f"--config-file={config}", "--nofork", "--nopidfile"])
+        self.env["DBUS_SYSTEM_BUS_ADDRESS"] = f"unix:path={socket}"
+        wait_for(socket.exists, START_TIMEOUT, "the private system bus")
+
     def _start_compositor(self) -> None:
         """The Wayland compositor (the recipe's window manager); the session moves to its Xwayland."""
         handed = self.runtime / SESSION_ENV
@@ -358,14 +461,37 @@ class Session:
             handed.unlink()
         self.spawn("window-manager", self.desktop.window_manager)
         compositor = self.desktop.window_manager[0]
-        values = wait_for(lambda: _read_session_env(handed), START_TIMEOUT, f"{compositor}'s Xwayland")
+        if self.desktop.hands_over_xwayland:
+            values = wait_for(lambda: _read_session_env(handed), START_TIMEOUT, f"{compositor}'s Xwayland")
+        else:
+            values = wait_for(self._xwayland_env, START_TIMEOUT, f"{compositor}'s Xwayland")
         self.env.update({name: values[name] for name in COMPOSITOR_VARS if name in values})
         self.display = self.env["DISPLAY"]
         self._owned = (self._owned[0], f"DISPLAY={self.display}".encode())
         self._wait_display(f"{compositor}'s Xwayland on {self.display}")
+        if not self.desktop.hands_over_xwayland:
+            # What gnome-session does with what gnome-shell hands it: D-Bus activated services
+            # (the file manager, the portals) open their windows on this Xwayland.
+            self.run(["dbus-update-activation-environment", *COMPOSITOR_VARS])
+
+    def _xwayland_env(self) -> dict[str, str] | None:
+        """DISPLAY and XAUTHORITY from the session's Xwayland command line (``Xwayland :0 ... -auth
+        FILE``) and WAYLAND_DISPLAY from the compositor's socket in the runtime directory; None
+        until both are there."""
+        sockets = sorted(path.name for path in self.runtime.glob("wayland-*") if path.is_socket())
+        for pid in self.running(XWAYLAND):
+            argv = _cmdline(pid)
+            display = next((arg for arg in argv[1:] if arg.startswith(":")), "")
+            if display and sockets:
+                values = {"DISPLAY": display, "WAYLAND_DISPLAY": sockets[0]}
+                if "-auth" in argv[:-1]:
+                    values["XAUTHORITY"] = argv[argv.index("-auth") + 1]
+                return values
+        return None
 
     def stop(self) -> None:
         """End every process of the session: TERM, then KILL what is left after 5 s."""
+        self.record_processes("before stop")
         for sig, grace in ((signal.SIGTERM, 5.0), (signal.SIGKILL, 2.0)):
             pids = self.session_pids()
             for pid in pids:
@@ -546,6 +672,16 @@ class Session:
             argv += ["-crop", f"{window.width}x{window.height}+{window.x}+{window.y}"]
         self.run([*argv, str(target)], timeout=X_TIMEOUT)
         return target
+
+    def evidence(self, name: str, window: Window | None = None, timeout: float = 10.0) -> Path:
+        """A screenshot kept as evidence of what a test saw: taken again (for ``timeout`` at most)
+        while it is one flat colour, as a window that was just mapped may not be drawn yet."""
+        deadline = time.monotonic() + timeout
+        while True:
+            shot = self.screenshot(name, window)
+            if self.image_stat(shot, "standard_deviation") > DRAWN_STDDEV or time.monotonic() > deadline:
+                return shot
+            time.sleep(1)
 
     def _rootless_screenshot(self, target: Path, window: Window | None) -> Path:
         """A rootless Xwayland's screen: ``window`` alone, else every visible window pasted where it is."""
