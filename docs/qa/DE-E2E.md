@@ -14,13 +14,13 @@ root under `/var/tmp/fork-linux-e2e/`, the read-only seed for the real-Fork tier
 
 | Desktop | Image | Integration tier | Real-Fork tier | Evidence |
 |---|---|---|---|---|
-| Xubuntu 26.04, XFCE 4.20 (xfwm4, xfsettingsd, Thunar 4.20 + its FileManager1, xfce4-terminal, garcon menu, Greybird / Greybird-dark) | `fork-linux-e2e-de-xfce:26.04` | ✅ 13/13 | ✅ 9/9 (setup 235 s from the seed, tier 292 s) | local `scripts/ci-e2e-de.sh xfce [--fork]`, 2026-10-11 |
-| Lubuntu 26.04, LXQt 2.3 (lxqt-session + openbox, pcmanfm-qt 2.3 + its FileManager1, qterminal, panel menu via GMenu, Kvantum Lubuntu / KvArcDark, Fusion palettes, Global Screen Scaling) | `fork-linux-e2e-de-lxqt:26.04` | ❌ 13/17 until [de-fixes/lxqt.md](de-fixes/lxqt.md) is applied (theme `light` and `light:dark-panel-theme`, PCManFM "Open in Fork", qterminal); ✅ 17/17 with it | ❌ stops at 03 (Fork starts dark on the light Lubuntu desktop); ✅ 9/9 with the patch (setup 294 s from the seed, tier 351 s) | local `scripts/ci-e2e-de.sh lxqt [--fork]`, 2026-10-11 |
-| Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, kcminit + kded6, Dolphin 25.12 + its FileManager1 and our service menu, Konsole, Kickoff's menu through kbuildsycoca6, Kubuntu / Kubuntu Dark / Breeze Dark global themes and colour schemes) | `fork-linux-e2e-de-kde:26.04` | ❌ 17/18: the `dark:custom-colors` theme case fails until the `theme.py` fix in [de-fixes/kde.md](de-fixes/kde.md) lands (18/18 with it) | ✅ 9/9 (setup 308 s from the seed, tier 369 s) | local `scripts/ci-e2e-de.sh kde [--fork]`, 2026-10-11 |
-| Ubuntu 26.04, GNOME 50 (mutter 50 headless Wayland + rootless Xwayland, gsd-xsettings, Nautilus 50 + python3-nautilus and its FileManager1, Ptyxis via xdg-terminal-exec, gnome-shell's app grid, Yaru / Yaru-dark + color-scheme) | `fork-linux-e2e-de-gnome:26.04` | ❌ 12/14 (3 src bugs, fixes proposed); ✅ 14/14 with the fixes | ❌ stops at 07 (Nautilus shows no "Open in Fork"); ✅ 9/9 with the fixes (setup 266-357 s from the seed, tier 325-431 s) | local `scripts/ci-e2e-de.sh gnome [--fork]`, 2026-10-11; [de-fixes/gnome.md](de-fixes/gnome.md) |
-| Ubuntu Budgie 26.04, Budgie 10.10 (labwc 0.9 headless Wayland + rootless Xwayland, budgie-daemon, Nemo 6.4 + its FileManager1 service, xfce4-terminal, the panel menus' libbudgie-appindexer, Pocillo / Pocillo-dark + the Dark theme switch, display scale and text scaling) | `fork-linux-e2e-de-budgie:26.04` | ❌ 13/14: Nemo shows no "Open in Fork" inside a folder until fix 1 in [de-fixes/budgie.md](de-fixes/budgie.md) lands; ✅ 14/14 with it | ❌ stops at 06 (the Nemo that Open In File Explorer starts inside Wine's sandbox aborts; 01-05 pass); ✅ 9/9 with both fixes (setup 256-267 s from the seed, tier 332 s) | local `scripts/ci-e2e-de.sh budgie [--fork]`, 2026-10-11 |
-| Ubuntu MATE 26.04, MATE 1.26 (marco, mate-settings-daemon, Caja 1.26 + its FileManager1 and caja-actions, mate-terminal, mate-panel's menu, Yaru-MATE light / dark and the stock Menta, BlackMATE, HighContrastInverse) | `fork-linux-e2e-de-mate:26.04` | ❌ 15/17: the `dark:blackmate` and `dark:highcontrastinverse` theme cases fail until the `theme.py` fix in [de-fixes/mate.md](de-fixes/mate.md) lands (17/17 with it) | ✅ 9/9 in both runs (setup 257 / 287 s from the seed, tier 313 / 340 s) | local `scripts/ci-e2e-de.sh mate [--fork]`, 2026-10-11 |
-| Ubuntu Cinnamon 26.04, Cinnamon 6.4 (rootless Xorg + dummy driver, muffin 6.4, csd-xsettings + csd-settings-remap, Nemo 6.4 + its FileManager1 and our Nemo actions, Xfce Terminal from Preferred Applications next to gnome-terminal + xdg-terminal-exec, the menu applet's CMenu, Yaru-cinnamon / Yaru-cinnamon-dark + Dark mode, User interface scale x text scaling) | `fork-linux-e2e-de-cinnamon:26.04` | ❌ 11/15 (4 src bugs, fixes proposed); ✅ 15/15 with the fixes | ❌ stops at 05 (gnome-terminal opens, not the user's terminal); ✅ 9/9 with the fixes (setup 264-789 s from the seed, tier 319-845 s) | local `scripts/ci-e2e-de.sh cinnamon [--fork]`, 2026-10-11; [de-fixes/cinnamon.md](de-fixes/cinnamon.md) |
+| Xubuntu 26.04, XFCE 4.20 (xfwm4, xfsettingsd, Thunar 4.20 + its FileManager1, xfce4-terminal, garcon menu, Greybird / Greybird-dark) | `fork-linux-e2e-de-xfce:26.04` | ✅ 13/13 (4 runs) | ✅ 9/9 in 3 runs (last: setup 362 s from the seed, tier 448 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the merged fixes, 2026-10-11 |
+| Ubuntu 26.04, GNOME 50 (mutter 50 headless Wayland + rootless Xwayland, gsd-xsettings, Nautilus 50 + python3-nautilus and its FileManager1, Ptyxis via xdg-terminal-exec, gnome-shell's app grid, Yaru / Yaru-dark + color-scheme) | `fork-linux-e2e-de-gnome:26.04` | ✅ 14/14 (was 12/14: Nautilus 50's extension and restart notice, display scale with Large Text); 6 runs, one failed before the context-menu retry (see GNOME facts) | ✅ 9/9 in 3 of 4 runs (last: setup 267 s, tier 336 s; was stopping at 07: no "Open in Fork" in Nautilus); the failed run is the close-button flake in the GNOME facts | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the merged fixes, 2026-10-11 |
+| Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, kcminit + kded6, Dolphin 25.12 + its FileManager1 and our service menu, Konsole, Kickoff's menu through kbuildsycoca6, Kubuntu / Kubuntu Dark / Breeze Dark global themes and colour schemes) | `fork-linux-e2e-de-kde:26.04` | ✅ 18/18 (was 17/18: a dark colour scheme named without "dark"); 4 runs | ✅ 9/9 in 2 runs (last: setup 260 s, tier 318 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the merged fixes, 2026-10-11 |
+| Ubuntu Cinnamon 26.04, Cinnamon 6.4 (rootless Xorg + dummy driver, muffin 6.4, csd-xsettings + csd-settings-remap, Nemo 6.4 + its FileManager1 and our Nemo actions, Xfce Terminal from Preferred Applications next to gnome-terminal + xdg-terminal-exec, the menu applet's CMenu, Yaru-cinnamon / Yaru-cinnamon-dark + Dark mode, User interface scale x text scaling) | `fork-linux-e2e-de-cinnamon:26.04` | ✅ 15/15 (was 11/15: Nemo's folder action, Dark mode, UI scale x text scaling, the Preferred Applications terminal); 4 runs | ✅ 9/9 in 2 runs (last: setup 280 s, tier 338 s; was stopping at 05: gnome-terminal opened, not the user's terminal) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the merged fixes, 2026-10-11 |
+| Ubuntu MATE 26.04, MATE 1.26 (marco, mate-settings-daemon, Caja 1.26 + its FileManager1 and caja-actions, mate-terminal, mate-panel's menu, Yaru-MATE light / dark and the stock Menta, BlackMATE, HighContrastInverse) | `fork-linux-e2e-de-mate:26.04` | ✅ 17/17 (was 15/17: BlackMATE, HighContrastInverse); 6 full runs, one hit the settings-daemon stall before its recovery, plus about 230 scale-case runs under load (see MATE facts) | ✅ 9/9 in 3 runs (last: setup 250 s, tier 303 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the merged fixes, 2026-10-11 |
+| Ubuntu Budgie 26.04, Budgie 10.10 (labwc 0.9 headless Wayland + rootless Xwayland, budgie-daemon, Nemo 6.4 + its FileManager1 service, xfce4-terminal, the panel menus' libbudgie-appindexer, Pocillo / Pocillo-dark + the Dark theme switch, display scale and text scaling) | `fork-linux-e2e-de-budgie:26.04` | ✅ 14/14 (was 13/14: Nemo's folder action); 4 runs | ✅ 9/9 in 2 runs (last: setup 323 s, tier 387 s; was stopping at 06: the Nemo started inside Wine's sandbox aborted) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the merged fixes, 2026-10-11 |
+| Lubuntu 26.04, LXQt 2.3 (lxqt-session + openbox, pcmanfm-qt 2.3 + its FileManager1, qterminal, panel menu via GMenu, Kvantum Lubuntu / KvArcDark, Fusion palettes, Global Screen Scaling) | `fork-linux-e2e-de-lxqt:26.04` | ✅ 17/17 (was 13/17: the theme read from GNOME's keys, no PCManFM action, qterminal by name); 4 runs | ✅ 9/9 in 2 runs (last: setup 373 s, tier 439 s; was stopping at 03: Fork started dark) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the merged fixes, 2026-10-11 |
 
 Each desktop is one `docker/Dockerfile.e2e.de.<desktop>` plus one entry in
 `tests/e2e_de/desktops.py` (see "Adding a desktop").
@@ -47,6 +47,11 @@ Each desktop is one `docker/Dockerfile.e2e.de.<desktop>` plus one entry in
 - Logs: `logs/e2e-de/<NAME>.log` (pytest) and `logs/e2e-de/<NAME>/` (text logs from the scratch
   root: the session's daemons, fork-linux's logs, the setup log; never `drive_c`, never images).
   Screenshots stay in `/var/tmp/fork-linux-e2e/<NAME>/root/shots/` (they show Fork's logo).
+- CI: `check.yml` job `e2e-de` runs every desktop's integration tier on every pull request (a
+  7-cell matrix, `fail-fast: false`, images built with the Actions cache, `FL_CI_DOCKER_CACHE=gha`);
+  `e2e-wine.yml` job `e2e-de` runs every desktop's real-Fork tier weekly, on demand and on
+  release-branch PRs, with fresh downloads (no seed, nothing cached). Both upload `logs/e2e-de/`
+  only. Locally `scripts/ci-pipeline.sh` runs the integration matrix as its `e2e-de` stage.
 
 ## The session (`tests/e2e_de/dekit.py`)
 
@@ -143,10 +148,14 @@ with `Theme=1` and a dark window;
   `~/.config/kdeglobals` and win over the global theme's (Kubuntu Dark + Breeze Light is light);
   applying a global theme takes them back out.
 - Plasma calls a colour scheme dark by its colours, not its name (xdg-desktop-portal-kde: the grey
-  of `[Colors:Window] BackgroundNormal` below 192). fork-linux reads only the names, so a dark
-  scheme named without "dark" (Nordic, Dracula, a user's own; the tier's "Nightfall" is Breeze
-  Dark's colours under another name) gives a light Fork: the `dark:custom-colors` case fails
-  until the fix proposed in [de-fixes/kde.md](de-fixes/kde.md) lands.
+  of `[Colors:Window] BackgroundNormal` below 192; measured in the image: `191,191,191` is dark,
+  `192,192,192` light, Breeze Dark `32,35,38` dark, Breeze Light `239,240,241` light). fork-linux
+  read only the names, so a dark scheme named without "dark" (Nordic, Dracula, a user's own; the
+  tier's "Nightfall" is Breeze Dark's colours under another name) gave a light Fork. `theme._kde`
+  now asks that colour first (`kreadconfig6` / `kreadconfig5`, so `~/.config/kdedefaults` counts),
+  then the `ColorScheme` / `LookAndFeelPackage` names, then the kdeglobals file; a session where
+  no scheme was ever applied has no `[Colors:Window]` and keeps the name-based answer. The
+  `dark:custom-colors` case checks it.
 - Scale on X11: Display Configuration's global scale writes kdeglobals `[KScreen] ScaleFactor` /
   `ScreenScaleFactors` and kcmfonts `forceFontDPI` (96 x scale) and publishes `Xft.dpi`; Text &
   Fonts' "Force font DPI" writes `forceFontDPI` and publishes `Xft.dpi` the same way (libkrdb, as
@@ -190,8 +199,14 @@ with `Theme=1` and a dark window;
   another Qt style (Fusion), the palette's `window_color` colours the applications.
   `palette_override` changes neither. LXQt's own theme (`theme=dark`) styles only the panel and
   the desktop. All of this was checked with screenshots of a pcmanfm-qt window. GNOME's
-  `gtk-theme` on Lubuntu is `Arc-Darker` (dark header bars only), which today's fork-linux reads
-  as "dark" (see [de-fixes/lxqt.md](de-fixes/lxqt.md)). The cases are `light` (Lubuntu as
+  `gtk-theme` on Lubuntu is `Arc-Darker` (dark header bars only), which fork-linux used to fall
+  back to, so Fork started dark on the light Lubuntu desktop. `theme._lxqt` now reads what colours
+  the applications: under the `kvantum` style the Kvantum theme's `[GeneralColors] window.color`
+  (the user's copy in `~/.config/Kvantum`, then `$XDG_DATA_DIRS/Kvantum`, then the theme's name;
+  Kvantum's built-in `Default` is light), under any other style the palette's `window_color`,
+  else LXQt's `theme=`; `lxqt.conf` is merged from `$XDG_CONFIG_HOME` over each of
+  `$XDG_CONFIG_DIRS` key by key, as LXQt does, and keys before the first section belong to
+  `[General]` (QSettings). The cases are `light` (Lubuntu as
   installed), `light:chosen-in-the-dialogs`, `dark` (Kvantum `KvArcDark` + LXQt theme `dark`),
   `dark:kvantum-dark-theme`, `dark:fusion-dark-palette` and `light:dark-panel-theme`.
 - Scale: LXQt's setting is Session Settings > Global Screen Scaling. It writes `QT_SCALE_FACTOR`
@@ -206,12 +221,16 @@ with `Theme=1` and a dark window;
   (`gir1.2-gmenu-3.0`), the XDG menu specification that the panel's libqtxdg implements: libqtxdg
   has no Python binding.
 - PCManFM-Qt reads FileManager-Actions entries (`~/.local/share/file-manager/actions`) whenever it
-  builds a context menu, so it needs no restart. In the folder's context menu, "Open in Fork"
+  builds a context menu, so it needs no restart. fork-linux did not know PCManFM and installed no
+  "Open in Fork" on Lubuntu; `pcmanfm` (programs `pcmanfm-qt` / `pcmanfm`) is now a file manager of
+  `desktop install --file-managers` that gets the same FileManager-Actions entry as Caja. In the folder's context menu, "Open in Fork"
   sits just above Folder Properties: Menu, Up, Up, Return. `pcmanfm-qt DIR` hands the folder to
   the running desktop instance, which owns `org.freedesktop.FileManager1`.
 - Terminal: Debian's `x-terminal-emulator` alternative points to qterminal. A qterminal started
-  through it is named `x-terminal-emul` in `/proc`, which is how the tier sees that fork-linux
-  did not pick qterminal by name (see de-fixes/lxqt.md, problem 3). Lubuntu's global shortcuts
+  through it is named `x-terminal-emul` in `/proc`, which is how the tier saw that fork-linux did
+  not pick qterminal by name (another terminal earlier in its list would have won, and
+  distributions without the alternative found none). qterminal is now a known terminal
+  (`--workdir`) and LXQt's own (`DESKTOP_TERMINALS["LXQT"]`). Lubuntu's global shortcuts
   bind Ctrl+Alt+T to qterminal, so as on XFCE the desktop takes Fork's "Open In Shell" key, and
   the tier uses Fork's menu.
 - `xdg-open` on LXQt runs `qtxdg-mat open`, which follows `xdg-mime default` (`mimeapps.list`) for
@@ -238,6 +257,18 @@ with `Theme=1` and a dark window;
   for the whole screen every visible window pasted at its position on black.
 - mutter frames only decorated X windows: Fork draws its own title bar and stays unframed
   (`frames_undecorated=False`); it is still managed (mutter's `_NET_SUPPORTING_WM_CHECK`).
+- Flaky spot, seen once in four GNOME real-Fork runs of the final tree: step 08 clicked Fork's
+  close button right after step 07 had handed the third repository over, and Fork was still
+  running 60 s later (the screenshot after 07 shows Fork with two tabs, Nautilus over it; no
+  dialog was recorded). `forkui.close_fork` now clicks the button again every 20 s while the main
+  window is still shown, as a user would, notes each retry in `logs/close-fork.txt` and keeps a
+  `close-timeout` screenshot and X report if Fork still does not exit.
+- Flaky spot, seen once in six GNOME integration runs of the final tree (before the retry): the "Open in Fork"
+  keys (Menu, Up, Up, Return) reached a Nautilus window that had just been mapped and showed its
+  folder, and nothing happened (no menu, no new window, fork-linux never started).
+  `Session.context_action` (both tiers) now presses Escape and the keys again, up to three tries,
+  as long as no new window appeared (so no other menu item ran), and notes each retry in
+  `logs/context-menu.txt`.
 - `XDG_CURRENT_DESKTOP=ubuntu:GNOME`: ubuntu-settings' gschema overrides (Yaru) are keyed on
   `ubuntu`. xdg-utils recognises GNOME only by `GNOME*`, `GNOME_DESKTOP_SESSION_ID` (gnome-session
   sets it to `this-is-deprecated`) or gnome-session's `org.gnome.SessionManager`; the recipe
@@ -246,12 +277,16 @@ with `Theme=1` and a dark window;
 - Scale: Settings > Displays > Scale is mutter's monitor configuration
   (`org.gnome.Mutter.DisplayConfig.ApplyMonitorsConfig`, `~/.config/monitors.xml`), not
   `scaling-factor` (0); gsd-xsettings publishes `Xft.dpi` = 96 x display scale x text scaling
-  (100 % 96, 200 % 192, Large Text 120, both 240). fork-linux asks GNOME's gsettings first and
-  reads 200 % + Large Text as 125 % ([de-fixes/gnome.md](de-fixes/gnome.md), fix 3).
-- Nautilus 50 loads nautilus-python extensions against API 4.1 only (`Nautilus-4.1.typelib`);
-  fork-linux's extension asks for 4.0 / 3.0 and is never loaded (fix 1). Nautilus loads
-  extensions only when it starts, and fork-linux does not say so (fix 2); the tier reinstalls
-  with a Files window open and expects the notice, then runs `nautilus -q`.
+  (100 % 96, 200 % 192, Large Text 120, both 240). fork-linux asked GNOME's gsettings first and
+  read 200 % + Large Text as 125 %; GNOME's own probe is now `Xft.dpi` (`DESKTOP_PROBES["gnome"]`),
+  with the gsettings as the fallback when there is no `Xft.dpi`.
+- Nautilus 50 loads nautilus-python extensions against API 4.1 only (`Nautilus-4.1.typelib`) and
+  has loaded it before any extension; fork-linux's extension asked for 4.0, then 3.0, both raised
+  `ValueError` and it never loaded. It now requires 4.1, 4.0 or 3.0, the first that works, else
+  imports the namespace Nautilus loaded. Nautilus loads extensions only when it starts: writing a
+  changed extension or removing it while `nautilus` runs now prints `NAUTILUS_RESTART` ("run
+  'nautilus -q'"); the tier reinstalls with a Files window open, expects the notice, then runs
+  `nautilus -q`.
 - Nautilus's D-Bus service (`nautilus --gapplication-service`) owns FileManager1 and quits when
   idle, so FileManager1 is often only activatable. Its folder context menu opens with the Menu
   key (Shift+F10 does nothing); "Open in Fork" is the second item from the bottom.
@@ -305,9 +340,13 @@ with `Theme=1` and a dark window;
 - Nemo's D-Bus service (`nemo --no-default-window`) quits about 10 s after its last window, so
   `org.freedesktop.FileManager1` is usually only activatable. A Nemo that `xdg-open` starts from
   a program Wine started (no systemd user manager in the container) inherits Wine's seccomp
-  filter, its glycin image loaders are killed with SIGSYS and it aborts: see fix 2 in
-  [de-fixes/budgie.md](de-fixes/budgie.md). Nemo shows our action only on a selected item
-  (`Selection=s`), not in a folder's own menu: fix 1 there.
+  filter, its glycin image loaders are killed with SIGSYS and it aborts. `fork-linux-host open`
+  of a folder therefore asks `FileManager1.ShowFolders` first (gdbus, else dbus-send, shared with
+  `reveal`): the session bus starts the file manager outside Wine's process tree; without a
+  FileManager1 service it falls back to `xdg-open`. Nemo shows an action with `Selection=s` only on
+  a selected item, not in a folder's own menu: fork-linux installs a second Nemo action,
+  `fork-linux-open-folder.nemo_action` (kind `nemo-folder`, `Selection=none`, `%P`, also
+  system-wide), next to the item action.
 - Nemo orders the actions of its context menu by the order it loaded their folders (system ones
   first, the user's last, but a folder that changes while Nemo runs moves to the end), so "Open
   in Fork" is the third or the fifth item of a Budgie folder's menu. The recipe's keys select it
@@ -317,9 +356,10 @@ with `Theme=1` and a dark window;
   shows no FileManager1 activation; not seen again, not root-caused): `forkui.click` now moves
   the pointer, waits 0.3 s and then clicks, as a hand does, instead of pressing in the same
   instant as the move.
-- Ubuntu Budgie's terminal is xfce4-terminal (`org.gnome.desktop.default-applications.terminal`,
-  labwc's Ctrl+Alt+T); fork-linux reaches it because no terminal earlier in its list is
-  installed (it does not read Budgie's setting; see de-fixes/budgie.md).
+- Ubuntu Budgie's terminal is xfce4-terminal (`org.gnome.desktop.default-applications.terminal`
+  `exec` in its `:Budgie` gschema override, also labwc's Ctrl+Alt+T). fork-linux reads that key
+  on Budgie before xdg-terminal-exec (`DESKTOP_TERMINAL_SCHEMAS`), so a Budgie user who also has
+  GNOME's terminal still gets Budgie's.
 
 ## MATE facts the recipe relies on
 
@@ -352,14 +392,36 @@ with `Theme=1` and a dark window;
   was busy with other real-Fork runs; none in about 7000 stress steps later. During one stall
   Xvfb sat idle in `epoll_wait`, marco's main thread waited in `poll` and its two glycin image
   loaders (`glycin-svg`, `glycin-image-rs`, the loaders gdk-pixbuf 2.44 uses) waited on a futex:
-  marco was holding a server grab while it waited for an image. The cause inside marco or glycin
-  is not known (a faked low `MemAvailable`, a CPU limit and a memory limit did not bring it
-  back). The tier waits it out: X queries in `dekit` (xdotool, xwininfo, xprop, screenshots) may
-  take up to `X_TIMEOUT` (300 s) instead of failing after 30 s. fork-linux is not involved.
+  it looked like marco holding a server grab while it waited for an image (a faked low
+  `MemAvailable`, a CPU limit and a memory limit did not bring it back). X queries in `dekit`
+  (xdotool, xwininfo, xprop, screenshots) may take up to `X_TIMEOUT` (300 s) instead of failing
+  after 30 s. fork-linux is not involved.
+  The integrator's stress runs (6 to 8 MATE sessions at once, `-k scale`, next to real-Fork runs
+  of other desktops: 5 stalls in about 230 runs) found the client that holds the server: right
+  after a font DPI or window-scaling change, with `xrdb -query` waiting for the server for more
+  than 300 s, ending the new marco changed nothing and ending **mate-settings-daemon** let the
+  server answer at once. The daemon holds a server grab while it updates `Xft.dpi` and does not
+  let go (its main thread idle in `poll`). The recipe therefore waits for each scale case's
+  `Xft.dpi` with `_mate_xft_dpi`, which ends a daemon that keeps the server from answering `xrdb`
+  (the session starts it again, see below); `_mate_window_scaling` does the same when no window
+  manager answers 10 s after the change, and starts marco again if that is not enough. Each such
+  recovery is noted in `logs/settings-daemon-stalls.txt`.
+- mate-settings-daemon segfaulted twice in those stress runs (kernel log: a NULL read at 0x78 in
+  `libmate-desktop-2.so.17`), each time right after a window-scaling change, and `Xft.dpi` then
+  stayed at its old value. mate-session restarts it (`X-MATE-AutoRestart=true` in its autostart
+  entry), and so does the recipe's settings daemon command (a restart loop that says so in
+  `logs/settings-daemon.log`).
+- mate-settings-daemon republishes `Xft.dpi` asynchronously: under load a scale case once asked
+  fork-linux while the previous case's 144 was still published (answer 150 for `font-dpi-192`).
+  Every scale case (and the reset) now waits until `xrdb` shows the case's `Xft.dpi` before
+  fork-linux is asked.
 - MATE's own dark theme BlackMATE and HighContrastInverse do not say "dark" in their names, and
-  `org.mate.interface` has no color-scheme key: fork-linux reads them as light (the two
-  failing theme cases; the fix is proposed in [de-fixes/mate.md](de-fixes/mate.md)). The
-  real-Fork tier's dark step uses Yaru-MATE-dark, which fork-linux reads correctly.
+  `org.mate.interface` has no color-scheme key: fork-linux read them as light. `theme.DARK_THEMES`
+  now names them (case-insensitive, for every probe that classifies a name; the other mate-themes
+  were checked against their `index.theme` comments: Blue-Submarine and Green-Submarine have dark
+  panels but light windows, `ContrastHigh` is the light `HighContrast`), and the
+  `dark:blackmate` / `dark:highcontrastinverse` cases check it. The real-Fork tier's dark step
+  uses Yaru-MATE-dark.
 - Caja (`caja --no-default-window`, as mate-session and its FileManager1 D-Bus service start
   it) draws the desktop and owns `org.freedesktop.FileManager1`. caja-actions puts every
   FileManager-Actions entry in a "Caja-Actions actions" submenu of the folder's context menu
@@ -398,8 +460,13 @@ with `Theme=1` and a dark window;
   1.5, 240 for scale 2 with text 1.25); each scale case waits for that value.
 - Dark mode: Themes > Settings > Dark mode (and the Light / Dark buttons of the simplified Themes
   page) is `org.x.apps.portal color-scheme`, what xdg-desktop-portal-xapp hands applications;
-  `org.cinnamon.desktop.interface` has no `color-scheme` (fix 2 of
-  [de-fixes/cinnamon.md](de-fixes/cinnamon.md)).
+  `org.cinnamon.desktop.interface` has no `color-scheme`. fork-linux asked only the theme name, so
+  a light theme with "Prefer dark mode" was light; `theme._cinnamon` now asks `org.x.apps.portal
+  color-scheme` first (dconf, then gsettings; `default` falls through to the theme name).
+- Scale: csd-settings-remap copies the text scaling factor, but not the UI scale, into
+  `org.gnome.desktop.interface`, so asking GNOME's keys first read scale 2 with text 1.25 as 125 %
+  while every X client got 240 DPI; Cinnamon's own probe is now `Xft.dpi`
+  (`DESKTOP_PROBES["cinnamon"]`).
 - muffin names itself "Mutter (Muffin)" and, like mutter, frames only decorated windows: Fork's
   undecorated main window stays a child of the root window (`frames_undecorated=False`).
   Started without a user action, a relaunched Fork may open behind the window the user used last
@@ -409,7 +476,7 @@ with `Theme=1` and a dark window;
   nemo-desktop draws the desktop and every Nemo window is a new or D-Bus activated process. Nemo
   watches its action folders, so actions installed while it runs show at once (no restart). An
   action with `Selection=s` is listed only for a selected item; the folder a window shows needs a
-  `Selection=none` action (fix 1). The Menu key opens the context menu at the pointer; the folder
+  `Selection=none` action (`nemo-folder`, see Budgie). The Menu key opens the context menu at the pointer; the folder
   menu is Create New Folder, Create New Document, the folder actions (ours), Open in Terminal, ...
 - The terminal is System Settings > Preferred Applications > Terminal
   (`org.cinnamon.desktop.default-applications.terminal exec`, the chosen terminal's desktop-entry
@@ -417,15 +484,22 @@ with `Theme=1` and a dark window;
   gnome-terminal once (gnome-terminal then writes itself into `~/.config/x-cinnamon-xdg-terminals.list`
   and `xdg-terminals.list`, which xdg-terminal-exec reads) and picked Xfce Terminal there. Before
   gnome-terminal has run, xdg-terminal-exec 0.14 picks `org.gnome.Terminal.Preferences.desktop`
-  (`gnome-terminal --preferences`, no terminal) or whichever terminal entry it finds first (fix 4).
+  (`gnome-terminal --preferences`, no terminal) or whichever terminal entry it finds first, and
+  afterwards gnome-terminal, never the user's choice. `fork-linux-host terminal` now reads the
+  Preferred Applications key on `X-Cinnamon` before xdg-terminal-exec (on the host inside
+  Flatpak), drops desktop-entry field codes, and uses it when it is installed: a known terminal
+  gets its own directory arguments, another one runs as stored, in the directory. Without an
+  answer `X-Cinnamon` prefers gnome-terminal in the generic order.
 - The container has no systemd user manager, so `fork-linux-handoff` runs the host helper directly
   inside Wine's process tree (`NoNewPrivs: 1`, `Seccomp: 2`). A GTK 3 program started from there
   aborts when gdk-pixbuf's glycin loader is used for a raster icon (Tilix: status 134,
   `ensure_surface_for_gicon: assertion failed ... Loader process exited early`); programs whose
   window comes from a process the session bus starts (gnome-terminal-server, a FileManager1
   service) and xfce4-terminal are not affected. This is why the recipe's user picked Xfce Terminal
-  rather than Tilix, and why fix 5 opens folders through FileManager1. On a desktop with a systemd
-  user session the hand-off runs the helper as a transient unit outside Wine's tree.
+  rather than Tilix, and why folders open through FileManager1 (see Budgie). On a desktop with a
+  systemd user session the hand-off runs the helper as a transient unit outside Wine's tree, so
+  this concerns only systems without a systemd user manager (a terminal there should be one whose
+  window comes from a D-Bus service, or xfce4-terminal).
 
 ## Adding a desktop
 
@@ -442,6 +516,8 @@ with `Theme=1` and a dark window;
    its applications; `scale_restarts_session` restarts the session for each scale case;
    theme cases beyond `light` / `dark` are named `light:<how>` / `dark:<how>`; `menu_folder` is
    the menu folder that lists our entry.
-3. `tests/test_docker.py` `EXPECTED`; `tests/test_e2e_de_recipes.py` keeps images, recipes and
-   checkers in step on its own.
+3. `tests/test_docker.py` `EXPECTED`; the desktop in the `desktop` matrix of the `e2e-de` jobs
+   of `.github/workflows/check.yml` and `e2e-wine.yml` (and in `DESKTOPS` of
+   `tests/test_workflows.py`); `tests/test_e2e_de_recipes.py` keeps images, recipes, checkers and
+   both CI matrices in step on its own.
 4. Run both tiers, record the result in the matrix above and in `docs/COMPATIBILITY.md`.

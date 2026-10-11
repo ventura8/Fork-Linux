@@ -30,20 +30,22 @@ user) passed in a container of that distribution; it does not start Fork. The re
 fork-linux installed from the release tarball inside a real desktop session in a container
 (`scripts/ci-e2e-de.sh`, [docs/qa/DE-E2E.md](qa/DE-E2E.md)): menu entry, file-manager action,
 theme and scale detection, terminal, reveal, default applications; the real-Fork column sets up
-the official Fork 2.23.2 and drives it under the desktop's window manager.
+the official Fork 2.23.2 and drives it under the desktop's window manager. CI runs both tiers for
+every desktop (`check.yml` and `e2e-wine.yml`, job `e2e-de`).
 
 | Desktop (container) | Integration | Real Fork | Evidence |
 |---|---|---|---|
-| Xubuntu 26.04, XFCE 4.20 (xfwm4, Thunar, xfce4-terminal) | ✅ 13/13 | ✅ 9/9 | local `scripts/ci-e2e-de.sh xfce [--fork]`, 2026-10-11 |
-| Lubuntu 26.04, LXQt 2.3 (openbox, pcmanfm-qt, qterminal, Kvantum) | ❌ 13/17 (4 src bugs, fixes proposed); ✅ 17/17 with the fixes | ❌ stops at 03 (Fork starts dark); ✅ 9/9 with the fixes | local `scripts/ci-e2e-de.sh lxqt [--fork]`, 2026-10-11; [qa/de-fixes/lxqt.md](qa/de-fixes/lxqt.md) |
-| Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, Dolphin, Konsole) | ❌ 17/18 (a dark colour scheme named without "dark" waits for the fix in [qa/de-fixes/kde.md](qa/de-fixes/kde.md)) | ✅ 9/9 | local `scripts/ci-e2e-de.sh kde [--fork]`, 2026-10-11 |
-| Ubuntu 26.04, GNOME 50 (mutter + Xwayland, Nautilus, Ptyxis) | ❌ 12/14 (3 src bugs, fixes proposed); ✅ 14/14 with the fixes | ❌ stops at 07 (Nautilus shows no "Open in Fork"); ✅ 9/9 with the fixes | local `scripts/ci-e2e-de.sh gnome [--fork]`, 2026-10-11; [qa/de-fixes/gnome.md](qa/de-fixes/gnome.md) |
-| Ubuntu Budgie 26.04, Budgie 10.10 (labwc + Xwayland, Nemo, xfce4-terminal) | ❌ 13/14 (Nemo's folder menu, fix proposed); ✅ 14/14 with the fix | ❌ stops at 06 (folder opened from Fork without a systemd user manager); ✅ 9/9 with the fixes | local `scripts/ci-e2e-de.sh budgie [--fork]`, 2026-10-11; [qa/de-fixes/budgie.md](qa/de-fixes/budgie.md) |
-| Ubuntu MATE 26.04, MATE 1.26 (marco, Caja + caja-actions, mate-terminal) | ❌ 15/17 (2 theme cases wait for the fix in [qa/de-fixes/mate.md](qa/de-fixes/mate.md)) | ✅ 9/9 | local `scripts/ci-e2e-de.sh mate [--fork]`, 2026-10-11 |
-| Ubuntu Cinnamon 26.04, Cinnamon 6.4 (muffin on Xorg, Nemo, Preferred Applications' terminal) | ❌ 11/15 (4 src bugs, fixes proposed); ✅ 15/15 with the fixes | ❌ stops at 05 (the user's terminal does not open); ✅ 9/9 with the fixes | local `scripts/ci-e2e-de.sh cinnamon [--fork]`, 2026-10-11; [qa/de-fixes/cinnamon.md](qa/de-fixes/cinnamon.md) |
+| Xubuntu 26.04, XFCE 4.20 (xfwm4, Thunar, xfce4-terminal) | ✅ 13/13 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]`, 2026-10-11 |
+| Ubuntu 26.04, GNOME 50 (mutter + Xwayland, Nautilus, Ptyxis) | ✅ 14/14 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]`, 2026-10-11 |
+| Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, Dolphin, Konsole) | ✅ 18/18 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]`, 2026-10-11 |
+| Ubuntu Cinnamon 26.04, Cinnamon 6.4 (muffin on Xorg, Nemo, Preferred Applications' terminal) | ✅ 15/15 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]`, 2026-10-11 |
+| Ubuntu MATE 26.04, MATE 1.26 (marco, Caja + caja-actions, mate-terminal) | ✅ 17/17 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]`, 2026-10-11 |
+| Ubuntu Budgie 26.04, Budgie 10.10 (labwc + Xwayland, Nemo, xfce4-terminal) | ✅ 14/14 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]`, 2026-10-11 |
+| Lubuntu 26.04, LXQt 2.3 (openbox, pcmanfm-qt, qterminal, Kvantum) | ✅ 17/17 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]`, 2026-10-11 |
 
-Known desktop behaviour (not a fork-linux bug): on Xubuntu, XFCE's own Ctrl+Alt+T shortcut
-shadows Fork's "Open In Shell" key; Fork's Repository menu and Shell button work.
+Known desktop behaviour (not a fork-linux bug): on Xubuntu and Lubuntu, the desktop's own
+Ctrl+Alt+T shortcut shadows Fork's "Open In Shell" key; Fork's Repository menu and Shell button
+work. Not covered: Plasma on Wayland (Kubuntu 26.04's default session).
 
 ## Real Fork under Wine
 
