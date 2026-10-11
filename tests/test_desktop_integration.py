@@ -897,8 +897,9 @@ def _never() -> list[str]:
 
 
 def test_kinds_rejects_unknown_names() -> None:
+    names = di._names("nautilus,konqueror")
     with pytest.raises(UsageError, match="unknown file manager") as caught:
-        di._kinds(di._names("nautilus,konqueror"), _never)
+        di._kinds(names, _never)
     assert caught.value.hint.startswith("choose from: auto, all, none,")
 
 
@@ -917,8 +918,9 @@ def test_kinds_auto_uses_detection(spec: str, kinds: list[str]) -> None:
 
 
 def test_kinds_auto_rejects_unknown_names_too() -> None:
+    names = di._names("auto,konqueror")
     with pytest.raises(UsageError, match="konqueror"):
-        di._kinds(di._names("auto,konqueror"), lambda: [])
+        di._kinds(names, lambda: [])
 
 
 # --- file manager detection ------------------------------------------------------------------------------

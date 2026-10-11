@@ -207,7 +207,8 @@ def test_pytest_mode_mounts_env_and_logs(box: Box) -> None:
             "FL_E2E_FOO=bar",
         ]
     )
-    assert "-e" not in opts and "-v" not in opts
+    assert "-e" not in opts
+    assert "-v" not in opts
     assert all(not value.startswith(("DISPLAY", "XAUTHORITY", "SECRET")) for value in _opts(opts, "--env"))
     # The lock descriptors never reach docker (and so never a container process).
     for row in box.calls("docker"):
@@ -235,7 +236,8 @@ def test_no_mount_source_lies_in_a_home_except_the_read_only_tree(box: Box) -> N
     for volume in _opts(argv, "--volume"):
         source, target, mode = volume.split(":")
         for home in homes:
-            assert source != home and not source.startswith(home + "/")
+            assert source != home
+            assert not source.startswith(home + "/")
         if mode == "rw":
             assert target == "/e2e"
             assert source == str(box.scratch)
@@ -326,7 +328,8 @@ def test_scratch_refusals(box: Box, scratch: str, message: str) -> None:
     precious.write_text("keep", encoding="utf-8")
     result = box.run("--name", NAME, "pytest", FL_E2E_SCRATCH=scratch.format(home=box.home, tmp=box.tmp))
     assert result.returncode == 2, result.stdout + result.stderr
-    assert "refusing" in result.stderr and message in result.stderr
+    assert "refusing" in result.stderr
+    assert message in result.stderr
     assert box.docker_runs() == []
     assert precious.read_text(encoding="utf-8") == "keep"
 
@@ -436,7 +439,8 @@ def test_all_slots_busy_waits_on_one(box: Box) -> None:
     assert result.returncode == 0, result.stderr
     flocks = [(row["lock"], row["nonblocking"]) for row in box.calls("flock")]
     assert flocks[:3] == [(f"name-{NAME}", 1), ("slot-1", 1), ("slot-2", 1)]
-    assert flocks[3][1] == 0 and flocks[3][0] in ("slot-1", "slot-2")
+    assert flocks[3][1] == 0
+    assert flocks[3][0] in ("slot-1", "slot-2")
     assert "all 2 E2E slots are busy" in result.stdout
     assert len(box.docker_runs()) == 1
 
@@ -530,11 +534,13 @@ def test_ci_e2e_wine_uses_a_fresh_wiped_scratch_and_no_seed(box: Box) -> None:
     argv = argv[:image]
     volumes = _opts(argv, "-v")
     assert volumes[0] == f"{box.wt.resolve()}:/src:ro"
-    assert volumes[1].startswith(f"{tmpdir}/fl-e2e-wine.") and volumes[1].endswith(":/e2e:rw")
+    assert volumes[1].startswith(f"{tmpdir}/fl-e2e-wine.")
+    assert volumes[1].endswith(":/e2e:rw")
     assert len(volumes) == 2
     assert "FL_E2E_FORK_VERSION" in _opts(argv, "-e")
     assert not any(value.endswith(":/seed:ro") or value.startswith("FL_E2E_SEED") for value in argv)
-    assert "--init" in argv and "--rm" in argv
+    assert "--init" in argv
+    assert "--rm" in argv
     assert list(tmpdir.iterdir()) == [], "the scratch root is deleted afterwards"
     logs = box.wt / "logs" / "e2e-wine"
     assert (logs / "root" / "logs" / "launch.log").is_file()
@@ -594,6 +600,7 @@ def test_both_runners_share_the_library() -> None:
     for rel in ("scripts/e2e-docker.sh", "scripts/ci-e2e-wine.sh"):
         text = (REPO / rel).read_text(encoding="utf-8")
         assert '. "${ROOT}/scripts/lib-e2e-docker.sh"' in text, rel
-        assert "fl_e2e_check_dir" in text and "fl_e2e_acquire_slot" in text and "fl_e2e_copy_logs" in text
+        for function in ("fl_e2e_check_dir", "fl_e2e_acquire_slot", "fl_e2e_copy_logs"):
+            assert function in text, (rel, function)
         assert "--privileged" not in text.replace("never --privileged", "")
         assert "/tmp/.X11-unix" not in text
