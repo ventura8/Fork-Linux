@@ -236,9 +236,12 @@ def test_logs_show_and_follow(closed: Any) -> None:
     Scenarios: D-LOGS-VIEW
     """
     e2e = closed
-    shown = e2e.cli("logs", "--all").stdout
-    assert "Start IPC server" in shown, "Fork's own fork.log is part of --all"
     fork_log = e2e.fork.local_dir / "Fork" / "logs" / "fork.log"
+    shown = e2e.cli("logs", "--all").stdout
+    # --all shows the end of each log: fork.log's header and its last line.
+    last = fork_log.read_text(encoding="utf-8", errors="replace").strip().splitlines()[-1]
+    assert f"==> fork: {fork_log} <==" in shown, "Fork's own fork.log is part of --all"
+    assert last in shown
     follow = subprocess.Popen([sys.executable, "-m", "fork_linux", "logs", "--fork", "--follow"], env=e2e.env,
                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, start_new_session=True)
     try:

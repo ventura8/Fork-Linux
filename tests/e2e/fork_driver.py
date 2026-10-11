@@ -438,6 +438,25 @@ class Fork:
         """``AppData\\Local`` of the prefix's user."""
         return self.prefix / "drive_c" / "users" / self.user / "AppData" / "Local"
 
+    def forget_tabs(self) -> None:
+        """Empty the tab lists of Fork's workspaces, so the next start opens no old repositories.
+
+        Fork reopens every repository tab at each start and refreshes (and fetches) them all in the
+        background; a tier that left dozens of tabs open slowed Git Flow's initialization past a minute.
+        Fork must be closed (it writes its settings when it exits).
+        """
+        if not self.settings_path().is_file():
+            return
+        workspaces = self.settings().get("Workspaces", {}).get("All", [])
+        if not any(workspace.get("Repositories") for workspace in workspaces):
+            return
+        for workspace in workspaces:
+            workspace["Repositories"] = []
+            workspace["ActiveRepository"] = None
+        result = self.cli("settings", "set", "Workspaces.All", json.dumps(workspaces))
+        if result.returncode != 0:
+            raise DriverError(f"settings set Workspaces.All failed: {result.stderr.strip()}")
+
     def settings_path(self) -> Path:
         """Fork's ``settings.json``."""
         return self.local_dir / "Fork" / "settings.json"

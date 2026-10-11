@@ -345,8 +345,10 @@ def _stop_all_wine(env: E2E) -> None:
 
 @pytest.fixture(scope="module")
 def ui(installed: E2E) -> Iterator[ForkUI]:
-    """One Fork session for a module's UI tests (each opens its repositories as tabs); closed after."""
+    """One Fork session for a module's UI tests (each opens its repositories as tabs, starting from none);
+    closed after."""
     installed.fork.ensure_closed()
+    installed.fork.forget_tabs()
     yield ForkUI(installed.fork)
     installed.fork.ensure_closed()
 

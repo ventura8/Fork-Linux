@@ -73,6 +73,7 @@ def bridged(installed: Any) -> Iterator[tuple[ForkUI, dict[str, str], Path]]:
     meld.chmod(0o755)
     extra = {"PATH": f"{stubs}:{installed.env['PATH']}"}
     installed.fork.ensure_closed()
+    installed.fork.forget_tabs()
     installed.cli("git-bridge", "enable")
     yield ForkUI(installed.fork), extra, log
     installed.fork.ensure_closed()

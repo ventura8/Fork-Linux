@@ -81,6 +81,7 @@ def desk(installed: Any) -> Iterator[tuple[ForkUI, Path, dict[str, str]]]:
         "FORK_LINUX_HANDOFF": "direct",
     }
     installed.fork.ensure_closed()
+    installed.fork.forget_tabs()
     ui = ForkUI(installed.fork)
     ui.fork.start(make_repo(installed.repos / "desk-first", {".gitignore": "*.tmp\n"}), extra=extra)
     yield ui, log, extra
