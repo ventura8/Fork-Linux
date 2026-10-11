@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import argparse
 import json
 import os
@@ -372,6 +373,19 @@ def test_run_steps_selection(ctx: Ctx, rec: Recorder) -> None:
         bootstrap.run_steps(ctx, listed, only=["zzz"])
     with pytest.raises(UsageError, match="yyy"):
         bootstrap.run_steps(ctx, listed, from_step="yyy")
+
+
+def test_a_selection_that_downloads_keeps_the_consent_step(ctx: Ctx, rec: Recorder) -> None:
+    consent = rec.step("consent")
+    download = dataclasses.replace(rec.step("download"), needs_network=True)
+    listed = [rec.step("pre", always=True), consent, rec.step("local"), download, rec.step("late")]
+    # Fork's license comes first, also for --only / --from-step of a downloading step.
+    assert bootstrap.run_steps(ctx, listed, only=["download"]) == ["pre", "consent", "download"]
+    assert bootstrap.run_steps(ctx, listed, from_step="download") == ["pre", "consent", "download", "late"]
+    # Steps that download nothing do not ask for it.
+    rec.runs.clear()
+    assert bootstrap.run_steps(ctx, listed, only=["local"]) == ["pre", "local"]
+    assert "consent" not in rec.runs
 
 
 def test_run_steps_partial_selection_is_not_complete(ctx: Ctx, rec: Recorder) -> None:
