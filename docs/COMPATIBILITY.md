@@ -29,23 +29,28 @@ user) passed in a container of that distribution; it does not start Fork. The re
 
 fork-linux installed from the release tarball inside a real desktop session in a container
 (`scripts/ci-e2e-de.sh`, [docs/qa/DE-E2E.md](qa/DE-E2E.md)): menu entry, file-manager action,
-theme and scale detection, terminal, reveal, default applications; the real-Fork column sets up
-the official Fork 2.23.2 and drives it under the desktop's window manager. CI runs both tiers for
+theme and scale detection (also against the desktop's own portal), terminal, reveal, default
+applications, each desktop's own shell or window manager and settings daemon running (never a
+stand-in); the real-Fork column sets up the official Fork 2.23.2 and drives it under the desktop's
+window manager. CI runs both tiers for
 every desktop (`check.yml` and `e2e-wine.yml`, job `e2e-de`).
 
 | Desktop (container) | Integration | Real Fork | Evidence |
 |---|---|---|---|
-| Xubuntu 26.04, XFCE 4.20 (xfwm4, Thunar, xfce4-terminal) | ✅ 13/13 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]`, 2026-10-11 |
-| Ubuntu 26.04, GNOME 50 (mutter + Xwayland, Nautilus, Ptyxis) | ✅ 14/14 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]`, 2026-10-11 |
-| Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, Dolphin, Konsole) | ✅ 18/18 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]`, 2026-10-11 |
-| Ubuntu Cinnamon 26.04, Cinnamon 6.4 (muffin on Xorg, Nemo, Preferred Applications' terminal) | ✅ 15/15 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]`, 2026-10-11 |
-| Ubuntu MATE 26.04, MATE 1.26 (marco, Caja + caja-actions, mate-terminal) | ✅ 17/17 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]`, 2026-10-11 |
-| Ubuntu Budgie 26.04, Budgie 10.10 (labwc + Xwayland, Nemo, xfce4-terminal) | ✅ 14/14 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]`, 2026-10-11 |
-| Lubuntu 26.04, LXQt 2.3 (openbox, pcmanfm-qt, qterminal, Kvantum) | ✅ 17/17 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]`, 2026-10-11 |
+| Xubuntu 26.04, XFCE 4.20 (xfwm4, Thunar, xfce4-terminal) | ✅ 15/15 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
+| Ubuntu 26.04, GNOME 50 (GNOME Shell + Xwayland, Nautilus, Ptyxis) | ✅ 16/16 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
+| Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, Dolphin, Konsole) | ✅ 20/20 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
+| Kubuntu 26.04, KDE Plasma 6.6 on Wayland, the default (kwin_wayland + Xwayland, Dolphin, Konsole) | ✅ 19/19 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
+| Ubuntu Cinnamon 26.04, Cinnamon 6.4 (cinnamon on Xorg, Nemo, Preferred Applications' terminal) | ✅ 17/17 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
+| Ubuntu MATE 26.04, MATE 1.26 (marco, Caja + caja-actions, mate-terminal) | ✅ 19/19 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
+| Ubuntu Budgie 26.04, Budgie 10.10 (labwc + Xwayland, Nemo, xfce4-terminal) | ✅ 16/16 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
+| Lubuntu 26.04, LXQt 2.3 (openbox, pcmanfm-qt, qterminal, Kvantum) | ✅ 19/19 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
 
 Known desktop behaviour (not a fork-linux bug): on Xubuntu and Lubuntu, the desktop's own
 Ctrl+Alt+T shortcut shadows Fork's "Open In Shell" key; Fork's Repository menu and Shell button
-work. Not covered: Plasma on Wayland (Kubuntu 26.04's default session).
+work. Cinnamon's and MATE's menus watch only the application folders that existed at login: when
+fork-linux has to create `~/.local/share/applications`, its menu entry shows after the next login
+(fork-linux says so).
 
 ## Real Fork under Wine
 
