@@ -237,12 +237,34 @@ class Session:
         self.spawn("settings-daemon", self.desktop.settings_daemon)
         wait_for(lambda: self.run(self.desktop.settings_ready, check=False).returncode == 0, START_TIMEOUT,
                  f"{self.desktop.settings_daemon[0]} to publish its settings")
-        self.spawn("window-manager", self.desktop.window_manager)
+        # An empty window manager or file-manager service: the session manager starts it.
+        if self.desktop.window_manager:
+            self.spawn("window-manager", self.desktop.window_manager)
         wait_for(lambda: self.window_manager_name() == self.desktop.wm_name, START_TIMEOUT,
                  f"the window manager {self.desktop.wm_name}")
-        self.spawn("file-manager", self.desktop.file_manager_service)
+        if self.desktop.file_manager_service:
+            self.spawn("file-manager", self.desktop.file_manager_service)
         if self.desktop.provides_file_manager1:
             wait_for(lambda: self.name_has_owner(FILE_MANAGER1), START_TIMEOUT, f"{FILE_MANAGER1} on the bus")
+        self._take_session_exports()
+
+    def _take_session_exports(self) -> None:
+        """``Desktop.session_exports`` as the session manager hands them to its applications: read
+        from a running child of the settings daemon (absent ones are dropped from the session)."""
+        if not self.desktop.session_exports:
+            return
+        argv = self.expand(self.desktop.settings_daemon)
+        manager = next(process.pid for process in reversed(self._started) if process.args == argv)
+        environ = wait_for(
+            lambda: next((_environ(pid) for pid in _all_pids() if _parent_of(pid) == manager), None),
+            START_TIMEOUT, f"a child of {argv[0]} (its exported environment)",
+        )
+        values = dict(item.decode(errors="replace").split("=", 1) for item in environ if b"=" in item)
+        for name in self.desktop.session_exports:
+            if name in values:
+                self.env[name] = values[name]
+            else:
+                self.env.pop(name, None)
 
     def stop(self) -> None:
         """End every process of the session: TERM, then KILL what is left after 5 s."""
@@ -262,6 +284,8 @@ class Session:
             except subprocess.TimeoutExpired:
                 process.kill()
         self._started.clear()
+        for name in self.desktop.session_exports:
+            self.env.pop(name, None)  # the next session manager must not inherit them
 
     def restart(self) -> None:
         """A fresh session on the same home (settings changed while it ran take effect from the start)."""
@@ -374,6 +398,16 @@ class Session:
         """An ImageMagick ``fx`` statistic of ``image`` (``mean``, ``standard_deviation``)."""
         out = self.run(["magick", str(image), "-format", f"%[fx:{expr}]", "info:"]).stdout
         return float(out.strip())
+
+
+def _parent_of(pid: int) -> int:
+    """The parent PID of ``pid`` from ``/proc/<pid>/stat`` (0 when it is gone)."""
+    try:
+        stat = Path("/proc", str(pid), "stat").read_text(encoding="utf-8")
+    except OSError:
+        return 0
+    fields = stat[stat.rfind(")") + 2 :].split()
+    return int(fields[1]) if len(fields) > 1 else 0
 
 
 def cwd_of(pid: int) -> str:

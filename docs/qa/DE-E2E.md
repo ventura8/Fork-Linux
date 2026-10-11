@@ -15,6 +15,7 @@ root under `/var/tmp/fork-linux-e2e/`, the read-only seed for the real-Fork tier
 | Desktop | Image | Integration tier | Real-Fork tier | Evidence |
 |---|---|---|---|---|
 | Xubuntu 26.04, XFCE 4.20 (xfwm4, xfsettingsd, Thunar 4.20 + its FileManager1, xfce4-terminal, garcon menu, Greybird / Greybird-dark) | `fork-linux-e2e-de-xfce:26.04` | ✅ 13/13 | ✅ 9/9 (setup 235 s from the seed, tier 292 s) | local `scripts/ci-e2e-de.sh xfce [--fork]`, 2026-10-11 |
+| Lubuntu 26.04, LXQt 2.3 (lxqt-session + openbox, pcmanfm-qt 2.3 + its FileManager1, qterminal, panel menu via GMenu, Kvantum Lubuntu / KvArcDark, Fusion palettes, Global Screen Scaling) | `fork-linux-e2e-de-lxqt:26.04` | ❌ 13/17 until [de-fixes/lxqt.md](de-fixes/lxqt.md) is applied (theme `light` and `light:dark-panel-theme`, PCManFM "Open in Fork", qterminal); ✅ 17/17 with it | ❌ stops at 03 (Fork starts dark on the light Lubuntu desktop); ✅ 9/9 with the patch (setup 294 s from the seed, tier 351 s) | local `scripts/ci-e2e-de.sh lxqt [--fork]`, 2026-10-11 |
 | Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, kcminit + kded6, Dolphin 25.12 + its FileManager1 and our service menu, Konsole, Kickoff's menu through kbuildsycoca6, Kubuntu / Kubuntu Dark global themes) | `fork-linux-e2e-de-kde:26.04` | ✅ 14/14 | ✅ 9/9 (setup 308 s from the seed, tier 369 s) | local `scripts/ci-e2e-de.sh kde [--fork]`, 2026-10-11 |
 
 GNOME, Cinnamon, MATE, Budgie and LXQt follow the same pattern: one
@@ -154,6 +155,60 @@ with `Theme=1` and a dark window;
   agreement was declined; nothing was downloaded".
 - Not covered: Plasma on Wayland (kwin_wayland + Xwayland), Kubuntu 26.04's default session.
 
+## LXQt (Lubuntu) facts the recipe relies on
+
+- The session starts as Lubuntu's does: `startlxqt`, which sets `QT_QPA_PLATFORMTHEME=lxqt` and
+  `XDG_MENU_PREFIX=lxqt-` and then runs lxqt-session. lxqt-session itself starts openbox (the
+  `window_manager` of Lubuntu's `session.conf`), `pcmanfm-qt --desktop`, the panel, the global
+  shortcuts and the notification daemon. So the recipe's window manager and file-manager
+  service are empty, and the session waits for openbox and for pcmanfm-qt's FileManager1.
+  `XDG_CONFIG_DIRS=/etc/xdg/xdg-Lubuntu:/etc/xdg:/etc:/usr/share` brings in Lubuntu's own
+  defaults (`lubuntu-default-settings`).
+- LXQt reads its INI files (`lxqt.conf`, `session.conf`, `panel.conf`) from the user's
+  directory first, then from each of `XDG_CONFIG_DIRS`, key by key. The user's files hold only
+  what the dialogs changed (plus `__userfile__=true`). The recipe edits them as QSettings does
+  and resets a case by removing the keys it set.
+- Theme: Lubuntu's Qt style is **kvantum**, so the Kvantum theme colours every Qt application
+  (Kvantum Manager: `~/.config/Kvantum/kvantum.kvconfig`; Lubuntu's default is the light
+  `Lubuntu`, `KvArcDark` is dark). Under Kvantum, LXQt's widget palette has no effect. Under
+  another Qt style (Fusion), the palette's `window_color` colours the applications.
+  `palette_override` changes neither. LXQt's own theme (`theme=dark`) styles only the panel and
+  the desktop. All of this was checked with screenshots of a pcmanfm-qt window. GNOME's
+  `gtk-theme` on Lubuntu is `Arc-Darker` (dark header bars only), which today's fork-linux reads
+  as "dark" (see [de-fixes/lxqt.md](de-fixes/lxqt.md)). The cases are `light` (Lubuntu as
+  installed), `light:chosen-in-the-dialogs`, `dark` (Kvantum `KvArcDark` + LXQt theme `dark`),
+  `dark:kvantum-dark-theme`, `dark:fusion-dark-palette` and `light:dark-panel-theme`.
+- Scale: LXQt's setting is Session Settings > Global Screen Scaling. It writes `QT_SCALE_FACTOR`
+  and `GDK_SCALE` (both 1.5 for 1.5) to `session.conf` `[Environment]` (checked by driving the
+  real dialog), which lxqt-session exports to the applications it starts, **at login only**. So
+  each scale case restarts the session (`scale_restarts_session`), and the session takes the
+  exported variables from a child of lxqt-session (`session_exports`). Appearance > Font >
+  Resolution (DPI) writes only a fontconfig `dpi` (no `Xft.dpi`, no xsettings without
+  xsettingsd), so it is not a scale setting.
+- The panel menu (Lubuntu: `fancymenu` on `lxqt-applications-compact.menu`, from `panel.conf`)
+  files `Categories=Development` under "Programming". It is read with GMenu
+  (`gir1.2-gmenu-3.0`), the XDG menu specification that the panel's libqtxdg implements: libqtxdg
+  has no Python binding.
+- PCManFM-Qt reads FileManager-Actions entries (`~/.local/share/file-manager/actions`) whenever it
+  builds a context menu, so it needs no restart. In the folder's context menu, "Open in Fork"
+  sits just above Folder Properties: Menu, Up, Up, Return. `pcmanfm-qt DIR` hands the folder to
+  the running desktop instance, which owns `org.freedesktop.FileManager1`.
+- Terminal: Debian's `x-terminal-emulator` alternative points to qterminal. A qterminal started
+  through it is named `x-terminal-emul` in `/proc`, which is how the tier sees that fork-linux
+  did not pick qterminal by name (see de-fixes/lxqt.md, problem 3). Lubuntu's global shortcuts
+  bind Ctrl+Alt+T to qterminal, so as on XFCE the desktop takes Fork's "Open In Shell" key, and
+  the tier uses Fork's menu.
+- `xdg-open` on LXQt runs `qtxdg-mat open`, which follows `xdg-mime default` (`mimeapps.list`) for
+  files and links alike. Lubuntu's `session.conf` sets `BROWSER=firefox`, which `xdg-open` does
+  not use on LXQt.
+- Lubuntu installs `fonts-dejavu-core` (`lubuntu-desktop`), and the image does too. Without it,
+  `doctor` warns `host.fonts`.
+- Flaky spot, seen once in three LXQt real-Fork runs: `fork-linux setup` failed in its `fonts` step
+  because Wine could not start `C:\windows\syswow64\regedit.exe` ("ShellExecuteEx failed")
+  for one font, twice in a row (after 7 and after 3 fonts had registered). fork-linux retries
+  `winetricks corefonts` once, and both tries hit it. The next run passed. Nothing in that step
+  depends on the desktop. It is recorded here in case it comes back.
+
 ## Adding a desktop
 
 1. `docker/Dockerfile.e2e.de.<key>` (copy the XFCE one: `FROM ubuntu:26.04`, `# Image tag:
@@ -164,6 +219,11 @@ with `Theme=1` and a dark window;
    manager, file manager + service, terminal, theme and scale commands as the desktop's own
    settings dialogs run them, reset commands, context-menu keys, the menu's launcher), and a
    checker in `test_de_integration.py` for any new integration kind, menu reader or browser kind.
+   An empty window manager or file-manager service means the session manager (the recipe's
+   settings daemon) starts it; `session_exports` names variables the session manager hands
+   its applications; `scale_restarts_session` restarts the session for each scale case;
+   theme cases beyond `light` / `dark` are named `light:<how>` / `dark:<how>`; `menu_folder` is
+   the menu folder that lists our entry.
 3. `tests/test_docker.py` `EXPECTED`; `tests/test_e2e_de_recipes.py` keeps images, recipes and
    checkers in step on its own.
 4. Run both tiers, record the result in the matrix above and in `docs/COMPATIBILITY.md`.

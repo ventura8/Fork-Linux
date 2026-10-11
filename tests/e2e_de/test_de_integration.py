@@ -11,6 +11,7 @@ question (zenity), which is then declined.
 
 from __future__ import annotations
 
+import configparser
 import json
 import os
 import shlex
@@ -206,9 +207,56 @@ def _ksycoca_entries(session: dekit.Session) -> list[dict[str, object]]:
     return found
 
 
+# lxqt-panel's application menu: the menu file its menu plugin (fancymenu or mainmenu) names in
+# panel.conf (LXQt merges the user's file over XDG_CONFIG_DIRS key by key), else
+# $XDG_MENU_PREFIX applications.menu, read with GMenu: the XDG menu specification the panel's
+# libqtxdg implements (libqtxdg has no Python binding).
+LXQT_PANEL_READER = """
+import configparser, json, os, gi
+gi.require_version("GMenu", "3.0")
+from gi.repository import GMenu
+dirs = [os.environ["XDG_CONFIG_HOME"], *os.environ.get("XDG_CONFIG_DIRS", "/etc/xdg").split(":")]
+panel = configparser.RawConfigParser(strict=False, interpolation=None)
+for base in reversed(dirs):
+    path = os.path.join(base, "lxqt", "panel.conf")
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as conf:  # QSettings: keys before any section are [General]
+            panel.read_string("[General]\\n" + conf.read(), path)
+menus = [panel[name].get("menu_file") for name in panel.sections()
+         if panel[name].get("type") in ("fancymenu", "mainmenu")]
+menu_file = next((menu for menu in menus if menu), "")
+if menu_file:
+    tree = GMenu.Tree.new_for_path(menu_file, GMenu.TreeFlags.NONE)
+else:
+    tree = GMenu.Tree.new(os.environ.get("XDG_MENU_PREFIX", "") + "applications.menu", GMenu.TreeFlags.NONE)
+tree.load_sync()
+found = []
+def walk(directory, path):
+    items = directory.iter()
+    kind = items.next()
+    while kind != GMenu.TreeItemType.INVALID:
+        if kind == GMenu.TreeItemType.ENTRY:
+            entry = items.get_entry()
+            found.append({"path": path, "id": entry.get_desktop_file_id(),
+                          "command": entry.get_app_info().get_commandline()})
+        elif kind == GMenu.TreeItemType.DIRECTORY:
+            folder = items.get_directory()
+            walk(folder, path + [folder.get_name()])
+        kind = items.next()
+walk(tree.get_root_directory(), [])
+print(json.dumps(found))
+"""
+
+
+def _lxqt_panel_entries(session: dekit.Session) -> list[dict[str, object]]:
+    """Every entry of the LXQt panel's application menu."""
+    return json.loads(session.run(["python3", "-I", "-c", LXQT_PANEL_READER]).stdout)
+
+
 MENU_READERS: dict[str, Callable[[dekit.Session], list[dict[str, object]]]] = {
     desktops.MENU_GARCON: _garcon_entries,
     desktops.MENU_KSYCOCA: _ksycoca_entries,
+    desktops.MENU_LXQT_PANEL: _lxqt_panel_entries,
 }
 
 
@@ -262,9 +310,25 @@ def _check_dolphin_servicemenu(session: dekit.Session, _installed: dekit.Install
     assert dekit.pids_of("dolphin"), "Dolphin's service (FileManager1) is not running"
 
 
+FMA_ACTION = (".local", "share", "file-manager", "actions", "fork-linux-open.desktop")
+
+
+def _check_fma_action(session: dekit.Session, _installed: dekit.Installed) -> None:
+    """Our FileManager-Actions entry is where PCManFM-Qt (libfm-qt) and caja-actions read it, and it
+    runs ``open --from-file-manager`` (they read actions when they build a menu: no restart)."""
+    path = session.home.joinpath(*FMA_ACTION)
+    assert path.is_file(), f"fork-linux added no 'Open in Fork' action for {session.desktop.file_manager}"
+    action = configparser.RawConfigParser(strict=False, interpolation=None)  # keys lower-cased
+    action.read(path, encoding="utf-8")
+    assert action["Desktop Entry"]["type"] == "Action"
+    profiles = [name for name in action["Desktop Entry"]["profiles"].split(";") if name]
+    assert any(OPEN_ACTION in action[f"X-Action-Profile {name}"]["exec"] for name in profiles), profiles
+
+
 INTEGRATION_CHECKS: dict[str, Callable[[dekit.Session, dekit.Installed], None]] = {
     desktops.THUNAR_UCA: _check_thunar_uca,
     desktops.DOLPHIN_SERVICEMENU: _check_dolphin_servicemenu,
+    desktops.PCMANFM_QT_FMA: _check_fma_action,
 }
 
 
@@ -289,7 +353,7 @@ def test_menu_entry_is_valid_listed_and_starts_fork_linux(
     session.run(["desktop-file-validate", str(menu_file)])
     entries = [entry for entry in MENU_READERS[desktop.menu_reader](session) if entry["id"] == menu_file.name]
     assert entries, f"{desktop.menu_reader} does not list {menu_file.name}"
-    assert entries[0]["path"] == ["Development"], entries
+    assert entries[0]["path"] == list(desktop.menu_folder), entries
     assert str(entries[0]["command"]).startswith(str(session.home / ".local" / "bin" / "fork-linux"))
     session.spawn("menu-launch", [*desktop.menu_launcher, str(menu_file)])
     askers = _decline_consent(session)
@@ -312,11 +376,18 @@ def test_file_manager_runs_open_in_fork(
     assert any(OPEN_ACTION in cmdline and str(repo) in cmdline for cmdline in askers), askers
 
 
-@pytest.mark.parametrize("wanted", [desktops.LIGHT, desktops.DARK])
+def _theme_ids(desktop_key: str) -> list[str]:
+    """The recipe's theme cases: light and dark, plus ``light:<how>`` / ``dark:<how>`` for other ways
+    the desktop's own settings make it light or dark."""
+    return list(desktops.DESKTOPS[desktop_key].themes)
+
+
+@pytest.mark.parametrize("case_id", _theme_ids(os.environ.get("FL_E2E_DE", "")))
 def test_theme_detection_follows_the_desktop(
-    session: dekit.Session, desktop: desktops.Desktop, installed: dekit.Installed, wanted: str
+    session: dekit.Session, desktop: desktops.Desktop, installed: dekit.Installed, case_id: str
 ) -> None:
-    for command in (*desktop.reset, *desktop.themes[wanted]):
+    wanted = case_id.partition(":")[0]
+    for command in (*desktop.reset, *desktop.themes[case_id]):
         session.run(command)
     code = "import os; from pathlib import Path; from fork_linux import theme; from fork_linux.procrun import Runner\n"
     code += "print(theme.detect(os.environ, Runner(), Path.home()))"
@@ -334,7 +405,10 @@ def test_scale_detection_follows_the_desktop(
     case = next(item for item in desktop.scales if item.id == case_id)
     for command in (*desktop.reset, *case.commands):
         session.run(command)
-    time.sleep(1)  # the settings daemon republishes Xft.dpi
+    if desktop.scale_restarts_session:
+        session.restart()  # read at login only
+    else:
+        time.sleep(1)  # the settings daemon republishes Xft.dpi
     code = "import os; from fork_linux import display; from fork_linux.procrun import Runner\n"
     code += "print(display.scale_percent(os.environ, Runner()))"
     try:
@@ -342,6 +416,8 @@ def test_scale_detection_follows_the_desktop(
     finally:
         for command in desktop.reset:
             session.run(command)
+        if desktop.scale_restarts_session and case.commands:
+            session.restart()
 
 
 def test_terminal_opens_in_the_directory(

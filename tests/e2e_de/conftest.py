@@ -46,7 +46,7 @@ STEP_MODULE = "test_de_fork.py"
 
 
 def _require_tools(desktop: desktops.Desktop) -> None:
-    wanted = (*TOOLS, desktop.settings_daemon[0], desktop.window_manager[0], desktop.terminal)
+    wanted = (*TOOLS, desktop.settings_daemon[0], *desktop.window_manager[:1], desktop.terminal)
     missing = [tool for tool in wanted if shutil.which(tool) is None]
     if missing:
         pytest.skip(f"the desktop tier needs {', '.join(missing)} on PATH (run it in docker/Dockerfile.e2e.de.*)")

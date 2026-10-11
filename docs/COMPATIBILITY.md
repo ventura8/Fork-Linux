@@ -35,6 +35,7 @@ the official Fork 2.23.2 and drives it under the desktop's window manager.
 | Desktop (container) | Integration | Real Fork | Evidence |
 |---|---|---|---|
 | Xubuntu 26.04, XFCE 4.20 (xfwm4, Thunar, xfce4-terminal) | ✅ 13/13 | ✅ 9/9 | local `scripts/ci-e2e-de.sh xfce [--fork]`, 2026-10-11 |
+| Lubuntu 26.04, LXQt 2.3 (openbox, pcmanfm-qt, qterminal, Kvantum) | ❌ 13/17 (4 src bugs, fixes proposed); ✅ 17/17 with the fixes | ❌ stops at 03 (Fork starts dark); ✅ 9/9 with the fixes | local `scripts/ci-e2e-de.sh lxqt [--fork]`, 2026-10-11; [qa/de-fixes/lxqt.md](qa/de-fixes/lxqt.md) |
 | Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, Dolphin, Konsole) | ✅ 14/14 | ✅ 9/9 | local `scripts/ci-e2e-de.sh kde [--fork]`, 2026-10-11 |
 
 Known desktop behaviour (not a fork-linux bug): on Xubuntu, XFCE's own Ctrl+Alt+T shortcut

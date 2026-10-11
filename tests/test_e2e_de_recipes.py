@@ -92,7 +92,9 @@ def test_recipe_is_complete(key: str) -> None:
     assert recipe.integration in desktops.INTEGRATION_KINDS
     assert recipe.menu_reader in desktops.MENU_READERS
     assert recipe.browser in desktops.BROWSER_KINDS
-    assert set(recipe.themes) == {desktops.LIGHT, desktops.DARK}
+    # light and dark, plus light:<how> / dark:<how> for other ways to the same result
+    assert {desktops.LIGHT, desktops.DARK} <= set(recipe.themes)
+    assert {name.partition(":")[0] for name in recipe.themes} == {desktops.LIGHT, desktops.DARK}
     assert all(recipe.themes.values()), "each theme needs the commands that set it"
     expected = [case.expected for case in recipe.scales]
     assert 100 in expected and 200 in expected, "scaling is checked at 100 and 200 %"
@@ -101,8 +103,10 @@ def test_recipe_is_complete(key: str) -> None:
     for name in ("XDG_CURRENT_DESKTOP", "DESKTOP_SESSION", "XDG_SESSION_DESKTOP"):
         assert recipe.session_env.get(name), name
     assert recipe.open_in_fork_keys and recipe.open_in_fork_keys[-1] == "Return"
+    assert recipe.settings_daemon
+    # An empty window manager or file-manager service: the session manager starts it.
     for command in (recipe.settings_daemon, recipe.window_manager, recipe.file_manager_service):
-        assert command and all(isinstance(word, str) and word for word in command)
+        assert all(isinstance(word, str) and word for word in command)
 
 
 def test_every_kind_in_use_has_a_checker() -> None:

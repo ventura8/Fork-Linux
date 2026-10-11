@@ -18,7 +18,7 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 - Real-Fork image `fork-linux-ci-e2e-wine:26.04` (`docker/Dockerfile.e2e.wine`): CI via `scripts/ci-e2e-wine.sh`, locally
   only via `scripts/e2e-docker.sh` (hard rule 18; shared code in `scripts/lib-e2e-docker.sh`). `ci-docker.sh --inside`
   refuses outside a container.
-- Desktop E2E images `fork-linux-e2e-de-<desktop>:26.04` (`docker/Dockerfile.e2e.de.<desktop>`, present: `xfce`):
+- Desktop E2E images `fork-linux-e2e-de-<desktop>:26.04` (`docker/Dockerfile.e2e.de.<desktop>`, present: `xfce`, `lxqt`):
   `scripts/ci-e2e-de.sh <desktop> [--fork]` / `scripts/ci-e2e-de-matrix.sh [--fork]`, same library and rules as
   `e2e-docker.sh`; one recipe per image in `tests/e2e_de/desktops.py` (`tests/test_e2e_de_recipes.py`). Runbook:
   `docs/qa/DE-E2E.md`.

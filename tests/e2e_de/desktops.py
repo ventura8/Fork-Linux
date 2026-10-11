@@ -31,7 +31,8 @@ INTEGRATION_KINDS = (THUNAR_UCA, NAUTILUS_EXTENSION, DOLPHIN_SERVICEMENU, NEMO_A
 # How the desktop's menu is read back (one reader per kind in test_de_integration.py).
 MENU_GARCON = "garcon"
 MENU_KSYCOCA = "kbuildsycoca"
-MENU_READERS = (MENU_GARCON, MENU_KSYCOCA)
+MENU_LXQT_PANEL = "lxqt-panel"
+MENU_READERS = (MENU_GARCON, MENU_KSYCOCA, MENU_LXQT_PANEL)
 
 # How the desktop picks the web browser that xdg-open hands http(s) links to.
 BROWSER_XFCE_HELPERS = "xfce-helpers"
@@ -85,6 +86,13 @@ class Desktop:
     open_in_fork_keys: tuple[str, ...]
     # The window manager reparents (frames) Fork's undecorated main window.
     frames_undecorated: bool = True
+    # Variables the session manager (the settings daemon) exports to the applications it starts,
+    # taken from its running children into the session's environment after each start.
+    session_exports: tuple[str, ...] = ()
+    # The scale is read once, at login: each scale case restarts the session.
+    scale_restarts_session: bool = False
+    # The folder of the desktop's menu that lists our entry (Categories=Development;...).
+    menu_folder: tuple[str, ...] = ("Development",)
     # The command (the .desktop file appended) that starts a menu entry as the desktop's menu does.
     menu_launcher: Command = ("gio", "launch")
     # A command whose success means the settings daemon has published its settings.
@@ -245,4 +253,142 @@ KDE = Desktop(
 )
 
 
-DESKTOPS: dict[str, Desktop] = {desktop.key: desktop for desktop in (XFCE, KDE)}
+
+# One INI file of LXQt (or Kvantum) changed as its settings dialogs save it through QSettings:
+# FILE, then SECTION KEY VALUE triples; an empty VALUE removes the key (back to the default
+# LXQt merges in from XDG_CONFIG_DIRS, here Lubuntu's /etc/xdg/xdg-Lubuntu).
+_LXQT_INI = """
+import configparser, sys
+from pathlib import Path
+path, args = Path(sys.argv[1]), sys.argv[2:]
+ini = configparser.RawConfigParser(strict=False, delimiters=("=",))
+ini.optionxform = str
+ini.read(path, encoding="utf-8")
+for section, key, value in zip(args[0::3], args[1::3], args[2::3]):
+    if value:
+        if not ini.has_section(section):
+            ini.add_section(section)
+        ini.set(section, key, value)
+    elif ini.has_section(section):
+        ini.remove_option(section, key)
+path.parent.mkdir(parents=True, exist_ok=True)
+with path.open("w", encoding="utf-8") as out:
+    ini.write(out, space_around_delimiters=False)
+"""
+_LXQT_CONF = "{home}/.config/lxqt/lxqt.conf"
+_LXQT_SESSION_CONF = "{home}/.config/lxqt/session.conf"
+_KVANTUM_CONF = "{home}/.config/Kvantum/kvantum.kvconfig"
+# LXQt Appearance > Widget Style > Qt Palette > Load Palette: "Dark" (/usr/share/lxqt/palettes/Dark).
+_DARK_PALETTE = {
+    "base_color": "#282828",
+    "highlight_color": "#640b0c",
+    "highlighted_text_color": "#ebfdff",
+    "link_color": "#8c9bff",
+    "link_visited_color": "#ffb3f7",
+    "text_color": "#b8b8b8",
+    "window_color": "#232323",
+    "window_text_color": "#e1e6e6",
+    "tooltip_base_color": "#232323",
+    "tooltip_text_color": "#b8b8b8",
+}
+
+
+def _lxqt_ini(path: str, *settings: tuple[str, str, str]) -> Command:
+    return ("python3", "-I", "-c", _LXQT_INI, path, *(word for setting in settings for word in setting))
+
+
+def _kvantum_theme(name: str) -> Command:
+    """Kvantum Manager > Change/Delete Theme > Use this theme (Lubuntu's Qt style is kvantum)."""
+    return _lxqt_ini(_KVANTUM_CONF, ("General", "theme", name))
+
+
+def _lxqt_theme(name: str) -> Command:
+    """LXQt Appearance > LXQt Theme (the panel, the desktop and LXQt's own dialogs)."""
+    return _lxqt_ini(_LXQT_CONF, ("General", "theme", name))
+
+
+def _fusion_with_palette(palette: Mapping[str, str]) -> Command:
+    """LXQt Appearance > Widget Style: Qt style Fusion, then Qt Palette > Load Palette."""
+    colors = (("Palette", key, value) for key, value in palette.items())
+    return _lxqt_ini(_LXQT_CONF, ("Qt", "style", "Fusion"), *colors)
+
+
+def _global_scaling(factor: str) -> Command:
+    """LXQt Session Settings > Basic Settings > Global Screen Scaling, applied at the next login."""
+    return _lxqt_ini(
+        _LXQT_SESSION_CONF, ("Environment", "GDK_SCALE", factor), ("Environment", "QT_SCALE_FACTOR", factor)
+    )
+
+
+# Every setting the cases change, removed: Lubuntu's defaults (/etc/xdg/xdg-Lubuntu) apply again.
+_LXQT_DEFAULTS = (
+    _lxqt_ini(_LXQT_CONF, ("General", "theme", ""), ("Qt", "style", ""), *(("Palette", k, "") for k in _DARK_PALETTE)),
+    _lxqt_ini(_KVANTUM_CONF, ("General", "theme", "")),
+    _lxqt_ini(_LXQT_SESSION_CONF, ("Environment", "GDK_SCALE", ""), ("Environment", "QT_SCALE_FACTOR", "")),
+)
+
+LXQT = Desktop(
+    key="lxqt",
+    title="Lubuntu 26.04 (LXQt 2.3: lxqt-session, openbox, pcmanfm-qt, qterminal, Kvantum)",
+    # What sddm + /etc/X11/Xsession.d (60x11-common_xdg_path) and startlxqt export for the
+    # "Lubuntu" session (startlxqt appends /etc and /usr/share to the XDG directories).
+    session_env={
+        "XDG_CURRENT_DESKTOP": "LXQt",
+        "DESKTOP_SESSION": "Lubuntu",
+        "XDG_SESSION_DESKTOP": "Lubuntu",
+        "XDG_SESSION_TYPE": "x11",
+        "XDG_MENU_PREFIX": "lxqt-",
+        "XDG_CONFIG_DIRS": "/etc/xdg/xdg-Lubuntu:/etc/xdg:/etc:/usr/share",
+        "XDG_DATA_DIRS": "/usr/share/Lubuntu:/usr/local/share/:/usr/share/:/usr/share",
+        "QT_QPA_PLATFORMTHEME": "lxqt",
+        "QT_PLATFORM_PLUGIN": "lxqt",
+    },
+    # startlxqt runs lxqt-session, which starts what session.conf and the autostart entries name:
+    # openbox (Lubuntu's window_manager), pcmanfm-qt --desktop (its FileManager1 service), the
+    # panel, the global shortcuts and the notification daemon.
+    settings_daemon=("startlxqt",),
+    settings_ready=("gdbus", "wait", "--session", "--timeout", "2", "org.lxqt.session"),
+    window_manager=(),
+    wm_name="Openbox",
+    file_manager="pcmanfm-qt",
+    file_manager_service=(),
+    file_manager_class="pcmanfm-qt",
+    provides_file_manager1=True,
+    integration=PCMANFM_QT_FMA,
+    # The panel's application menu (Lubuntu: fancymenu on lxqt-applications-compact.menu) files
+    # Development under "Programming".
+    menu_reader=MENU_LXQT_PANEL,
+    menu_folder=("Programming",),
+    terminal="qterminal",
+    terminal_class="qterminal",
+    # Lubuntu's Qt style is kvantum: Kvantum's theme colours the applications, LXQt's own theme
+    # only the panel and the desktop, and LXQt's widget palette counts only for other Qt styles.
+    themes={
+        # Lubuntu as installed: Kvantum's "Lubuntu" theme, the "Lubuntu Arc" LXQt theme.
+        LIGHT: _LXQT_DEFAULTS,
+        "light:chosen-in-the-dialogs": (_kvantum_theme("Lubuntu"), _lxqt_theme("Lubuntu Arc")),
+        DARK: (_kvantum_theme("KvArcDark"), _lxqt_theme("dark")),
+        "dark:kvantum-dark-theme": (_kvantum_theme("KvArcDark"),),
+        "dark:fusion-dark-palette": (_fusion_with_palette(_DARK_PALETTE),),
+        "light:dark-panel-theme": (_lxqt_theme("dark"),),
+    },
+    scales=(
+        ScaleCase("default", 100),
+        ScaleCase("global-scaling-1.5", 150, (_global_scaling("1.5"),)),
+        ScaleCase("global-scaling-2", 200, (_global_scaling("2"),)),
+    ),
+    reset=_LXQT_DEFAULTS,
+    # lxqt-session exports session.conf's [Environment] (Global Screen Scaling) and marks the session.
+    session_exports=("LXQT_SESSION_CONFIG", "QT_SCALE_FACTOR", "GDK_SCALE"),
+    scale_restarts_session=True,
+    browser=BROWSER_XDG_MIME,
+    # pcmanfm-qt's folder context menu ends with our action and Folder Properties.
+    open_in_fork_keys=("Menu", "Up", "Up", "Return"),
+    packages=(
+        "lxqt-session", "lxqt-config", "lxqt-panel", "lxqt-qtplugin", "lxqt-globalkeys", "lxqt-notificationd",
+        "openbox", "pcmanfm-qt", "qterminal", "qtxdg-tools", "qt-style-kvantum", "lubuntu-default-settings",
+        "gir1.2-gmenu-3.0",
+    ),
+)
+
+DESKTOPS: dict[str, Desktop] = {desktop.key: desktop for desktop in (XFCE, KDE, LXQT)}
