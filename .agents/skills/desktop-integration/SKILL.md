@@ -27,6 +27,9 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
   while a `nautilus` process runs logs `NAUTILUS_RESTART` ("run 'nautilus -q'"). Nemo needs two actions: `nemo`
   (`Selection=s`, the selected item) and `nemo-folder` (`Selection=none`, `%P`, the folder a window shows). Caja and
   PCManFM(-Qt) share the FileManager-Actions entry (`fma`); Caja-actions, libfm and Nemo watch their folders (no restart).
+- Menu: Cinnamon's CMenu and MATE's libmate-menu watch only the application folders that existed at login (GNOME Shell,
+  Budgie, garcon and KSycoca notice a new one); a menu entry that had to create `$XDG_DATA_HOME/applications` on
+  `X-Cinnamon` / `MATE` logs `MENU_RELOGIN` ("log out and back in", `MENU_AT_LOGIN_DESKTOPS`).
 - Host helper: `open` of a folder asks `FileManager1.ShowFolders` before `xdg-open` (the session bus starts the file
   manager outside Wine's process tree); `terminal` asks the desktop's own setting first (`DESKTOP_TERMINAL_SCHEMAS`:
   Cinnamon's Preferred Applications, Budgie's `org.gnome.desktop.default-applications.terminal`), then

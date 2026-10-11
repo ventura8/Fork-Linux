@@ -13,7 +13,10 @@ desktop's own file (Xubuntu's "Open Terminal Here", ...), never created empty.
 ``uca.xml`` is written only when its content changes; a running Thunar reads it only
 when it starts, so a change then comes with a warning to restart Thunar. Nautilus
 likewise loads its extensions only when it starts: installing a changed extension or
-removing it comes with a warning to restart a running Nautilus.
+removing it comes with a warning to restart a running Nautilus. Cinnamon's and MATE's
+menus watch only the application folders that existed when the session started: a menu
+entry that had to create ``$XDG_DATA_HOME/applications`` there comes with a warning
+that it shows up after the next login.
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ from typing import Any
 from xml.sax.saxutils import escape as xml_escape
 
 from . import APP_ID, APP_NAME, credits, fsutil, icon_extract, procs, resources, sandbox
+from .display import desktop as current_desktop
 from .errors import ForkLinuxError, UsageError
 from .paths import Paths
 from .procrun import Runner
@@ -61,6 +65,14 @@ NAUTILUS_PROGRAMS = ("nautilus",)
 NAUTILUS_RESTART = (
     "Nautilus is running and loads its extensions only when it starts: run 'nautilus -q' "
     "(it starts again when needed) to see the change to 'Open in Fork'"
+)
+# Desktop (display.desktop) -> its name, for desktops whose menu library watches only the
+# application folders that existed when the session started (Cinnamon's CMenu, MATE's
+# libmate-menu; GNOME Shell, Budgie (GIO), XFCE (garcon) and KDE (KSycoca) notice a new one).
+MENU_AT_LOGIN_DESKTOPS = {"cinnamon": "Cinnamon", "mate": "MATE"}
+MENU_RELOGIN = (
+    "{desktop}'s menu lists the applications of {folder} only if that folder existed when you "
+    "logged in, and fork-linux has just created it: log out and back in to see {app} in the menu"
 )
 # Our neutral placeholder icon, relative to a data directory (share/).
 SCALABLE_ICON = ("icons", "hicolor", "scalable", "apps", f"{APP_ID}.svg")
@@ -678,17 +690,35 @@ def _refresh(dirs: _Dirs, env: Mapping[str, str], runner: Runner, *, menu: bool,
 
 
 def _install_menu(
-    dirs: _Dirs, cmd: list[str], registry: _Registry, system_desktop_present: bool | None, installed: list[Path]
+    dirs: _Dirs,
+    cmd: list[str],
+    registry: _Registry,
+    system_desktop_present: bool | None,
+    installed: list[Path],
+    desktop: str,
 ) -> bool:
-    """Write the personal menu entry unless a packaged one exists; True if the menu changed."""
+    """Write the personal menu entry unless a packaged one exists; True if the menu changed.
+
+    ``desktop`` is the session's desktop (:func:`display.desktop`), for :func:`_menu_folder_created`.
+    """
     system = _system_desktop(dirs) if system_desktop_present is None else None
     if system is not None or system_desktop_present:
         log.info("a packaged menu entry exists (%s); not adding a personal one", system)
         return _remove_owned(dirs.menu_file, registry)
+    new_folder = not dirs.applications.is_dir()
     if _write_owned(dirs.menu_file, _render_menu(cmd).encode("utf-8"), 0o644, MENU, registry):
         installed.append(dirs.menu_file)
+        if new_folder:
+            _menu_folder_created(dirs, desktop)
         return True
     return False
+
+
+def _menu_folder_created(dirs: _Dirs, desktop: str) -> None:
+    """Tell a Cinnamon or MATE user that the menu shows the new folder's entries after the next login."""
+    name = MENU_AT_LOGIN_DESKTOPS.get(desktop)
+    if name is not None:
+        log.warning(MENU_RELOGIN.format(desktop=name, folder=dirs.applications, app=APP_NAME))
 
 
 def _install_icons(fork_exe: Path, dirs: _Dirs, registry: _Registry) -> list[Path]:
@@ -785,7 +815,9 @@ def install(
     kinds = _kinds(names, lambda: installed_file_managers(environ))
     registry = _Registry.load(paths.integrations_file)
     installed: list[Path] = []
-    menu_changed = menu and _install_menu(dirs, cmd, registry, system_desktop_present, installed)
+    menu_changed = menu and _install_menu(
+        dirs, cmd, registry, system_desktop_present, installed, current_desktop(environ)
+    )
     icons_changed = False
     if icons:
         written = _install_icons(Path(fork_exe), dirs, registry) if fork_exe and Path(fork_exe).is_file() else []

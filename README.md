@@ -85,7 +85,7 @@ Downloads are cached in `~/.cache/fork-linux/` (winetricks' .NET and font downlo
 
 - `fork` — start Fork.
 - `fork .` or `fork ~/src/myrepo` — open a repository (a path inside a repository opens its root). If Fork is already running, the repository opens in a new tab.
-- **Desktop launcher** — "Fork for Linux (unofficial)" in your app menu, with Fork's own icon extracted from your copy (at every icon size; a neutral placeholder until Fork is installed).
+- **Desktop launcher** — "Fork for Linux (unofficial)" in your app menu, with Fork's own icon extracted from your copy (at every icon size; a neutral placeholder until Fork is installed). On Cinnamon and MATE the menu picks up a brand-new `~/.local/share/applications` only at the next login; fork-linux says so when it had to create that folder.
 - **Open in Fork** — a right-click action in Nautilus, Nemo, Caja, Dolphin, Thunar and PCManFM-Qt. `install.sh` and `fork-linux desktop install` add it for the file managers installed on your computer (`--file-managers auto`, the default); `--file-managers all` or a list such as `thunar,nemo` picks them yourself. In Thunar the action is added next to your desktop's own custom actions ("Open Terminal Here", ...), and removing it brings back exactly what was there.
 
 ## Updating

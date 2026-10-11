@@ -46,6 +46,9 @@ def env(xdg: Path, tmp_path: Path) -> dict[str, str]:
     environ["XDG_DATA_DIRS"] = str(system)
     environ["XDG_CONFIG_DIRS"] = str(tmp_path / "system-config")
     environ["PATH"] = str(tmp_path / "empty-path")
+    # No desktop session unless a test names one (the host's own must not steer the results).
+    for name in ("XDG_CURRENT_DESKTOP", "DESKTOP_SESSION"):
+        environ.pop(name, None)
     return environ
 
 
@@ -1300,6 +1303,59 @@ def test_cli_aliases_keep_the_mode_of_an_existing_bin_dir(
     _install(paths, env, runner, menu=False, file_managers="none", cli_alias=True, exec_cmd=[str(target)])
     assert os.readlink(dirs.bin / "fork") == str(target)
     assert stat.S_IMODE(dirs.bin.stat().st_mode) == 0o700
+
+
+def _relogin_notices(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [record.getMessage() for record in caplog.records if "log out and back in" in record.getMessage()]
+
+
+@pytest.mark.parametrize(
+    ("current", "named"),
+    [("X-Cinnamon", "Cinnamon"), ("MATE", "MATE"), ("ubuntu:GNOME", None), ("Budgie", None), ("XFCE", None),
+     ("KDE", None), ("", None)],
+)
+def test_a_new_menu_folder_on_cinnamon_or_mate_shows_after_the_next_login(
+    paths: Paths,
+    env: dict[str, str],
+    runner: RecordingRunner,
+    caplog: pytest.LogCaptureFixture,
+    current: str,
+    named: str | None,
+) -> None:
+    """Cinnamon's and MATE's menus watch only the application folders that existed at login (the
+    desktop tier saw it): creating ``$XDG_DATA_HOME/applications`` comes with a log-in-again notice."""
+    env["XDG_CURRENT_DESKTOP"] = current
+    caplog.set_level(logging.WARNING, logger=di.__name__)
+    folder = _dirs(env).applications
+    assert not folder.exists()
+    _install(paths, env, runner, file_managers="none")
+    assert _dirs(env).menu_file.is_file()
+    expected = [] if named is None else [di.MENU_RELOGIN.format(desktop=named, folder=folder, app=APP_NAME)]
+    assert _relogin_notices(caplog) == expected
+
+
+def test_no_relogin_notice_when_the_menu_folder_was_there(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A folder that existed before is watched: no notice, also not for a changed or a packaged entry."""
+    env["XDG_CURRENT_DESKTOP"] = "X-Cinnamon"
+    caplog.set_level(logging.WARNING, logger=di.__name__)
+    _dirs(env).applications.mkdir(parents=True)
+    _install(paths, env, runner, file_managers="none")
+    _install(paths, env, runner, file_managers="none", exec_cmd=["/opt/other/fork-linux"])
+    assert _dirs(env).menu_file.is_file()
+    assert _relogin_notices(caplog) == []
+
+
+def test_no_relogin_notice_when_no_menu_entry_is_written(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A packaged menu entry (or a foreign file in the way) means no personal entry: no notice."""
+    env["XDG_CURRENT_DESKTOP"] = "MATE"
+    caplog.set_level(logging.WARNING, logger=di.__name__)
+    _install(paths, env, runner, file_managers="none", system_desktop_present=True)
+    assert not _dirs(env).menu_file.exists()
+    assert _relogin_notices(caplog) == []
 
 
 @pytest.mark.parametrize("nautilus_running", [True, False], ids=["nautilus-running", "no-nautilus"])
