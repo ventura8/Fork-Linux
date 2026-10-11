@@ -1172,12 +1172,33 @@ def test_ssh_checks(monkeypatch: pytest.MonkeyPatch) -> None:
         assert run(ctx, "ssh.config").status == level, state
 
 
+def test_ssh_passphrase_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fork_linux import ssh_sync
+
+    assert run(make(), "ssh.passphrase") == Result("info", "no ~/.ssh to share")
+    ctx = make(env={"FORK_LINUX_SSH_SYNC": "on"})
+    assert run(ctx, "ssh.passphrase").status == "info"
+    prefix(ctx)
+    status: dict[str, Any] = {"passphrase_keys": []}
+    monkeypatch.setattr(ssh_sync, "status", lambda *_a: status)
+    assert run(ctx, "ssh.passphrase") == Result("ok", "no shared key needs a passphrase")
+    status["passphrase_keys"] = ["id_rsa", "work/id_ed25519"]
+    monkeypatch.setattr(doctor, "_bridge_ready", lambda _ctx: False)
+    assert run(ctx, "ssh.passphrase") == Result(
+        "warn", f"id_rsa, work/id_ed25519 need(s) a passphrase: {ssh_sync.PASSPHRASE_PROBLEM}", ssh_sync.PASSPHRASE_HINT
+    )
+    monkeypatch.setattr(doctor, "_bridge_ready", lambda _ctx: True)
+    assert run(ctx, "ssh.passphrase") == Result(
+        "ok", "id_rsa, work/id_ed25519 need(s) a passphrase: the git bridge's Linux ssh asks for it"
+    )
+
+
 def test_git_overlay() -> None:
     ctx = make()
     prefix(ctx)
     result = run(ctx, "git.overlay")
     assert result.status == "warn"
-    assert "core.filemode=false, core.autocrlf=false" in result.detail
+    assert "core.filemode=false, core.autocrlf=false, core.checkStat=minimal" in result.detail
     from fork_linux import gitconfig
 
     overlay = gitconfig.overlay_path(ctx.paths, USER)

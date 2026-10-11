@@ -63,6 +63,29 @@ scripts/e2e-docker.sh --name shim --image fork-linux-ci-bridge:26.04 shell -- ba
   `<scratch>/bridge/1/` and `<scratch>/bridge/2/`, then run with `--keep` and
   `FL_E2E_BRIDGE_BUILDS=/e2e/bridge` (without it A6 is skipped).
 
+## The real tier (tests/e2e)
+
+- `test_real_*.py` and `test_git_ops_*.py` modules share one prefix and run in `conftest.py`'s `MODULE_ORDER` (setup
+  errors, the main setup, launch, Fork's git UI, OS integration, display, bridge, doctor,
+  snapshots, setup variants, uninstall last). Iterate on one module without a new setup:
+  `FL_E2E_REUSE=1 scripts/e2e-docker.sh --name my-run --keep pytest tests/e2e/test_real_launch.py`
+  (the first run of that name sets up; `--keep` and `FL_E2E_REUSE=1` keep the prefix after it).
+- Build the bridge first for `test_real_bridge.py`: `scripts/build-bridge.sh` (its own image).
+- Helpers: `fork_driver.py` (windows, keys, clicks, screenshots, Fork sessions, git),
+  `fork_ui.py` (Fork's layout in the seeded 1500x940 window and its keyboard paths: Quick Launch,
+  shortcuts, context menus clicked from their bottom edge), `git_servers.py` (HTTP with basic
+  auth, sshd on a high port), `remote_ops.py` (bare remotes, Fetch / Pull / Push, tags, credential
+  prompts and Clone, shared by the bundled-git and bridge modules). A failed test leaves
+  `failed-<test>.png` in the shots directory.
+- Drive a Fork operation through `ForkUI.operate(start, done, what)`: it waits until native git
+  shows the effect and, when Fork reports Wine's failed start of its git (`Win32Exception ...
+  0x2db ... StartWithCreateProcess`, README "Known Wine limitations"), closes the report and runs
+  the step once more; any other Git Error fails at once with Fork's text. `Screen.clipboard()`
+  reads what Fork copied (Copy Commit SHA): it first wakes Wine's clipboard thread, whose claim of
+  the X selection a bare Xvfb never flushes.
+- Every test names its scenarios on a `Scenarios: ID, ...` docstring line; the registry is
+  `tests/e2e/scenarios.json` (`python3 scripts/gen-scenarios-doc.py validate` / `write`).
+
 ## What the container sees
 
 `/src` (this worktree, read-only), the git common dir (read-only, same path), `/e2e` (the scratch

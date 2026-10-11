@@ -31,6 +31,7 @@ complete -c fork-linux -n '__fish_seen_subcommand_from run' -l x11 -d 'use Wine\
 complete -c fork-linux -n '__fish_seen_subcommand_from run' -l wayland -d 'use Wine\'s experimental Wayland driver'
 complete -c fork-linux -n '__fish_seen_subcommand_from run' -l no-setup -d 'fail (exit 10) instead of running pending setup steps'
 complete -c fork-linux -n '__fish_seen_subcommand_from run' -l no-hooks -d 'skip the pre-launch snapshot, settings and ssh/git sync'
+complete -c fork-linux -n '__fish_seen_subcommand_from run' -l restart -d 'end the running Fork first (when it shows no window or stopped responding)'
 complete -c fork-linux -n '__fish_seen_subcommand_from run' -l from-file-manager -d 'a file opens the repository that contains it (used by file manager actions)'
 complete -c fork-linux -n '__fish_seen_subcommand_from run' -F
 complete -c fork-linux -n '__fish_use_subcommand' -a open -d 'open repositories in Fork'
@@ -40,6 +41,7 @@ complete -c fork-linux -n '__fish_seen_subcommand_from open' -l x11 -d 'use Wine
 complete -c fork-linux -n '__fish_seen_subcommand_from open' -l wayland -d 'use Wine\'s experimental Wayland driver'
 complete -c fork-linux -n '__fish_seen_subcommand_from open' -l no-setup -d 'fail (exit 10) instead of running pending setup steps'
 complete -c fork-linux -n '__fish_seen_subcommand_from open' -l no-hooks -d 'skip the pre-launch snapshot, settings and ssh/git sync'
+complete -c fork-linux -n '__fish_seen_subcommand_from open' -l restart -d 'end the running Fork first (when it shows no window or stopped responding)'
 complete -c fork-linux -n '__fish_seen_subcommand_from open' -l from-file-manager -d 'a file opens the repository that contains it (used by file manager actions)'
 complete -c fork-linux -n '__fish_seen_subcommand_from open' -F
 complete -c fork-linux -n '__fish_use_subcommand' -a update -d 'check for or install Fork and Wine updates'

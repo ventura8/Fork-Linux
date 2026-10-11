@@ -287,6 +287,8 @@ def test_e2e_asserts_what_agents_md_requires() -> None:
         'PREV_ART="${FL_PREVIOUS_ARTIFACTS_DIR:?',
         "upgrade_from_previous() {",
         "downgrade_to_previous() {",
+        "check_root_refused",
+        "refusing to run as root",
     ):
         assert needle in e2e, needle
 

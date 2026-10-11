@@ -30,10 +30,10 @@ CONTRACT = {
         "enforce_settings": "UpdateSubmodulesOnCheckout, DisableHardwareAcceleration",
     },
     "display": {"dpi": "auto", "theme": "follow"},
-    "ssh": {"sync": "auto", "mode": "link", "agent_bridge": "off"},
+    "ssh": {"sync": "auto", "mode": "link"},
     "git": {
         "config_overlay": "translate",
-        "env_overrides": "core.filemode=false, core.autocrlf=false",
+        "env_overrides": "core.filemode=false, core.autocrlf=false, core.checkStat=minimal",
         "safe_directory_all": "false",
         "bridge": "off",
         "bridge_mode": "bridge",
@@ -192,7 +192,6 @@ def test_getlist_and_getbool_defaults(paths: Paths) -> None:
     assert config.getlist("fork", "enforce_settings") == ["UpdateSubmodulesOnCheckout", "DisableHardwareAcceleration"]
     assert config.getlist("wine", "extra_dll_overrides") == []
     assert config.getbool("integration", "open_files_natively") is True
-    assert config.getbool("ssh", "agent_bridge") is False
     assert config.getint("snapshots", "keep") == 2
 
 

@@ -13,7 +13,8 @@ import importlib
 import os
 from typing import Any
 
-from .. import fsutil, procs, winecmd
+from .. import fork_install, fsutil, procs, wine_provider, winecmd
+from .. import manifest as manifest_mod
 from ..cli import AppContext
 from ..errors import Declined, ForkLinuxError, UsageError
 from ..locking import FileLock
@@ -159,6 +160,25 @@ def _reset_text(bctx: Any) -> str:
     )
 
 
+def _stop_prefix(bctx: Any) -> None:
+    """End everything running in our prefix before it is deleted (a prefix without our marker: nothing).
+
+    ``wineserver -k`` first; then what an interrupted setup left behind (a winetricks script that
+    keeps starting installers) gets SIGTERM / SIGKILL, or deleting the prefix races it and fails
+    with "Directory not empty".
+    """
+    paths = bctx.paths
+    if paths.created_by_marker.is_symlink() or not paths.created_by_marker.exists():
+        return
+    try:
+        winecmd.wineserver(bctx.runner, bctx.wine_env(), bctx.wine(), "-k", timeout=60)
+    except ForkLinuxError as exc:
+        bctx.ui.warn(f"could not stop Wine in the prefix: {exc}")
+    stopped = procs.stop_prefix(paths.prefix, proc_root=bctx.proc_root)
+    if stopped:
+        bctx.ui.warn(f"stopped {len(stopped)} process(es) still running in {paths.prefix}")
+
+
 def reset(bctx: Any) -> None:
     """Ask, stop the prefix's Wine, delete the prefix (only if ours) and start a fresh state."""
     if not bctx.ui.confirm(RESET_TITLE, _reset_text(bctx), default=False):
@@ -170,10 +190,7 @@ def reset(bctx: Any) -> None:
     with FileLock(paths.lock_file, "setup"):
         procs.require_closed(paths.prefix, proc_root=bctx.proc_root)
         if paths.prefix.exists():
-            try:
-                winecmd.wineserver(bctx.runner, bctx.wine_env(), bctx.wine(), "-k", timeout=60)
-            except ForkLinuxError as exc:
-                bctx.ui.warn(f"could not stop Wine in the prefix: {exc}")
+            _stop_prefix(bctx)
             fsutil.safe_rmtree(paths.prefix, marker=paths.created_by_marker)
     kept = {key: bctx.state.get(key) for key in KEPT_ON_RESET if bctx.state.get(key) is not None}
     bctx.state = State.load(paths.state_file)
@@ -192,10 +209,37 @@ def check_selection(boot: Any, args: argparse.Namespace) -> None:
         raise UsageError(f"unknown setup step(s): {', '.join(unknown)}", hint=f"steps: {', '.join(ids)}")
 
 
+def check_fork_request(args: argparse.Namespace, ctx: AppContext) -> None:
+    """Refuse a malformed, known-bad or (without ``--allow-untested``) unpinned ``--fork-version`` first.
+
+    The ``fork_download`` step checks it again; refusing it here means nothing (no Wine
+    download, no prefix, no ``--reset``) happens for a request that can never succeed.
+    """
+    if args.fork_version is None or args.list_steps:
+        return
+    manifest = manifest_mod.load(override=ctx.paths.manifest_override)
+    fork_install.plan(manifest, requested=args.fork_version, allow_untested=args.allow_untested)
+
+
+def check_wine_choice(args: argparse.Namespace, ctx: AppContext) -> None:
+    """Refuse a ``--wine`` choice that cannot work here before it is saved as ``wine.provider``.
+
+    A saved choice is used by every later setup and launch, so a Flatpak provider outside the
+    Flatpak, a missing system Wine or a wrong path would break them all. The managed Wine is
+    downloaded by setup itself and needs no check.
+    """
+    if not args.wine or args.wine == "managed":
+        return
+    manifest = manifest_mod.load(override=ctx.paths.manifest_override)
+    wine_provider.resolve(ctx.config, manifest, ctx.paths, ctx.runner, ctx.env, choice=args.wine)
+
+
 def run(args: argparse.Namespace, ctx: AppContext) -> int:
     """Run the pending setup steps (or list them)."""
     boot = _bootstrap()
     check_selection(boot, args)
+    check_fork_request(args, ctx)
+    check_wine_choice(args, ctx)
     bctx = _make_ctx(args, ctx)
     if args.list_steps:
         return list_steps(ctx, boot, bctx)

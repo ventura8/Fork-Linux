@@ -144,9 +144,6 @@ SCHEMA: dict[str, dict[str, KeySpec]] = {
             kind="choice",
             choices=("link", "copy"),
         ),
-        "agent_bridge": KeySpec(
-            "off", "Experimental: let Fork's ssh use your ssh-agent ($SSH_AUTH_SOCK).", kind="bool"
-        ),
     },
     "git": {
         "config_overlay": KeySpec(
@@ -156,7 +153,7 @@ SCHEMA: dict[str, dict[str, KeySpec]] = {
             choices=("translate", "off"),
         ),
         "env_overrides": KeySpec(
-            "core.filemode=false, core.autocrlf=false",
+            "core.filemode=false, core.autocrlf=false, core.checkStat=minimal",
             "git settings passed to Fork's git through GIT_CONFIG_COUNT (comma separated key=value).",
             kind="list",
         ),

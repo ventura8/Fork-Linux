@@ -43,4 +43,6 @@ Flatpak runs on its runtime's glibc.
 `scripts/ci-docker.sh` (stages lint / coverage / bridge / compat), `scripts/ci-matrix.sh`,
 `scripts/ci-packaging-{cell,matrix}.sh`, `scripts/ci-pipeline.sh`, `scripts/ci-e2e-wine.sh`;
 workflows `check.yml`, `release.yml`, `e2e-wine.yml`, `upstream-watch.yml`; one Dockerfile per
-stage / cell under `docker/`.
+stage / cell under `docker/`. The coverage stage ends with `scripts/check-coverage.py`:
+SonarQube's per-file coverage of every measured Python and C file (every file >= 90%, Python
+100% line + branch), its scope read from `sonar-project.properties`.

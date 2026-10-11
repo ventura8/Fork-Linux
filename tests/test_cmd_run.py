@@ -42,15 +42,17 @@ def test_run_defaults(capsys: pytest.CaptureFixture[str], launched: list[dict[st
             "no_setup": False,
             "no_hooks": False,
             "from_file_manager": False,
+            "restart": False,
         }
     ]
 
 
 def test_run_every_option(capsys: pytest.CaptureFixture[str], launched: list[dict[str, Any]]) -> None:
-    argv = ["run", "--debug", "--wine-debug", "+relay", "--wayland", "--no-setup", "--no-hooks"]
+    argv = ["run", "--debug", "--wine-debug", "+relay", "--wayland", "--no-setup", "--no-hooks", "--restart"]
     assert run_cli(capsys, *argv, "--from-file-manager", "a", "b")[0] == 0
     call = launched[0]
     assert call["targets"] == ["a", "b"]
+    assert call["restart"]
     assert call["debug"]
     assert call["no_setup"]
     assert call["no_hooks"]

@@ -104,9 +104,10 @@ def plan(
         return _make_plan(manifest, newest.version, "latest", allow_tofu=True)
     if requested is None:
         return _make_plan(manifest, manifest.fork_default, "default", allow_tofu=allow_untested)
-    if not isinstance(requested, str) or not versions.is_valid(requested):
+    # A dotted number, optionally written v2.23.2; anything else is refused before it names a download.
+    if not isinstance(requested, str) or not versions.is_plain(requested.strip().removeprefix("v")):
         raise UsageError(f"not a Fork version: {requested!r}", hint="use a dotted number such as 2.23.2")
-    _refuse_known_bad(manifest, requested)
+    _refuse_known_bad(manifest, requested.strip())
     return _make_plan(manifest, requested.strip(), "requested", allow_tofu=allow_untested)
 
 

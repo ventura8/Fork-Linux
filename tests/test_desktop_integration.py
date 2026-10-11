@@ -1260,6 +1260,88 @@ def test_remove_never_leaves_the_user_dirs(
     assert not paths.integrations_file.exists()
 
 
+def _tree(root: Path) -> list[str]:
+    """Every directory and file under ``root``, relative (without fork-linux's own data directory)."""
+    paths = (path.relative_to(root) for path in root.rglob("*"))
+    return sorted(str(path) for path in paths if path.parts[0] != "fork-linux")
+
+
+def test_remove_drops_the_directories_install_created(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
+) -> None:
+    # E2E: desktop remove left empty applications/, icons/hicolor/<N>/apps/, nemo/actions/... behind.
+    dirs = _dirs(env)
+    mine = dirs.data / "nautilus" / "scripts" / "mine.sh"
+    mine.parent.mkdir(parents=True)
+    mine.write_text("#!/bin/sh\n", encoding="utf-8")
+    exe = tmp_path / "Fork.exe"
+    exe.write_bytes(pb.build_pe())
+    before = (_tree(dirs.data), _tree(dirs.config), dirs.bin.exists())
+    _install(paths, env, runner, fork_exe=exe, icons=True, cli_alias=True, exec_cmd=[str(_launcher(tmp_path))])
+    recorded = json.loads(paths.integrations_file.read_text(encoding="utf-8"))["dirs"]
+    assert str(dirs.data / "applications") in recorded
+    assert str(dirs.data / "nautilus") not in recorded
+    # update-desktop-database's index alone does not keep the directory.
+    (dirs.data / "applications" / "mimeinfo.cache").write_text("[MIME Cache]\n", encoding="utf-8")
+    di.remove(paths, env, runner=runner)
+    after = (_tree(dirs.data), _tree(dirs.config), dirs.bin.exists())
+    assert after == before
+    assert mine.is_file()
+
+
+def test_remove_keeps_a_created_directory_that_holds_user_files(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner
+) -> None:
+    dirs = _dirs(env)
+    _install(paths, env, runner, file_managers="nemo")
+    user_file = dirs.kind_path(di.NEMO).parent / "theirs.nemo_action"
+    user_file.write_text("[Nemo Action]\n", encoding="utf-8")
+    di.remove(paths, env, runner=runner)
+    assert user_file.is_file()
+    assert not dirs.kind_path(di.NEMO).exists()
+    assert not paths.integrations_file.exists()
+
+
+def test_install_prunes_directories_left_empty(paths: Paths, env: dict[str, str], runner: RecordingRunner) -> None:
+    dirs = _dirs(env)
+    _install(paths, env, runner, file_managers="nemo")
+    nemo_dir = dirs.kind_path(di.NEMO).parent
+    assert nemo_dir.is_dir()
+    _install(paths, env, runner, file_managers="auto")
+    assert not nemo_dir.exists()
+    assert str(nemo_dir) not in json.loads(paths.integrations_file.read_text(encoding="utf-8")).get("dirs", [])
+
+
+def test_registry_ignores_malformed_dirs(paths: Paths) -> None:
+    paths.integrations_file.parent.mkdir(parents=True, exist_ok=True)
+    entry = {"path": "/x", "kind": di.MENU}
+    paths.integrations_file.write_text(json.dumps({"entries": [entry], "dirs": "/tmp"}), encoding="utf-8")
+    assert di._Registry.load(paths.integrations_file).dirs == set()
+    paths.integrations_file.write_text(json.dumps({"entries": [entry], "dirs": ["/a", 3]}), encoding="utf-8")
+    assert di._Registry.load(paths.integrations_file).dirs == {"/a"}
+
+
+def test_drop_if_empty_edge_cases(env: dict[str, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    dirs = _dirs(env)
+    assert not di._drop_if_empty(tmp_path / "outside", dirs)
+    target = dirs.data / "real"
+    target.mkdir(parents=True)
+    link = dirs.data / "link"
+    link.symlink_to(target)
+    assert not di._drop_if_empty(link, dirs)
+    assert di._drop_if_empty(dirs.data / "gone", dirs)
+    # A "cache index" that is a directory cannot be unlinked: the directory stays.
+    (target / "icon-theme.cache").mkdir()
+    assert not di._drop_if_empty(target, dirs)
+    assert target.is_dir()
+
+    def unreadable(_path: Path) -> list[str]:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(di.os, "listdir", unreadable)
+    assert not di._drop_if_empty(target, dirs)
+
+
 def test_status(paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path) -> None:
     empty = di.status(paths, env)
     assert empty["installed"] is False

@@ -8,16 +8,19 @@ registry batch applies the settings Fork needs under Wine (spike S1).
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from .. import helpers, procs, registry, wine_provider, winecmd, winetricks
+from .. import fsutil, helpers, procs, registry, wine_provider, winecmd, winetricks
 from ..bootstrap import Ctx, Step
 from ..errors import ForkLinuxError, SetupFailed
 from ..registry import RegBatch
 from . import runtime
+
+log = logging.getLogger(__name__)
 
 WINEBOOT_TIMEOUT = 600
 BOOT_DLL_OVERRIDES = "mscoree,mshtml="
@@ -35,6 +38,15 @@ WINE_KEY = r"HKCU\Software\Wine"
 DEFAULT_RENDERER = "default"
 # Windows' default ClearType gamma; Wine reads it for GDI text (0, wine.inf's value, means "unset").
 FONT_SMOOTHING_GAMMA = 1400
+# What a full disk or a full disk quota makes winetricks, Wine and the installers print (strerror).
+DISK_FULL_MARKERS = ("No space left on device", "Disk quota exceeded")
+DISK_FULL_TAIL_BYTES = 256 * 1024
+# Less free space than this after a failure: the disk filled up (whatever language the messages were in).
+DISK_LOW_BYTES = 64 * 1024 * 1024
+
+
+class DiskFull(SetupFailed):
+    """winetricks failed because the disk, or the user's disk quota, is full: retrying cannot help."""
 
 
 # -- shared helpers (also used by the dotnet, fonts and display steps) -----------------
@@ -79,19 +91,65 @@ def import_batch(ctx: Ctx, batch: RegBatch, name: str) -> None:
 def run_verbs(ctx: Ctx, step_id: str, verbs: Sequence[str]) -> None:
     """``winetricks -q <verbs>`` with its cache in ours; a non-zero exit raises :class:`SetupFailed` for ``step_id``.
 
-    Downloads already in winetricks' default cache are reused first (that cache is only read).
+    Downloads already in winetricks' default cache are reused first (that cache is only read). A failure
+    that its output blames on a full disk or quota (or with almost no space left) raises :class:`DiskFull`:
+    the preflight sees free space only, not per-user quotas.
     """
     cache = ctx.paths.winetricks_cache_dir
     winetricks.seed_cache(cache, ctx.paths.legacy_winetricks_cache_dir)
+    stop_leftovers(ctx)
+    offset = _log_size(ctx.log_file)
     result = winetricks.run_verbs(
         ctx.runner, runtime.winetricks_path(ctx), ctx.wine_env(), list(verbs), log_file=ctx.log_file, cache=cache
     )
-    if not result.ok:
-        raise SetupFailed(
+    if result.ok:
+        return
+    failed = f"winetricks {' '.join(verbs)} exited with code {result.returncode}"
+    if _disk_full_since(ctx.log_file, offset) or fsutil.disk_free(ctx.paths.prefix) < DISK_LOW_BYTES:
+        raise DiskFull(
             step_id,
-            f"winetricks {' '.join(verbs)} exited with code {result.returncode}",
-            hint="check your network connection; winetricks' output is in the setup log",
+            f"{failed}: the disk is full",
+            hint=f"the disk holding {ctx.paths.prefix} (or your disk quota there) is full: free some space, "
+            "then run 'fork-linux setup' again (it resumes)",
         )
+    raise SetupFailed(step_id, failed, hint="check your network connection; winetricks' output is in the setup log")
+
+
+def stop_leftovers(ctx: Ctx) -> None:
+    """End what still runs in the prefix before winetricks or a rebuild changes it.
+
+    The steps that call this need Fork closed, so anything left is an interrupted setup's (a
+    winetricks script that keeps starting installers would break the next install, and made
+    deleting the prefix fail with "Directory not empty"): ``wineserver -k``, then a signal.
+    """
+    if not procs.prefix_pids(ctx.paths.prefix):
+        return
+    winecmd.wineserver(ctx.runner, ctx.wine_env(), ctx.wine(), "-k")
+    stopped = procs.stop_prefix(ctx.paths.prefix)
+    if stopped:
+        log.warning("stopped %d process(es) an interrupted setup left in %s", len(stopped), ctx.paths.prefix)
+
+
+def _log_size(log_file: Path | None) -> int:
+    """The size of ``log_file`` now (0 when there is none yet)."""
+    try:
+        return 0 if log_file is None else log_file.stat().st_size
+    except OSError:
+        return 0
+
+
+def _disk_full_since(log_file: Path | None, offset: int) -> bool:
+    """True when what was appended to ``log_file`` after ``offset`` says the disk or the quota is full."""
+    if log_file is None:
+        return False
+    try:
+        with open(log_file, "rb") as handle:
+            end = handle.seek(0, os.SEEK_END)
+            handle.seek(max(offset, end - DISK_FULL_TAIL_BYTES))
+            text = handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return False
+    return any(marker in text for marker in DISK_FULL_MARKERS)
 
 
 # -- prefix_init -------------------------------------------------------------------------

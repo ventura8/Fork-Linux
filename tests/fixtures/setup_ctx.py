@@ -224,6 +224,8 @@ class FakeWine:
         self.fail = set(fail)
         # Verbs that fail on their next call only (a transient winetricks failure).
         self.fail_once: set[str] = set()
+        # Verbs that fail like a full disk quota (the message lands in the setup log).
+        self.disk_full: set[str] = set()
         self.layout = layout
         self.verbs: list[str] = []
 
@@ -267,9 +269,14 @@ class FakeWine:
     def wineserver(self, argv: list[str]) -> int:
         return 1 if "wineserver" in self.fail else 0
 
-    def winetricks(self, argv: list[str]) -> int:
+    def winetricks(self, argv: list[str], log_file: Path | None = None) -> int:
         verbs = [arg for arg in argv[1:] if not arg.startswith("-")]
         self.verbs.extend(verbs)
+        if self.disk_full.intersection(verbs):
+            if log_file is not None:
+                with open(log_file, "a", encoding="utf-8") as handle:
+                    handle.write("cabextract: write error: Disk quota exceeded\n")
+            return 1
         failed = [verb for verb in verbs if verb in self.fail or verb in self.fail_once]
         self.fail_once.difference_update(verbs)
         if failed:

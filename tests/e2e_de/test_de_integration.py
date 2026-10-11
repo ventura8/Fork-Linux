@@ -550,7 +550,11 @@ def _portal_agrees(session: dekit.Session, wanted: str) -> int | None:
 def test_the_desktops_own_programs_run(session: dekit.Session, desktop: desktops.Desktop) -> None:
     """The session is the desktop's own: its window manager answers the EWMH check, its shell,
     settings daemon and file-manager service run (logs/session-processes.txt lists every process),
-    and the portal hands applications the colour scheme through the desktop's own backend."""
+    and the portal hands applications the colour scheme through the desktop's own backend.
+
+    Scenarios: DE-XFCE-SESSION, DE-KDE-SESSION, DE-KDEWAYLAND-SESSION, DE-LXQT-SESSION, DE-GNOME-SESSION,
+    DE-BUDGIE-SESSION, DE-MATE-SESSION, DE-CINNAMON-SESSION
+    """
     assert session.window_manager_name() == desktop.wm_name
     for program in desktop.components:
         assert session.running(program), f"{program} does not run ({dekit.PROCESS_LOG})"
@@ -563,6 +567,8 @@ def test_the_desktops_own_programs_run(session: dekit.Session, desktop: desktops
 
 
 def test_install_from_the_release_tarball(session: dekit.Session, installed: dekit.Installed) -> None:
+    """Scenarios: DE-XFCE-INSTALL, DE-KDE-INSTALL, DE-KDEWAYLAND-INSTALL, DE-LXQT-INSTALL, DE-GNOME-INSTALL,
+    DE-BUDGIE-INSTALL, DE-MATE-INSTALL, DE-CINNAMON-INSTALL"""
     version = (REPO / "VERSION").read_text(encoding="utf-8").strip()
     reported = session.run(["fork-linux", "--version"]).stdout
     assert version in reported
@@ -576,6 +582,9 @@ def test_install_from_the_release_tarball(session: dekit.Session, installed: dek
 def test_file_manager_runs_open_in_fork(
     session: dekit.Session, desktop: desktops.Desktop, installed: dekit.Installed
 ) -> None:
+    """Scenarios: DE-XFCE-FILE-MANAGER-ACTION, DE-KDE-FILE-MANAGER-ACTION, DE-KDEWAYLAND-FILE-MANAGER-ACTION,
+    DE-LXQT-FILE-MANAGER-ACTION, DE-GNOME-FILE-MANAGER-ACTION, DE-BUDGIE-FILE-MANAGER-ACTION,
+    DE-MATE-FILE-MANAGER-ACTION, DE-CINNAMON-FILE-MANAGER-ACTION"""
     INTEGRATION_CHECKS[desktop.integration](session, installed)
     repo = _git_repo(session.root / "fm" / "fm-repo", session)
     session.spawn("file-manager-window", [desktop.file_manager, str(repo)])
@@ -595,6 +604,8 @@ def test_file_manager_runs_open_in_fork(
 def test_menu_entry_is_valid_listed_and_starts_fork_linux(
     session: dekit.Session, desktop: desktops.Desktop, installed: dekit.Installed
 ) -> None:
+    """Scenarios: DE-XFCE-MENU, DE-KDE-MENU, DE-KDEWAYLAND-MENU, DE-LXQT-MENU, DE-GNOME-MENU, DE-BUDGIE-MENU,
+    DE-MATE-MENU, DE-CINNAMON-MENU"""
     menu_file = installed.menu_file
     session.run(["desktop-file-validate", str(menu_file)])
     if desktop.menu_after_login:
@@ -625,6 +636,8 @@ def _theme_ids(desktop_key: str) -> list[str]:
 def test_theme_detection_follows_the_desktop(
     session: dekit.Session, desktop: desktops.Desktop, installed: dekit.Installed, case_id: str
 ) -> None:
+    """Scenarios: DE-XFCE-THEME, DE-KDE-THEME, DE-KDEWAYLAND-THEME, DE-LXQT-THEME, DE-GNOME-THEME,
+    DE-BUDGIE-THEME, DE-MATE-THEME, DE-CINNAMON-THEME"""
     wanted = case_id.partition(":")[0]
     for command in (*desktop.reset, *desktop.themes[case_id]):
         session.run(command)
@@ -650,6 +663,8 @@ def _scale_ids(desktop_key: str) -> list[str]:
 def test_scale_detection_follows_the_desktop(
     session: dekit.Session, desktop: desktops.Desktop, installed: dekit.Installed, case_id: str
 ) -> None:
+    """Scenarios: DE-XFCE-SCALE, DE-KDE-SCALE, DE-KDEWAYLAND-SCALE, DE-LXQT-SCALE, DE-GNOME-SCALE,
+    DE-BUDGIE-SCALE, DE-MATE-SCALE, DE-CINNAMON-SCALE"""
     case = next(item for item in desktop.scales if item.id == case_id)
     for command in (*desktop.reset, *case.commands):
         session.run(command)
@@ -671,6 +686,8 @@ def test_scale_detection_follows_the_desktop(
 def test_terminal_opens_in_the_directory(
     session: dekit.Session, desktop: desktops.Desktop, installed: dekit.Installed
 ) -> None:
+    """Scenarios: DE-XFCE-TERMINAL, DE-KDE-TERMINAL, DE-KDEWAYLAND-TERMINAL, DE-LXQT-TERMINAL, DE-GNOME-TERMINAL,
+    DE-BUDGIE-TERMINAL, DE-MATE-TERMINAL, DE-CINNAMON-TERMINAL"""
     target = _git_repo(session.root / "term" / "term-repo", session)
     # A terminal window an earlier test left open (the file manager's own "Open in Terminal") is not the answer.
     before = {window.id for window in session.windows()}
@@ -693,6 +710,9 @@ def test_terminal_opens_in_the_directory(
 def test_reveal_shows_the_file_in_the_file_manager(
     session: dekit.Session, desktop: desktops.Desktop, installed: dekit.Installed
 ) -> None:
+    """Scenarios: DE-XFCE-FILE-MANAGER-REVEAL, DE-KDE-FILE-MANAGER-REVEAL, DE-KDEWAYLAND-FILE-MANAGER-REVEAL,
+    DE-LXQT-FILE-MANAGER-REVEAL, DE-GNOME-FILE-MANAGER-REVEAL, DE-BUDGIE-FILE-MANAGER-REVEAL,
+    DE-MATE-FILE-MANAGER-REVEAL, DE-CINNAMON-FILE-MANAGER-REVEAL"""
     folder = session.root / "reveal" / "reveal-here"
     item = folder / "item.txt"
     _write(item, "reveal me\n")
@@ -710,6 +730,8 @@ def test_reveal_shows_the_file_in_the_file_manager(
 def test_open_file_reaches_the_default_application(
     session: dekit.Session, installed: dekit.Installed, stub: Path
 ) -> None:
+    """Scenarios: DE-XFCE-DEFAULT-APPS, DE-KDE-DEFAULT-APPS, DE-KDEWAYLAND-DEFAULT-APPS, DE-LXQT-DEFAULT-APPS,
+    DE-GNOME-DEFAULT-APPS, DE-BUDGIE-DEFAULT-APPS, DE-MATE-DEFAULT-APPS, DE-CINNAMON-DEFAULT-APPS"""
     document = session.root / "open" / f"document{STUB_SUFFIX}"
     _write(document, "open me\n")
     session.run([str(installed.host_helper), "open", str(document)])
@@ -717,11 +739,15 @@ def test_open_file_reaches_the_default_application(
 
 
 def test_open_url_reaches_the_web_browser(session: dekit.Session, installed: dekit.Installed, stub: Path) -> None:
+    """Scenarios: DE-XFCE-DEFAULT-APPS, DE-KDE-DEFAULT-APPS, DE-KDEWAYLAND-DEFAULT-APPS, DE-LXQT-DEFAULT-APPS,
+    DE-GNOME-DEFAULT-APPS, DE-BUDGIE-DEFAULT-APPS, DE-MATE-DEFAULT-APPS, DE-CINNAMON-DEFAULT-APPS"""
     session.run([str(installed.host_helper), "open", STUB_URL])
     dekit.wait_for(lambda: _stub_called_with(stub, STUB_URL), 30, "the web browser to get the link")
 
 
 def test_doctor_fails_only_for_what_setup_installs(session: dekit.Session, installed: dekit.Installed) -> None:
+    """Scenarios: DE-XFCE-DOCTOR, DE-KDE-DOCTOR, DE-KDEWAYLAND-DOCTOR, DE-LXQT-DOCTOR, DE-GNOME-DOCTOR,
+    DE-BUDGIE-DOCTOR, DE-MATE-DOCTOR, DE-CINNAMON-DOCTOR"""
     result = session.run(["fork-linux", "doctor", "--json"], check=False)
     report = json.loads(result.stdout)
     failed = {check["id"] for check in report["checks"] if check["status"] == "fail"}
@@ -733,5 +759,9 @@ def test_doctor_fails_only_for_what_setup_installs(session: dekit.Session, insta
 def test_the_desktops_own_programs_kept_running(session: dekit.Session) -> None:
     """None of the desktop's own programs crashed while the tier used the desktop: a panel or a
     settings daemon that dies and is started again would leave the tier checking a desktop that
-    does not hold up (Lubuntu's panel did, without the programs its menu names as favorites)."""
+    does not hold up (Lubuntu's panel did, without the programs its menu names as favorites).
+
+    Scenarios: DE-XFCE-SESSION, DE-KDE-SESSION, DE-KDEWAYLAND-SESSION, DE-LXQT-SESSION, DE-GNOME-SESSION,
+    DE-BUDGIE-SESSION, DE-MATE-SESSION, DE-CINNAMON-SESSION
+    """
     assert session.components_gone() == [], dekit.PROCESS_LOG

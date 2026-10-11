@@ -105,6 +105,8 @@ def run_fonts(ctx: Ctx) -> None:
         try:
             prefix_steps.run_verbs(ctx, "fonts", [COREFONTS])
             return
+        except prefix_steps.DiskFull:
+            raise
         except SetupFailed:
             log.warning("winetricks %s failed; trying once more", COREFONTS)
     prefix_steps.run_verbs(ctx, "fonts", [COREFONTS])

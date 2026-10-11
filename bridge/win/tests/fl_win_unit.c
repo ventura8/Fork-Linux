@@ -353,6 +353,12 @@ static void t_paths(void)
     CHECK(streq(out, "/no-such-root-fl"));
     CHECK(flw_to_unix_cb(NULL, "Z:\\tmp\\\\x", out, sizeof(out)) == 0);
     CHECK(flw_to_unix_cb(NULL, "\\\\no-such-server\\share\\x", out, sizeof(out)) == -1);
+    /* Wine refuses a wildcard in an NT name: only the drive root maps, the rest is the tail. */
+    CHECK(flw_to_unix_cb(NULL, "Z:\\fl*glob", out, sizeof(out)) == 0);
+    CHECK(streq(out, "/fl*glob"));
+    CHECK(flw_to_unix_cb(NULL, "Z:\\fl*glob", out, 5) == -1); /* the tail does not fit */
+    CHECK(flw_to_unix_cb(NULL, "C:\\fl*glob", out, sizeof(out)) == 0);
+    CHECK(ends(out, "/fl*glob") && strstr(out, "//") == NULL);
     memset(longp, 'a', sizeof(longp) - 1);
     longp[0] = 'C';
     longp[1] = ':';
@@ -407,6 +413,7 @@ static void t_norm(void)
     free(s);
     CHECK(flw_norm_win("\\\\server\\share\\x", NULL) == NULL);
     CHECK(flw_norm_win("\\\\?\\unix\\tmp", NULL) == NULL);
+    CHECK(flw_norm_win("\\\\?\\~:\\x", NULL) == NULL); /* '~' is no drive letter */
     CHECK(flw_norm_win("\xff", NULL) == NULL);
     CHECK(flw_norm_win("x", "\xff") == NULL);
     CHECK(flw_norm_win("", NULL) == NULL);
@@ -557,6 +564,12 @@ static void t_log_json(void)
     flw_buf_json_env_value(&b, "U", "ssh://me:pw@h/r");
     CHECK(streq(b.p, "\"<redacted>\"\"<redacted>\"\"ssh://<redacted>@h/r\""));
     flw_buf_free(&b);
+    /* The userinfo ends at the host; every character that ends a URL ends the scan. */
+    flw_buf_json_env_value(&b, "U",
+                           "https://a@h?q https://b@h#f x https://c@h y 'https://d@h' \"https://e@h\"");
+    CHECK(streq(b.p, "\"https://<redacted>@h?q https://<redacted>@h#f x https://<redacted>@h y "
+                     "'https://<redacted>@h' \\\"https://<redacted>@h\\\"\""));
+    flw_buf_free(&b);
 
     flw_buf_timestamp(&b);
     CHECK(b.n == 26 && b.p[0] == '"' && b.p[5] == '-' && b.p[11] == 'T' && b.p[20] == '.' && b.p[24] == 'Z');
@@ -665,6 +678,8 @@ static void t_transport_local(void)
 static void t_xlate(void)
 {
     static char *const in[] = { "-x", "C:\\windows", "C:\\windows\\no-such-fl" };
+    static char longarg[40000];
+    char *long_in[1] = { longarg };
     struct flw_cfg c;
     struct fl_xlate x;
     struct fl_strvec out = { 0, 0, NULL };
@@ -682,6 +697,12 @@ static void t_xlate(void)
     fl_strvec_free(&out);
     fail_alloc(3);
     CHECK(flw_xlate_args(&x, 3, in, &out) == -1);
+    fl_strvec_free(&out);
+    /* A Windows path that does not convert (too long for Win32) is passed on unchanged. */
+    memset(longarg, 'a', sizeof(longarg) - 1);
+    memcpy(longarg, "C:\\", 3);
+    CHECK(flw_xlate_args(&x, 1, long_in, &out) == 0);
+    CHECK(out.n == 1 && streq(out.v[0], longarg));
     fl_strvec_free(&out);
     memset(&ops, 0, sizeof(ops));
     flw_translate_environ(&x, &ops);

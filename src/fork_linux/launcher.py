@@ -30,6 +30,7 @@ import logging
 import os
 import stat
 import sys
+import time
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -80,6 +81,8 @@ FORK_LOG_PREFIX = "fork-"
 FORK_LOGS_KEEP = 10
 # Velopack's "Restart and Update" takes ~4 s under Wine (spike S9); allow for a slow disk.
 UPDATER_WAIT = 120.0
+RESTART_TIMEOUT = 30.0
+RESTART_POLL = 0.2
 _LOG_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_CLOEXEC | os.O_NOFOLLOW
 
 
@@ -752,6 +755,32 @@ def _fast_spec(
     )
 
 
+def stop_running_fork(app_ctx: AppContext) -> None:
+    """End the Fork running in our prefix (``run --restart``): ``wineserver -k`` with the session's Wine.
+
+    For a Fork that lost its window or stopped responding: the fast path would hand the paths to it
+    and nothing would show. Everything else running in the prefix ends too.
+    """
+    paths: Paths = app_ctx.paths
+    info = _session_wine(paths, trusted_wines(app_ctx))
+    if info is None:
+        raise ForkLinuxError(
+            "cannot stop the running Fork: the Wine of its session is unknown",
+            hint="end Fork.exe yourself (for example with your system monitor), then start it again",
+        )
+    env = winecmd.build_env(paths, info, user=winecmd.windows_user(app_ctx.env), base_env=app_ctx.env)
+    log.info("stopping the running Fork (wineserver -k)")
+    winecmd.wineserver(app_ctx.runner, env, info, "-k", timeout=RESTART_TIMEOUT)
+    deadline = time.monotonic() + RESTART_TIMEOUT
+    while procs.fork_running(paths.prefix):
+        if time.monotonic() > deadline:
+            raise ForkLinuxError(
+                f"Fork still runs {RESTART_TIMEOUT:g} s after 'wineserver -k'",
+                hint="end Fork.exe yourself (for example with your system monitor), then start it again",
+            )
+        time.sleep(RESTART_POLL)
+
+
 def _maybe_to_terminal(spec: LaunchSpec, terminal: bool) -> LaunchSpec:
     """``spec`` without its log file when Wine's output stays on the terminal."""
     return dataclasses.replace(spec, log_file=None) if terminal else spec
@@ -799,6 +828,7 @@ def run(
     no_setup: bool = False,
     no_hooks: bool = False,
     from_file_manager: bool = False,
+    restart: bool = False,
     execvpe: Callable[..., Any] = os.execvpe,
 ) -> int:
     """Open ``raw_targets`` in Fork (or just start it); returns only when ``execvpe`` does (tests).
@@ -812,11 +842,15 @@ def run(
     when the desktop hand-off needs one (:func:`bridge.start_handoff`); 5. pre-launch hooks unless
     ``no_hooks``; 6. record the session, send Wine's output to the log and
     exec. When anything fails before the exec the daemon is stopped again.
+    ``restart`` first ends a running Fork (:func:`stop_running_fork`).
     """
     targets = resolve_targets(raw_targets, Path(os.getcwd()), from_file_manager=from_file_manager)
     terminal = _to_terminal(app_ctx, debug)
     wait_for_fork_update(app_ctx.paths.prefix)
     running = procs.fork_running(app_ctx.paths.prefix)
+    if running and restart:
+        stop_running_fork(app_ctx)
+        running = False
     fast = _fast_spec(app_ctx, targets, debug=debug, wine_debug=wine_debug, driver=driver) if running else None
     if fast is not None:
         return _exec(_maybe_to_terminal(fast, terminal), truncate=False, execvpe=execvpe)

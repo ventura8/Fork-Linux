@@ -57,6 +57,8 @@ def _report_dict(report: ssh_sync.SyncReport) -> dict[str, Any]:
         "config_path": None if report.config_path is None else str(report.config_path),
         "skipped": [str(path) for path in report.skipped],
         "removed": [str(path) for path in report.removed],
+        "unchanged": [str(path) for path in report.unchanged],
+        "passphrase_keys": list(report.passphrase_keys),
     }
 
 
@@ -84,12 +86,30 @@ def _print_sync(data: dict[str, Any], *, dry_run: bool) -> None:
     for key in ("linked", "copied", "removed", "skipped"):
         for path in data[key]:
             print(f"{labels[key]}: {path}")
-    if data["config_path"]:
+    config_changed = bool(data["config_path"]) and data["config_path"] not in data["unchanged"]
+    if config_changed:
         print(f"{labels['config_path']}: {data['config_path']}")
     for item in data["dropped_directives"]:
         print(f"commented out: {item['directive']} ({item['reason']})")
-    if not any(data[key] for key in ("linked", "copied", "removed", "skipped", "config_path")):
-        print("nothing to share" if not dry_run else "nothing would change")
+    if not config_changed and not any(data[key] for key in ("linked", "copied", "removed", "skipped")):
+        print(_nothing(dry_run, len(data["unchanged"])))
+    _print_passphrase_keys(data["passphrase_keys"])
+
+
+def _print_passphrase_keys(keys: list[str]) -> None:
+    """Name the shared keys that need a passphrase, which Fork's bundled ssh cannot ask for."""
+    for name in keys:
+        print(f"needs a passphrase: {name}")
+    if keys:
+        print(f"note: {ssh_sync.PASSPHRASE_PROBLEM}; {ssh_sync.PASSPHRASE_HINT}")
+
+
+def _nothing(dry_run: bool, unchanged: int) -> str:
+    """The line for a sync that changed nothing (``unchanged`` files were already shared)."""
+    if not unchanged:
+        return "nothing would change" if dry_run else "nothing to share"
+    verdict = "nothing would change" if dry_run else "nothing changed"
+    return f"{verdict}: {unchanged} file(s) already shared"
 
 
 def run_status(args: argparse.Namespace, ctx: AppContext) -> int:
@@ -115,3 +135,4 @@ def _print_status(info: dict[str, Any]) -> None:
         print(f"insecure:    {name}")
     for name in info["broken_links"]:
         print(f"broken link: {name}")
+    _print_passphrase_keys(info["passphrase_keys"])

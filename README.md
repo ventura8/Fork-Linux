@@ -104,7 +104,7 @@ Downloads are cached in `~/.cache/fork-linux/` (winetricks' .NET and font downlo
 | Command | Purpose |
 |---|---|
 | `setup [--fork-version V \| --latest] [--allow-untested] [--wine managed\|system\|flatpak\|PATH] [--dotnet auto\|dotnet48\|dotnet472] [--accept-fork-eula] [--only STEP \| --from-step STEP] [--force] [--reset] [--no-launch] [--list-steps]` | Idempotent, resumable bootstrap |
-| `run [PATH …]`, `open PATH …`, `fork [PATH]` (`[--debug] [--wine-debug CHANNELS] [--x11 \| --wayland] [--no-setup] [--no-hooks]`) | Launch Fork or open repositories |
+| `run [PATH …]`, `open PATH …`, `fork [PATH]` (`[--debug] [--wine-debug CHANNELS] [--x11 \| --wayland] [--no-setup] [--no-hooks] [--restart]`) | Launch Fork or open repositories |
 | `update [--check \| --fork \| --wine] [--fork-version V \| --latest] [--allow-untested]` | Check for and apply Fork / Wine runtime updates |
 | `snapshot create [--reason R] \| list \| delete ID \| prune` | Manage snapshots of Fork's install |
 | `rollback [ID \| --to-version V] [--with-settings] [--no-pin]` | Restore a snapshot and pin that version |
@@ -115,7 +115,7 @@ Downloads are cached in `~/.cache/fork-linux/` (winetricks' .NET and font downlo
 | `ssh sync [--dry-run] [--mode link\|copy] [--no-config] \| status` | Share your SSH keys and config with Fork |
 | `git-bridge enable \| disable \| status \| record on\|off` | Experimental native-git bridge (opt-in; `record` forwards to bundled git for debugging) |
 | `logs [--wine \| --fork \| --velopack \| --setup \| --all] [--follow \| --path \| --bundle]` | Show logs or create a redacted bug-report bundle |
-| `uninstall [--purge] [--keep-downloads] [--yes]` | Remove integrations; `--purge` also removes the prefix, runtimes and caches (`--keep-downloads` keeps the downloaded Wine, Fork, .NET and fonts) |
+| `uninstall [--purge] [--keep-downloads] [--yes]` | Remove integrations; `--purge` also removes the prefix (with every other prefix in `~/.local/share/fork-linux/`), runtimes and caches (`--keep-downloads` keeps the downloaded Wine, Fork, .NET and fonts) |
 | `about` / `credits`, `version`, `status` | Credits, version, setup and Fork status |
 
 Exit codes are stable and documented in [AGENTS.md §5](AGENTS.md#5-standard-exit-code-mapping) (for example `10` not set up, `13` integrity check failed, `15` Fork is running).
@@ -141,8 +141,9 @@ fork-linux git-bridge disable    # back to Fork's bundled git at the next start
 
 What it changes, verified with Fork 2.23.2:
 
-- **Hooks run natively**: a `pre-commit` hook that fails now blocks the commit and Fork shows its output (bundled git skips such hooks and commits anyway). **Submodule update**, pushes and fetches to `file://` / `/home/…` remotes, and interactive rebase from Fork's dialog work; commits keep exec bits and symlinks.
+- **Hooks run natively**: a `pre-commit` hook that fails now blocks the commit and Fork shows its output (bundled git skips such hooks and commits anyway). **Submodule update**, pushes and fetches to `file://` / `/home/…` remotes, interactive rebase from Fork's dialog and **Git Flow** (with `git-flow` installed) work; commits keep exec bits and symlinks.
 - **Open in Shell / Console** and **Diff in Linux (fork-linux)** (Ctrl+D on a changed file) open your Linux terminal and diff tool (meld, kdiff3, Beyond Compare or VS Code), and Fork waits for the diff tool.
+- **ssh and HTTPS** use your Linux ssh (with your ssh-agent; a key's passphrase is asked in Fork's own prompt) and your Linux credential helpers; without a helper, Fork's prompt asks for the user name and password.
 - Each git call is much faster (about 13 ms against about 90 ms for bundled git).
 
 How it works: when Fork starts, fork-linux starts a small helper (`fl-bridge-helper`) outside Wine and points Fork at its own shims in `C:\fork-linux\gitInstance`. The helper lives as long as Fork does — also across Fork's own "Restart and Update" — and stops a few seconds after Fork closes. Only the `[git] bridge` setting and Fork's terminal / diff / merge tool entries change; your `~/.gitconfig` (and its credential helpers, signing and editors) is what git uses.
@@ -158,6 +159,7 @@ Baseline: **Ubuntu 26.04**; oldest supported: **Ubuntu 22.04**. CI also covers U
 - **Start with `fork-linux doctor`.** It checks the host, Wine, the prefix, Fork and the integrations, and prints a fix for every failure; `fork-linux doctor --fix` applies the safe ones.
 - **Logs**: `fork-linux logs` (files in `~/.local/state/fork-linux/logs/`). `fork-linux logs --bundle` creates a redacted archive to attach to an issue. Earlier Fork sessions' `fork.log` files are kept there as `fork-<time>.log`.
 - **A terminal or app Fork opens crashes or does not start** (Tilix, Nemo, Snap apps): `fork-linux doctor --check desktop.handoff` says how Fork's terminals and apps leave Wine's process tree on your system (your systemd user session, fork-linux's own launcher daemon, or `flatpak-spawn --host`) and warns when the last one ran inside it; start Fork with `fork-linux run` or the menu entry so the launcher can start its daemon.
+- **Fork shows no window or stopped responding**: while Fork runs, `fork-linux run` only hands the paths to it. `fork-linux run --restart` ends the running Fork (everything in its Wine prefix) and starts it again.
 - **Repository problems**: `fork-linux repo check` lists what breaks per repository (hooks, symlinks, submodules, remotes given as Linux paths, `core.filemode`); `fork-linux repo fix PATH` sets `core.filemode=false` and marks tracked symlinks `skip-worktree` after asking, and `fork-linux repo undo PATH` reverts exactly that.
 
 What fork-linux connects for you:
@@ -172,9 +174,14 @@ What fork-linux connects for you:
 Known Wine limitations:
 
 - **Hooks that start other programs are silently skipped** by Fork's bundled git under Wine (its `sh` dies after the first program, and the commit still succeeds). `fork-linux doctor` lists affected repositories; commit there from a terminal, or enable the git bridge (see [Git bridge](#git-bridge-experimental-opt-in)), which runs them with Linux git.
+- **Git LFS**: *Initialize* and commits work with Fork's bundled git, but a push runs LFS's pre-push hook through that same `sh`, which now and then hangs under Wine (the push never ends). Enable the git bridge for LFS repositories: Linux git (with your distribution's `git-lfs`) runs the hook.
 - **Symlinks** look like modified files to Fork (and committing them through Fork's git turns them into plain files); **submodule update / init** does nothing; **Git Bash** exits at once. Use a terminal for these; the git bridge fixes submodules and symlink-preserving commits.
+- **Git Flow**: *Initialize* works, but *Start Feature* (git-flow's shell scripts) silently does nothing with Fork's bundled git. With the git bridge it runs with your Linux git: install your distribution's `git-flow` package.
 - **Spell checking** does nothing under Wine; keep it disabled.
-- **GitHub account sign-in (OAuth) can crash Fork under Wine.** Use a GitHub personal access token instead. Credentials are stored with DPAPI inside the prefix.
+- **Now and then a pane shows `Win32Exception ... StartWithCreateProcess`** instead of a diff, or an action (applying a stash, for example) ends in a *Git Error* that shows it (Git Flow commands show `OS Error 731` instead): Wine failed to start one of Fork's git processes, so that git call did not run. Select the commit or file again (or press F5), or close the report and repeat the action. When it is the last step of *Initialize Git Flow* (`git config gitflow.path.hooks`), Git Flow is already set up: just close the report.
+- **ssh keys with a passphrase and ssh-agent** do not work with Fork's bundled ssh: under Wine it cannot show its passphrase prompt nor reach your agent, and the fetch or push fails with `Permission denied (publickey)`. `fork-linux ssh sync` and `fork-linux doctor` name such keys. Enable the git bridge (see [Git bridge](#git-bridge-experimental-opt-in)): your Linux ssh then uses the agent, or asks for the passphrase through Fork. Keys without a passphrase work either way.
+- **GitHub account sign-in (OAuth) can crash Fork under Wine.** Use a GitHub personal access token instead. For HTTPS remotes Fork's git uses Git Credential Manager: it asks once for the user name and password (or token) and keeps them with DPAPI inside the prefix. When its window cannot open under Wine (now and then on the first prompt after Fork starts), Fork's own prompt asks instead, and the account is kept just the same.
+- **Copy Path / Copy Full Path** in Fork put the path Fork sees on your clipboard: a full path is a Windows path such as `Z:\home\you\src\file.txt`. A repository opened by typing `H:\...` stays under `H:` in Fork's tab list; fork-linux's `repo check` and `doctor` find it all the same.
 - **Wayland**: Fork runs through XWayland by default; Wine's native Wayland driver is opt-in and experimental.
 - **License activations**: each new Wine prefix may count as a new machine for your Fork license (3 per license). **Deactivate the license in Fork before `fork-linux uninstall --purge`** or before deleting the prefix.
 

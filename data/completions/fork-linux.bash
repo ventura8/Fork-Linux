@@ -40,14 +40,14 @@ _fork_linux_node() {
 			_fl_pos_words=''
 			;;
 		"run")
-			_fl_opts='-h --help --json --prefix --gui --no-gui --offline -v --verbose -q --quiet --allow-root --debug --wine-debug --x11 --wayland --no-setup --no-hooks --from-file-manager'
+			_fl_opts='-h --help --json --prefix --gui --no-gui --offline -v --verbose -q --quiet --allow-root --debug --wine-debug --x11 --wayland --no-setup --no-hooks --restart --from-file-manager'
 			_fl_vopts='--prefix --wine-debug'
 			_fl_subs=''
 			_fl_pos=1
 			_fl_pos_words=''
 			;;
 		"open")
-			_fl_opts='-h --help --json --prefix --gui --no-gui --offline -v --verbose -q --quiet --allow-root --debug --wine-debug --x11 --wayland --no-setup --no-hooks --from-file-manager'
+			_fl_opts='-h --help --json --prefix --gui --no-gui --offline -v --verbose -q --quiet --allow-root --debug --wine-debug --x11 --wayland --no-setup --no-hooks --restart --from-file-manager'
 			_fl_vopts='--prefix --wine-debug'
 			_fl_subs=''
 			_fl_pos=1

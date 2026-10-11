@@ -82,6 +82,8 @@ def _repository_menu(session: dekit.Session, item: tuple[int, int], name: str) -
 
 
 def test_01_setup_completes(session: dekit.Session, installed: dekit.Installed) -> None:
+    """Scenarios: DE-XFCE-FORK-SETUP, DE-KDE-FORK-SETUP, DE-KDEWAYLAND-FORK-SETUP, DE-LXQT-FORK-SETUP,
+    DE-GNOME-FORK-SETUP, DE-BUDGIE-FORK-SETUP, DE-MATE-FORK-SETUP, DE-CINNAMON-FORK-SETUP"""
     forkui.seed_caches(session.home)
     started = time.monotonic()
     session.run(SETUP, timeout=SETUP_TIMEOUT)
@@ -92,6 +94,8 @@ def test_01_setup_completes(session: dekit.Session, installed: dekit.Installed) 
 
 
 def test_02_doctor_deep_has_no_failures(session: dekit.Session) -> None:
+    """Scenarios: DE-XFCE-FORK-SETUP, DE-KDE-FORK-SETUP, DE-KDEWAYLAND-FORK-SETUP, DE-LXQT-FORK-SETUP,
+    DE-GNOME-FORK-SETUP, DE-BUDGIE-FORK-SETUP, DE-MATE-FORK-SETUP, DE-CINNAMON-FORK-SETUP"""
     report = json.loads(session.run(["fork-linux", "doctor", "--deep", "--json"], timeout=300).stdout)
     failed = [check for check in report["checks"] if check["status"] == "fail"]
     warned = [check for check in report["checks"] if check["status"] == "warn"]
@@ -102,6 +106,8 @@ def test_02_doctor_deep_has_no_failures(session: dekit.Session) -> None:
 def test_03_fork_runs_under_the_desktops_window_manager(
     session: dekit.Session, desktop: desktops.Desktop, installed: dekit.Installed
 ) -> None:
+    """Scenarios: DE-XFCE-FORK-WINDOW, DE-KDE-FORK-WINDOW, DE-KDEWAYLAND-FORK-WINDOW, DE-LXQT-FORK-WINDOW,
+    DE-GNOME-FORK-WINDOW, DE-BUDGIE-FORK-WINDOW, DE-MATE-FORK-WINDOW, DE-CINNAMON-FORK-WINDOW"""
     demo = forkui.make_repo(session, _repos(session) / "demo")
     # The desktop's light theme (some desktops, such as Ubuntu Budgie, start dark).
     for command in desktop.themes[desktops.LIGHT]:
@@ -126,6 +132,9 @@ def test_03_fork_runs_under_the_desktops_window_manager(
 
 
 def test_04_fork_command_opens_a_second_tab(session: dekit.Session) -> None:
+    """Scenarios: DE-XFCE-FORK-SECOND-TAB, DE-KDE-FORK-SECOND-TAB, DE-KDEWAYLAND-FORK-SECOND-TAB,
+    DE-LXQT-FORK-SECOND-TAB, DE-GNOME-FORK-SECOND-TAB, DE-BUDGIE-FORK-SECOND-TAB, DE-MATE-FORK-SECOND-TAB,
+    DE-CINNAMON-FORK-SECOND-TAB"""
     second = forkui.make_repo(session, _repos(session) / "second")
     started = time.monotonic()
     result = session.run(["fork", str(second)], timeout=FAST_PATH_SECONDS)
@@ -136,6 +145,9 @@ def test_04_fork_command_opens_a_second_tab(session: dekit.Session) -> None:
 
 
 def test_05_open_in_shell_opens_the_desktops_terminal(session: dekit.Session, desktop: desktops.Desktop) -> None:
+    """Scenarios: DE-XFCE-FORK-SHELL, DE-KDE-FORK-SHELL, DE-KDEWAYLAND-FORK-SHELL, DE-LXQT-FORK-SHELL,
+    DE-GNOME-FORK-SHELL, DE-BUDGIE-FORK-SHELL, DE-MATE-FORK-SHELL, DE-CINNAMON-FORK-SHELL, I-HANDOFF-DAEMON,
+    D-DESKTOP-HANDOFF"""
     active = _repos(session) / ACTIVE
     before = {window.id for window in session.windows()}
     _repository_menu(session, OPEN_IN_SHELL, "open-in-shell")
@@ -185,6 +197,9 @@ def test_05_open_in_shell_opens_the_desktops_terminal(session: dekit.Session, de
 def test_06_open_in_file_explorer_opens_the_desktops_file_manager(
     session: dekit.Session, desktop: desktops.Desktop
 ) -> None:
+    """Scenarios: DE-XFCE-FORK-EXPLORER, DE-KDE-FORK-EXPLORER, DE-KDEWAYLAND-FORK-EXPLORER,
+    DE-LXQT-FORK-EXPLORER, DE-GNOME-FORK-EXPLORER, DE-BUDGIE-FORK-EXPLORER, DE-MATE-FORK-EXPLORER,
+    DE-CINNAMON-FORK-EXPLORER"""
     before = {window.id for window in session.windows()}
     _repository_menu(session, OPEN_IN_FILE_EXPLORER, "open-in-file-explorer")
     window = session.wait_window(
@@ -214,6 +229,9 @@ def _opening(repo: Path) -> list[str]:
 def test_07_file_managers_open_in_fork_reaches_the_running_fork(
     session: dekit.Session, desktop: desktops.Desktop
 ) -> None:
+    """Scenarios: DE-XFCE-FORK-OPEN-IN-FORK, DE-KDE-FORK-OPEN-IN-FORK, DE-KDEWAYLAND-FORK-OPEN-IN-FORK,
+    DE-LXQT-FORK-OPEN-IN-FORK, DE-GNOME-FORK-OPEN-IN-FORK, DE-BUDGIE-FORK-OPEN-IN-FORK,
+    DE-MATE-FORK-OPEN-IN-FORK, DE-CINNAMON-FORK-OPEN-IN-FORK"""
     third = forkui.make_repo(session, _repos(session) / "third")
     # install.sh asked to restart a file manager that was running while it added the action.
     program = RESTARTED_FILE_MANAGERS.get(desktop.integration)
@@ -241,6 +259,8 @@ def test_07_file_managers_open_in_fork_reaches_the_running_fork(
 def test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark(
     session: dekit.Session, desktop: desktops.Desktop
 ) -> None:
+    """Scenarios: DE-XFCE-FORK-DARK, DE-KDE-FORK-DARK, DE-KDEWAYLAND-FORK-DARK, DE-LXQT-FORK-DARK,
+    DE-GNOME-FORK-DARK, DE-BUDGIE-FORK-DARK, DE-MATE-FORK-DARK, DE-CINNAMON-FORK-DARK"""
     forkui.close_fork(session)
     # The terminal Fork opened in step 05 is the user's now: closing Fork leaves it running.
     assert any(window.has_class(desktop.terminal_class) for window in session.windows())
@@ -265,6 +285,8 @@ def test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark(
 
 
 def test_09_doctor_after_use_has_no_failures(session: dekit.Session) -> None:
+    """Scenarios: DE-XFCE-FORK-SETUP, DE-KDE-FORK-SETUP, DE-KDEWAYLAND-FORK-SETUP, DE-LXQT-FORK-SETUP,
+    DE-GNOME-FORK-SETUP, DE-BUDGIE-FORK-SETUP, DE-MATE-FORK-SETUP, DE-CINNAMON-FORK-SETUP, D-DESKTOP-HANDOFF"""
     forkui.close_fork(session)
     report = json.loads(session.run(["fork-linux", "doctor", "--deep", "--json"], timeout=300).stdout)
     failed = [check for check in report["checks"] if check["status"] == "fail"]

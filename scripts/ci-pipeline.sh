@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ci-pipeline.sh - the full local gate of Fork for Linux (unofficial), fail-fast between stages:
 #   1) lint       scripts/ci-docker.sh FL_CI_STAGE=lint
-#   2) coverage   scripts/ci-docker.sh FL_CI_STAGE=coverage (Python gates + C coverage report)
+#   2) coverage   scripts/ci-docker.sh FL_CI_STAGE=coverage (Python gates + C coverage report + per-file gate)
 #   3) bridge     scripts/ci-docker.sh FL_CI_STAGE=bridge (MinGW/musl, repro, Wine tier)
 #   4) compat     scripts/ci-matrix.sh (7 cells in parallel)
 #   5) e2e-de     scripts/ci-e2e-de-matrix.sh (the desktop integration tier, 8 desktops in

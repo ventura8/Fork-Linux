@@ -409,7 +409,7 @@ def test_sync_without_host_config(paths: Paths, pathmap: PathMap, tmp_path: Path
     user_dir = paths.wine_user_dir(USER)
     assert changed == [gitconfig.overlay_path(paths, USER), user_dir / ".gitconfig"]
     assert gitconfig.overlay_path(paths, USER).read_text(encoding="utf-8") == gitconfig.HEADER + (
-        gitconfig.MANAGED_HEADER + "[credential]\n\tcredentialStore = dpapi\n"
+        gitconfig.MANAGED_HEADER + "[credential]\n\thelper =\n\thelper = manager\n\tcredentialStore = dpapi\n"
     )
     assert (user_dir / ".gitconfig").read_text(encoding="utf-8") == BLOCK
 
@@ -453,11 +453,13 @@ def _config(tmp_path: Path, **values: str) -> Config:
 
 def test_env_overrides_defaults(tmp_path: Path) -> None:
     assert gitconfig.env_overrides(_config(tmp_path)) == {
-        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_COUNT": "3",
         "GIT_CONFIG_KEY_0": "core.filemode",
         "GIT_CONFIG_VALUE_0": "false",
         "GIT_CONFIG_KEY_1": "core.autocrlf",
         "GIT_CONFIG_VALUE_1": "false",
+        "GIT_CONFIG_KEY_2": "core.checkStat",
+        "GIT_CONFIG_VALUE_2": "minimal",
     }
 
 
@@ -473,7 +475,8 @@ def test_env_overrides_safe_directory(tmp_path: Path) -> None:
 
 
 def test_env_overrides_for_native_git_drop_the_bundled_only_keys(tmp_path: Path) -> None:
-    config = _config(tmp_path, env_overrides="core.FileMode=false, core.autocrlf=false, core.symlinks=true, a.b=c")
+    overrides = "core.FileMode=false, core.autocrlf=false, core.symlinks=true, core.checkStat=minimal, a.b=c"
+    config = _config(tmp_path, env_overrides=overrides)
     assert gitconfig.env_overrides(config, native=True, git_version=(2, 53, 0)) == {
         "GIT_CONFIG_COUNT": "2",
         "GIT_CONFIG_KEY_0": "a.b",
@@ -580,7 +583,7 @@ def test_sync_translates_each_host_file_against_the_host_home(
         + gitconfig.MANAGED_HEADER
         + '[url "file:///Z:/home/"]\n\tinsteadOf = file:///home/\n'
         + '[url "Z:/home/"]\n\tinsteadOf = /home/\n'
-        + "[credential]\n\tcredentialStore = dpapi\n"
+        + "[credential]\n\thelper =\n\thelper = manager\n\tcredentialStore = dpapi\n"
     )
 
 
@@ -599,7 +602,7 @@ def test_managed_text_skips_unreachable_tops(tmp_path: Path) -> None:
     text = gitconfig.managed_text(only_home, ["home", "mnt"])
     assert '[url "file:///H:/"]\n\tinsteadOf = file:///home/\n[url "H:/"]\n\tinsteadOf = /home/\n' in text
     assert "mnt" not in text
-    assert text.endswith("[credential]\n\tcredentialStore = dpapi\n")
+    assert text.endswith("[credential]\n\thelper =\n\thelper = manager\n\tcredentialStore = dpapi\n")
 
 
 def _git_runner(stdout: str = "git version 2.53.0\n", code: int = 0) -> RecordingRunner:

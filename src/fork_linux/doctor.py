@@ -517,7 +517,8 @@ def check_disk(ctx: DoctorCtx) -> Result:
 
 def _other_dialog(name: str) -> str:
     """The dialog tool that can stand in for ``name``."""
-    return next(other for other in hostdeps.DIALOG_TOOLS if other != name)
+    # A list, not a generator: Python 3.10 traces an unfinished generator as a missed branch.
+    return [other for other in hostdeps.DIALOG_TOOLS if other != name][0]
 
 
 def check_tools(ctx: DoctorCtx) -> Result:
@@ -1494,6 +1495,22 @@ def check_ssh_config(ctx: DoctorCtx) -> Result:
     )
 
 
+def check_ssh_passphrase(ctx: DoctorCtx) -> Result:
+    """Shared keys with a passphrase: Fork's bundled ssh cannot ask for it under Wine (the bridge's ssh can)."""
+    why = _ssh_wanted(ctx)
+    if why:
+        return Result("info", why)
+    if not _has_prefix(ctx):
+        return _skip(NO_PREFIX)
+    keys = ssh_sync.status(ctx.paths, ctx.user, ctx.host_home)["passphrase_keys"]
+    if not keys:
+        return Result("ok", "no shared key needs a passphrase")
+    names = ", ".join(keys)
+    if _bridge_ready(ctx):
+        return Result("ok", f"{names} need(s) a passphrase: the git bridge's Linux ssh asks for it")
+    return Result("warn", f"{names} need(s) a passphrase: {ssh_sync.PASSPHRASE_PROBLEM}", ssh_sync.PASSPHRASE_HINT)
+
+
 def check_git_overlay(ctx: DoctorCtx) -> Result:
     """Fork's git sees a translated ``~/.gitconfig``; the env overrides are valid."""
     try:
@@ -1579,7 +1596,8 @@ def check_git_selftest(ctx: DoctorCtx) -> Result:
         return Result(
             "warn",
             f"{version or 'git'}: a fresh repository shows changes ({status.splitlines()[0]})",
-            "keep core.filemode=false and core.autocrlf=false in git.env_overrides; " + HOOK_LIMITATION,
+            "keep core.filemode=false, core.autocrlf=false and core.checkStat=minimal in git.env_overrides; "
+            + HOOK_LIMITATION,
         )
     level = "ok" if info.staging else "warn"
     return Result(level, f"{version or 'git'} works; a fresh repository is clean", HOOK_LIMITATION)
@@ -1884,6 +1902,7 @@ CHECKS: list[Check] = [
     Check("repo.filemode", "Repository core.filemode", "repo", check_repo_filemode, fixer=fix_repo_filemode),
     Check("ssh.dir", "ssh keys", "ssh", check_ssh_dir, fix_steps=("ssh_sync",)),
     Check("ssh.config", "ssh config", "ssh", check_ssh_config, fix_steps=("ssh_sync",)),
+    Check("ssh.passphrase", "ssh key passphrases", "ssh", check_ssh_passphrase),
     Check("git.overlay", "git config overlay", "git", check_git_overlay, fix_steps=("git_overlay",)),
     Check("git.selftest", "Bundled git self-test", "git", check_git_selftest, deep=True),
     Check("bridge.status", "Native-git bridge", "bridge", check_bridge),

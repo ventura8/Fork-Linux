@@ -48,7 +48,7 @@ After changing a command or option: `python3 scripts/gen-data.py write`.
 
 ```sh
 FL_CI_STAGE=lint ./scripts/ci-docker.sh        # every linter (see AGENTS.md §4.8)
-FL_CI_STAGE=coverage ./scripts/ci-docker.sh    # pytest gates + ASan/UBSan unit tests + C coverage
+FL_CI_STAGE=coverage ./scripts/ci-docker.sh    # pytest gates + ASan/UBSan unit tests + C coverage + per-file gate (scripts/check-coverage.py)
 FL_CI_STAGE=bridge ./scripts/ci-docker.sh      # MinGW/musl, reproducibility, FL_REAL_WINE=1 tier
 FL_CI_STAGE=compat FL_CI_CELL=jammy ./scripts/ci-docker.sh
 ./scripts/ci-matrix.sh                         # 7 compat cells in parallel
@@ -87,6 +87,18 @@ Desktop E2E tier (fork-linux from the release tarball inside a real desktop sess
 container; also containers only): `./scripts/ci-e2e-de.sh xfce` (integration, no Wine),
 `./scripts/ci-e2e-de.sh xfce --fork` (real Fork under the desktop's window manager),
 `./scripts/ci-e2e-de-matrix.sh [--fork]` (every desktop). See [docs/qa/DE-E2E.md](qa/DE-E2E.md).
+
+The real tier covers every user-facing scenario listed in
+[`docs/qa/E2E-SCENARIOS.md`](qa/E2E-SCENARIOS.md), generated from the registry
+`tests/e2e/scenarios.json`: a new feature or fix adds its scenario there and a test in
+`tests/e2e/test_*.py` that names it on a `Scenarios:` docstring line, then
+`python3 scripts/gen-scenarios-doc.py write`. The bridge scenarios need `scripts/build-bridge.sh` first.
+CI checks the registry on every pull request (check.yml, `gen-scenarios-doc.py validate` and `check`,
+even when the lint stage failed) next to the per-file coverage gate (`scripts/check-coverage.py`), and
+runs the real tier in `e2e-wine.yml` weekly, on demand and on pull requests from release branches
+(`feature/vX.Y.Z`): one parallel job per module, named `<area>-<module>`, each with its own runner,
+scratch root and prefix and under 90 minutes; locally,
+`./scripts/ci-e2e-wine.sh tests/e2e/test_real_doctor.py` runs one such job.
 
 Read every `logs/ci-packaging/<format>.log` after a packaging run (exit 0 is not enough).
 

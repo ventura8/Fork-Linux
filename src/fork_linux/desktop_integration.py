@@ -92,6 +92,8 @@ DOLPHIN = "dolphin"
 THUNAR = "thunar"
 CLI_ALIAS = "cli-alias"
 FILE_KINDS = (MENU, ICON, NAUTILUS, NAUTILUS_SCRIPT, NEMO, NEMO_FOLDER, FMA, DOLPHIN)
+# Indexes the desktop cache tools write next to our files (update-desktop-database, gtk-update-icon-cache).
+CACHE_INDEXES = frozenset({"mimeinfo.cache", "icon-theme.cache"})
 
 AUTO = "auto"
 # File manager name -> integration kinds it needs.
@@ -268,11 +270,12 @@ def _sha256(data: bytes) -> str:
 
 
 class _Registry:
-    """``integrations.json``: what we installed, keyed by path."""
+    """``integrations.json``: what we installed, keyed by path, and the directories we had to create."""
 
-    def __init__(self, path: Path, entries: dict[str, dict[str, Any]]) -> None:
+    def __init__(self, path: Path, entries: dict[str, dict[str, Any]], dirs: set[str] | None = None) -> None:
         self.path = path
         self.entries = entries
+        self.dirs = set() if dirs is None else dirs
 
     @classmethod
     def load(cls, path: Path) -> _Registry:
@@ -288,7 +291,9 @@ class _Registry:
         for entry in raw if isinstance(raw, list) else []:
             if isinstance(entry, dict) and isinstance(entry.get("path"), str) and isinstance(entry.get("kind"), str):
                 entries[entry["path"]] = entry
-        return cls(path, entries)
+        raw_dirs = data.get("dirs") if isinstance(data, dict) else None
+        dirs = {item for item in raw_dirs if isinstance(item, str)} if isinstance(raw_dirs, list) else set()
+        return cls(path, entries, dirs)
 
     def get(self, path: Path) -> dict[str, Any] | None:
         return self.entries.get(str(path))
@@ -300,12 +305,67 @@ class _Registry:
         self.entries.pop(str(path), None)
 
     def save(self) -> None:
+        """Write the registry; without entries it is deleted (created directories still in use stay)."""
         if not self.entries:
             if self.path.exists():
                 self.path.unlink()
             return
-        data = {"schema": REGISTRY_SCHEMA, "entries": sorted(self.entries.values(), key=lambda e: e["path"])}
+        data: dict[str, Any] = {
+            "schema": REGISTRY_SCHEMA,
+            "entries": sorted(self.entries.values(), key=lambda e: e["path"]),
+        }
+        if self.dirs:
+            data["dirs"] = sorted(self.dirs)
         fsutil.atomic_write(self.path, json.dumps(data, indent=2) + "\n", mode=0o600)
+
+
+def _missing_dirs(directory: Path) -> list[Path]:
+    """``directory`` and its ancestors that do not exist yet, deepest first."""
+    missing = []
+    while not os.path.lexists(directory):
+        missing.append(directory)
+        directory = directory.parent
+    return missing
+
+
+def _make_parents(path: Path, registry: _Registry) -> None:
+    """Create the missing directories above ``path``, recording each one so :func:`remove` can drop it again."""
+    missing = _missing_dirs(path.parent)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    registry.dirs.update(str(directory) for directory in missing)
+
+
+def _prune_dirs(registry: _Registry, dirs: _Dirs) -> None:
+    """Remove the directories :func:`install` created that are empty again (deepest first) and forget them."""
+    for key in sorted(registry.dirs, key=len, reverse=True):
+        if _drop_if_empty(Path(key), dirs):
+            registry.dirs.discard(key)
+
+
+def _drop_if_empty(directory: Path, dirs: _Dirs) -> bool:
+    """Remove ``directory`` when nothing but desktop cache indexes is left in it; True when it is gone.
+
+    A cache index (``mimeinfo.cache``...) alone does not keep the directory: it only indexed our files.
+    """
+    ours = _inside_user_dirs(directory, dirs) or os.path.abspath(directory) == os.path.abspath(dirs.bin)
+    if not ours or directory.is_symlink():
+        return False
+    try:
+        names = os.listdir(directory)
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    if not set(names) <= CACHE_INDEXES:
+        return False
+    try:
+        for name in names:
+            (directory / name).unlink()
+        directory.rmdir()
+    except OSError as exc:
+        log.debug("keeping %s: %s", directory, exc)
+        return False
+    return True
 
 
 def _file_state(path: Path, recorded_sha: str | None) -> str:
@@ -331,7 +391,7 @@ def _write_owned(path: Path, content: bytes, mode: int, kind: str, registry: _Re
             os.chmod(path, mode)
             registry.record(path, kind, sha256=digest)
             return True
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _make_parents(path, registry)
     fsutil.atomic_write(path, content, mode=mode)
     registry.record(path, kind, sha256=digest)
     return True
@@ -457,7 +517,6 @@ def _write_uca(path: Path, root: ET.Element) -> None:
             return
         mode = path.stat().st_mode & 0o777
         fsutil.atomic_write(path.with_name(THUNAR_BACKUP), current, mode=mode)
-    path.parent.mkdir(parents=True, exist_ok=True)
     fsutil.atomic_write(path, content, mode=mode)
     _thunar_changed()
 
@@ -515,6 +574,7 @@ def _install_thunar(dirs: _Dirs, cmd: list[str], registry: _Registry) -> bool:
         if _sha256(_uca_bytes(root)) == seed_fields["seed_sha256"]:
             fields = seed_fields
     root.append(_thunar_action(cmd))
+    _make_parents(path, registry)
     _write_uca(path, root)
     registry.record(path, THUNAR, unique_id=UNIQUE_ID, created=created, **fields)
     return True
@@ -590,7 +650,7 @@ def _install_aliases(dirs: _Dirs, cmd: list[str], registry: _Registry) -> list[P
             continue
         if not (link.is_symlink() and os.readlink(link) == target):
             # The user's own bin directory: create it if needed, never change its mode.
-            dirs.bin.mkdir(parents=True, exist_ok=True)
+            _make_parents(link, registry)
             temp = link.with_name(f".{name}.fork-linux-tmp")
             if os.path.lexists(temp):
                 temp.unlink()
@@ -728,6 +788,8 @@ def _install_icons(fork_exe: Path, dirs: _Dirs, registry: _Registry) -> list[Pat
     largest image, so no size falls back to our placeholder (GTK takes the
     scalable directory for every size without its own PNG).
     """
+    missing = _missing_dirs(dirs.hicolor)
+    existing = {path for pattern in ("*", "*/*") for path in dirs.hicolor.glob(pattern)}
     try:
         pngs = icon_extract.extract_icons(fork_exe, dirs.hicolor, APP_ID)
     except ForkLinuxError as exc:
@@ -735,7 +797,10 @@ def _install_icons(fork_exe: Path, dirs: _Dirs, registry: _Registry) -> list[Pat
         pngs = []
     for png in pngs:
         registry.record(png, ICON, sha256=fsutil.sha256_file(png))
+        # <N>x<N>/apps and <N>x<N> that the extraction created.
+        registry.dirs.update(str(path) for path in (png.parent, png.parent.parent) if path not in existing)
     if pngs:
+        registry.dirs.update(str(path) for path in missing)
         svg = icon_extract.scalable_svg(pngs[-1].read_bytes())
         if _write_owned(dirs.scalable_icon, svg, 0o644, ICON, registry):
             pngs.append(dirs.scalable_icon)
@@ -837,8 +902,9 @@ def install(
         installed.extend(_install_kind(kind, dirs, cmd, registry))
     if cli_alias:
         installed.extend(_install_aliases(dirs, cmd, registry))
-    registry.save()
     _refresh(dirs, environ, Runner() if runner is None else runner, menu=menu_changed, icons=icons_changed)
+    _prune_dirs(registry, dirs)
+    registry.save()
     return installed
 
 
@@ -895,7 +961,6 @@ def remove(paths: Paths, env: Mapping[str, str] | None = None, *, runner: Runner
             removed.append(path)
             kinds_removed.add(entry["kind"])
     registry.entries.clear()
-    registry.save()
     if NAUTILUS in kinds_removed:
         _nautilus_changed()
     _refresh(
@@ -905,6 +970,8 @@ def remove(paths: Paths, env: Mapping[str, str] | None = None, *, runner: Runner
         menu=MENU in kinds_removed,
         icons=ICON in kinds_removed,
     )
+    _prune_dirs(registry, dirs)
+    registry.save()
     return removed
 
 

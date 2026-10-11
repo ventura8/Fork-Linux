@@ -3,9 +3,12 @@
 Fork for Windows is a .NET Framework 4.7.2+ WPF application. The verbs come
 from ``setup --dotnet`` (``auto``: the manifest's list, in order). Success is
 judged by the registry (``NDP\\v4\\Full`` ``Release``), not by winetricks'
-exit code alone. A half-installed .NET is not repairable, so when a verb fails
-before Fork is installed the prefix (ours: it carries the created-by marker)
-is deleted, booted again and the next verb is tried; once Fork is installed we
+exit code alone. A failed winetricks run is retried once in place: .NET's
+installers fail now and then under Wine (the 4.6.2 one with status 67 while
+installing 4.7.2), and winetricks skips the parts already installed. A verb
+that still fails leaves a half-installed .NET that is not repairable, so before
+Fork is installed the prefix (ours: it carries the created-by marker) is
+deleted, booted again and the next verb is tried; once Fork is installed we
 never delete the prefix behind the user's back.
 """
 
@@ -29,6 +32,8 @@ RESET_HINT = (
 )
 # Markers that survive a prefix rebuild: they describe things outside the prefix.
 HOST_STEPS = ("consent", "wine_runtime", "winetricks")
+# winetricks runs per verb: a transient installer failure gets one more try in the same prefix.
+VERB_ATTEMPTS = 2
 
 
 def verbs(ctx: Ctx) -> list[str]:
@@ -60,6 +65,7 @@ def rebuild_prefix(ctx: Ctx) -> None:
     log.warning("rebuilding the Wine prefix %s after a failed .NET installation", ctx.paths.prefix)
     ctx.ui.warn("the .NET Framework installation failed; rebuilding the Wine prefix and trying again")
     winecmd.wineserver(ctx.runner, ctx.wine_env(), ctx.wine(), "-k")
+    prefix_steps.stop_leftovers(ctx)
     fsutil.safe_rmtree(ctx.paths.prefix, marker=ctx.paths.created_by_marker)
     init_prefix_meta(ctx)
     clear_markers(ctx, keep=HOST_STEPS)
@@ -68,12 +74,27 @@ def rebuild_prefix(ctx: Ctx) -> None:
         run_step(ctx, step)
 
 
+def _install(ctx: Ctx, verb: str) -> str | None:
+    """Run winetricks for ``verb`` (twice at most); None when it succeeded, else why it failed."""
+    problem = None
+    for attempt in range(VERB_ATTEMPTS):
+        if attempt:
+            log.warning("winetricks %s failed (%s); trying once more", verb, problem)
+        try:
+            prefix_steps.run_verbs(ctx, "dotnet", [verb])
+            return None
+        except prefix_steps.DiskFull:
+            raise
+        except SetupFailed as exc:
+            problem = exc.message
+    return problem
+
+
 def _attempt(ctx: Ctx, verb: str) -> str | None:
     """Install ``verb``; None on success, else why it failed."""
-    try:
-        prefix_steps.run_verbs(ctx, "dotnet", [verb])
-    except SetupFailed as exc:
-        return exc.message
+    problem = _install(ctx, verb)
+    if problem is not None:
+        return problem
     if verify(ctx):
         return None
     found = release(ctx)

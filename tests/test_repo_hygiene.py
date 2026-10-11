@@ -417,7 +417,7 @@ def test_test_module_basenames_are_unique() -> None:
 def test_tests_and_scripts_import_only_stdlib_pytest_or_local() -> None:
     """pytest is the only test dependency (AGENTS.md §1); local helpers live in tests/.
 
-    A test directory without ``__init__.py`` (``tests/e2e_de``) is put on ``sys.path`` by
+    A test directory without ``__init__.py`` (``tests/e2e``, ``tests/e2e_de``) is put on ``sys.path`` by
     pytest, so the modules next to a file count as local for it too.
     """
     local = {

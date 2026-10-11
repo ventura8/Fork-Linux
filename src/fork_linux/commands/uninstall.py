@@ -20,7 +20,7 @@ from .. import APP_NAME, bootstrap, desktop_integration, fsutil, procs, wine_pro
 from ..cli import AppContext
 from ..errors import Declined
 from ..locking import FileLock
-from ..paths import Paths
+from ..paths import CREATED_BY, DEFAULT_PREFIX_NAME, META_DIR, Paths
 
 CONFIRM_WORD = "purge"
 KILL_TIMEOUT = 60.0
@@ -84,16 +84,18 @@ def _wineservers(paths: Paths) -> list[Path]:
 
 
 def _stop_wine(ctx: AppContext) -> bool:
-    """``wineserver -k`` for our prefix when something still runs in it; True if a server was asked."""
-    paths = ctx.paths
-    if not procs.prefix_pids(paths.prefix):
+    """``wineserver -k`` for each prefix the purge deletes that still runs something; True if one was asked."""
+    servers = _wineservers(ctx.paths)
+    if not servers:
         return False
-    env = {key: value for key, value in ctx.env.items() if not key.startswith("WINE")}
-    env["WINEPREFIX"] = str(paths.prefix)
-    for server in _wineservers(paths):
-        ctx.runner.run([str(server), "-k"], env=env, timeout=KILL_TIMEOUT)
-        return True
-    return False
+    asked = False
+    for prefix in _purged_prefixes(ctx.paths):
+        if procs.prefix_pids(prefix):
+            env = {key: value for key, value in ctx.env.items() if not key.startswith("WINE")}
+            env["WINEPREFIX"] = str(prefix)
+            ctx.runner.run([str(servers[0]), "-k"], env=env, timeout=KILL_TIMEOUT)
+            asked = True
+    return asked
 
 
 def _inside(path: Path, root: Path) -> bool:
@@ -141,11 +143,32 @@ def _purge_cache_keeping_downloads(paths: Paths, removed: list[str], kept: list[
     kept.extend(str(directory) for directory in downloads if os.path.lexists(directory))
 
 
+def _purged_prefixes(paths: Paths) -> list[Path]:
+    """The prefixes a purge deletes: the selected one and, with the data directory, the default one and
+    every other prefix fork-linux created in it (``FORK_LINUX_PREFIX`` names a new one there)."""
+    found = [paths.prefix]
+    try:
+        children = sorted(paths.data_dir.iterdir())
+    except OSError:
+        children = []
+    marked = [child for child in children if not child.is_symlink() and (child / META_DIR / CREATED_BY).is_file()]
+    for prefix in [paths.data_dir / DEFAULT_PREFIX_NAME, *marked]:
+        if prefix not in found:
+            found.append(prefix)
+    return found
+
+
+def _require_closed(paths: Paths) -> None:
+    """Raise :class:`ForkRunning` when Fork runs in a prefix the purge would delete."""
+    for prefix in _purged_prefixes(paths):
+        procs.require_closed(prefix)
+
+
 def _purge(ctx: AppContext, args: argparse.Namespace) -> dict[str, Any]:
     """Delete everything we created (Fork must be closed); return what was removed and kept."""
     paths = ctx.paths
     home = Path(ctx.env.get("HOME") or Path.home())
-    procs.require_closed(paths.prefix)
+    _require_closed(paths)
     removed: list[str] = []
     kept: list[str] = []
     with FileLock(paths.lock_file, "uninstall"):
@@ -166,8 +189,9 @@ def run(args: argparse.Namespace, ctx: AppContext) -> int:
     """Remove the integration, then (``--purge``) everything else."""
     if args.purge:
         _confirm(args)
-        # Checked before anything is removed, so a running Fork leaves the installation untouched.
-        procs.require_closed(ctx.paths.prefix)
+        # Checked before anything is removed, so a running Fork leaves the installation untouched. A
+        # purge with another prefix selected still deletes the data directory with every prefix in it.
+        _require_closed(ctx.paths)
     integration = desktop_integration.remove(ctx.paths, ctx.env, runner=ctx.runner)
     result: dict[str, Any] = {"integration_removed": [str(path) for path in integration], "purged": args.purge}
     if args.purge:

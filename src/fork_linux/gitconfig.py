@@ -13,8 +13,11 @@ and because it comes after the include it wins.
 The overlay ends with a block fork-linux always adds (it comes last, so it
 wins over the translated host values): ``url.<Z:>.insteadOf`` rewrites that
 turn remotes written by Linux git (``file:///home/…``, ``/home/…``) into paths
-msys git can open, and ``credential.credentialStore = dpapi`` (the Windows
-credential store Git Credential Manager uses by default fails under Wine).
+msys git can open, ``credential.helper = manager`` (after an empty value that drops the
+``helper-selector`` of Fork's git: under Wine it never asks, so git fell back to asking for
+the user name and password at every fetch and stored nothing) and
+``credential.credentialStore = dpapi`` (the Windows credential store Git Credential
+Manager uses by default fails under Wine).
 
 :func:`env_overrides` turns ``[git] env_overrides`` into ``GIT_CONFIG_COUNT``
 / ``GIT_CONFIG_KEY_n`` / ``GIT_CONFIG_VALUE_n`` for the launcher; with a host
@@ -85,18 +88,22 @@ INCLUDE_KEYS = frozenset({"include.path", "includeif.*.path"})
 GITCONFIG_NAME = ".gitconfig"
 HOST_FILES = ((".config", "git", "config"), (GITCONFIG_NAME,))
 # Bump when the generated overlay changes, so existing installs regenerate it.
-OVERLAY_REVISION = 2
+OVERLAY_REVISION = 3
 MANAGED_HEADER = "# fork-linux: added for Wine (comes last, so it wins over the values above)\n"
 # Top-level host directories whose Linux paths in remote URLs are rewritten to Z: paths.
 REWRITE_TOPS = ("home", "mnt", "media", "srv", "opt", "tmp", "var", "run")
 CREDENTIAL_STORE = "dpapi"
+# Git Credential Manager, also when Fork's git configures its helper selector.
+CREDENTIAL_HELPER = "manager"
 # worktree.useRelativePaths sets extensions.relativeWorktrees, which git before 2.48 refuses.
 RELATIVE_WORKTREES_KEY = "worktree.useRelativePaths"
 RELATIVE_WORKTREES_MIN = (2, 48)
 GIT_VERSION_CACHE = "host-git-version.json"
 # Overrides that only make sense for Fork's bundled git under Wine; native git (the bridge) tracks
-# modes, line endings and symlinks itself.
-BUNDLED_ONLY_KEYS = frozenset({"core.filemode", "core.autocrlf", "core.symlinks"})
+# modes, line endings and symlinks itself, and reads the file stat data it wrote into the index
+# (bundled git sees no inode, device or owner under Wine: without core.checkStat=minimal every file
+# Linux git indexed looks changed, and "git apply --index" refuses it).
+BUNDLED_ONLY_KEYS = frozenset({"core.filemode", "core.autocrlf", "core.symlinks", "core.checkstat"})
 GIT_VERSION_TIMEOUT = 5.0
 _GIT_VERSION_RE = re.compile(r"git version (\d+)\.(\d+)(?:\.(\d+))?", re.ASCII)
 
@@ -544,7 +551,8 @@ def managed_text(pathmap: PathMap, tops: list[str]) -> str:
             f"[url {_quote_sub(drive)}]",
             f"\tinsteadOf = /{top}/",
         ]
-    lines += ["[credential]", f"\tcredentialStore = {CREDENTIAL_STORE}"]
+    lines += ["[credential]", "\thelper =", f"\thelper = {CREDENTIAL_HELPER}"]
+    lines.append(f"\tcredentialStore = {CREDENTIAL_STORE}")
     return "\n".join(lines) + "\n"
 
 
@@ -658,7 +666,7 @@ def env_overrides(
     at least 2.48 (so native git can use worktrees Fork creates) and the user
     did not set that key. With ``native`` (the git bridge runs the Linux git)
     the keys only bundled git needs (:data:`BUNDLED_ONLY_KEYS`: file modes,
-    line endings, symlinks) are left out, so native git sees real modes. An
+    line endings, symlinks, stat checks) are left out, so native git sees real modes. An
     empty result means no override at all.
     """
     pairs: list[tuple[str, str]] = []

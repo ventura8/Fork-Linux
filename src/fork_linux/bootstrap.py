@@ -47,6 +47,8 @@ PROGRESS_TITLE = "Setting up Fork for Linux (unofficial)"
 ALLOW_ROOT_ENV = "FORK_LINUX_ALLOW_ROOT"
 
 LAST_ERROR = "setup.last_error"
+# The step that asks for Fork's license (steps/consent.py); it runs before any download.
+CONSENT_STEP = "consent"
 BOOTSTRAP_REVISION = "setup.bootstrap_revision"
 MANIFEST_REVISION = "setup.manifest_revision"
 COMPLETED_AT = "setup.completed_at"
@@ -244,7 +246,12 @@ def pending(ctx: Ctx, steps: Sequence[Step] | None = None) -> list[Step]:
 
 
 def _select(steps: list[Step], only: Iterable[str] | None, from_step: str | None) -> list[Step]:
-    """The steps chosen by ``--only`` / ``--from-step`` (``always`` steps are kept)."""
+    """The steps chosen by ``--only`` / ``--from-step`` (``always`` steps are kept).
+
+    A selection that downloads anything keeps the ``consent`` step too: Fork's license is
+    accepted before any download, also for ``setup --only fork_download`` (AGENTS.md hard rule 13).
+    The step does nothing once the license was accepted.
+    """
     ids = [step.id for step in steps]
     wanted = list(only or [])
     unknown = [name for name in [*wanted, *([from_step] if from_step else [])] if name not in ids]
@@ -254,11 +261,14 @@ def _select(steps: list[Step], only: Iterable[str] | None, from_step: str | None
             hint=f"steps: {', '.join(ids)}",
         )
     if wanted:
-        return [step for step in steps if step.always or step.id in wanted]
-    if from_step:
-        start = ids.index(from_step)
-        return [step for index, step in enumerate(steps) if step.always or index >= start]
-    return steps
+        chosen = set(wanted)
+    elif from_step:
+        chosen = set(ids[ids.index(from_step):])
+    else:
+        return steps
+    if any(step.needs_network for step in steps if step.id in chosen):
+        chosen.add(CONSENT_STEP)
+    return [step for step in steps if step.always or step.id in chosen]
 
 
 def init_prefix_meta(ctx: Ctx) -> None:

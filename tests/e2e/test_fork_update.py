@@ -48,6 +48,8 @@ if os.environ.get("FL_E2E_FORK") != "1" or os.environ.get("FL_E2E_FORK_UPDATES")
 # Containers only (AGENTS.md hard rule 18).
 real_tier.enforce()
 
+# One scenario in steps that build on each other: after a failed step the later ones fail fast.
+CHAIN = True
 T = TypeVar("T")
 
 OLD = "2.23.1"
@@ -696,7 +698,10 @@ def stable_feed() -> str:
 
 
 def test_00_setup_installs_fork_n_minus_1(upd: Upd) -> None:
-    """setup --fork-version 2.23.1 --allow-untested: trust on first use, checked against Fork's feed."""
+    """setup --fork-version 2.23.1 --allow-untested: trust on first use, checked against Fork's feed.
+
+    Scenarios: F2
+    """
     assert versions.Version(OLD) < versions.Version(NEW)
     upd.cli(*SETUP, timeout=SETUP_TIMEOUT)
     state = upd.state()["fork"]
@@ -707,7 +712,10 @@ def test_00_setup_installs_fork_n_minus_1(upd: Upd) -> None:
 
 
 def test_f9_stable_channel_reads_the_stable_feed(upd: Upd, fork: ForkSession) -> None:
-    """Stable lags behind (2.21.1): Fork finds nothing, 'update --fork --latest' is the way."""
+    """Stable lags behind (2.21.1): Fork finds nothing, 'update --fork --latest' is the way.
+
+    Scenarios: F9, F24
+    """
     upd.cli("settings", "set", "ApplicationUpdateType", "1")
     text = upd.cli("update", "--check").stdout
     assert "Channel:   stable (Fork's own updater)" in text
@@ -733,7 +741,10 @@ def test_f9_stable_channel_reads_the_stable_feed(upd: Upd, fork: ForkSession) ->
 
 
 def test_f5_known_bad_override_warns_and_doctor_fails(upd: Upd, fork: ForkSession) -> None:
-    """An override marks 2.23.1 known-bad: fork warns and still starts it, doctor fails with the rollback hint."""
+    """An override marks 2.23.1 known-bad: fork warns and still starts it, doctor fails with the rollback hint.
+
+    Scenarios: F5
+    """
     override = upd.home / ".config" / "fork-linux" / "manifest.local.json"
     reason = "E2E: marked known-bad by the test"
     override.write_text(json.dumps({"fork": {"known_bad": {OLD: reason}}}), encoding="utf-8")
@@ -761,7 +772,10 @@ def test_f5_known_bad_override_warns_and_doctor_fails(upd: Upd, fork: ForkSessio
 
 
 def test_f6_staged_update_reported_and_dropped_when_pinned(upd: Upd, fork: ForkSession) -> None:
-    """Velopack staged N but Fork was not restarted: reported, and the pin drops it before Fork starts."""
+    """Velopack staged N but Fork was not restarted: reported, and the pin drops it before Fork starts.
+
+    Scenarios: F6
+    """
     fork.start(make_repo(upd, "demo"))
     stage_update(fork)
     fork.screen.shot("f6-ready")
@@ -801,7 +815,10 @@ def _probe_during_restart(upd: Upd, fork: ForkSession) -> Callable[[], None]:
 
 
 def test_f1_in_app_update_keeps_env_and_notifies(upd: Upd, fork: ForkSession) -> None:
-    """File > Check for Updates..., Restart and Update: the new Fork keeps our environment; the next fork says so."""
+    """File > Check for Updates..., Restart and Update: the new Fork keeps our environment; the next fork says so.
+
+    Scenarios: F1
+    """
     fork.start(make_repo(upd, "demo"))
     assert upd.settings()["ApplicationUpdateType"] == 0  # the unpin brought the user's channel back (F4)
     (old_pid,) = fork_pids(upd)
@@ -842,7 +859,10 @@ def test_f1_in_app_update_keeps_env_and_notifies(upd: Upd, fork: ForkSession) ->
 
 
 def test_f10_fork_path_during_restart_and_update(upd: Upd, fork: ForkSession) -> None:
-    """The 'fork <path>' started while Velopack applied the update reached the restarted Fork, alone."""
+    """The 'fork <path>' started while Velopack applied the update reached the restarted Fork, alone.
+
+    Scenarios: F10
+    """
     assert RESTART["updater_seen"], "the probe ran while Velopack's Update.exe was running"
     launched = RESTART["launch"]
     assert launched.process.returncode == 0, launched.output()
@@ -866,7 +886,10 @@ def test_f10_fork_path_during_restart_and_update(upd: Upd, fork: ForkSession) ->
 
 
 def test_f4_rollback_pins_and_blocks_the_in_app_update(upd: Upd, fork: ForkSession) -> None:
-    """rollback --to-version 2.23.1 pins it: Fork's own update check is off and finds nothing; unpin restores it."""
+    """rollback --to-version 2.23.1 pins it: Fork's own update check is off and finds nothing; unpin restores it.
+
+    Scenarios: F4, F24
+    """
     result = upd.cli("rollback", "--to-version", OLD)
     assert f"Fork is pinned to {OLD}" in result.stdout
     assert upd.installed() == OLD
@@ -926,7 +949,10 @@ def _daemon_ends_with_fork(upd: Upd, log: Path) -> None:
 
 
 def test_f7_bridge_survives_the_self_restart(upd: Upd, fork: ForkSession) -> None:
-    """Git bridge on, Restart and Update: the same daemon serves the restarted Fork's native git."""
+    """Git bridge on, Restart and Update: the same daemon serves the restarted Fork's native git.
+
+    Scenarios: F7
+    """
     need_bridge()
     assert upd.installed() == OLD  # test_f4 ended on the rolled-back, unpinned 2.23.1
     upd.cli("git-bridge", "enable")
@@ -955,7 +981,10 @@ def test_f7_bridge_survives_the_self_restart(upd: Upd, fork: ForkSession) -> Non
 
 
 def test_f2_cli_update_preserves_user_data(upd: Upd, fork: ForkSession) -> None:
-    """update --fork 2.23.1 -> 2.23.2 with the official installer: Fork's user files are byte-identical."""
+    """update --fork 2.23.1 -> 2.23.2 with the official installer: Fork's user files are byte-identical.
+
+    Scenarios: F2
+    """
     upd.cli("rollback", "--to-version", OLD)
     fork.start(make_repo(upd, "demo"))
     refused = upd.cli("update", "--fork", check=False)
@@ -980,7 +1009,10 @@ def test_f2_cli_update_preserves_user_data(upd: Upd, fork: ForkSession) -> None:
 
 
 def test_f19_update_fork_keeps_the_bridge_working(upd: Upd, fork: ForkSession) -> None:
-    """After the CLI update the next fork starts one daemon; staging and committing go through native git."""
+    """After the CLI update the next fork starts one daemon; staging and committing go through native git.
+
+    Scenarios: F19
+    """
     need_bridge()
     repo = make_repo(upd, "bridged")
     (repo / "cli-update.txt").write_text("staged after 'update --fork'\n", encoding="utf-8")
@@ -1000,7 +1032,10 @@ def _integrity_for(version: str) -> str:
 
 
 def test_f3_update_fork_latest_verifies_against_the_feed(upd: Upd) -> None:
-    """update --fork --latest: the newest feed version from cdn.fork.dev, its package equal to the feed's sha256."""
+    """update --fork --latest: the newest feed version from cdn.fork.dev, its package equal to the feed's sha256.
+
+    Scenarios: F3
+    """
     upd.cli("rollback", "--to-version", OLD)
     before = digests(upd)
     assets = feed_assets(upd)
@@ -1017,7 +1052,10 @@ def test_f3_update_fork_latest_verifies_against_the_feed(upd: Upd) -> None:
 
 def test_f23_staged_update_applied_at_the_next_start(upd: Upd, fork: ForkSession) -> None:
     """Fork staged an update by itself (F24) and Velopack applies it when Fork starts: the path and the bridge
-    reach the new Fork."""
+    reach the new Fork.
+
+    Scenarios: F23, F24
+    """
     need_bridge()
     upd.cli("rollback", "--to-version", OLD)
     upd.cli("config", "set", "fork.update_policy", "auto")
@@ -1056,7 +1094,10 @@ def test_f23_staged_update_applied_at_the_next_start(upd: Upd, fork: ForkSession
 
 
 def test_f20_interrupted_apply_is_reinstalled_keeping_the_users_files(upd: Upd, fork: ForkSession) -> None:
-    """Power loss while Velopack swapped ``current\\``: the next fork reinstalls Fork with the user's files."""
+    """Power loss while Velopack swapped ``current\\``: the next fork reinstalls Fork with the user's files.
+
+    Scenarios: F20
+    """
     assert not any_fork_pids(upd)
     assert upd.state()["fork"]["request"] == {"source": "latest"}  # test_f3's request
     newest = feeds.latest_full(feed_assets(upd))

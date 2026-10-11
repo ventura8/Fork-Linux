@@ -42,6 +42,7 @@ SETTINGS = frozenset(
         "FL_E2E_LOCK_DIR",
         "FL_E2E_IMAGE",
         "FL_E2E_BRIDGE_BUILDS",
+        "FL_E2E_REUSE",
     }
 )
 

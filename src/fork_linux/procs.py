@@ -13,14 +13,20 @@ Entries that vanish or cannot be read while scanning are skipped.
 
 from __future__ import annotations
 
+import contextlib
 import os
+import signal
 import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from .errors import ForkRunning
+from .errors import ForkLinuxError, ForkRunning
 
 PROC = Path("/proc")
+# stop_prefix: SIGTERM first, SIGKILL after STOP_GRACE seconds, give up after STOP_TIMEOUT.
+STOP_GRACE = 5.0
+STOP_TIMEOUT = 30.0
+STOP_POLL = 0.2
 # /proc/<pid>/environ and cmdline are bounded by ARG_MAX in practice; never read more.
 MAX_BYTES = 4 * 1024 * 1024
 # The kernel keeps the first 15 bytes of a program name in /proc/<pid>/comm.
@@ -187,3 +193,43 @@ def running(names: Iterable[str], *, proc_root: Path = PROC) -> list[int]:
         if comm is not None and os.fsdecode(comm).strip().lower() in wanted:
             found.append(pid)
     return found
+
+
+def stop_prefix(
+    prefix: Path,
+    *,
+    proc_root: Path = PROC,
+    kill: Callable[[int, int], None] = os.kill,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> list[int]:
+    """End the current user's processes still running in ``prefix``; return the pids that were signalled.
+
+    For what an interrupted setup leaves behind (a winetricks script that keeps starting Wine
+    programs): SIGTERM first, SIGKILL to what is left after :data:`STOP_GRACE` seconds. Raises
+    :class:`ForkLinuxError` when something still runs after :data:`STOP_TIMEOUT` seconds.
+    """
+    signalled: list[int] = []
+    start = clock()
+    while True:
+        pids = prefix_pids(prefix, proc_root=proc_root)
+        if not pids:
+            return signalled
+        elapsed = clock() - start
+        if elapsed > STOP_TIMEOUT:
+            raise ForkLinuxError(
+                f"processes still run in {prefix}: {', '.join(map(str, pids))}",
+                hint="end them (for example with your system monitor), then run 'fork-linux setup' again",
+            )
+        number = signal.SIGKILL if elapsed > STOP_GRACE else signal.SIGTERM
+        for pid in pids:
+            _signal(kill, pid, number)
+            if pid not in signalled:
+                signalled.append(pid)
+        sleep(STOP_POLL)
+
+
+def _signal(kill: Callable[[int, int], None], pid: int, number: int) -> None:
+    """Send ``number`` to ``pid``; a process that is already gone is fine."""
+    with contextlib.suppress(ProcessLookupError):
+        kill(pid, number)

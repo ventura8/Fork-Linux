@@ -25,6 +25,8 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 COPIED = ("scripts/e2e-docker.sh", "scripts/lib-e2e-docker.sh", "scripts/ci-e2e-wine.sh", "docker/Dockerfile.e2e.wine")
 NAME = "unit"
+# The real-tier modules of the throwaway worktree (ci-e2e-wine.sh runs what tests/e2e holds).
+MODULES = ("test_fork_update.py", "test_real_bridge.py", "test_real_fork.py", "test_wine_app_upgrade.py")
 MARKER = ".fl-e2e-scratch"
 
 FAKE_DOCKER = """#!{python}
@@ -106,6 +108,9 @@ class Box:
             target = self.main / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / rel, target)
+        for module in MODULES:
+            (self.main / "tests" / "e2e").mkdir(parents=True, exist_ok=True)
+            (self.main / "tests" / "e2e" / module).write_text('"""A real-tier module."""\n', encoding="utf-8")
         _git(self.main, "init", "-q")
         _git(self.main, "add", "-A")
         _git(self.main, "commit", "-qm", "scripts")
@@ -452,19 +457,11 @@ def test_all_slots_busy_takes_the_first_that_frees_up(box: Box) -> None:
     assert "FL_E2E_SLOT_POLL" not in " ".join(box.docker_runs()[0])
 
 
-@pytest.mark.parametrize("poll", ["-1", "x", "1000"])
+@pytest.mark.parametrize("poll", ["-1", "x", "1000", "1e3", "0.1234"])
 def test_bad_slot_poll(box: Box, poll: str) -> None:
     result = box.run("--name", NAME, "pytest", FL_E2E_SLOT_POLL=poll)
     assert result.returncode == 1
     assert "FL_E2E_SLOT_POLL must be a number of seconds" in result.stderr
-    assert box.docker_runs() == []
-
-
-@pytest.mark.parametrize("poll", ["x", "-1", "1e3"])
-def test_bad_slot_poll(box: Box, poll: str) -> None:
-    result = box.run("--name", NAME, "pytest", FAKE_FLOCK_BUSY="slot-1 slot-2 slot-3", FL_E2E_SLOT_POLL=poll)
-    assert result.returncode == 1
-    assert "FL_E2E_SLOT_POLL" in result.stderr
     assert box.docker_runs() == []
 
 
@@ -547,13 +544,15 @@ def test_missing_tools(box: Box, tmp_path: Path) -> None:
 def test_ci_e2e_wine_uses_a_fresh_wiped_scratch_and_no_seed(box: Box) -> None:
     tmpdir = box.tmp / "var" / "tmp"
     tmpdir.mkdir()
+    _bridge_built(box)
     result = box.run("-k", "setup", script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_FORK_VERSION="2.23.2",
                      FAKE_FLOCK_BUSY="slot-1")
     assert result.returncode == 0, result.stdout + result.stderr
     assert [(row["lock"], row["nonblocking"]) for row in box.calls("flock")] == [("slot-1", 1), ("slot-2", 1)]
     (argv,) = box.docker_runs()
     image = _image_index(argv, "fork-linux-ci-e2e-wine:26.04")
-    assert argv[image + 1:][-3:] == ["tests/e2e/test_real_fork.py", "-k", "setup"]
+    # No test paths: the whole tier in one session, without the update tiers nobody asked for.
+    assert argv[image + 1:][-4:] == ["tests/e2e/test_real_bridge.py", "tests/e2e/test_real_fork.py", "-k", "setup"]
     argv = argv[:image]
     volumes = _opts(argv, "-v")
     assert volumes[0] == f"{box.wt.resolve()}:/src:ro"
@@ -566,7 +565,9 @@ def test_ci_e2e_wine_uses_a_fresh_wiped_scratch_and_no_seed(box: Box) -> None:
     assert "--init" in argv
     assert "--rm" in argv
     assert list(tmpdir.iterdir()) == [], "the scratch root is deleted afterwards"
-    logs = box.wt / "logs" / "e2e-wine" / "test_real_fork"
+    assert "FL_E2E_FORK_UPDATES=0" in _opts(argv, "-e")
+    assert "FL_E2E_APP_UPGRADE=0" in _opts(argv, "-e")
+    logs = box.wt / "logs" / "e2e-wine" / "tier"
     assert (logs / "root" / "logs" / "launch.log").is_file()
     assert "fake container output" in (logs / "pytest.log").read_text(encoding="utf-8")
     assert not list(logs.rglob("*.png"))
@@ -593,17 +594,26 @@ fi
 """
 
 
-def test_ci_e2e_wine_runs_each_module_in_a_scratch_root_of_its_own(box: Box) -> None:
-    """Fork-update and app-upgrade tiers on: one container and one fresh root per module; the bridge is built
-    first, the app-upgrade tier gets two bridge builds read-only; every module runs although each fails."""
+def _bridge_built(box: Box) -> None:
+    """The worktree already holds a bridge build (scripts/build-bridge.sh is not run again)."""
+    helper = box.wt / "build-bridge" / "bridge" / "fl-bridge-helper"
+    helper.parent.mkdir(parents=True)
+    helper.write_text("#!/bin/sh\n", encoding="utf-8")
+    helper.chmod(0o755)
+
+
+def test_ci_e2e_wine_runs_each_module_of_a_shard_in_a_scratch_root_of_its_own(box: Box) -> None:
+    """Named modules: one container and one fresh root each, the update tiers switched on for their own
+    module only; the bridge is built first, the app-upgrade module gets two bridge builds read-only; every
+    module runs although each fails."""
     tmpdir = box.tmp / "var" / "tmp"
     tmpdir.mkdir()
     for name, text in (("build-version-variant.sh", FAKE_VARIANT), ("build-bridge.sh", FAKE_BUILD_BRIDGE)):
         path = box.wt / "scripts" / name
         path.write_text(text, encoding="utf-8")
         path.chmod(0o755)
-    result = box.run(script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_FORK_UPDATES="1", FL_E2E_APP_UPGRADE="1",
-                     FAKE_RUN_RC="3")
+    shard = ["tests/e2e/test_real_fork.py", "tests/e2e/test_fork_update.py", "tests/e2e/test_wine_app_upgrade.py"]
+    result = box.run(*shard, "-x", script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_RC="3")
     assert result.returncode == 3, result.stdout + result.stderr
     builds = [row["args"] for row in box.calls() if row["tool"] in ("variant", "build-bridge")]
     assert builds[0] == ""
@@ -612,12 +622,17 @@ def test_ci_e2e_wine_runs_each_module_in_a_scratch_root_of_its_own(box: Box) -> 
         ["--out", builds[4].split()[1]],
     ]
     full = box.docker_runs()
-    modules = [argv[-1] for argv in full]
+    assert [argv[-2:] for argv in full] == [[module, "-x"] for module in shard]
     runs = [argv[:_image_index(argv, "fork-linux-ci-e2e-wine:26.04")] for argv in full]
-    assert modules == ["tests/e2e/test_real_fork.py", "tests/e2e/test_fork_update.py",
-                       "tests/e2e/test_wine_app_upgrade.py"]
     roots = [next(v for v in _opts(argv, "-v") if v.endswith(":/e2e:rw")) for argv in runs]
     assert len(set(roots)) == 3
+    switches = [[env for env in _opts(argv, "-e") if env.startswith(("FL_E2E_FORK_UPDATES=", "FL_E2E_APP_UPGRADE="))]
+                for argv in runs]
+    assert switches == [
+        ["FL_E2E_FORK_UPDATES=0", "FL_E2E_APP_UPGRADE=0"],
+        ["FL_E2E_FORK_UPDATES=1", "FL_E2E_APP_UPGRADE=0"],
+        ["FL_E2E_FORK_UPDATES=0", "FL_E2E_APP_UPGRADE=1"],
+    ]
     for argv in runs[:2]:
         assert len(_opts(argv, "-v")) == 2
         assert "FL_E2E_BRIDGE_BUILDS=" in _opts(argv, "-e")
@@ -635,21 +650,45 @@ def test_ci_e2e_wine_runs_each_module_in_a_scratch_root_of_its_own(box: Box) -> 
         assert (logs / module / "pytest.log").is_file()
 
 
+def test_ci_e2e_wine_whole_tier_takes_the_update_tiers_only_when_asked(box: Box) -> None:
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    _bridge_built(box)
+    result = box.run(script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_FORK_UPDATES="1")
+    assert result.returncode == 0, result.stdout + result.stderr
+    (argv,) = box.docker_runs()
+    assert argv[-3:] == ["tests/e2e/test_fork_update.py", "tests/e2e/test_real_bridge.py",
+                         "tests/e2e/test_real_fork.py"]
+    assert "FL_E2E_FORK_UPDATES=1" in _opts(argv, "-e")
+    assert "tests/e2e (3 modules) exit 0" in result.stdout
+
+
+def test_ci_e2e_wine_refuses_a_module_that_does_not_exist(box: Box) -> None:
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    result = box.run("tests/e2e/test_nothing.py", script="ci-e2e-wine.sh", TMPDIR=str(tmpdir))
+    assert result.returncode == 1
+    assert "no such real-tier module: tests/e2e/test_nothing.py" in result.stderr
+    assert box.docker_runs() == []
+
+
 def test_ci_e2e_wine_fails_a_module_that_skipped_a_test(box: Box) -> None:
     """A skip in CI is a scenario that silently did not run: the module fails although pytest passed."""
     tmpdir = box.tmp / "var" / "tmp"
     tmpdir.mkdir()
+    _bridge_built(box)
+    shard = "tests/e2e/test_real_fork.py"
     skipped = "SKIPPED [1] tests/e2e/test_real_fork.py:26: requires FL_E2E_FORK=1"
-    result = box.run(script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_OUTPUT=f"1 passed\n{skipped}")
+    result = box.run(shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_OUTPUT=f"1 passed\n{skipped}")
     assert result.returncode == 1, result.stdout + result.stderr
-    assert "tests/e2e/test_real_fork.py skipped tests; every scenario of a requested tier must run" in result.stderr
+    assert "test_real_fork skipped tests; every scenario of a requested tier must run" in result.stderr
     assert skipped in result.stderr
     assert "tests/e2e/test_real_fork.py exit 1" in result.stdout
     (argv,) = box.docker_runs()
     assert "-rs" in argv
-    passed = box.run(script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_OUTPUT="1 passed")
+    passed = box.run(shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_OUTPUT="1 passed")
     assert passed.returncode == 0, passed.stdout + passed.stderr
-    failed = box.run(script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_OUTPUT=skipped, FAKE_RUN_RC="4")
+    failed = box.run(shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_OUTPUT=skipped, FAKE_RUN_RC="4")
     assert failed.returncode == 4, "pytest's own failure status wins"
 
 

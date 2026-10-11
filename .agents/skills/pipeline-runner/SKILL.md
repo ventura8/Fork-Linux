@@ -10,7 +10,9 @@ Full local gate: lint, coverage, bridge, compat x7, desktop integration x8, pack
 Canonical rules: [AGENTS.md](../../../AGENTS.md).
 
 1. `./scripts/ci-pipeline.sh` (fail-fast; tees `logs/ci-{lint,coverage,bridge,matrix,e2e-de,packaging}.log`).
-2. On a failure, re-run only that stage: `FL_CI_STAGE=<stage> ./scripts/ci-docker.sh`,
+2. The coverage stage ends with the per-file gate (every file >= 90%, Python 100% line + branch, enforced by
+   `scripts/check-coverage.py`): add tests for the files in its table, never exclusions.
+   On a failure, re-run only that stage: `FL_CI_STAGE=<stage> ./scripts/ci-docker.sh`,
    `./scripts/ci-matrix.sh <cell>`, `./scripts/ci-e2e-de.sh <desktop>`, `./scripts/ci-packaging-cell.sh <format>`.
 3. Read **every** `logs/ci-packaging/<format>.log`, `logs/ci-matrix/<cell>.log` and `logs/e2e-de/de-<desktop>.log`,
    not only exit codes.
@@ -18,6 +20,9 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 5. Re-run until every stage and cell is green; report each result honestly.
 6. Real-Fork / Wine stages run only in containers (hard rule 18): the bridge stage through
    `ci-docker.sh`, the real tier through `./scripts/e2e-docker.sh --name <run> pytest tests/e2e`
-   (or `./scripts/ci-e2e-wine.sh`), the real-Fork tier per desktop through `./scripts/ci-e2e-de-matrix.sh --fork`
-   (not part of the pipeline: it holds the host-wide E2E slots). Never `ci-docker.sh --inside`, `ci-c-coverage.sh --no-docker`
+   (or `./scripts/ci-e2e-wine.sh tests/e2e/<module>.py`, one module per scratch root as e2e-wine.yml's
+   jobs do), the real-Fork tier per desktop through `./scripts/ci-e2e-de-matrix.sh --fork` (not part of the
+   pipeline: it holds the host-wide E2E slots). check.yml's lint job also runs the scenario registry gate
+   (`gen-scenarios-doc.py validate` and `check`, even when the lint stage failed) and the coverage job the
+   per-file gate (`scripts/check-coverage.py`). Never `ci-docker.sh --inside`, `ci-c-coverage.sh --no-docker`
    or `FL_E2E_FORK=1` / `FL_REAL_WINE=1` pytest on the host — they refuse.

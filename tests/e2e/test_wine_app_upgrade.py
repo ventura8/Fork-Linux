@@ -61,6 +61,8 @@ if os.environ.get("FL_E2E_FORK") != "1" or os.environ.get("FL_E2E_APP_UPGRADE") 
 # Containers only (AGENTS.md hard rule 18).
 real_tier.enforce()
 
+# One scenario in steps that build on each other: after a failed step the later ones fail fast.
+CHAIN = True
 REPO = Path(__file__).resolve().parents[2]
 FORK_OLD = "2.23.1"
 FORK_NEW = manifest_mod.load().fork_default
@@ -269,7 +271,10 @@ def releases(e2e: Any) -> Releases:
 
 
 def test_01_setup_with_the_previous_fork(e2e: Any, releases: Releases) -> None:
-    """N-1 sets up with Fork 2.23.1 (verified against Fork's feed); Fork's first run is answered."""
+    """N-1 sets up with Fork 2.23.1 (verified against Fork's feed); Fork's first run is answered.
+
+    Scenarios: A3
+    """
     releases.cli(*SETUP, timeout=SETUP_TIMEOUT)
     listed = releases.json("setup", "--list-steps")
     assert listed["needs_setup"] is False
@@ -284,6 +289,7 @@ def test_01_setup_with_the_previous_fork(e2e: Any, releases: Releases) -> None:
 
 
 def test_02_a3_upgrade_reruns_only_the_bumped_step(e2e: Any, releases: Releases) -> None:
+    """Scenarios: A3"""
     downloads, before = _downloads(e2e), _markers(e2e)
     releases.upgrade(releases.make("n", "1.0.1", bump=("display_dpi",), revisions=True))
     listed = releases.json("setup", "--list-steps")
@@ -302,6 +308,7 @@ def test_02_a3_upgrade_reruns_only_the_bumped_step(e2e: Any, releases: Releases)
 
 
 def test_03_a5_upgrade_while_fork_runs(e2e: Any, releases: Releases) -> None:
+    """Scenarios: A5"""
     (pid,) = ui.fork_pids(e2e.prefix)
     before = _markers(e2e)
     releases.upgrade(releases.make("n1", "1.0.2", bump=("fork_settings",)))
@@ -320,6 +327,7 @@ def test_03_a5_upgrade_while_fork_runs(e2e: Any, releases: Releases) -> None:
 
 
 def test_04_a4_wine_pin_change_and_revert(e2e: Any, releases: Releases) -> None:
+    """Scenarios: A4"""
     override = e2e.home / ".config" / "fork-linux" / "manifest.local.json"
     override.write_text(json.dumps({"wine": {"builds": {WINE_B_ID: WINE_B}}}), encoding="utf-8")
     releases.cli("config", "set", "wine.build", WINE_B_ID)
@@ -365,6 +373,7 @@ def test_04_a4_wine_pin_change_and_revert(e2e: Any, releases: Releases) -> None:
 
 
 def test_05_a11_uninstall_then_reinstall_keeps_the_prefix(e2e: Any, releases: Releases) -> None:
+    """Scenarios: A11"""
     menu = e2e.home / ".local" / "share" / "applications" / "io.github.ventura8.ForkLinux.desktop"
     assert menu.is_file()
     settings = ui.settings_file(e2e.prefix).read_bytes()
@@ -420,6 +429,7 @@ def _git_through_the_bridge(e2e: Any, fork_pid: int, repo: Path) -> str:
 
 
 def test_06_a6_bridge_binaries_replaced_while_the_daemon_runs(e2e: Any, releases: Releases) -> None:
+    """Scenarios: A6"""
     builds = _bridge_builds()
     libexec = e2e.root / "bridge-install" / "lib"
     shutil.copytree(Path(releases.current["FORK_LINUX_LIBEXEC_DIR"]), libexec)
@@ -483,7 +493,10 @@ def _forks_own_update(e2e: Any) -> None:
 
 
 def test_07_a12_app_upgrade_and_fork_self_update_on_one_launch(e2e: Any, releases: Releases) -> None:
-    """While Fork runs, our package is upgraded and Fork updates itself; the next launch applies both."""
+    """While Fork runs, our package is upgraded and Fork updates itself; the next launch applies both.
+
+    Scenarios: A12
+    """
     fork_dir = e2e.prefix / "drive_c" / "users" / winecmd.windows_user(e2e.env) / "AppData" / "Local" / "Fork"
     _open_fork(releases, e2e.repos / "demo", name="07-a12-before")
     before = _markers(e2e)

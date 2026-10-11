@@ -24,6 +24,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -408,15 +409,30 @@ class Host:
         return self.wait([name, *fill(args, values)])
 
     def merge(self, base: str, local: str, remote: str, merged: str) -> int:
-        """Three-way merge into ``merged``; wait for the tool and return its status."""
+        """Three-way merge into ``merged``; wait for the tool and return its status.
+
+        An empty ``base`` is what Fork passes when the file has no common version (both sides
+        added it): the tool gets an empty file instead, made next to ``local`` (Fork's temporary
+        folder, which a tool started outside a sandbox sees too) and deleted afterwards.
+        """
         name, args = self._tool(merge=True)
         values = {
-            "base": self.existing(base),
             "local": self.existing(local),
             "remote": self.existing(remote),
             "merged": os.path.abspath(self.path(merged)),
         }
-        return self.wait([name, *fill(args, values)])
+        if base:
+            values["base"] = self.existing(base)
+            return self.wait([name, *fill(args, values)])
+        local_path = Path(values["local"])
+        handle, values["base"] = tempfile.mkstemp(
+            prefix=f"{local_path.stem}~Base-", suffix=local_path.suffix, dir=local_path.parent
+        )
+        os.close(handle)
+        try:
+            return self.wait([name, *fill(args, values)])
+        finally:
+            os.unlink(values["base"])
 
 
 def _split(text: str) -> list[str]:

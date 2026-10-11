@@ -263,6 +263,22 @@ def test_reset_rebuilds_everything(harness: Harness, capsys: pytest.CaptureFixtu
     assert any(call["argv"][-1] == "-k" for call in harness.runner.calls)
 
 
+def test_reset_stops_what_still_runs_in_the_prefix_before_deleting_it(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    harness.run("--accept-fork-eula", "--wine", str(harness.wine_root))
+    seen: list[bool] = []
+
+    def stop(prefix: Path, *, proc_root: Path) -> list[int]:
+        seen.append(prefix.is_dir())
+        return [41, 42]
+
+    monkeypatch.setattr(setup_cmd.procs, "stop_prefix", stop)
+    assert harness.run("--reset") == 0
+    assert seen == [True]
+    assert any("stopped 2 process(es)" in text for text in harness.ui.kinds("warn"))
+
+
 def test_reset_on_a_fresh_machine(harness: Harness) -> None:
     assert harness.run("--reset", "--accept-fork-eula", "--wine", str(harness.wine_root)) == 0
     assert harness.state().get("setup.complete") is True
@@ -285,12 +301,26 @@ def test_reset_warns_when_wine_is_gone(harness: Harness, monkeypatch: pytest.Mon
     assert bctx.state.is_new
 
 
-def test_reset_refuses_a_prefix_we_did_not_create(harness: Harness) -> None:
+@pytest.mark.parametrize("marker", ["missing", "symlink"])
+def test_reset_refuses_a_prefix_we_did_not_create(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch, marker: str
+) -> None:
     harness.run("--accept-fork-eula", "--wine", str(harness.wine_root))
-    harness.paths.created_by_marker.unlink()
+    real = harness.paths.created_by_marker
+    if marker == "symlink":
+        moved = real.with_name("elsewhere")
+        real.rename(moved)
+        real.symlink_to(moved)
+    else:
+        real.unlink()
+    stopped: list[Path] = []
+    monkeypatch.setattr(setup_cmd.procs, "stop_prefix", lambda prefix, **_kw: stopped.append(prefix) or [])
+    harness.runner.calls.clear()
     with pytest.raises(IntegrityFailed, match="marker"):
         harness.run("--reset")
     assert harness.paths.prefix.is_dir()
+    assert stopped == []
+    assert not any(call["argv"][-1] == "-k" for call in harness.runner.calls)
 
 
 def test_reset_with_an_unknown_step_deletes_nothing(harness: Harness) -> None:
@@ -302,12 +332,47 @@ def test_reset_with_an_unknown_step_deletes_nothing(harness: Harness) -> None:
     assert harness.state().get("setup.complete") is True
 
 
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (("--fork-version", "2.23.2; rm -rf /"), "not a Fork version"),
+        (("--fork-version", "9.98.7"), "not pinned"),
+        (("--fork-version", "9.98.7", "--reset"), "not pinned"),
+    ],
+)
+def test_a_bad_fork_version_is_refused_before_any_step(harness: Harness, argv: tuple[str, ...], message: str) -> None:
+    with pytest.raises(UsageError, match=message):
+        harness.run("--accept-fork-eula", "--wine", str(harness.wine_root), *argv)
+    assert not harness.paths.state_file.exists()
+    assert not harness.paths.prefix.exists()
+    assert harness.ui.kinds("confirm") == []
+    assert harness.downloads == []
+
+
+def test_an_unpinned_fork_version_with_allow_untested_goes_on(harness: Harness) -> None:
+    setup_cmd.check_fork_request(
+        _parser().parse_args(["setup", "--fork-version", "9.98.7", "--allow-untested"]),
+        cli.AppContext(_parser().parse_args(["setup"]), env=harness.env, runner=harness.runner),
+    )
+    listing = _parser().parse_args(["setup", "--fork-version", "nonsense", "--list-steps"])
+    setup_cmd.check_fork_request(listing, cli.AppContext(listing, env=harness.env, runner=harness.runner))
+
+
 def test_wine_choice_is_saved_only_when_it_changes(harness: Harness) -> None:
-    harness.run("--only", "consent", "--accept-fork-eula", "--wine", "system")
+    root = str(harness.wine_root)
+    harness.run("--only", "consent", "--accept-fork-eula", "--wine", root)
     first = harness.paths.config_file.read_text()
-    harness.run("--only", "consent", "--wine", "system")
+    harness.run("--only", "consent", "--wine", root)
     assert harness.paths.config_file.read_text() == first
-    assert "provider = system" in first
+    assert f"provider = {root}" in first
+
+
+@pytest.mark.parametrize("choice", ["flatpak", "system", "/nonexistent/wine"])
+def test_a_wine_choice_that_cannot_work_is_refused_and_not_saved(harness: Harness, choice: str) -> None:
+    with pytest.raises(WineUnavailable):
+        harness.run("--accept-fork-eula", "--wine", choice)
+    assert not harness.paths.config_file.is_file() or "provider" not in harness.paths.config_file.read_text()
+    assert not harness.paths.state_file.exists()
 
 
 def test_runner_type_is_recording(harness: Harness) -> None:

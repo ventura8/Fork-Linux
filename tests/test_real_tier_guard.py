@@ -43,6 +43,7 @@ def homes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
         ({"FL_E2E_FORK": "0", "FL_REAL_WINE": ""}, []),
         ({"FL_E2E_DE": "yes"}, ["FL_E2E_DE"]),
         ({"FL_E2E_ROOT": "/e2e/root", "FL_E2E_SEED": "/seed", "FL_E2E_SLOTS": "1", "FL_E2E_DISPLAY": ":98"}, []),
+        ({"FL_E2E_REUSE": "1"}, []),
         ({"FL_E2E_FORK_VERSION": "2.23.2", "FL_E2E_WINETRICKS_CACHE": "/seed/winetricks"}, []),
         ({"FL_E2E_BRIDGE_BUILDS": "/e2e/bridge"}, []),
         ({"FL_CI_STAGE": "bridge", "WINEPREFIX": "/x"}, []),

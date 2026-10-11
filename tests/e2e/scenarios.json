@@ -1,0 +1,4523 @@
+[
+  {
+    "id": "S-FRESH-MANAGED",
+    "area": "setup",
+    "title": "Fresh setup with the managed Wine runtime, .NET, fonts, Selawik and the official Fork",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_fork.py::test_01_setup_completes_and_resumes"
+    ]
+  },
+  {
+    "id": "S-IDEMPOTENT",
+    "area": "setup",
+    "title": "A second setup is a quick no-op",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_fork.py::test_01_setup_completes_and_resumes"
+    ]
+  },
+  {
+    "id": "S-FORK-VERSION",
+    "area": "setup",
+    "title": "--fork-version installs that version; a malformed or unpinned one is refused before any step",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_fork.py::test_01_setup_completes_and_resumes",
+      "tests/e2e/test_real_setup_errors.py::test_unpinned_or_malformed_fork_version_is_refused_first"
+    ]
+  },
+  {
+    "id": "S-LATEST",
+    "area": "setup",
+    "title": "--latest installs the newest Fork of Fork's feed, verified against the feed (trust on first use)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_latest_installs_the_newest_fork"
+    ]
+  },
+  {
+    "id": "S-RESUME-DOWNLOAD",
+    "area": "setup",
+    "title": "A download interrupted half way resumes where it stopped",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_interrupted_wine_download_resumes"
+    ]
+  },
+  {
+    "id": "S-RESUME-DOTNET",
+    "area": "setup",
+    "title": "Setup interrupted in the .NET step resumes there, not from the start",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_reset_rebuilds_offline_and_resumes_after_an_interrupted_dotnet"
+    ]
+  },
+  {
+    "id": "S-OFFLINE-CACHE",
+    "area": "setup",
+    "title": "--offline setup rebuilds a prefix from the download caches alone",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_reset_rebuilds_offline_and_resumes_after_an_interrupted_dotnet"
+    ]
+  },
+  {
+    "id": "S-OFFLINE-MISSING",
+    "area": "setup",
+    "title": "--offline with an empty cache fails (exit 12) and names the missing download",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_errors.py::test_offline_with_an_empty_cache_names_the_file"
+    ]
+  },
+  {
+    "id": "S-INTEGRITY",
+    "area": "setup",
+    "title": "A download whose sha256 does not match the manifest is deleted and nothing is installed (exit 13); the next run verifies it",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_errors.py::test_a_download_with_the_wrong_checksum_is_deleted"
+    ]
+  },
+  {
+    "id": "S-RESET",
+    "area": "setup",
+    "title": "--reset warns about license activations, keeps the prefix on no, rebuilds it on yes",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_reset_answered_no_keeps_the_prefix",
+      "tests/e2e/test_real_setup_variants.py::test_reset_rebuilds_offline_and_resumes_after_an_interrupted_dotnet"
+    ]
+  },
+  {
+    "id": "S-WINE-SYSTEM",
+    "area": "setup",
+    "title": "--wine system: the Wine found on PATH runs Fork",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_system_wine_provider"
+    ]
+  },
+  {
+    "id": "S-WINE-FLATPAK",
+    "area": "setup",
+    "title": "--wine flatpak outside the Flatpak build is refused with a clear message",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_flatpak_provider_outside_the_flatpak_is_refused"
+    ],
+    "notes": "the provider itself needs the org.winehq.Wine BaseApp inside the Flatpak; its detection is unit-tested"
+  },
+  {
+    "id": "S-WINE-CUSTOM",
+    "area": "setup",
+    "title": "--wine /path/to/wine (a custom Wine) runs Fork; --wine managed goes back",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_custom_wine_path_and_back"
+    ]
+  },
+  {
+    "id": "S-CONSENT-REQUIRED",
+    "area": "setup",
+    "title": "Fork's license is shown and accepted before any download; no or nobody to ask stops setup",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_errors.py::test_no_consent_and_nobody_to_ask_downloads_nothing",
+      "tests/e2e/test_real_setup_errors.py::test_license_on_a_terminal_and_no_stops"
+    ]
+  },
+  {
+    "id": "S-MISSING-TOOLS",
+    "area": "setup",
+    "title": "Missing host tools (cabextract, unzip) are named with the package to install",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_errors.py::test_missing_host_tools_are_named_with_their_packages"
+    ]
+  },
+  {
+    "id": "S-MISSING-DOWNLOADER",
+    "area": "setup",
+    "title": "No curl, wget or aria2c: setup names curl",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_errors.py::test_missing_downloader_is_named"
+    ]
+  },
+  {
+    "id": "S-MISSING-LIBS",
+    "area": "setup",
+    "title": "A host library Wine needs is missing: doctor names it and its package",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_missing_host_library_is_named_with_its_package"
+    ]
+  },
+  {
+    "id": "S-LOCKED",
+    "area": "setup",
+    "title": "A second setup while one runs exits 16 (LOCKED)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_errors.py::test_a_second_setup_while_one_runs_is_locked"
+    ]
+  },
+  {
+    "id": "S-STEP-REPAIR",
+    "area": "setup",
+    "title": "setup --only STEP --force re-runs exactly that step",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_setup_repairs_one_step"
+    ]
+  },
+  {
+    "id": "S-LIST-STEPS",
+    "area": "setup",
+    "title": "setup --list-steps lists every step in order with its state; an unknown step is refused (exit 2) before anything runs",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_list_steps_and_from_step"
+    ]
+  },
+  {
+    "id": "S-FROM-STEP",
+    "area": "setup",
+    "title": "setup --from-step STEP re-runs that step and the ones after it, and never starts Fork",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_list_steps_and_from_step"
+    ]
+  },
+  {
+    "id": "S-WINETRICKS-CACHE",
+    "area": "setup",
+    "title": "winetricks' own cache is reused for .NET and fonts and never changed",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_winetricks_cache_is_reused_and_left_alone"
+    ]
+  },
+  {
+    "id": "S-CUSTOM-PREFIX",
+    "area": "setup",
+    "title": "A prefix outside the data directory (FORK_LINUX_PREFIX + adopt) is ours and kept apart",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_a_second_prefix_is_adopted_and_kept_apart"
+    ]
+  },
+  {
+    "id": "S-PREFIX-OPTION",
+    "area": "setup",
+    "title": "The global --prefix DIR option selects a prefix of ours (over FORK_LINUX_PREFIX); ~/.wine is refused",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_a_second_prefix_is_adopted_and_kept_apart"
+    ]
+  },
+  {
+    "id": "S-CONFIG-CLI",
+    "area": "setup",
+    "title": "fork-linux config get, set (keeping comments), unset, list, path and edit",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_config_get_set_unset_list_path_edit"
+    ]
+  },
+  {
+    "id": "S-DOTNET-472",
+    "area": "setup",
+    "title": "setup --dotnet dotnet472 builds a prefix with .NET 4.7.2 that runs Fork",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_setup_variants.py::test_dotnet472_prefix_runs_fork"
+    ]
+  },
+  {
+    "id": "S-PACKAGE-INSTALL",
+    "area": "setup",
+    "title": "Each package format installs fork-linux for a user: version, menu entry, man pages, shims",
+    "tiers": [
+      "packaging"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "packaging:deb:assert_installed",
+      "packaging:deb-jammy:assert_installed",
+      "packaging:rpm-fedora:assert_installed",
+      "packaging:rpm-opensuse:assert_installed",
+      "packaging:arch:assert_installed",
+      "packaging:snap:assert_installed",
+      "packaging:appimage:assert_installed",
+      "packaging:flatpak:assert_installed",
+      "packaging:tarball:assert_installed"
+    ]
+  },
+  {
+    "id": "S-ROOT-REFUSED",
+    "area": "setup",
+    "title": "Run as root, fork-linux refuses (exit 19) before it creates or downloads anything; --allow-root lets a command run",
+    "tiers": [
+      "packaging"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "packaging:deb:check_root_refused",
+      "packaging:deb-jammy:check_root_refused",
+      "packaging:rpm-fedora:check_root_refused",
+      "packaging:rpm-opensuse:check_root_refused",
+      "packaging:arch:check_root_refused"
+    ]
+  },
+  {
+    "id": "L-FIRST-WELCOME",
+    "area": "launch",
+    "title": "The first start answers Fork's first-run dialogs; the clone folder is the Linux home",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_fork.py::test_03_first_launch_opens_the_repository"
+    ]
+  },
+  {
+    "id": "L-FORWARD-PATH",
+    "area": "launch",
+    "title": "fork-linux run PATH while Fork runs opens a new tab in the running Fork",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_fork.py::test_04_second_tab_and_fork_alias"
+    ]
+  },
+  {
+    "id": "L-FORK-ALIAS",
+    "area": "launch",
+    "title": "The fork command (argv[0] alias) opens a repository",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_fork.py::test_04_second_tab_and_fork_alias"
+    ]
+  },
+  {
+    "id": "L-RELAUNCH",
+    "area": "launch",
+    "title": "Close and start again: the pre-launch hooks run again",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_fork.py::test_05_relaunch_applies_dark_theme"
+    ]
+  },
+  {
+    "id": "L-DOT-SUBDIR",
+    "area": "launch",
+    "title": "fork . in a subdirectory opens the repository's root",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_launch.py::test_dot_in_a_subdirectory_opens_the_repository_root"
+    ]
+  },
+  {
+    "id": "L-FILE-MANAGER",
+    "area": "launch",
+    "title": "run --from-file-manager FILE opens the repository that contains the file",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_launch.py::test_file_manager_file_opens_its_repository"
+    ]
+  },
+  {
+    "id": "L-OPEN",
+    "area": "launch",
+    "title": "fork-linux open PATH opens a repository in the running Fork",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_launch.py::test_open_command_adds_a_tab"
+    ]
+  },
+  {
+    "id": "L-BAD-PATH",
+    "area": "launch",
+    "title": "A path that does not exist is a usage error (exit 2); Fork does not start",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_launch.py::test_missing_path_is_a_usage_error"
+    ]
+  },
+  {
+    "id": "L-FORK-LOG-HISTORY",
+    "area": "launch",
+    "title": "The previous session's fork.log is kept as fork-<time>.log",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_launch.py::test_previous_fork_log_is_kept"
+    ]
+  },
+  {
+    "id": "L-DEBUG-LOGS",
+    "area": "launch",
+    "title": "run --debug writes Wine's errors to a new wine-<time>.log; --wine-debug picks the channels",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_launch.py::test_debug_launch_writes_a_wine_log"
+    ]
+  },
+  {
+    "id": "L-DRIVER-X11",
+    "area": "launch",
+    "title": "--x11 keeps Wine on the X display in a Wayland session",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_launch.py::test_x11_driver"
+    ]
+  },
+  {
+    "id": "L-DRIVER-WAYLAND",
+    "area": "launch",
+    "title": "--wayland runs Fork with Wine's Wayland driver",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_launch.py::test_wayland_driver"
+    ]
+  },
+  {
+    "id": "L-NO-SETUP",
+    "area": "launch",
+    "title": "run --no-setup with an incomplete setup exits 10",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_launch.py::test_no_setup_refuses_pending_steps"
+    ]
+  },
+  {
+    "id": "L-NO-HOOKS",
+    "area": "launch",
+    "title": "run --no-hooks skips the snapshot and settings hooks",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_launch.py::test_no_hooks_skips_the_pre_launch_hooks"
+    ]
+  },
+  {
+    "id": "L-RESTART",
+    "area": "launch",
+    "title": "run --restart ends a Fork that lost its window (the fast path shows nothing) and starts Fork again",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_launch.py::test_restart_replaces_a_fork_without_a_window"
+    ]
+  },
+  {
+    "id": "L-SETUP-INCOMPLETE-GUI",
+    "area": "launch",
+    "title": "A launch with pending setup steps shows a progress dialog, then Fork",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_launch.py::test_pending_setup_runs_behind_a_progress_dialog"
+    ]
+  },
+  {
+    "id": "G-HISTORY",
+    "area": "git",
+    "title": "The commit list shows the history, newest first",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_history.py::test_history_lists_the_commits_newest_first"
+    ]
+  },
+  {
+    "id": "G-CHECKOUT-COMMIT",
+    "area": "git",
+    "title": "Checkout Commit (detached HEAD) from the commit menu",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_history.py::test_history_lists_the_commits_newest_first"
+    ]
+  },
+  {
+    "id": "G-GRAPH",
+    "area": "git",
+    "title": "The graph draws a merge with two lanes",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_history.py::test_graph_draws_the_merge"
+    ]
+  },
+  {
+    "id": "G-SEARCH",
+    "area": "git",
+    "title": "Search Commits finds and selects a commit by its message",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_history.py::test_search_finds_a_commit_by_message"
+    ]
+  },
+  {
+    "id": "G-FILTER",
+    "area": "git",
+    "title": "The sidebar filter narrows the branches; the match can be checked out",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_history.py::test_sidebar_filter_keeps_matching_refs"
+    ]
+  },
+  {
+    "id": "G-BLAME",
+    "area": "git",
+    "title": "Blame window of a file",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_history.py::test_blame_window_opens_for_a_file"
+    ]
+  },
+  {
+    "id": "G-FILE-HISTORY",
+    "area": "git",
+    "title": "File History window of a file",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_history.py::test_file_history_window_opens"
+    ]
+  },
+  {
+    "id": "G-DIFF-TEXT",
+    "area": "git",
+    "title": "Text diff of a commit",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_history.py::test_text_diff_of_a_commit"
+    ]
+  },
+  {
+    "id": "G-DIFF-IMAGE",
+    "area": "git",
+    "title": "Image diff of a changed PNG",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_history.py::test_image_diff_of_a_changed_png"
+    ]
+  },
+  {
+    "id": "G-QUICK-LAUNCH",
+    "area": "git",
+    "title": "Quick Launch (Ctrl+P) switches repositories",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_history.py::test_quick_launch_switches_repositories"
+    ]
+  },
+  {
+    "id": "G-TABS",
+    "area": "git",
+    "title": "Close Tab and Restore Closed Tab",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_history.py::test_tabs_close_and_restore"
+    ]
+  },
+  {
+    "id": "G-LARGE-REPO",
+    "area": "git",
+    "title": "A repository with 5000 commits and 3000 files opens with its whole history",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_history.py::test_large_repository_opens_quickly"
+    ]
+  },
+  {
+    "id": "G-STAGE-FILE",
+    "area": "git",
+    "title": "Stage a file",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_changes.py::test_stage_and_unstage_a_file"
+    ]
+  },
+  {
+    "id": "G-UNSTAGE-FILE",
+    "area": "git",
+    "title": "Unstage a file",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_changes.py::test_stage_and_unstage_a_file"
+    ]
+  },
+  {
+    "id": "G-UNSTAGE-HUNK",
+    "area": "git",
+    "title": "Unstage one hunk of a staged file",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_local.py::test_unstage_one_hunk"
+    ]
+  },
+  {
+    "id": "G-STAGE-HUNK",
+    "area": "git",
+    "title": "Stage one hunk",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_changes.py::test_stage_one_hunk"
+    ]
+  },
+  {
+    "id": "G-STAGE-LINE",
+    "area": "git",
+    "title": "Stage one line",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_changes.py::test_stage_one_line"
+    ]
+  },
+  {
+    "id": "G-DISCARD",
+    "area": "git",
+    "title": "Discard a change (confirmed)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_changes.py::test_discard_a_hunk"
+    ]
+  },
+  {
+    "id": "G-COMMIT",
+    "area": "git",
+    "title": "Commit staged changes",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_changes.py::test_commit_with_a_utf8_message"
+    ]
+  },
+  {
+    "id": "G-COMMIT-UTF8",
+    "area": "git",
+    "title": "A UTF-8 commit message is stored byte for byte",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_changes.py::test_commit_with_a_utf8_message"
+    ]
+  },
+  {
+    "id": "G-COMMIT-AMEND",
+    "area": "git",
+    "title": "Amend the last commit",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_changes.py::test_amend_the_last_commit"
+    ]
+  },
+  {
+    "id": "G-COMMIT-TEMPLATE",
+    "area": "git",
+    "title": "commit.template fills the commit box",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_changes.py::test_commit_template_prefills_the_message"
+    ]
+  },
+  {
+    "id": "G-BRANCH-CREATE",
+    "area": "git",
+    "title": "Create a branch",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_branch_create_checkout_rename_delete"
+    ]
+  },
+  {
+    "id": "G-BRANCH-CHECKOUT",
+    "area": "git",
+    "title": "Check out a branch",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_branch_create_checkout_rename_delete"
+    ]
+  },
+  {
+    "id": "G-BRANCH-RENAME",
+    "area": "git",
+    "title": "Rename a branch",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_branch_create_checkout_rename_delete"
+    ]
+  },
+  {
+    "id": "G-BRANCH-DELETE",
+    "area": "git",
+    "title": "Delete a branch",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_branch_create_checkout_rename_delete"
+    ]
+  },
+  {
+    "id": "G-MERGE",
+    "area": "git",
+    "title": "Merge a branch",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_merge_a_branch"
+    ]
+  },
+  {
+    "id": "G-MERGE-ABORT",
+    "area": "git",
+    "title": "Abort a conflicted merge from Fork's banner",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_local.py::test_abort_a_conflicted_merge"
+    ]
+  },
+  {
+    "id": "G-REBASE",
+    "area": "git",
+    "title": "Rebase onto a branch",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_rebase_onto_a_branch"
+    ]
+  },
+  {
+    "id": "G-REBASE-INTERACTIVE",
+    "area": "git",
+    "title": "Interactive rebase in Fork's window: squash and drop",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_interactive_rebase_squash_and_drop"
+    ]
+  },
+  {
+    "id": "G-CHERRY-PICK",
+    "area": "git",
+    "title": "Cherry-pick a commit",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_cherry_pick_a_commit"
+    ]
+  },
+  {
+    "id": "G-REVERT",
+    "area": "git",
+    "title": "Revert a commit",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_revert_a_commit"
+    ]
+  },
+  {
+    "id": "G-RESET",
+    "area": "git",
+    "title": "Reset the branch to a commit",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_reset_the_branch"
+    ]
+  },
+  {
+    "id": "G-TAG-CREATE",
+    "area": "git",
+    "title": "Create a tag",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_create_a_tag"
+    ]
+  },
+  {
+    "id": "G-TAG-DELETE",
+    "area": "git",
+    "title": "Delete a tag (an annotated tag beside it is kept)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_local.py::test_delete_a_tag"
+    ]
+  },
+  {
+    "id": "G-STASH-SAVE",
+    "area": "git",
+    "title": "Save a stash",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_stash_save_apply_pop_drop"
+    ]
+  },
+  {
+    "id": "G-STASH-APPLY",
+    "area": "git",
+    "title": "Apply a stash",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_stash_save_apply_pop_drop"
+    ]
+  },
+  {
+    "id": "G-STASH-POP",
+    "area": "git",
+    "title": "Pop a stash (apply and delete)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_stash_save_apply_pop_drop"
+    ]
+  },
+  {
+    "id": "G-STASH-DROP",
+    "area": "git",
+    "title": "Delete a stash",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_stash_save_apply_pop_drop"
+    ]
+  },
+  {
+    "id": "G-APPLY-PATCH",
+    "area": "git",
+    "title": "Apply Patch with a patch picked as H:\\...; files Linux git indexed are not refused as changed",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_local.py::test_apply_a_patch_from_the_home_drive"
+    ]
+  },
+  {
+    "id": "G-INIT-REPO",
+    "area": "git",
+    "title": "File > Init New Repository on a folder in the Linux home; native git uses the repository",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_local.py::test_init_a_new_repository_in_the_home"
+    ]
+  },
+  {
+    "id": "G-CONFLICT-MERGER",
+    "area": "git",
+    "title": "Resolve a merge conflict in Fork's own merger",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_branches.py::test_conflict_resolution_in_forks_merger"
+    ]
+  },
+  {
+    "id": "G-FETCH-FILE",
+    "area": "git",
+    "title": "Fetch from a file:// remote on the Linux side",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_file_url"
+    ]
+  },
+  {
+    "id": "G-PULL-FILE",
+    "area": "git",
+    "title": "Pull from a file:// remote",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_file_url"
+    ]
+  },
+  {
+    "id": "G-PUSH-FILE",
+    "area": "git",
+    "title": "Push to a file:// remote",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_file_url"
+    ]
+  },
+  {
+    "id": "G-REMOTE-LINUX-PATH",
+    "area": "git",
+    "title": "A remote given as a bare Linux path (git clone /path) works",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_linux_path",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_linux_path"
+    ]
+  },
+  {
+    "id": "G-REMOTE-ADD",
+    "area": "git",
+    "title": "Remotes > Add New Remote with a Linux path; native git fetches from it",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_local.py::test_add_a_remote_from_the_sidebar"
+    ]
+  },
+  {
+    "id": "G-TAG-PUSH",
+    "area": "git",
+    "title": "Push tags",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_remotes.py::test_push_tags",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_push_tags"
+    ]
+  },
+  {
+    "id": "G-HTTP-BASIC-AUTH",
+    "area": "git",
+    "title": "An HTTP remote with a password: Git Credential Manager asks",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_http_with_basic_auth",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_fetch_and_push_over_http_with_basic_auth"
+    ]
+  },
+  {
+    "id": "G-HTTP-CREDENTIALS-STORED",
+    "area": "git",
+    "title": "The password is stored (DPAPI) and not asked again",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_http_with_basic_auth"
+    ]
+  },
+  {
+    "id": "G-HTTP-FORK-PROMPT",
+    "area": "git",
+    "title": "When Git Credential Manager cannot show its window, Fork's own prompt asks and GCM still keeps the account",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_remotes.py::test_forks_own_prompt_when_gcm_cannot_ask"
+    ]
+  },
+  {
+    "id": "G-SSH-KEY",
+    "area": "git",
+    "title": "ssh remote with the user's key and config (bundled ssh)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_ssh_with_a_shared_key"
+    ]
+  },
+  {
+    "id": "G-CLONE-FILE",
+    "area": "git",
+    "title": "Clone a file:// URL into the Linux home",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_remotes.py::test_clone_a_file_url",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_clone_a_file_url"
+    ]
+  },
+  {
+    "id": "G-CLONE-HTTPS",
+    "area": "git",
+    "title": "Clone a public HTTPS repository",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_remotes.py::test_clone_a_public_https_repository",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_clone_a_public_https_repository"
+    ]
+  },
+  {
+    "id": "G-WORKTREE",
+    "area": "git",
+    "title": "Worktrees: create, open as a tab, remove; native git understands them",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_advanced.py::test_worktree_create_open_remove"
+    ]
+  },
+  {
+    "id": "G-GITFLOW",
+    "area": "git",
+    "title": "Git Flow: initialize (bundled git); start a feature (native-git bridge with git-flow)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_advanced.py::test_git_flow_initialize",
+      "tests/e2e/test_real_bridge.py::test_git_flow_start_feature"
+    ]
+  },
+  {
+    "id": "G-LFS",
+    "area": "git",
+    "title": "Git LFS: initialize, commit a tracked file as a pointer (bundled git-lfs)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_advanced.py::test_lfs_files_are_committed_as_pointers"
+    ]
+  },
+  {
+    "id": "G-LFS-PUSH",
+    "area": "git",
+    "title": "Git LFS: a push uploads the object with the commit (native-git bridge runs the pre-push hook)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_lfs_push_uploads_the_object"
+    ]
+  },
+  {
+    "id": "G-HOOK-BUNDLED",
+    "area": "git",
+    "title": "Bundled git: a failing builtin-only pre-commit hook stops the commit",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_advanced.py::test_failing_builtin_hook_blocks_the_commit_with_bundled_git"
+    ]
+  },
+  {
+    "id": "G-HOOK-BRIDGE",
+    "area": "git",
+    "title": "Native-git bridge: a failing hook that runs programs stops the commit",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_failing_pre_commit_hook_blocks_the_commit"
+    ]
+  },
+  {
+    "id": "G-SUBMODULE",
+    "area": "git",
+    "title": "Update a submodule (native-git bridge)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_submodule_update_works"
+    ]
+  },
+  {
+    "id": "G-SSH-AGENT",
+    "area": "git",
+    "title": "ssh through the user's ssh-agent (native-git bridge)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_fetch_over_ssh_with_the_agent"
+    ]
+  },
+  {
+    "id": "G-SSH-AGENT-BUNDLED",
+    "area": "git",
+    "title": "Bundled ssh cannot use the Linux ssh-agent (the git bridge is needed)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_remote_ssh.py::test_bundled_ssh_cannot_use_the_agent"
+    ]
+  },
+  {
+    "id": "G-SSH-PASSPHRASE",
+    "area": "git",
+    "title": "ssh key with a passphrase asked by Fork (native-git bridge)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_fetch_over_ssh_with_a_passphrase_prompt"
+    ]
+  },
+  {
+    "id": "G-SSH-PASSPHRASE-BUNDLED",
+    "area": "git",
+    "title": "A key with a passphrase is named by ssh sync and doctor; bundled ssh fails without asking",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_remote_ssh.py::test_a_passphrase_key_is_named_and_bundled_ssh_cannot_ask"
+    ]
+  },
+  {
+    "id": "I-HELP-LINKS",
+    "area": "integration",
+    "title": "Help menu links open in the Linux browser",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_help_links_open_in_the_linux_browser"
+    ]
+  },
+  {
+    "id": "I-OPEN-IN-EXPLORER",
+    "area": "integration",
+    "title": "Open In File Explorer opens the Linux file manager",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_open_in_file_explorer_uses_the_linux_file_manager"
+    ]
+  },
+  {
+    "id": "I-SHOW-IN-EXPLORER",
+    "area": "integration",
+    "title": "Show in File Explorer selects the file in the Linux file manager",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_show_in_file_explorer_selects_the_file"
+    ]
+  },
+  {
+    "id": "I-OPEN-FILE",
+    "area": "integration",
+    "title": "Open a file with the Linux default application",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_open_file_uses_the_linux_default_app"
+    ]
+  },
+  {
+    "id": "I-CONSOLE-TERMINAL",
+    "area": "integration",
+    "title": "Open In Shell opens the Linux terminal in the repository",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_open_in_shell_runs_the_linux_terminal"
+    ]
+  },
+  {
+    "id": "I-HOME-DRIVE",
+    "area": "integration",
+    "title": "File dialogs reach the Linux home as H:",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_home_drive_in_a_file_dialog"
+    ]
+  },
+  {
+    "id": "I-CLIPBOARD-OUT",
+    "area": "integration",
+    "title": "Copy Full Path / Copy Path in Fork reach the Linux clipboard (the full path as Fork sees it, Z:\\...)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_copy_path_reaches_the_linux_clipboard"
+    ]
+  },
+  {
+    "id": "I-OPEN-REPO-DIALOG",
+    "area": "integration",
+    "title": "File > Open Repository with an H:\\ path opens the tab; fork-linux's repository checks find it at its Linux path",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_open_repository_dialog_takes_a_home_drive_path"
+    ]
+  },
+  {
+    "id": "I-PREFERENCES-PERSIST",
+    "area": "integration",
+    "title": "Preferences survive a restart",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_preferences_survive_a_restart"
+    ]
+  },
+  {
+    "id": "I-SETTINGS-CLI",
+    "area": "integration",
+    "title": "fork-linux settings set/get/restore/apply-defaults (refused while Fork runs)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_fork_settings_from_the_command_line"
+    ]
+  },
+  {
+    "id": "I-SETTINGS-FILE",
+    "area": "integration",
+    "title": "fork-linux settings path/show/backup/unset; restore FILE brings a backup back (unset refused while Fork runs)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_fork_settings_file_show_backup_and_unset"
+    ]
+  },
+  {
+    "id": "I-DESKTOP-MENU",
+    "area": "integration",
+    "title": "The menu entry starts Fork; Fork's icon at every size",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_menu_entry_with_forks_icon_starts_fork"
+    ]
+  },
+  {
+    "id": "I-CLI-ALIAS",
+    "area": "integration",
+    "title": "desktop install --cli-alias (the AppImage's --install-desktop) links fork into ~/.local/bin",
+    "tiers": [
+      "packaging"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "packaging:appimage:appimage_assert"
+    ]
+  },
+  {
+    "id": "I-FILE-MANAGER-ACTIONS",
+    "area": "integration",
+    "title": "Every file manager's Open in Fork action opens the file's repository",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_file_manager_actions_open_the_files_repository"
+    ]
+  },
+  {
+    "id": "I-DESKTOP-REMOVE",
+    "area": "integration",
+    "title": "desktop remove deletes exactly what desktop install created (with the folders it made)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_desktop_remove_deletes_exactly_what_was_installed"
+    ]
+  },
+  {
+    "id": "I-DESKTOP-PARTIAL",
+    "area": "integration",
+    "title": "desktop install --no-menu --no-icons adds only the file-manager action; desktop status lists it",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_desktop_install_without_menu_and_icons"
+    ]
+  },
+  {
+    "id": "I-GIT-BASH",
+    "area": "integration",
+    "title": "Git Bash as Fork's terminal (it exits at once under Wine): doctor warns; unset, the Linux terminal is back",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_git_bash_terminal_is_flagged_and_replaced"
+    ]
+  },
+  {
+    "id": "I-SSH-SYNC",
+    "area": "integration",
+    "title": "ssh sync shares ~/.ssh keys and config with Fork's bundled ssh",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_ssh_with_a_shared_key"
+    ]
+  },
+  {
+    "id": "I-SSH-SYNC-OPTIONS",
+    "area": "integration",
+    "title": "ssh sync --mode copy, --no-config and --dry-run; a plain sync links keys and translates the config; a deleted key leaves the prefix",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_ssh_sync_modes_dry_run_and_config"
+    ]
+  },
+  {
+    "id": "I-EXTERNAL-DIFF",
+    "area": "integration",
+    "title": "Diff in Linux: the Linux diff tool, Fork waits",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_linux_diff_tool_runs_and_fork_waits"
+    ]
+  },
+  {
+    "id": "I-EXTERNAL-MERGE",
+    "area": "integration",
+    "title": "Merge in Linux: the Linux merge tool resolves a conflict",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_linux_merge_tool_resolves_a_conflict",
+      "tests/e2e/test_real_bridge.py::test_linux_merge_tool_without_a_common_base"
+    ]
+  },
+  {
+    "id": "I-THEME-LIGHT",
+    "area": "integration",
+    "title": "Light desktop theme: Fork is light",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_display.py::test_theme_follows_the_desktop[light]"
+    ]
+  },
+  {
+    "id": "I-THEME-DARK",
+    "area": "integration",
+    "title": "Dark desktop theme: Fork is dark",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_display.py::test_theme_follows_the_desktop[dark]",
+      "tests/e2e/test_real_fork.py::test_05_relaunch_applies_dark_theme"
+    ]
+  },
+  {
+    "id": "I-HIDPI-96",
+    "area": "integration",
+    "title": "96 DPI: Fork scaled 1x, once",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_display.py::test_dpi_scales_fork_once[96]"
+    ]
+  },
+  {
+    "id": "I-HIDPI-144",
+    "area": "integration",
+    "title": "144 DPI: Fork scaled 1.5x, once",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_display.py::test_dpi_scales_fork_once[144]"
+    ]
+  },
+  {
+    "id": "I-HIDPI-192",
+    "area": "integration",
+    "title": "192 DPI: Fork scaled 2x, once",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_display.py::test_dpi_scales_fork_once[192]"
+    ]
+  },
+  {
+    "id": "I-FONT-SELAWIK",
+    "area": "integration",
+    "title": "Fork's interface font is Selawik",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_display.py::test_interface_text_is_drawn_in_selawik"
+    ]
+  },
+  {
+    "id": "I-HANDOFF-DAEMON",
+    "area": "integration",
+    "title": "Without a systemd user session, the terminal and apps Fork opens start outside Wine's process tree through the launcher's hand-off daemon (FL_REQ_HANDOFF), never inheriting Wine's NoNewPrivs and seccomp filter",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
+    ]
+  },
+  {
+    "id": "B-ENABLE",
+    "area": "bridge",
+    "title": "git-bridge enable: Fork uses Linux git through the shims and the daemon",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_enable_starts_the_daemon_and_fork_uses_linux_git"
+    ]
+  },
+  {
+    "id": "B-STATUS",
+    "area": "bridge",
+    "title": "git-bridge status shows enabled, ready, git version and the running daemon",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_enable_starts_the_daemon_and_fork_uses_linux_git"
+    ]
+  },
+  {
+    "id": "B-EXEC-SYMLINK",
+    "area": "bridge",
+    "title": "Commits through Fork keep exec bits and symlinks",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_commits_through_fork_keep_exec_bits_and_symlinks"
+    ]
+  },
+  {
+    "id": "B-DAEMON-LIFECYCLE",
+    "area": "bridge",
+    "title": "The daemon is reused by a second fork PATH and exits after Fork",
+    "tiers": [
+      "real-fork",
+      "e2e-wine-docker"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_daemon_is_reused_and_stops_after_fork",
+      "tests/bridge/test_launcher_wine.py::test_launcher_started_daemon_serves_the_shim_and_follows_wine"
+    ]
+  },
+  {
+    "id": "B-DAEMON-RESTART",
+    "area": "bridge",
+    "title": "A Fork restarted outside fork-linux (its updater) keeps the daemon",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_daemon_keeps_serving_a_restarted_fork"
+    ]
+  },
+  {
+    "id": "B-PERFORMANCE",
+    "area": "bridge",
+    "title": "A git call through the bridge is faster than bundled git",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_git_calls_meet_the_latency_budget"
+    ]
+  },
+  {
+    "id": "B-RECORD",
+    "area": "bridge",
+    "title": "git-bridge record on: the shims forward to bundled git",
+    "tiers": [
+      "real-fork",
+      "e2e-wine-docker"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_record_mode_forwards_to_bundled_git",
+      "tests/bridge/test_shims_wine.py::test_record_mode_forwards_and_logs"
+    ]
+  },
+  {
+    "id": "B-GIT-FLOOR",
+    "area": "bridge",
+    "title": "git-bridge enable refuses a host git older than 2.40",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_enable_refuses_an_old_host_git"
+    ]
+  },
+  {
+    "id": "B-DISABLE",
+    "area": "bridge",
+    "title": "git-bridge disable: back to bundled git, no daemon",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_disable_goes_back_to_bundled_git"
+    ]
+  },
+  {
+    "id": "D-HEALTHY",
+    "area": "doctor",
+    "title": "doctor --deep on a fresh install: no failure, no warning",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_fork.py::test_02_doctor_has_no_failures"
+    ]
+  },
+  {
+    "id": "D-FIX-SHELL-TOOL",
+    "area": "doctor",
+    "title": "doctor --fix resets a terminal tool with no bridge daemon",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_fix_resets_a_terminal_tool_without_a_daemon"
+    ]
+  },
+  {
+    "id": "D-FIX-SOURCE-DIRS",
+    "area": "doctor",
+    "title": "doctor --fix points Fork's clone folder at the Linux home",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_fix_points_the_source_folder_at_the_home"
+    ]
+  },
+  {
+    "id": "D-FIX-MENUBUILDER",
+    "area": "doctor",
+    "title": "doctor --fix deletes exactly our Wine menu leftovers",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_fix_deletes_exactly_our_menubuilder_leftovers"
+    ]
+  },
+  {
+    "id": "D-FIX-OVERLAY",
+    "area": "doctor",
+    "title": "doctor --fix rewrites a lost git config overlay",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_fix_rewrites_a_missing_git_overlay"
+    ]
+  },
+  {
+    "id": "D-FIX-STEP",
+    "area": "doctor",
+    "title": "doctor --fix re-runs the setup step of a broken check",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_fix_reruns_the_setup_step_of_a_broken_check"
+    ]
+  },
+  {
+    "id": "D-REPO-CHECK",
+    "area": "doctor",
+    "title": "repo check lists a repository's problems",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_repo_fixes_need_consent_and_undo_reverts_them"
+    ]
+  },
+  {
+    "id": "D-REPO-FIX-UNDO",
+    "area": "doctor",
+    "title": "Repository fixes need consent; repo undo reverts them",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_repo_fixes_need_consent_and_undo_reverts_them"
+    ]
+  },
+  {
+    "id": "D-REPO-FIX-PARTIAL",
+    "area": "doctor",
+    "title": "repo fix --no-filemode / --no-symlinks change only the other fix; repo undo reverts each",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_repo_fix_can_leave_filemode_or_symlinks_alone"
+    ]
+  },
+  {
+    "id": "D-LOGS-BUNDLE",
+    "area": "doctor",
+    "title": "logs --bundle is redacted and leaves out accounts.json",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_fork.py::test_10_logs_bundle_is_redacted"
+    ]
+  },
+  {
+    "id": "D-LOGS-VIEW",
+    "area": "doctor",
+    "title": "logs --all shows fork-linux's and Fork's logs; logs --follow prints new lines",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_logs_show_and_follow"
+    ]
+  },
+  {
+    "id": "D-LOGS-SOURCES",
+    "area": "doctor",
+    "title": "logs --path names each log (fork-linux, Wine, Fork, Fork's updater); logs --setup and --velopack show theirs",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_logs_of_each_source"
+    ]
+  },
+  {
+    "id": "D-NETWORK",
+    "area": "doctor",
+    "title": "doctor --network reaches the download hosts",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_network_checks_reach_the_download_hosts"
+    ]
+  },
+  {
+    "id": "D-STATUS",
+    "area": "doctor",
+    "title": "status, version / --version and about / credits",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_doctor.py::test_status_version_and_about"
+    ]
+  },
+  {
+    "id": "D-NO-WINE",
+    "area": "doctor",
+    "title": "doctor --offline --json works right after a package install, with no Wine",
+    "tiers": [
+      "packaging"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "packaging:deb:check_doctor_json",
+      "packaging:deb-jammy:check_doctor_json",
+      "packaging:rpm-fedora:check_doctor_json",
+      "packaging:rpm-opensuse:check_doctor_json",
+      "packaging:arch:check_doctor_json",
+      "packaging:snap:check_doctor_json",
+      "packaging:appimage:check_doctor_json",
+      "packaging:flatpak:check_doctor_json",
+      "packaging:tarball:check_doctor_json"
+    ]
+  },
+  {
+    "id": "D-DESKTOP-HANDOFF",
+    "area": "doctor",
+    "title": "doctor desktop.handoff reports how Fork's terminals and apps leave Wine's process tree (here: the launcher's daemon, no systemd user session) and stays ok after use",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
+    ]
+  },
+  {
+    "id": "U-KEEP-PREFIX",
+    "area": "uninstall",
+    "title": "uninstall removes the integration and keeps Fork and its prefix",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_uninstall.py::test_uninstall_keeps_the_prefix_and_fork"
+    ]
+  },
+  {
+    "id": "U-FORK-RUNNING",
+    "area": "uninstall",
+    "title": "uninstall --purge refuses while Fork runs",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_uninstall.py::test_purge_refuses_while_fork_runs"
+    ]
+  },
+  {
+    "id": "U-FORK-RUNNING-OTHER-PREFIX",
+    "area": "uninstall",
+    "title": "uninstall --purge with another prefix selected refuses while Fork runs in a prefix of the data directory",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_uninstall.py::test_purge_refuses_while_fork_runs"
+    ]
+  },
+  {
+    "id": "U-LICENSE-WARNING",
+    "area": "uninstall",
+    "title": "uninstall --purge warns about license activations and needs the word purge",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_uninstall.py::test_purge_shows_the_license_warning_and_needs_the_word"
+    ]
+  },
+  {
+    "id": "U-KEEP-DOWNLOADS",
+    "area": "uninstall",
+    "title": "uninstall --purge --keep-downloads keeps the download caches",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_uninstall.py::test_purge_keep_downloads_keeps_the_caches"
+    ]
+  },
+  {
+    "id": "U-PURGE",
+    "area": "uninstall",
+    "title": "uninstall --purge deletes everything fork-linux created, nothing else",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_uninstall.py::test_purge_deletes_only_what_we_created"
+    ]
+  },
+  {
+    "id": "U-NEVER-WINE",
+    "area": "uninstall",
+    "title": "~/.wine is never touched",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_uninstall.py::test_purge_deletes_only_what_we_created"
+    ]
+  },
+  {
+    "id": "U-PACKAGE-REMOVE",
+    "area": "uninstall",
+    "title": "Removing the package leaves the user's files and ~/.wine alone",
+    "tiers": [
+      "packaging"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "packaging:deb:assert_removed",
+      "packaging:deb-jammy:assert_removed",
+      "packaging:rpm-fedora:assert_removed",
+      "packaging:rpm-opensuse:assert_removed",
+      "packaging:arch:assert_removed",
+      "packaging:snap:assert_removed",
+      "packaging:appimage:assert_removed",
+      "packaging:flatpak:assert_removed",
+      "packaging:tarball:assert_removed"
+    ]
+  },
+  {
+    "id": "R-SNAPSHOT-AUTO",
+    "area": "rollback",
+    "title": "A snapshot of Fork is taken before a launch",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_fork.py::test_07_snapshot_and_rollback"
+    ]
+  },
+  {
+    "id": "R-REFUSE-RUNNING",
+    "area": "rollback",
+    "title": "rollback refuses while Fork runs",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_fork.py::test_07_snapshot_and_rollback"
+    ]
+  },
+  {
+    "id": "R-ROLLBACK-VERSION",
+    "area": "rollback",
+    "title": "rollback --to-version restores that version and Fork starts",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_fork.py::test_07_snapshot_and_rollback"
+    ]
+  },
+  {
+    "id": "R-SNAPSHOT-MANAGE",
+    "area": "rollback",
+    "title": "snapshot create, list, delete and prune",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_snapshots.py::test_snapshot_create_list_delete_prune"
+    ]
+  },
+  {
+    "id": "R-ROLLBACK-ID",
+    "area": "rollback",
+    "title": "rollback ID restores one snapshot",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_snapshots.py::test_rollback_with_settings_restores_settings"
+    ]
+  },
+  {
+    "id": "R-WITH-SETTINGS",
+    "area": "rollback",
+    "title": "rollback --with-settings restores Fork's settings",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_snapshots.py::test_rollback_with_settings_restores_settings"
+    ]
+  },
+  {
+    "id": "R-PIN",
+    "area": "rollback",
+    "title": "A rollback pins the version (Fork's updater off); update_policy auto restores the channel",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_snapshots.py::test_rollback_pins_and_auto_brings_the_channel_back"
+    ]
+  },
+  {
+    "id": "F1",
+    "area": "fork-update",
+    "title": "In-app Velopack update (File > Check for Updates > Restart and Update) keeps fork-linux's environment",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_fork_update.py::test_f1_in_app_update_keeps_env_and_notifies"
+    ]
+  },
+  {
+    "id": "F2",
+    "area": "fork-update",
+    "title": "update --fork installs another Fork version and keeps settings, accounts and the repository list",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_fork_update.py::test_00_setup_installs_fork_n_minus_1",
+      "tests/e2e/test_fork_update.py::test_f2_cli_update_preserves_user_data"
+    ]
+  },
+  {
+    "id": "F3",
+    "area": "fork-update",
+    "title": "update --fork --latest verifies the new version against Fork's feed",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_fork_update.py::test_f3_update_fork_latest_verifies_against_the_feed"
+    ]
+  },
+  {
+    "id": "F4",
+    "area": "fork-update",
+    "title": "rollback after an update pins the version and Fork's updater stays off",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_fork.py::test_07_snapshot_and_rollback",
+      "tests/e2e/test_fork_update.py::test_f4_rollback_pins_and_blocks_the_in_app_update"
+    ]
+  },
+  {
+    "id": "F5",
+    "area": "fork-update",
+    "title": "A known-bad Fork version: the launcher warns and doctor fails with a rollback hint",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_fork_update.py::test_f5_known_bad_override_warns_and_doctor_fails"
+    ]
+  },
+  {
+    "id": "F6",
+    "area": "fork-update",
+    "title": "A staged but unapplied update is reported; pinned drops it",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_fork_update.py::test_f6_staged_update_reported_and_dropped_when_pinned"
+    ]
+  },
+  {
+    "id": "F7",
+    "area": "fork-update",
+    "title": "The native-git bridge survives Fork's own restart after an update",
+    "tiers": [
+      "real-fork",
+      "e2e-wine-docker"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/bridge/test_daemon_protocol.py::test_watch_prefix_outlives_its_parent",
+      "tests/e2e/test_fork_update.py::test_f7_bridge_survives_the_self_restart"
+    ]
+  },
+  {
+    "id": "F9",
+    "area": "fork-update",
+    "title": "Fork's own channel (Develop, Stable, Off) in update --check",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_fork_update.py::test_f9_stable_channel_reads_the_stable_feed"
+    ]
+  },
+  {
+    "id": "F10",
+    "area": "fork-update",
+    "title": "fork PATH while Fork restarts for an update",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_fork_update.py::test_f10_fork_path_during_restart_and_update"
+    ]
+  },
+  {
+    "id": "F19",
+    "area": "fork-update",
+    "title": "Git bridge on, then update --fork: the new Fork's git goes through the bridge",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_fork_update.py::test_f19_update_fork_keeps_the_bridge_working"
+    ]
+  },
+  {
+    "id": "F20",
+    "area": "fork-update",
+    "title": "An interrupted Velopack apply (current\\ missing) is reinstalled on the next launch, keeping the user's files",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_fork_update.py::test_f20_interrupted_apply_is_reinstalled_keeping_the_users_files"
+    ]
+  },
+  {
+    "id": "F23",
+    "area": "fork-update",
+    "title": "A staged update applied by Velopack when Fork starts opens the launch's path in the new Fork",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_fork_update.py::test_f23_staged_update_applied_at_the_next_start"
+    ]
+  },
+  {
+    "id": "F24",
+    "area": "fork-update",
+    "title": "Fork's own automatic update check follows the channel and never runs behind a pin",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_fork_update.py::test_f9_stable_channel_reads_the_stable_feed",
+      "tests/e2e/test_fork_update.py::test_f4_rollback_pins_and_blocks_the_in_app_update",
+      "tests/e2e/test_fork_update.py::test_f23_staged_update_applied_at_the_next_start"
+    ]
+  },
+  {
+    "id": "A1",
+    "area": "app-upgrade",
+    "title": "install.sh upgrade N-1 -> N keeps config, state, prefix and integrations",
+    "tiers": [
+      "packaging"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "packaging:tarball:upgrade_from_previous"
+    ]
+  },
+  {
+    "id": "A2",
+    "area": "app-upgrade",
+    "title": "Each package format upgrades N-1 -> N and keeps the user's files",
+    "tiers": [
+      "packaging"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "packaging:deb:upgrade_from_previous",
+      "packaging:deb-jammy:upgrade_from_previous",
+      "packaging:rpm-fedora:upgrade_from_previous",
+      "packaging:rpm-opensuse:upgrade_from_previous",
+      "packaging:arch:upgrade_from_previous",
+      "packaging:snap:upgrade_from_previous",
+      "packaging:appimage:upgrade_from_previous",
+      "packaging:flatpak:upgrade_from_previous",
+      "packaging:tarball:upgrade_from_previous"
+    ]
+  },
+  {
+    "id": "A3",
+    "area": "app-upgrade",
+    "title": "A new step revision re-runs only that step",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_wine_app_upgrade.py::test_01_setup_with_the_previous_fork",
+      "tests/e2e/test_wine_app_upgrade.py::test_02_a3_upgrade_reruns_only_the_bumped_step"
+    ]
+  },
+  {
+    "id": "A4",
+    "area": "app-upgrade",
+    "title": "A new Wine pin: new runtime, Wine-dependent steps re-run, the old build kept for revert",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_wine_app_upgrade.py::test_04_a4_wine_pin_change_and_revert"
+    ]
+  },
+  {
+    "id": "A5",
+    "area": "app-upgrade",
+    "title": "Upgrade while Fork runs",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_wine_app_upgrade.py::test_03_a5_upgrade_while_fork_runs"
+    ]
+  },
+  {
+    "id": "A6",
+    "area": "app-upgrade",
+    "title": "Bridge binaries replaced while the daemon runs",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_wine_app_upgrade.py::test_06_a6_bridge_binaries_replaced_while_the_daemon_runs"
+    ]
+  },
+  {
+    "id": "A8",
+    "area": "app-upgrade",
+    "title": "Downgrade N -> N-1 warns and keeps working",
+    "tiers": [
+      "packaging"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "packaging:deb:downgrade_to_previous",
+      "packaging:deb-jammy:downgrade_to_previous",
+      "packaging:rpm-fedora:downgrade_to_previous",
+      "packaging:rpm-opensuse:downgrade_to_previous",
+      "packaging:arch:downgrade_to_previous",
+      "packaging:snap:downgrade_to_previous",
+      "packaging:appimage:downgrade_to_previous",
+      "packaging:flatpak:downgrade_to_previous",
+      "packaging:tarball:downgrade_to_previous"
+    ]
+  },
+  {
+    "id": "A9",
+    "area": "app-upgrade",
+    "title": "AppImage update information and a moved AppImage",
+    "tiers": [
+      "packaging"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "packaging:appimage:check_appimage_update_info",
+      "packaging:appimage:appimage_moved"
+    ]
+  },
+  {
+    "id": "A10",
+    "area": "app-upgrade",
+    "title": "Flatpak bundle update, snap refresh and snap revert",
+    "tiers": [
+      "packaging"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "packaging:flatpak:upgrade_from_previous",
+      "packaging:snap:upgrade_from_previous",
+      "packaging:snap:snap_revert"
+    ]
+  },
+  {
+    "id": "A11",
+    "area": "app-upgrade",
+    "title": "Uninstall then reinstall keeps the prefix (no new license activation)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_wine_app_upgrade.py::test_05_a11_uninstall_then_reinstall_keeps_the_prefix"
+    ]
+  },
+  {
+    "id": "A12",
+    "area": "app-upgrade",
+    "title": "An app upgrade and a Fork self-update in the same session",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_wine_app_upgrade.py::test_07_a12_app_upgrade_and_fork_self_update_on_one_launch"
+    ]
+  },
+  {
+    "id": "A17",
+    "area": "app-upgrade",
+    "title": "No maintainer scripts: installing, upgrading and removing a package never touches a home directory",
+    "tiers": [
+      "packaging"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "packaging:deb:assert_markers",
+      "packaging:deb-jammy:assert_markers",
+      "packaging:rpm-fedora:assert_markers",
+      "packaging:rpm-opensuse:assert_markers",
+      "packaging:arch:assert_markers",
+      "packaging:snap:assert_markers",
+      "packaging:appimage:assert_markers",
+      "packaging:flatpak:assert_markers",
+      "packaging:tarball:assert_markers"
+    ]
+  },
+  {
+    "id": "DE-XFCE-SESSION",
+    "area": "desktop",
+    "title": "Xfce: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
+    ]
+  },
+  {
+    "id": "DE-XFCE-INSTALL",
+    "area": "desktop",
+    "title": "Xfce: fork-linux installs from the release tarball",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
+    ]
+  },
+  {
+    "id": "DE-XFCE-MENU",
+    "area": "desktop",
+    "title": "Xfce: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
+    ]
+  },
+  {
+    "id": "DE-XFCE-FILE-MANAGER-ACTION",
+    "area": "desktop",
+    "title": "Xfce: the file manager's Open in Fork runs fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
+    ]
+  },
+  {
+    "id": "DE-XFCE-THEME",
+    "area": "desktop",
+    "title": "Xfce: the light and dark themes are detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-XFCE-SCALE",
+    "area": "desktop",
+    "title": "Xfce: the desktop's scaling is detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-XFCE-TERMINAL",
+    "area": "desktop",
+    "title": "Xfce: the desktop's terminal opens in a folder",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
+    ]
+  },
+  {
+    "id": "DE-XFCE-FILE-MANAGER-REVEAL",
+    "area": "desktop",
+    "title": "Xfce: the desktop's file manager shows a file",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
+    ]
+  },
+  {
+    "id": "DE-XFCE-DEFAULT-APPS",
+    "area": "desktop",
+    "title": "Xfce: files and URLs reach the desktop's default applications",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
+    ]
+  },
+  {
+    "id": "DE-XFCE-DOCTOR",
+    "area": "desktop",
+    "title": "Xfce: doctor fails only for what setup installs",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
+    ]
+  },
+  {
+    "id": "DE-XFCE-FORK-SETUP",
+    "area": "desktop",
+    "title": "Xfce: setup completes and doctor --deep has no failures, before and after use",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
+    ]
+  },
+  {
+    "id": "DE-XFCE-FORK-WINDOW",
+    "area": "desktop",
+    "title": "Xfce: the official Fork runs under the desktop's window manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
+    ]
+  },
+  {
+    "id": "DE-XFCE-FORK-SECOND-TAB",
+    "area": "desktop",
+    "title": "Xfce: the fork command opens a second tab in the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
+    ]
+  },
+  {
+    "id": "DE-XFCE-FORK-SHELL",
+    "area": "desktop",
+    "title": "Xfce: Fork's Open In Shell opens the desktop's terminal",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
+    ]
+  },
+  {
+    "id": "DE-XFCE-FORK-EXPLORER",
+    "area": "desktop",
+    "title": "Xfce: Fork's Open In File Explorer opens the desktop's file manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
+    ]
+  },
+  {
+    "id": "DE-XFCE-FORK-OPEN-IN-FORK",
+    "area": "desktop",
+    "title": "Xfce: the file manager's Open in Fork reaches the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
+    ]
+  },
+  {
+    "id": "DE-XFCE-FORK-DARK",
+    "area": "desktop",
+    "title": "Xfce: the tabs are kept and a dark desktop relaunches Fork dark",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
+    ]
+  },
+  {
+    "id": "DE-KDE-SESSION",
+    "area": "desktop",
+    "title": "KDE Plasma: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
+    ]
+  },
+  {
+    "id": "DE-KDE-INSTALL",
+    "area": "desktop",
+    "title": "KDE Plasma: fork-linux installs from the release tarball",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
+    ]
+  },
+  {
+    "id": "DE-KDE-MENU",
+    "area": "desktop",
+    "title": "KDE Plasma: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
+    ]
+  },
+  {
+    "id": "DE-KDE-FILE-MANAGER-ACTION",
+    "area": "desktop",
+    "title": "KDE Plasma: the file manager's Open in Fork runs fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
+    ]
+  },
+  {
+    "id": "DE-KDE-THEME",
+    "area": "desktop",
+    "title": "KDE Plasma: the light and dark themes are detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-KDE-SCALE",
+    "area": "desktop",
+    "title": "KDE Plasma: the desktop's scaling is detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-KDE-TERMINAL",
+    "area": "desktop",
+    "title": "KDE Plasma: the desktop's terminal opens in a folder",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
+    ]
+  },
+  {
+    "id": "DE-KDE-FILE-MANAGER-REVEAL",
+    "area": "desktop",
+    "title": "KDE Plasma: the desktop's file manager shows a file",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
+    ]
+  },
+  {
+    "id": "DE-KDE-DEFAULT-APPS",
+    "area": "desktop",
+    "title": "KDE Plasma: files and URLs reach the desktop's default applications",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
+    ]
+  },
+  {
+    "id": "DE-KDE-DOCTOR",
+    "area": "desktop",
+    "title": "KDE Plasma: doctor fails only for what setup installs",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
+    ]
+  },
+  {
+    "id": "DE-KDE-FORK-SETUP",
+    "area": "desktop",
+    "title": "KDE Plasma: setup completes and doctor --deep has no failures, before and after use",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
+    ]
+  },
+  {
+    "id": "DE-KDE-FORK-WINDOW",
+    "area": "desktop",
+    "title": "KDE Plasma: the official Fork runs under the desktop's window manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
+    ]
+  },
+  {
+    "id": "DE-KDE-FORK-SECOND-TAB",
+    "area": "desktop",
+    "title": "KDE Plasma: the fork command opens a second tab in the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
+    ]
+  },
+  {
+    "id": "DE-KDE-FORK-SHELL",
+    "area": "desktop",
+    "title": "KDE Plasma: Fork's Open In Shell opens the desktop's terminal",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
+    ]
+  },
+  {
+    "id": "DE-KDE-FORK-EXPLORER",
+    "area": "desktop",
+    "title": "KDE Plasma: Fork's Open In File Explorer opens the desktop's file manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
+    ]
+  },
+  {
+    "id": "DE-KDE-FORK-OPEN-IN-FORK",
+    "area": "desktop",
+    "title": "KDE Plasma: the file manager's Open in Fork reaches the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
+    ]
+  },
+  {
+    "id": "DE-KDE-FORK-DARK",
+    "area": "desktop",
+    "title": "KDE Plasma: the tabs are kept and a dark desktop relaunches Fork dark",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-SESSION",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-INSTALL",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: fork-linux installs from the release tarball",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-MENU",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FILE-MANAGER-ACTION",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the file manager's Open in Fork runs fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-THEME",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the light and dark themes are detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-SCALE",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the desktop's scaling is detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-TERMINAL",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the desktop's terminal opens in a folder",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FILE-MANAGER-REVEAL",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the desktop's file manager shows a file",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-DEFAULT-APPS",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: files and URLs reach the desktop's default applications",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-DOCTOR",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: doctor fails only for what setup installs",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FORK-SETUP",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: setup completes and doctor --deep has no failures, before and after use",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FORK-WINDOW",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the official Fork runs under the desktop's window manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FORK-SECOND-TAB",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the fork command opens a second tab in the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FORK-SHELL",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: Fork's Open In Shell opens the desktop's terminal",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FORK-EXPLORER",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: Fork's Open In File Explorer opens the desktop's file manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FORK-OPEN-IN-FORK",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the file manager's Open in Fork reaches the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FORK-DARK",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the tabs are kept and a dark desktop relaunches Fork dark",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
+    ]
+  },
+  {
+    "id": "DE-LXQT-SESSION",
+    "area": "desktop",
+    "title": "LXQt: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
+    ]
+  },
+  {
+    "id": "DE-LXQT-INSTALL",
+    "area": "desktop",
+    "title": "LXQt: fork-linux installs from the release tarball",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
+    ]
+  },
+  {
+    "id": "DE-LXQT-MENU",
+    "area": "desktop",
+    "title": "LXQt: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FILE-MANAGER-ACTION",
+    "area": "desktop",
+    "title": "LXQt: the file manager's Open in Fork runs fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
+    ]
+  },
+  {
+    "id": "DE-LXQT-THEME",
+    "area": "desktop",
+    "title": "LXQt: the light and dark themes are detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-LXQT-SCALE",
+    "area": "desktop",
+    "title": "LXQt: the desktop's scaling is detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-LXQT-TERMINAL",
+    "area": "desktop",
+    "title": "LXQt: the desktop's terminal opens in a folder",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FILE-MANAGER-REVEAL",
+    "area": "desktop",
+    "title": "LXQt: the desktop's file manager shows a file",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
+    ]
+  },
+  {
+    "id": "DE-LXQT-DEFAULT-APPS",
+    "area": "desktop",
+    "title": "LXQt: files and URLs reach the desktop's default applications",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
+    ]
+  },
+  {
+    "id": "DE-LXQT-DOCTOR",
+    "area": "desktop",
+    "title": "LXQt: doctor fails only for what setup installs",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FORK-SETUP",
+    "area": "desktop",
+    "title": "LXQt: setup completes and doctor --deep has no failures, before and after use",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FORK-WINDOW",
+    "area": "desktop",
+    "title": "LXQt: the official Fork runs under the desktop's window manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FORK-SECOND-TAB",
+    "area": "desktop",
+    "title": "LXQt: the fork command opens a second tab in the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FORK-SHELL",
+    "area": "desktop",
+    "title": "LXQt: Fork's Open In Shell opens the desktop's terminal",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FORK-EXPLORER",
+    "area": "desktop",
+    "title": "LXQt: Fork's Open In File Explorer opens the desktop's file manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FORK-OPEN-IN-FORK",
+    "area": "desktop",
+    "title": "LXQt: the file manager's Open in Fork reaches the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
+    ]
+  },
+  {
+    "id": "DE-LXQT-FORK-DARK",
+    "area": "desktop",
+    "title": "LXQt: the tabs are kept and a dark desktop relaunches Fork dark",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
+    ]
+  },
+  {
+    "id": "DE-GNOME-SESSION",
+    "area": "desktop",
+    "title": "GNOME: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
+    ]
+  },
+  {
+    "id": "DE-GNOME-INSTALL",
+    "area": "desktop",
+    "title": "GNOME: fork-linux installs from the release tarball",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
+    ]
+  },
+  {
+    "id": "DE-GNOME-MENU",
+    "area": "desktop",
+    "title": "GNOME: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FILE-MANAGER-ACTION",
+    "area": "desktop",
+    "title": "GNOME: the file manager's Open in Fork runs fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
+    ]
+  },
+  {
+    "id": "DE-GNOME-THEME",
+    "area": "desktop",
+    "title": "GNOME: the light and dark themes are detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-GNOME-SCALE",
+    "area": "desktop",
+    "title": "GNOME: the desktop's scaling is detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-GNOME-TERMINAL",
+    "area": "desktop",
+    "title": "GNOME: the desktop's terminal opens in a folder",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FILE-MANAGER-REVEAL",
+    "area": "desktop",
+    "title": "GNOME: the desktop's file manager shows a file",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
+    ]
+  },
+  {
+    "id": "DE-GNOME-DEFAULT-APPS",
+    "area": "desktop",
+    "title": "GNOME: files and URLs reach the desktop's default applications",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
+    ]
+  },
+  {
+    "id": "DE-GNOME-DOCTOR",
+    "area": "desktop",
+    "title": "GNOME: doctor fails only for what setup installs",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FORK-SETUP",
+    "area": "desktop",
+    "title": "GNOME: setup completes and doctor --deep has no failures, before and after use",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FORK-WINDOW",
+    "area": "desktop",
+    "title": "GNOME: the official Fork runs under the desktop's window manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FORK-SECOND-TAB",
+    "area": "desktop",
+    "title": "GNOME: the fork command opens a second tab in the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FORK-SHELL",
+    "area": "desktop",
+    "title": "GNOME: Fork's Open In Shell opens the desktop's terminal",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FORK-EXPLORER",
+    "area": "desktop",
+    "title": "GNOME: Fork's Open In File Explorer opens the desktop's file manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FORK-OPEN-IN-FORK",
+    "area": "desktop",
+    "title": "GNOME: the file manager's Open in Fork reaches the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
+    ]
+  },
+  {
+    "id": "DE-GNOME-FORK-DARK",
+    "area": "desktop",
+    "title": "GNOME: the tabs are kept and a dark desktop relaunches Fork dark",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-SESSION",
+    "area": "desktop",
+    "title": "Budgie: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-INSTALL",
+    "area": "desktop",
+    "title": "Budgie: fork-linux installs from the release tarball",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-MENU",
+    "area": "desktop",
+    "title": "Budgie: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-FILE-MANAGER-ACTION",
+    "area": "desktop",
+    "title": "Budgie: the file manager's Open in Fork runs fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-THEME",
+    "area": "desktop",
+    "title": "Budgie: the light and dark themes are detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-SCALE",
+    "area": "desktop",
+    "title": "Budgie: the desktop's scaling is detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-TERMINAL",
+    "area": "desktop",
+    "title": "Budgie: the desktop's terminal opens in a folder",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-FILE-MANAGER-REVEAL",
+    "area": "desktop",
+    "title": "Budgie: the desktop's file manager shows a file",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-DEFAULT-APPS",
+    "area": "desktop",
+    "title": "Budgie: files and URLs reach the desktop's default applications",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-DOCTOR",
+    "area": "desktop",
+    "title": "Budgie: doctor fails only for what setup installs",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-FORK-SETUP",
+    "area": "desktop",
+    "title": "Budgie: setup completes and doctor --deep has no failures, before and after use",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-FORK-WINDOW",
+    "area": "desktop",
+    "title": "Budgie: the official Fork runs under the desktop's window manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-FORK-SECOND-TAB",
+    "area": "desktop",
+    "title": "Budgie: the fork command opens a second tab in the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-FORK-SHELL",
+    "area": "desktop",
+    "title": "Budgie: Fork's Open In Shell opens the desktop's terminal",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-FORK-EXPLORER",
+    "area": "desktop",
+    "title": "Budgie: Fork's Open In File Explorer opens the desktop's file manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-FORK-OPEN-IN-FORK",
+    "area": "desktop",
+    "title": "Budgie: the file manager's Open in Fork reaches the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-FORK-DARK",
+    "area": "desktop",
+    "title": "Budgie: the tabs are kept and a dark desktop relaunches Fork dark",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
+    ]
+  },
+  {
+    "id": "DE-MATE-SESSION",
+    "area": "desktop",
+    "title": "MATE: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
+    ]
+  },
+  {
+    "id": "DE-MATE-INSTALL",
+    "area": "desktop",
+    "title": "MATE: fork-linux installs from the release tarball",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
+    ]
+  },
+  {
+    "id": "DE-MATE-MENU",
+    "area": "desktop",
+    "title": "MATE: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
+    ]
+  },
+  {
+    "id": "DE-MATE-FILE-MANAGER-ACTION",
+    "area": "desktop",
+    "title": "MATE: the file manager's Open in Fork runs fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
+    ]
+  },
+  {
+    "id": "DE-MATE-THEME",
+    "area": "desktop",
+    "title": "MATE: the light and dark themes are detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-MATE-SCALE",
+    "area": "desktop",
+    "title": "MATE: the desktop's scaling is detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-MATE-TERMINAL",
+    "area": "desktop",
+    "title": "MATE: the desktop's terminal opens in a folder",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
+    ]
+  },
+  {
+    "id": "DE-MATE-FILE-MANAGER-REVEAL",
+    "area": "desktop",
+    "title": "MATE: the desktop's file manager shows a file",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
+    ]
+  },
+  {
+    "id": "DE-MATE-DEFAULT-APPS",
+    "area": "desktop",
+    "title": "MATE: files and URLs reach the desktop's default applications",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
+    ]
+  },
+  {
+    "id": "DE-MATE-DOCTOR",
+    "area": "desktop",
+    "title": "MATE: doctor fails only for what setup installs",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
+    ]
+  },
+  {
+    "id": "DE-MATE-FORK-SETUP",
+    "area": "desktop",
+    "title": "MATE: setup completes and doctor --deep has no failures, before and after use",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
+    ]
+  },
+  {
+    "id": "DE-MATE-FORK-WINDOW",
+    "area": "desktop",
+    "title": "MATE: the official Fork runs under the desktop's window manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
+    ]
+  },
+  {
+    "id": "DE-MATE-FORK-SECOND-TAB",
+    "area": "desktop",
+    "title": "MATE: the fork command opens a second tab in the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
+    ]
+  },
+  {
+    "id": "DE-MATE-FORK-SHELL",
+    "area": "desktop",
+    "title": "MATE: Fork's Open In Shell opens the desktop's terminal",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
+    ]
+  },
+  {
+    "id": "DE-MATE-FORK-EXPLORER",
+    "area": "desktop",
+    "title": "MATE: Fork's Open In File Explorer opens the desktop's file manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
+    ]
+  },
+  {
+    "id": "DE-MATE-FORK-OPEN-IN-FORK",
+    "area": "desktop",
+    "title": "MATE: the file manager's Open in Fork reaches the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
+    ]
+  },
+  {
+    "id": "DE-MATE-FORK-DARK",
+    "area": "desktop",
+    "title": "MATE: the tabs are kept and a dark desktop relaunches Fork dark",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-SESSION",
+    "area": "desktop",
+    "title": "Cinnamon: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-INSTALL",
+    "area": "desktop",
+    "title": "Cinnamon: fork-linux installs from the release tarball",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-MENU",
+    "area": "desktop",
+    "title": "Cinnamon: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FILE-MANAGER-ACTION",
+    "area": "desktop",
+    "title": "Cinnamon: the file manager's Open in Fork runs fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-THEME",
+    "area": "desktop",
+    "title": "Cinnamon: the light and dark themes are detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-SCALE",
+    "area": "desktop",
+    "title": "Cinnamon: the desktop's scaling is detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-TERMINAL",
+    "area": "desktop",
+    "title": "Cinnamon: the desktop's terminal opens in a folder",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FILE-MANAGER-REVEAL",
+    "area": "desktop",
+    "title": "Cinnamon: the desktop's file manager shows a file",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-DEFAULT-APPS",
+    "area": "desktop",
+    "title": "Cinnamon: files and URLs reach the desktop's default applications",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-DOCTOR",
+    "area": "desktop",
+    "title": "Cinnamon: doctor fails only for what setup installs",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FORK-SETUP",
+    "area": "desktop",
+    "title": "Cinnamon: setup completes and doctor --deep has no failures, before and after use",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FORK-WINDOW",
+    "area": "desktop",
+    "title": "Cinnamon: the official Fork runs under the desktop's window manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FORK-SECOND-TAB",
+    "area": "desktop",
+    "title": "Cinnamon: the fork command opens a second tab in the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FORK-SHELL",
+    "area": "desktop",
+    "title": "Cinnamon: Fork's Open In Shell opens the desktop's terminal",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FORK-EXPLORER",
+    "area": "desktop",
+    "title": "Cinnamon: Fork's Open In File Explorer opens the desktop's file manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FORK-OPEN-IN-FORK",
+    "area": "desktop",
+    "title": "Cinnamon: the file manager's Open in Fork reaches the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-FORK-DARK",
+    "area": "desktop",
+    "title": "Cinnamon: the tabs are kept and a dark desktop relaunches Fork dark",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
+    ]
+  },
+  {
+    "id": "FF-DOCTOR",
+    "area": "font-fallback",
+    "title": "doctor's font-fallback check reports the host fonts mapped in WPF's composite font",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/font-fallback-472",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_fork.py::test_02_doctor_has_no_failures"
+    ]
+  }
+]

@@ -148,9 +148,10 @@ def test_build_spec_defaults(ctx: bootstrap.Ctx, tmp_path: Path) -> None:
     assert env["WINEDEBUG"] == "-all"
     assert env["WINEDLLOVERRIDES"] == "winemenubuilder.exe=d"
     assert env["WINEHOME"] == f"C:\\users\\{USER}"
-    assert env["GIT_CONFIG_COUNT"] == "2"
+    assert env["GIT_CONFIG_COUNT"] == "3"
     assert env["GIT_CONFIG_KEY_0"] == "core.filemode"
     assert env["GIT_CONFIG_VALUE_0"] == "false"
+    assert (env["GIT_CONFIG_KEY_2"], env["GIT_CONFIG_VALUE_2"]) == ("core.checkStat", "minimal")
     assert env["HOME"] == ctx.env["HOME"]
 
 
@@ -205,7 +206,7 @@ def test_build_spec_includes_bridge_env_and_drops_the_bundled_git_overlay(ctx: b
         return [env[f"GIT_CONFIG_KEY_{n}"] for n in range(int(env.get("GIT_CONFIG_COUNT", "0")))]
 
     plain = launcher.build_spec(ctx, []).env
-    assert keys(plain)[:2] == ["core.filemode", "core.autocrlf"]
+    assert keys(plain)[:3] == ["core.filemode", "core.autocrlf", "core.checkStat"]
     assert "FORKGITINSTANCE" not in plain
     bridged = {"FORKGITINSTANCE": "C:\\fork-linux\\gitInstance", "FL_BRIDGE_PORT": "4242"}
     env = launcher.build_spec(ctx, [], bridge_env=bridged).env
@@ -213,9 +214,10 @@ def test_build_spec_includes_bridge_env_and_drops_the_bundled_git_overlay(ctx: b
     assert env["FL_BRIDGE_PORT"] == "4242"
     assert "core.filemode" not in keys(env)
     assert "core.autocrlf" not in keys(env)
+    assert "core.checkStat" not in keys(env)
     # Record mode forwards to bundled git: the overlay stays.
     env = launcher.build_spec(ctx, [], bridge_env={**bridged, "FL_BRIDGE_MODE": "record"}).env
-    assert keys(env)[:2] == ["core.filemode", "core.autocrlf"]
+    assert keys(env)[:3] == ["core.filemode", "core.autocrlf", "core.checkStat"]
 
 
 # -- pre_launch -----------------------------------------------------------------------------
@@ -789,6 +791,50 @@ def test_f10_velopack_apply_that_never_ends_is_reported(
         launcher.run(flow["app"], ["repo"], execvpe=flow["exec"])
     assert flow["exec"].calls == []
     assert flow["ensure"] == []
+
+
+def test_run_restart_stops_the_running_fork_first(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # E2E: a Fork that lost its window kept the fast path busy; --restart ends it, then starts Fork again.
+    launcher.write_session(ctx.paths, ctx.wine(), 99)
+    answers = iter([True, True, False])
+    monkeypatch.setattr(procs, "fork_running", lambda prefix, **_kw: next(answers))
+    monkeypatch.setattr(launcher.time, "sleep", lambda _seconds: None)
+    launcher.run(flow["app"], ["repo"], restart=True, execvpe=flow["exec"])
+    kill = flow["app"].runner.calls[0]
+    assert kill["argv"] == [str(ctx.wine().wineserver), "-k"]
+    assert kill["env"]["WINEPREFIX"] == str(ctx.paths.prefix)
+    # The normal path follows: setup check, hooks, a new session.
+    assert flow["ensure"] == [True]
+    assert flow["hooks"] == 1
+    assert launcher.read_session(ctx.paths)["pid"] == os.getpid()
+
+
+def test_run_restart_without_a_running_fork_just_starts_it(ctx: bootstrap.Ctx, flow: dict[str, Any]) -> None:
+    launcher.run(flow["app"], [], restart=True, execvpe=flow["exec"])
+    assert flow["app"].runner.calls == []
+    assert flow["hooks"] == 1
+
+
+def test_restart_needs_the_session_wine(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], not_running: list[bool]
+) -> None:
+    not_running[0] = True
+    with pytest.raises(ForkLinuxError, match="Wine of its session is unknown"):
+        launcher.run(flow["app"], [], restart=True, execvpe=flow["exec"])
+    assert flow["exec"].calls == []
+
+
+def test_restart_gives_up_when_fork_keeps_running(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], not_running: list[bool], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    launcher.write_session(ctx.paths, ctx.wine(), 99)
+    not_running[0] = True
+    monkeypatch.setattr(launcher, "RESTART_TIMEOUT", -1.0)
+    with pytest.raises(ForkLinuxError, match="Fork still runs"):
+        launcher.run(flow["app"], [], restart=True, execvpe=flow["exec"])
+    assert flow["exec"].calls == []
 
 
 def test_run_running_without_session_takes_the_normal_path_without_hooks(

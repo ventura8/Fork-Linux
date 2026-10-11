@@ -21,7 +21,8 @@ concurrency:
 jobs:
   watch:
     runs-on: ubuntu-26.04
-    timeout-minutes: 120
+    # The whole real tier in one job (see e2e-wine.yml for its shards).
+    timeout-minutes: 240
     permissions:
       contents: write
       pull-requests: write
@@ -46,6 +47,10 @@ jobs:
             "https://cdn.fork.dev/win/Fork-${FORK_VERSION}.exe"
           python3 scripts/check-upstream-fork.py --add "${FORK_VERSION}" --installer "${scratch}/Fork.exe"
           rm -rf "${scratch}"
+
+      - name: Build the native-git bridge (the bridge scenarios need its shims)
+        if: steps.check.outputs.new == 'true'
+        run: ./scripts/build-bridge.sh
 
       - name: Real E2E with the new version
         id: e2e

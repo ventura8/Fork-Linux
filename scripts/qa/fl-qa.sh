@@ -109,8 +109,9 @@ cmd_init() {
     chmod 700 "$R/run"
     local seed="${FL_E2E_SEED:-}" cache="${FL_E2E_WINETRICKS_CACHE:-}" f
     if [ -n "$seed" ] && [ -d "$seed" ]; then
-        for f in "$seed"/wine-*.tar.xz "$seed"/Fork-*.exe "$seed"/winetricks-*; do
-            [ -f "$f" ] && cp -n "$f" "$R/home/.cache/fork-linux/downloads/"
+        for f in "$seed"/wine-*.tar.xz "$seed"/Fork-*.exe "$seed"/winetricks-* "$seed"/selawik-*.zip; do
+            [ -f "$f" ] || continue
+            [ -e "$R/home/.cache/fork-linux/downloads/${f##*/}" ] || cp "$f" "$R/home/.cache/fork-linux/downloads/"
         done
     fi
     if [ -n "$cache" ] && [ -d "$cache" ] && [ ! -d "$R/home/.cache/winetricks" ]; then

@@ -24,7 +24,9 @@
 #                          ones are reused): artifacts/coverage/coverage.xml with pytest
 #                          on the host, and artifacts/coverage/c-coverage.xml with
 #                          scripts/ci-c-coverage.sh (native unit + daemon tests and the
-#                          Wine tier against --coverage builds of the bridge, in Docker).
+#                          Wine tier against --coverage builds of the bridge, in Docker),
+#                          then gate them per file (every file >= 90%, enforced by
+#                          scripts/check-coverage.py) before anything is uploaded.
 #   FL_SONAR_IMAGE       — override the pinned scanner image.
 #   FL_SONAR_BRANCH      — the branch to file the analysis under (default: the checked-out
 #                          branch; a detached HEAD needs it). Any branch other than main is
@@ -89,6 +91,8 @@ ensure_coverage() {
 			--cov-report="xml:${COVERAGE_XML}" tests
 		echo "==> refreshing C coverage (scripts/ci-c-coverage.sh)"
 		"${ROOT}/scripts/ci-c-coverage.sh"
+		echo "==> gate: every file >= 90% (scripts/check-coverage.py) before the scan"
+		python3 "${ROOT}/scripts/check-coverage.py" --min 90 --min-python-line 100 --min-python-branch 100
 	fi
 	if [[ ! -f "${COVERAGE_XML}" ]]; then
 		echo "==> note: ${COVERAGE_XML#"${ROOT}"/} is missing — analysing without Python coverage."

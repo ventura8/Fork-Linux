@@ -79,6 +79,14 @@ def test_fonts_retries_a_transient_failure(xdg: Path) -> None:
     assert fonts.verify_fonts(ctx)
 
 
+def test_fonts_do_not_retry_on_a_full_disk(xdg: Path) -> None:
+    ctx, fake = _ctx(log_file=xdg / "setup.log")
+    fake.disk_full.add("corefonts")
+    with pytest.raises(prefix_steps.DiskFull):
+        fonts.run_fonts(ctx)
+    assert fake.verbs == ["corefonts"]
+
+
 def test_fonts_partial_corefonts_is_not_done(xdg: Path) -> None:
     # E2E: an interrupted corefonts left arial.ttf behind; the step must not count as done.
     ctx, fake = _ctx()
