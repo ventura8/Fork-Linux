@@ -19,4 +19,7 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
   only via `scripts/e2e-docker.sh` (hard rule 18; shared code in `scripts/lib-e2e-docker.sh`). `ci-docker.sh --inside`
   refuses outside a container. It carries `fonts-noto-core` / `fonts-noto-cjk`: without them `prefix.font_fallback`
   warns and the E2E doctor step (no warnings allowed) fails.
+- Packaging cells (`scripts/ci-packaging-cell.sh`) mount a linked worktree's git common dir read-only
+  (`fl_git_mount_args`) and build the previous release (`FL_PACKAGING_PREVIOUS`, default 0.9.9) into
+  `<artifacts>/previous` for the real upgrade / downgrade E2E; check.yml does not upload that directory.
 - When you change an image, script or cell: update AGENTS.md §4.8, this skill and `tests/test_docker.py` in the same change.

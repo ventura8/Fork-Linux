@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # ci-packaging-cell.sh - one packaging cell of Fork for Linux (unofficial): build the image,
-# build the package, smoke-verify it, then the live install E2E (install -> upgrade ->
-# remove -> reinstall; scripts/packaging-e2e-install.sh). Shared by check.yml, release.yml
-# and scripts/ci-packaging-matrix.sh, so a cell fails the same way everywhere.
+# build the package, smoke-verify it, build the previous release of the same format (this
+# tree as version FL_PACKAGING_PREVIOUS, default 0.9.9, by scripts/build-version-variant.sh,
+# into <artifacts>/previous), then the live install E2E (N-1 -> N upgrade, downgrade and
+# back, upgrade in place, remove, reinstall; scripts/packaging-e2e-install.sh). Shared by
+# check.yml, release.yml and scripts/ci-packaging-matrix.sh, so a cell fails the same way
+# everywhere.
 #
 # Usage: ./scripts/ci-packaging-cell.sh <format>
 # Formats: deb deb-jammy rpm-fedora rpm-opensuse arch snap appimage flatpak tarball
@@ -26,6 +29,14 @@ export FL_ARTIFACTS_DIR="${FL_ARTIFACTS_DIR:-${ROOT}/artifacts}"
 }
 mkdir -p "${FL_ARTIFACTS_DIR}"
 ART_IN="/src/${FL_ARTIFACTS_DIR#"${ROOT}"/}"
+# shellcheck source=scripts/release-common.sh
+. scripts/release-common.sh
+mapfile -t GIT_MOUNT < <(fl_git_mount_args)
+# The previous release for the real upgrade / downgrade E2E (docs/qa/UPDATE-SCENARIOS.md A2, A8).
+export FL_PACKAGING_PREVIOUS="${FL_PACKAGING_PREVIOUS:-0.9.9}"
+PREV_DIR="${FL_ARTIFACTS_DIR}/previous"
+FL_PREVIOUS_IN="${ART_IN}/previous"
+rm -rf "${PREV_DIR:?}"
 
 DOCKER_FLAGS=()
 case "${FORMAT}" in
@@ -80,14 +91,19 @@ else
 	docker build -f "${DOCKERFILE}" -t "${IMAGE}" docker
 	run_in_image() {
 		docker run --rm "${DOCKER_FLAGS[@]}" -e "FL_ARTIFACTS_DIR=${ART_IN}" \
-			-v "${ROOT}:/src:rw" -w /src "${IMAGE}" "$@"
+			-v "${ROOT}:/src:rw" "${GIT_MOUNT[@]}" -w /src "${IMAGE}" "$@"
 	}
 	run_in_image "${BUILD[@]}" || status=$?
 	if ((status == 0)); then
 		./scripts/packaging-smoke-verify.sh "${FORMAT}" || status=$?
 	fi
 	if ((status == 0)); then
-		run_in_image ./scripts/packaging-e2e-install.sh "${FORMAT}" || status=$?
+		run_in_image ./scripts/build-version-variant.sh "${FL_PACKAGING_PREVIOUS}" "${FL_PREVIOUS_IN}" "${FORMAT}" ||
+			status=$?
+	fi
+	if ((status == 0)); then
+		run_in_image env FL_PREVIOUS_ARTIFACTS_DIR="${FL_PREVIOUS_IN}" FL_PREVIOUS_VERSION="${FL_PACKAGING_PREVIOUS}" \
+			./scripts/packaging-e2e-install.sh "${FORMAT}" || status=$?
 	fi
 fi
 # The packaging containers run as root: hand the outputs back to the invoking user.

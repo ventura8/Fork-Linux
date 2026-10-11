@@ -2,7 +2,7 @@
 
 preflight -> consent -> wine_runtime -> winetricks -> prefix_init ->
 shell_folders -> registry -> dotnet -> winver -> fonts -> ui_font -> font_replacements ->
-font_fallback -> display_dpi -> fork_download -> fork_install -> fork_settings -> host_shims ->
+font_fallback -> display_dpi -> fork_download -> fork_install -> host_shims -> fork_settings ->
 host_integration -> git_overlay -> ssh_sync -> icon -> desktop_entry -> finalize
 """
 
@@ -38,8 +38,10 @@ STEPS: tuple[Step, ...] = (
     DISPLAY_DPI,
     FORK_DOWNLOAD,
     FORK_INSTALL,
-    FORK_SETTINGS,
+    # The shims first: whether the bridge is ready (and so which tools Fork's settings name)
+    # depends on the installed shims matching the shipped ones (UPD-28).
     HOST_SHIMS,
+    FORK_SETTINGS,
     HOST_INTEGRATION,
     GIT_OVERLAY,
     SSH_SYNC,

@@ -17,7 +17,8 @@ were reconstructed 2026-10-10 from the NUC build (fork-linux 1.0.0 built from th
 | Setup: winetricks | `winetricks.py`, `steps/prefix.py` (`run_verbs`) | every verb runs with `W_CACHE=~/.cache/fork-linux/winetricks`, seeded read-only from `~/.cache/winetricks` |
 | Desktop integration | `desktop_integration.py`, `data/templates/*` | per-user menu entry and file-manager actions (`--file-managers auto` by default: the installed ones; Thunar's `uca.xml` seeded from the desktop's own); packages ship the same entry system-wide |
 | Icons | `pe_resources.py`, `imaging.py`, `icon_extract.py` | Fork's icon from the user's `Fork.exe` at every hicolor size (missing sizes shrunk from the largest image) plus a scalable SVG; our neutral placeholder until then |
-| Host helpers | `libexec/*` → `<prefix>/lib/fork-linux/` | terminal / explorer / open-url hand-off outside Wine's process tree |
+| Host helpers | `libexec/*` → `<prefix>/lib/fork-linux/`, `helpers.py` | terminal / explorer / open-url hand-off outside Wine's process tree; from an AppImage through stable launchers in `<data_dir>/helpers/` (AppRun `--libexec`), from a snap through `/snap/<name>/current` |
+| Updates | `updates.py`, `snapshots.py`, `fork_install.py`, `fork_userdata.py`, `commands/update.py`, `commands/snapshot.py`, `procs.py` | Fork's own Velopack updates are noticed, snapshotted and can be rolled back; `update --fork` downloads first, snapshots (copy), installs and undoes an unverified install; the user's files in `AppData\Local\Fork`, which the official installer deletes, are moved aside and back (`fork_userdata.py`); Velopack's `Update.exe` counts as Fork being busy. Scenarios: [docs/qa/UPDATE-SCENARIOS.md](../qa/UPDATE-SCENARIOS.md) |
 | Bridge | `bridge/` → `fl-bridge-helper` + personas, `win64/fl-shim.exe`, `fl-launch.exe` | see [bridge/README.md](../../bridge/README.md) |
 
 ## Build and packaging
@@ -31,6 +32,7 @@ were reconstructed 2026-10-10 from the NUC build (fork-linux 1.0.0 built from th
 | Arch / AUR | `packaging/arch/PKGBUILD.in`, `scripts/release-arch.sh`, `scripts/aur-render.sh` |
 | Portable | `scripts/release-portable.sh`, `packaging/appimage/`, `packaging/flatpak/`, `packaging/snap/`, `packaging/common/find-python.sh`, `install.sh`, `uninstall.sh` |
 | Shared helpers | `scripts/release-common.sh` |
+| Other versions | `scripts/build-version-variant.sh` + `scripts/version-variant.py` (N-1 builds for the upgrade / downgrade E2E) |
 
 Distribution packages ship the glibc PIE `fl-bridge-helper`; the portable channels (tarball,
 AppImage, snap) ship the static musl build (ET_EXEC) so they run on any host libc. The

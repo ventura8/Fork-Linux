@@ -158,6 +158,78 @@ def test_e2e_wine_uploads_logs_only() -> None:
     assert "actions/cache" not in E2E
 
 
+E2E_SCRIPT = (ROOT / "scripts" / "ci-e2e-wine.sh").read_text(encoding="utf-8")
+
+
+def test_e2e_wine_runs_the_fork_update_tier() -> None:
+    """e2e-wine.yml switches the Fork-update tier on; the script forwards the switch and builds the bridge."""
+    assert "FL_E2E_FORK_UPDATES: '1'" in E2E
+    assert "-e FL_E2E_FORK_UPDATES " in E2E_SCRIPT
+    build = E2E_SCRIPT.index('"${ROOT}/scripts/build-bridge.sh"')
+    gate = E2E_SCRIPT.index('FL_E2E_FORK_UPDATES:-0}" == "1" && ! -x')
+    assert gate < build < E2E_SCRIPT.index("docker run --rm --init")
+    assert "MODULES+=(test_fork_update.py)" in E2E_SCRIPT
+    assert (ROOT / "tests" / "e2e" / "test_fork_update.py").is_file()
+
+
+def test_e2e_wine_runs_the_app_upgrade_tier() -> None:
+    """e2e-wine.yml switches the app-upgrade tier on; the script forwards it with two bridge builds for A6."""
+    assert "FL_E2E_APP_UPGRADE: '1'" in E2E
+    assert "-e FL_E2E_APP_UPGRADE " in E2E_SCRIPT
+    assert '-e FL_E2E_BRIDGE_BUILDS="${builds_env}"' in E2E_SCRIPT
+    assert "MODULES+=(test_wine_app_upgrade.py)" in E2E_SCRIPT
+    variant = E2E_SCRIPT.index('scripts/build-version-variant.sh" --tree-only')
+    build = E2E_SCRIPT.index('scripts/build-bridge.sh" --out "${BUILDS}/${n}"')
+    assert variant < build < E2E_SCRIPT.index("docker run --rm --init")
+    assert 'mounts+=(-v "${BUILDS}:${BUILDS_IN}:ro")' in E2E_SCRIPT
+    assert (ROOT / "tests" / "e2e" / "test_wine_app_upgrade.py").is_file()
+
+
+def test_e2e_wine_gives_every_module_a_scratch_root_of_its_own() -> None:
+    """Each tests/e2e module is one scenario: its own pytest session, container and fresh root."""
+    loop = E2E_SCRIPT[E2E_SCRIPT.index('for module in "${MODULES[@]}"; do'):]
+    assert 'run_module "${module}" "$@"' in loop
+    body = E2E_SCRIPT[E2E_SCRIPT.index("run_module() {"):E2E_SCRIPT.index('for module in "${MODULES[@]}"; do')]
+    order = ['SCRATCH="$(new_scratch)"', '-v "${SCRATCH}:/e2e:rw"', '"tests/e2e/${module}" "$@"',
+             'fl_e2e_copy_logs "${SCRATCH}" "${logs}"', 'fl_e2e_wipe "${SCRATCH}"']
+    positions = [body.index(item) for item in order]
+    assert positions == sorted(positions)
+    assert 'logs="${LOG_DIR}/${module%.py}"' in body
+    modules = sorted(path.name for path in (ROOT / "tests" / "e2e").glob("test_*.py"))
+    assert modules == ["test_fork_update.py", "test_real_fork.py", "test_wine_app_upgrade.py"]
+    for module in modules:
+        assert module in E2E_SCRIPT
+    assert "timeout-minutes: 200" in _job(E2E, "e2e")
+
+
+def test_e2e_wine_runs_on_release_branches_weekly_and_on_demand() -> None:
+    assert re.search(r"^  schedule:\n    - cron: ", E2E, re.MULTILINE)
+    assert re.search(r"^  workflow_dispatch:", E2E, re.MULTILINE)
+    job = _job(E2E, "e2e")
+    assert "startsWith(github.head_ref, 'feature/v')" in job
+    assert "github.event.pull_request.head.repo.full_name == github.repository" in job
+
+
+def test_check_packaging_runs_the_real_upgrade_per_format() -> None:
+    """Every packaging cell of check.yml installs N-1, upgrades to N, downgrades and goes forward again."""
+    packaging = _job(CHECK, "packaging")
+    assert 'run: ./scripts/ci-packaging-cell.sh "${{ matrix.format }}"' in packaging
+    assert "FL_SNAP_E2E" not in CHECK and "FL_PACKAGING_PREVIOUS" not in CHECK
+    cell = (ROOT / "scripts" / "ci-packaging-cell.sh").read_text(encoding="utf-8")
+    order = ["./scripts/packaging-smoke-verify.sh", "./scripts/build-version-variant.sh",
+             "./scripts/packaging-e2e-install.sh"]
+    positions = [cell.index(item) for item in order]
+    assert positions == sorted(positions)
+    assert 'FL_PREVIOUS_ARTIFACTS_DIR="${FL_PREVIOUS_IN}"' in cell
+    assert "./scripts/ci-snap-build.sh" in cell
+    snap = (ROOT / "scripts" / "ci-snap-build.sh").read_text(encoding="utf-8")
+    assert '"${FL_SNAP_E2E:-1}" == "1"' in snap
+    install = (ROOT / "scripts" / "packaging-e2e-install.sh").read_text(encoding="utf-8")
+    for step in ("upgrade_from_previous", "downgrade_to_previous"):
+        assert f"{step}() {{" in install
+    assert "!artifacts/previous" in packaging
+
+
 def test_upstream_watch_flow() -> None:
     assert "schedule:" in UPSTREAM
     order = [

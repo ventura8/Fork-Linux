@@ -18,6 +18,7 @@ from fork_linux import bootstrap, bridge, launcher, procs, snapshots, updates
 from fork_linux.cli import AppContext
 from fork_linux.errors import (
     ForkLinuxError,
+    ForkRunning,
     IntegrityFailed,
     NotSetUpError,
     UsageError,
@@ -308,6 +309,29 @@ def test_pin_hook(ctx: bootstrap.Ctx) -> None:
     newer = _stage(ctx.layout, "2.26.0")
     launcher._pin(ctx, notes)
     assert newer.exists()
+
+
+def test_f6_pin_hook_puts_back_the_installed_package_velopack_deleted(ctx: bootstrap.Ctx) -> None:
+    """E2E F6: staging 2.24.0 made Velopack delete 2.23.2's package; dropping the staged one brings it back."""
+    package = ctx.layout.full_package("2.23.2")
+    original = package.read_bytes()
+    snapshots.create(ctx.paths, ctx.layout)
+    package.unlink()
+    newer = _stage(ctx.layout, "2.24.0")
+    ctx.config.set("fork", "update_policy", "pinned")
+    notes: list[str] = []
+    launcher._pin(ctx, notes)
+    assert not newer.exists()
+    assert package.read_bytes() == original
+    assert notes == [
+        "removed staged update Fork-2.24.0-full.nupkg (Fork is pinned to 2.23.2)",
+        "put Fork-2.23.2-full.nupkg back from its snapshot",
+    ]
+    # Nothing staged: the pin does not touch packages\ (a missing package stays a doctor finding).
+    package.unlink()
+    launcher._pin(ctx, notes)
+    assert not package.exists()
+    assert len(notes) == 2
 
 
 def test_pin_hook_warns_when_fork_already_updated_past_the_pin(ctx: bootstrap.Ctx) -> None:
@@ -730,6 +754,39 @@ def test_run_fast_path_when_fork_runs(
     dup2.clear()
     launcher.run(_app(dict(ctx.env), verbose=1), [], debug=True, execvpe=flow["exec"])
     assert dup2 == []
+
+
+def test_f10_fork_path_during_velopack_apply_waits(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], not_running: list[bool], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """UPD-3: while Update.exe swaps current\\, 'fork <path>' waits and then forwards to the restarted Fork."""
+    launcher.write_session(ctx.paths, ctx.wine(), 99)
+    polls: list[float] = []
+
+    def updater(prefix: Path, **_kw: Any) -> list[int]:
+        if len(polls) < 2:
+            return [77]
+        not_running[0] = True  # Velopack started the new Fork.exe and exited
+        return []
+
+    monkeypatch.setattr(procs, "updater_pids", updater)
+    monkeypatch.setattr(procs.time, "sleep", polls.append)  # the time module, restored by monkeypatch
+    launcher.run(flow["app"], ["repo"], execvpe=flow["exec"])
+    assert polls == [0.5, 0.5]
+    assert flow["ensure"] == []
+    assert flow["hooks"] == 0
+    assert len(flow["exec"].calls) == 1
+
+
+def test_f10_velopack_apply_that_never_ends_is_reported(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(procs, "updater_pids", lambda prefix, **_kw: [77])
+    monkeypatch.setattr(launcher, "UPDATER_WAIT", 0.0)
+    with pytest.raises(ForkRunning, match="still updating itself"):
+        launcher.run(flow["app"], ["repo"], execvpe=flow["exec"])
+    assert flow["exec"].calls == []
+    assert flow["ensure"] == []
 
 
 def test_run_running_without_session_takes_the_normal_path_without_hooks(

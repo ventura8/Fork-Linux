@@ -11,6 +11,7 @@ Every environment built here disables winemenubuilder (AGENTS.md hard rule
 
 from __future__ import annotations
 
+import logging
 import os
 import pwd
 import re
@@ -24,6 +25,8 @@ from .paths import Paths
 from .procrun import Completed, Runner, format_argv, tail
 from .registry import RegBatch
 
+log = logging.getLogger(__name__)
+
 PROVIDERS = ("managed", "system", "flatpak", "custom")
 DEFAULT_DEBUG = "-all"
 MENUBUILDER_OFF = "winemenubuilder.exe=d"
@@ -32,6 +35,12 @@ DEFAULT_DLL_OVERRIDES = MENUBUILDER_OFF
 KEEP_WINE_VARS = ("WINEESYNC", "WINEFSYNC")
 VERSION_TIMEOUT = 30.0
 WINESERVER_FLAGS = ("-w", "-k")
+# How long a prefix may stay busy after wineboot updated it (see :func:`settle`).
+SETTLE_TIMEOUT = 120.0
+SETTLE_WARNING = (
+    "Wine left a window open while it updated the prefix for this Wine build "
+    "(rundll32: 'This application could not be started'); it was closed and the prefix is ready"
+)
 REG_TMP_DIR = "tmp"
 
 # (?a:...) keeps the digits ASCII-only while \b and \s keep their Unicode meaning.
@@ -219,6 +228,26 @@ def wineserver(
     if flag not in WINESERVER_FLAGS:
         raise ValueError(f"unsupported wineserver flag {flag!r}; use one of {', '.join(WINESERVER_FLAGS)}")
     return runner.run([str(info.wineserver), flag], env=env, timeout=timeout, check=flag == "-w")
+
+
+def settle(runner: Runner, env: Mapping[str, str], info: WineInfo, *, timeout: float = SETTLE_TIMEOUT) -> bool:
+    """Wait until the prefix is idle after ``wineboot``; stop what is left when it does not get there.
+
+    Updating a prefix that holds the .NET Framework (another Wine build: a pin change, or
+    going back to an older one) can leave Wine's 32-bit ``rundll32 setupapi,InstallHinfSection
+    Wow64Install`` in a "This application could not be started" dialog that waits for a click
+    (E2E 2026-10-11, Kron4ek 11.0 <-> 11.1 / 11.19): ``wineserver -w`` would wait forever (and
+    without a display, nobody can click). The prefix is updated by then and Fork starts on it,
+    so after ``timeout`` the prefix's processes are stopped (``wineserver -k``). Returns True
+    when the prefix went idle by itself, False when it had to be stopped.
+    """
+    try:
+        wineserver(runner, env, info, "-w", timeout=timeout)
+    except ForkLinuxError as exc:
+        log.warning("the Wine prefix did not go idle after wineboot (%s); stopping what is left", exc)
+        wineserver(runner, env, info, "-k")
+        return False
+    return True
 
 
 def import_reg(

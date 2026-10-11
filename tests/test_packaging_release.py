@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from fork_linux import APP_ID, PACKAGE, hostdeps
+from fork_linux import APP_ID, PACKAGE, credits, hostdeps
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
@@ -34,7 +34,8 @@ SCRIPTS = [
     "aur-render.sh", "ppa-docker.sh", "release-verify-tag-version.sh", "packaging-smoke-verify.sh",
     "packaging-e2e-install.sh", "ci-docker.sh", "ci-matrix.sh", "ci-pipeline.sh", "ci-packaging-cell.sh",
     "ci-packaging-matrix.sh", "ci-snap-build.sh", "ci-e2e-wine.sh", "check-upstream-fork.py",
-    "check-dep-names.py", "generate-badges.py", "gen-data.py",
+    "check-dep-names.py", "generate-badges.py", "gen-data.py", "build-version-variant.sh", "version-variant.py",
+    "check-update-scenarios.py",
 ]
 FINISH_ARGS_ALLOWED = {
     "--share=network",
@@ -60,6 +61,14 @@ def _text(path: Path) -> str:
 def test_debian_changelog_top_entry_is_version() -> None:
     first = _text(ROOT / "debian" / "changelog").splitlines()[0]
     assert re.fullmatch(rf"fork-linux \({re.escape(VERSION)}\) resolute; urgency=medium", first)
+
+
+@pytest.mark.parametrize("spec", SPECS, ids=lambda p: p.parent.name)
+def test_rpm_changelog_top_entry_is_version(spec: Path) -> None:
+    """rpmlint fails the cell on incoherent-version-in-changelog: a version bump updates %changelog too."""
+    lines = _text(spec).splitlines()
+    top = lines[lines.index("%changelog") + 1]
+    assert re.fullmatch(rf"\* \w{{3}} \w{{3}} \d{{2}} \d{{4}} .+ <.+> - {re.escape(VERSION)}-1", top), top
 
 
 def test_metainfo_newest_release_is_version() -> None:
@@ -134,6 +143,9 @@ def test_snap_rules() -> None:
     assert "hooks" not in text
     assert f"common-id: {APP_ID}" in text
     assert "fl-bridge-helper-static" in text
+    # snapcraft's metadata lint: every store link is set (the packaging log stays free of lint warnings).
+    for key in ("website", "source-code", "issues", "contact"):
+        assert re.search(rf"^{key}: https://github\.com/ventura8/Fork-Linux", text, re.MULTILINE), key
 
 
 def test_flatpak_rules() -> None:
@@ -270,8 +282,29 @@ def test_e2e_asserts_what_agents_md_requires() -> None:
         'echo "==> E2E remove',
         'echo "==> E2E reinstall',
         'runuser -u "${TESTER}"',
+        'echo "==> E2E upgrade N-1 -> N',
+        'echo "==> E2E downgrade N -> N-1',
+        'PREV_ART="${FL_PREVIOUS_ARTIFACTS_DIR:?',
+        "upgrade_from_previous() {",
+        "downgrade_to_previous() {",
     ):
         assert needle in e2e, needle
+
+
+def test_a2_every_cell_upgrades_from_the_previous_version() -> None:
+    """Each cell builds N-1 with build-version-variant.sh and the E2E upgrades from it and back."""
+    cell = _text(ROOT / "scripts" / "ci-packaging-cell.sh")
+    assert 'export FL_PACKAGING_PREVIOUS="${FL_PACKAGING_PREVIOUS:-0.9.9}"' in cell
+    assert './scripts/build-version-variant.sh "${FL_PACKAGING_PREVIOUS}" "${FL_PREVIOUS_IN}" "${FORMAT}"' in cell
+    assert 'FL_PREVIOUS_ARTIFACTS_DIR="${FL_PREVIOUS_IN}"' in cell
+    snap = _text(ROOT / "scripts" / "ci-snap-build.sh")
+    assert './scripts/build-version-variant.sh "${previous}" "${ART_IN}/previous" snap' in snap
+    assert '-e "FL_PREVIOUS_ARTIFACTS_DIR=${ART_IN}/previous"' in snap
+    e2e = _text(ROOT / "scripts" / "packaging-e2e-install.sh")
+    cycle = e2e[e2e.index("cycle() {"):]
+    assert cycle.index("upgrade_from_previous") < cycle.index("downgrade_to_previous") < cycle.index("upgrade in place")
+    assert not re.search(r'artifact "[^"]*\$\{VERSION\}', e2e), "install functions take REL_VERSION"
+    assert "!artifacts/previous" in _text(ROOT / ".github" / "workflows" / "check.yml")
 
 
 @pytest.mark.parametrize("name", SCRIPTS)
@@ -378,3 +411,169 @@ def test_source_tarball_contains_only_what_git_would_commit(tmp_path: Path) -> N
         assert "__pycache__" not in entry
         assert not entry.endswith((".exe", ".pyc"))
         assert ".sonar-token" not in entry
+
+
+def _common(root: Path, call: str, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    """Run a release-common.sh function with FL_REPO_ROOT=``root`` (git sees nothing above tmp_path)."""
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": str(tmp_path),
+        "TMPDIR": str(tmp_path),
+        "FL_REPO_ROOT": str(root),
+        "GIT_CEILING_DIRECTORIES": str(tmp_path),
+    }
+    script = f'. "{ROOT}/scripts/release-common.sh"; {call}'
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False, env=env, cwd=root)
+
+
+def _tar_listing(tarball: Path) -> list[str]:
+    return subprocess.run(["tar", "-tzf", str(tarball)], capture_output=True, text=True, check=True).stdout.split()
+
+
+def test_source_tarball_without_git_skips_the_git_pointer_and_byte_code(tmp_path: Path) -> None:
+    """A tree whose git metadata is out of reach (a linked worktree in a container, a copy) is taken whole,
+    except a worktree's ``.git`` pointer file and Python byte code."""
+    tree = tmp_path / "tree"
+    (tree / "src" / "pkg" / "__pycache__").mkdir(parents=True)
+    (tree / "VERSION").write_text("0.0.0\n", encoding="utf-8")
+    (tree / ".git").write_text("gitdir: /nonexistent/.git/worktrees/x\n", encoding="utf-8")
+    (tree / "src" / "pkg" / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    (tree / "src" / "pkg" / "__pycache__" / "mod.cpython-310.pyc").write_bytes(b"\0")
+    (tree / "src" / "pkg" / "stray.pyc").write_bytes(b"\0")
+    (tree / "meson_options.txt").symlink_to("VERSION")  # links are part of the tree (meson 0.61 reads this one)
+    out = tmp_path / "src.tar.gz"
+    result = _common(tree, f'fl_create_source_tarball 0.0.0 "{out}"', tmp_path)
+    assert result.returncode == 0, result.stderr
+    files = sorted(entry for entry in _tar_listing(out) if not entry.endswith("/"))
+    assert files == [
+        "fork-linux-0.0.0/VERSION", "fork-linux-0.0.0/meson_options.txt", "fork-linux-0.0.0/src/pkg/mod.py"
+    ]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["src.tar.gz", "tree"], "temporary files were left behind"
+
+
+def test_source_files_of_a_copy_inside_another_checkout_are_not_that_checkouts(tmp_path: Path) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    outer = tmp_path / "outer"
+    outer.mkdir()
+    subprocess.run(["git", "init", "-q", str(outer)], check=True)
+    (outer / ".gitignore").write_text("artifacts/\n", encoding="utf-8")
+    copy = outer / "artifacts" / "fork-linux-0.9.9"
+    copy.mkdir(parents=True)
+    (copy / "VERSION").write_text("0.9.9\n", encoding="utf-8")
+    result = _common(copy, "fl_source_files | tr '\\0' '\\n'", tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["VERSION"]
+
+
+def test_git_mount_args_for_a_linked_worktree_only(tmp_path: Path) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    main = tmp_path / "main"
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-C", str(main)]
+    subprocess.run(["git", "init", "-q", str(main)], check=True)
+    (main / "f").write_text("x\n", encoding="utf-8")
+    subprocess.run([*git, "add", "f"], check=True)
+    subprocess.run([*git, "commit", "-qm", "x"], check=True)
+    subprocess.run([*git, "worktree", "add", "-q", str(tmp_path / "wt")], check=True)
+    plain = _common(main, "fl_git_mount_args", tmp_path)
+    assert plain.returncode == 0, plain.stderr
+    assert plain.stdout == ""
+    linked = _common(tmp_path / "wt", "fl_git_mount_args", tmp_path)
+    assert linked.returncode == 0, linked.stderr
+    common = (main / ".git").resolve()
+    assert linked.stdout.splitlines() == ["-v", f"{common}:{common}:ro"]
+    no_git = _common(tmp_path, "fl_git_mount_args", tmp_path)
+    assert no_git.returncode == 0
+    assert no_git.stdout == ""
+
+
+def test_packaging_containers_get_the_git_common_dir() -> None:
+    cell = _text(ROOT / "scripts" / "ci-packaging-cell.sh")
+    snap = _text(ROOT / "scripts" / "ci-snap-build.sh")
+    for text in (cell, snap):
+        assert "mapfile -t GIT_MOUNT < <(fl_git_mount_args)" in text
+        assert '-v "${ROOT}:/src:rw" "${GIT_MOUNT[@]}"' in text
+
+
+def test_snap_smoke_verify_always_runs() -> None:
+    snap = _text(ROOT / "scripts" / "ci-snap-build.sh")
+    smoke = snap.index("./scripts/packaging-smoke-verify.sh snap")
+    assert smoke < snap.index('if [[ "${FL_SNAP_E2E:-1}" == "1" ]]; then')
+
+
+def test_a9_appimage_update_information() -> None:
+    """AppImageUpdate finds the next release through the GitHub releases zsync of this repository."""
+    expected = "gh-releases-zsync|ventura8|Fork-Linux|latest|fork-linux-*-x86_64.AppImage.zsync"
+    owner, repo = credits.LINKS["project"].removeprefix("https://github.com/").split("/")
+    assert expected.split("|")[1:3] == [owner, repo]
+    build = _text(ROOT / "packaging" / "appimage" / "build-appimage.sh")
+    assert f'UPDATE_INFO="{expected}"' in build
+    assert '-u "${UPDATE_INFO}"' in build
+    assert f'APPIMAGE_UPDATE_INFO="{expected}"' in _text(ROOT / "scripts" / "packaging-e2e-install.sh")
+    smoke = _text(ROOT / "scripts" / "packaging-smoke-verify.sh")
+    assert 'expect "fork-linux-${VERSION}-x86_64.AppImage.zsync"' in smoke
+    assert "artifacts/*.AppImage.zsync" in _text(ROOT / ".github" / "workflows" / "release.yml")
+
+
+def test_a9_appimage_cell_moves_and_renames_the_image() -> None:
+    """The AppImage cell ends by moving and renaming the image: one step re-runs, everything follows it."""
+    e2e = _text(ROOT / "scripts" / "packaging-e2e-install.sh")
+    assert re.search(r'AFTER_UPGRADES=appimage_moved\n\t\tcycle appimage_install appimage_remove appimage_assert', e2e)
+    cycle = e2e[e2e.index("cycle() {"):]
+    assert cycle.index("downgrade_to_previous") < cycle.index('"${AFTER_UPGRADES}"') < cycle.index("upgrade in place")
+    moved = e2e[e2e.index("appimage_moved() {"):]
+    moved = moved[:moved.index("\n}\n")]
+    assert 'local moved="${TESTER_HOME}/Apps/Fork Linux (moved).AppImage"' in moved
+    assert 'NEXT_ALSO="desktop_entry"' in moved
+    assert 'check_next_launch env APPIMAGE="${moved}" "${moved}"' in moved
+    assert "for name in fork-linux-terminal fork-linux-explorer fork-linux-open-url; do" in moved
+    assert '''grep -qF -- "exec '${moved}' --libexec ${name} "''' in moved
+    assert '"${moved}" --install-desktop' in moved
+    assert 'check_menu_command "${desktop}"' in moved
+    assert "assert_seeded" in moved
+
+
+def test_a10_snap_cell_reverts_a_refresh() -> None:
+    """The snap cell ends with a refresh taken back: 'snap revert' back and 'snap revert --revision' forward."""
+    e2e = _text(ROOT / "scripts" / "packaging-e2e-install.sh")
+    assert re.search(r'cycle snap_install snap_remove snap_assert "[^"]*"\n\t\tsnap_revert ;;', e2e)
+    revert = e2e[e2e.index("snap_revert() {"):]
+    revert = revert[:revert.index("\n}\n")]
+    steps = ["snap_install", "snap revert fork-linux", 'snap revert --revision "${n1_rev}" fork-linux',
+             'snap revert --revision "${n_rev}" fork-linux']
+    positions = [revert.index(step) for step in steps]
+    assert positions == sorted(positions)
+    assert revert.count("snap_assert") == 4
+    assert 'fail "snap revert did not go back to revision ${n_rev}"' in revert
+
+
+@pytest.mark.parametrize("previous", [VERSION, "99.0.0"])
+def test_packaging_e2e_refuses_a_previous_release_that_is_not_older(previous: str, tmp_path: Path) -> None:
+    """An N-1 -> N "upgrade" between equal versions (or from a newer one) would test nothing."""
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "FL_ARTIFACTS_DIR": str(tmp_path / "n"),
+        "FL_PREVIOUS_ARTIFACTS_DIR": str(tmp_path / "n-1"),
+        "FL_PREVIOUS_VERSION": previous,
+    }
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "packaging-e2e-install.sh"), "deb"],
+        cwd=str(tmp_path), env=env, capture_output=True, text=True, timeout=60, check=False,
+    )
+    assert result.returncode == 1
+    message = f"the previous release {previous} is not older than {VERSION}: the upgrade would test nothing"
+    assert message in result.stderr
+    assert not (tmp_path / "n").exists()
+
+
+def test_a18_package_versions_sort_upwards() -> None:
+    """Every upgrade path is an upgrade for dpkg: N-1 < N < N's PPA builds (by series) < N+1."""
+    if shutil.which("dpkg") is None:
+        pytest.skip("dpkg is not installed (the deb packaging images have it)")
+    major, minor, patch = (int(part) for part in VERSION.split("."))
+    ppa = [f"{VERSION}+ppa1~ubuntu{series}.1" for series in ("22.04", "24.04", "26.04")]
+    chain = ["0.9.9", VERSION, *ppa, f"{major}.{minor}.{patch + 1}", f"{major}.{minor + 1}.0", f"{major + 1}.0.0"]
+    for older, newer in zip(chain, chain[1:], strict=False):
+        result = subprocess.run(["dpkg", "--compare-versions", older, "lt", newer], check=False)
+        assert result.returncode == 0, f"dpkg does not sort {older} below {newer}"

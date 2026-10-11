@@ -48,7 +48,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import IO, Any
 
-from . import fsutil, gitconfig, resources, winecmd
+from . import fsutil, gitconfig, helpers, resources, winecmd
 from .errors import ForkLinuxError, UsageError
 from .fork_layout import ForkLayout
 from .paths import Paths
@@ -333,7 +333,7 @@ def host_helper(paths: Paths) -> Path | None:
     A source checkout has only the template ``fork-linux-host.in``; a small
     wrapper in :func:`personas_dir` runs it with this Python.
     """
-    installed = resources.host_helper_path()
+    installed = helpers.path(resources.HOST_HELPER, paths=paths)
     if installed.is_file() and os.access(installed, os.X_OK):
         return installed
     template = installed.with_name(installed.name + ".in")

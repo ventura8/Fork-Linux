@@ -4,12 +4,18 @@ Only processes of the current user are considered. A process belongs to a
 prefix when its environment has ``WINEPREFIX`` equal to the prefix (both
 resolved); Fork itself is recognised by ``fork.exe`` in its command line
 (Wine shows the Windows path there), excluding Velopack's ``Update.exe``.
+That updater (``...\\Fork\\Update.exe``) is tracked on its own: during
+"Restart and Update" it replaces ``current\\`` between the old Fork's exit and
+the new one's start (spike S9), so Fork counts as busy (:func:`require_closed`)
+and the launcher waits for it (:func:`wait_for_updater`).
 Entries that vanish or cannot be read while scanning are skipped.
 """
 
 from __future__ import annotations
 
 import os
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 from .errors import ForkRunning
@@ -81,13 +87,45 @@ def _is_fork(cmdline: bytes) -> bool:
     return "fork.exe" in text and "update.exe" not in text
 
 
-def fork_pids(prefix: Path, *, proc_root: Path = PROC) -> list[int]:
-    """PIDs of Fork processes running in ``prefix``."""
+def _is_updater(cmdline: bytes) -> bool:
+    """True for Velopack's ``Update.exe`` from Fork's install directory (any argument of the command line)."""
+    for arg in cmdline.split(b"\0"):
+        text = os.fsdecode(arg).lower().replace("/", "\\")
+        if text.endswith("\\fork\\update.exe"):
+            return True
+    return False
+
+
+def _matching(prefix: Path, proc_root: Path, wanted: Callable[[bytes], bool]) -> list[int]:
+    """PIDs in ``prefix`` whose command line ``wanted`` accepts."""
     found = []
     for pid in prefix_pids(prefix, proc_root=proc_root):
         cmdline = _read(proc_root / str(pid) / "cmdline")
-        if cmdline is not None and _is_fork(cmdline):
+        if cmdline is not None and wanted(cmdline):
             found.append(pid)
+    return found
+
+
+def fork_pids(prefix: Path, *, proc_root: Path = PROC) -> list[int]:
+    """PIDs of Fork processes running in ``prefix``."""
+    return _matching(prefix, proc_root, _is_fork)
+
+
+def updater_pids(prefix: Path, *, proc_root: Path = PROC) -> list[int]:
+    """PIDs of Velopack's ``Update.exe`` (Fork updating itself) in ``prefix``."""
+    return _matching(prefix, proc_root, _is_updater)
+
+
+def wineserver_exes(prefix: Path, *, proc_root: Path = PROC) -> list[Path]:
+    """The binaries of the wineservers serving ``prefix`` (``/proc/<pid>/exe``), each listed once."""
+    found: list[Path] = []
+    for pid in prefix_pids(prefix, proc_root=proc_root):
+        try:
+            exe = Path(os.readlink(proc_root / str(pid) / "exe"))
+        except OSError:
+            continue
+        if exe.name.startswith("wineserver") and exe not in found:
+            found.append(exe)
     return found
 
 
@@ -96,12 +134,39 @@ def fork_running(prefix: Path, *, proc_root: Path = PROC) -> bool:
     return bool(fork_pids(prefix, proc_root=proc_root))
 
 
+def wait_for_updater(
+    prefix: Path,
+    *,
+    timeout: float,
+    proc_root: Path = PROC,
+    poll: float = 0.5,
+    sleep: Callable[[float], None] | None = None,
+    clock: Callable[[], float] | None = None,
+) -> bool:
+    """Wait until no ``Update.exe`` runs in ``prefix``; False when it still runs after ``timeout`` seconds."""
+    pause = sleep or time.sleep
+    now = clock or time.monotonic
+    deadline = now() + timeout
+    while updater_pids(prefix, proc_root=proc_root):
+        if now() >= deadline:
+            return False
+        pause(poll)
+    return True
+
+
 def require_closed(prefix: Path, *, proc_root: Path = PROC) -> None:
-    """Raise :class:`ForkRunning` if Fork runs in ``prefix``."""
+    """Raise :class:`ForkRunning` if Fork runs in ``prefix``, or Velopack is replacing it."""
     pids = fork_pids(prefix, proc_root=proc_root)
     if pids:
         listed = ", ".join(str(pid) for pid in pids)
         raise ForkRunning(
             f"Fork is running in {prefix} (pid {listed})",
             hint="close Fork first, then run the command again",
+        )
+    updating = updater_pids(prefix, proc_root=proc_root)
+    if updating:
+        listed = ", ".join(str(pid) for pid in updating)
+        raise ForkRunning(
+            f"Fork is updating itself in {prefix} (Velopack's Update.exe, pid {listed})",
+            hint="wait until Fork has restarted, close it, then run the command again",
         )

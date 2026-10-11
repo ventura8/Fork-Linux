@@ -20,3 +20,8 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
   with `auto`, recorded actions of a file manager that is gone are removed. Tests pin `XDG_CONFIG_DIRS` and `PATH`.
 - Thunar: a missing `~/.config/Thunar/uca.xml` is seeded from the first `Thunar/uca.xml` in `$XDG_CONFIG_DIRS`
   (registry fields `seed`, `seed_sha256`); removal deletes it only when it is back to that seed.
+- AppImage: the menu entry, actions and links start the AppImage file (`FORK_LINUX_APPIMAGE`); the `desktop_entry` step
+  re-runs when that path changes (the file was moved) and `install(refresh_recorded=True)` re-points every recorded
+  action and link. Helper paths Wine and Fork keep go through `helpers.path` (stable launchers, AppRun `--libexec`).
+- `uninstall` / `desktop remove` clear the `icon` and `desktop_entry` markers (`bootstrap.forget_markers`), so the next
+  launch after a reinstall puts Fork's icon and the menu entry back.

@@ -57,6 +57,7 @@ if args[:1] == ["run"]:
             if not os.path.lexists(link):
                 os.symlink("/etc/hostname", link)
     print("fake container output")
+    print(os.environ.get("FAKE_RUN_OUTPUT", ""))
     sys.exit(int(os.environ.get("FAKE_RUN_RC", "0")))
 sys.exit(0)
 """
@@ -67,7 +68,11 @@ if [[ "$1" == "-n" ]]; then nb=1; shift; fi
 target="$(basename "$(readlink "/proc/$$/fd/$1")")"
 printf '{"tool": "flock", "nonblocking": %s, "lock": "%s"}\\n' "$nb" "$target" >> "$FAKE_LOG"
 for busy in ${FAKE_FLOCK_BUSY:-}; do
-    if [[ "$busy" == "$target" && "$nb" == 1 ]]; then exit 1; fi
+    if [[ "$busy" == "$target" && "$nb" == 1 ]]; then
+        # FAKE_FLOCK_BUSY_TRIES=N: a busy slot frees up after N tries (default: never).
+        tries="$(grep -cF -- "\\"$target\\"" "$FAKE_LOG")"
+        if [[ -z "${FAKE_FLOCK_BUSY_TRIES:-}" || "$tries" -le "$FAKE_FLOCK_BUSY_TRIES" ]]; then exit 1; fi
+    fi
 done
 exit 0
 """
@@ -434,15 +439,25 @@ def test_slots_are_tried_in_order_then_taken(box: Box) -> None:
     assert "holding E2E slot 3/3" in result.stdout
 
 
-def test_all_slots_busy_waits_on_one(box: Box) -> None:
-    result = box.run("--name", NAME, "pytest", FL_E2E_SLOTS="2", FAKE_FLOCK_BUSY="slot-1 slot-2")
+def test_all_slots_busy_takes_the_first_that_frees_up(box: Box) -> None:
+    result = box.run("--name", NAME, "pytest", FL_E2E_SLOTS="2", FL_E2E_SLOT_POLL="0",
+                     FAKE_FLOCK_BUSY="slot-1 slot-2", FAKE_FLOCK_BUSY_TRIES="2")
     assert result.returncode == 0, result.stderr
     flocks = [(row["lock"], row["nonblocking"]) for row in box.calls("flock")]
-    assert flocks[:3] == [(f"name-{NAME}", 1), ("slot-1", 1), ("slot-2", 1)]
-    assert flocks[3][1] == 0
-    assert flocks[3][0] in ("slot-1", "slot-2")
-    assert "all 2 E2E slots are busy" in result.stdout
+    # Never a blocking wait on one slot: every round tries them all, slot-1 frees up on its third try.
+    assert flocks == [(f"name-{NAME}", 1), ("slot-1", 1), ("slot-2", 1), ("slot-1", 1), ("slot-2", 1), ("slot-1", 1)]
+    assert result.stdout.count("all 2 E2E slots are busy") == 1
+    assert "holding E2E slot 1/2" in result.stdout
     assert len(box.docker_runs()) == 1
+    assert "FL_E2E_SLOT_POLL" not in " ".join(box.docker_runs()[0])
+
+
+@pytest.mark.parametrize("poll", ["-1", "x", "1000"])
+def test_bad_slot_poll(box: Box, poll: str) -> None:
+    result = box.run("--name", NAME, "pytest", FL_E2E_SLOT_POLL=poll)
+    assert result.returncode == 1
+    assert "FL_E2E_SLOT_POLL must be a number of seconds" in result.stderr
+    assert box.docker_runs() == []
 
 
 @pytest.mark.parametrize("slots", ["0", "abc", "100", ""])
@@ -528,9 +543,9 @@ def test_ci_e2e_wine_uses_a_fresh_wiped_scratch_and_no_seed(box: Box) -> None:
                      FAKE_FLOCK_BUSY="slot-1")
     assert result.returncode == 0, result.stdout + result.stderr
     assert [(row["lock"], row["nonblocking"]) for row in box.calls("flock")] == [("slot-1", 1), ("slot-2", 1)]
-    argv = box.docker_runs()[0]
+    (argv,) = box.docker_runs()
     image = _image_index(argv, "fork-linux-ci-e2e-wine:26.04")
-    assert argv[image + 1:][-2:] == ["-k", "setup"]
+    assert argv[image + 1:][-3:] == ["tests/e2e/test_real_fork.py", "-k", "setup"]
     argv = argv[:image]
     volumes = _opts(argv, "-v")
     assert volumes[0] == f"{box.wt.resolve()}:/src:ro"
@@ -538,15 +553,96 @@ def test_ci_e2e_wine_uses_a_fresh_wiped_scratch_and_no_seed(box: Box) -> None:
     assert volumes[1].endswith(":/e2e:rw")
     assert len(volumes) == 2
     assert "FL_E2E_FORK_VERSION" in _opts(argv, "-e")
+    assert "FL_E2E_BRIDGE_BUILDS=" in _opts(argv, "-e")
     assert not any(value.endswith(":/seed:ro") or value.startswith("FL_E2E_SEED") for value in argv)
     assert "--init" in argv
     assert "--rm" in argv
     assert list(tmpdir.iterdir()) == [], "the scratch root is deleted afterwards"
-    logs = box.wt / "logs" / "e2e-wine"
+    logs = box.wt / "logs" / "e2e-wine" / "test_real_fork"
     assert (logs / "root" / "logs" / "launch.log").is_file()
+    assert "fake container output" in (logs / "pytest.log").read_text(encoding="utf-8")
     assert not list(logs.rglob("*.png"))
     for row in box.calls("docker"):
         assert row["fds"]["9"] is False
+
+
+FAKE_VARIANT = """#!/usr/bin/env bash
+# fake build-version-variant.sh --tree-only VERSION OUTDIR: a variant tree with a fake build-bridge.sh
+set -euo pipefail
+printf '{"tool": "variant", "args": "%s"}\\n' "$*" >> "$FAKE_LOG"
+tree="$3/fork-linux-$2"
+mkdir -p "$tree/scripts"
+cp "$(dirname "$0")/build-bridge.sh" "$tree/scripts/build-bridge.sh"
+"""
+FAKE_BUILD_BRIDGE = """#!/usr/bin/env bash
+# fake build-bridge.sh [--out DIR]
+set -euo pipefail
+printf '{"tool": "build-bridge", "args": "%s"}\\n' "$*" >> "$FAKE_LOG"
+if [[ "${1:-}" == "--out" ]]; then
+    mkdir -p "$2"
+    for name in fl-bridge-helper fl-shim.exe fl-launch.exe; do printf 'build\\n' > "$2/$name"; done
+fi
+"""
+
+
+def test_ci_e2e_wine_runs_each_module_in_a_scratch_root_of_its_own(box: Box) -> None:
+    """Fork-update and app-upgrade tiers on: one container and one fresh root per module; the bridge is built
+    first, the app-upgrade tier gets two bridge builds read-only; every module runs although each fails."""
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    for name, text in (("build-version-variant.sh", FAKE_VARIANT), ("build-bridge.sh", FAKE_BUILD_BRIDGE)):
+        path = box.wt / "scripts" / name
+        path.write_text(text, encoding="utf-8")
+        path.chmod(0o755)
+    result = box.run(script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_FORK_UPDATES="1", FL_E2E_APP_UPGRADE="1",
+                     FAKE_RUN_RC="3")
+    assert result.returncode == 3, result.stdout + result.stderr
+    builds = [row["args"] for row in box.calls() if row["tool"] in ("variant", "build-bridge")]
+    assert builds[0] == ""
+    assert [args.split()[:2] for args in builds[1:]] == [
+        ["--tree-only", "0.9.1"], ["--out", builds[2].split()[1]], ["--tree-only", "0.9.2"],
+        ["--out", builds[4].split()[1]],
+    ]
+    full = box.docker_runs()
+    modules = [argv[-1] for argv in full]
+    runs = [argv[:_image_index(argv, "fork-linux-ci-e2e-wine:26.04")] for argv in full]
+    assert modules == ["tests/e2e/test_real_fork.py", "tests/e2e/test_fork_update.py",
+                       "tests/e2e/test_wine_app_upgrade.py"]
+    roots = [next(v for v in _opts(argv, "-v") if v.endswith(":/e2e:rw")) for argv in runs]
+    assert len(set(roots)) == 3
+    for argv in runs[:2]:
+        assert len(_opts(argv, "-v")) == 2
+        assert "FL_E2E_BRIDGE_BUILDS=" in _opts(argv, "-e")
+    upgrade = _opts(runs[2], "-v")
+    assert upgrade[2].endswith(":/bridge-builds:ro")
+    built = Path(upgrade[2].split(":")[0])
+    assert "FL_E2E_BRIDGE_BUILDS=/bridge-builds" in _opts(runs[2], "-e")
+    assert not built.exists(), "the bridge builds are deleted afterwards"
+    assert list(tmpdir.iterdir()) == []
+    logs = box.wt / "logs" / "e2e-wine"
+    assert sorted(path.name for path in logs.iterdir()) == ["test_fork_update", "test_real_fork",
+                                                             "test_wine_app_upgrade"]
+    for module in ("test_real_fork", "test_fork_update", "test_wine_app_upgrade"):
+        assert f"tests/e2e/{module}.py exit 3" in result.stdout
+        assert (logs / module / "pytest.log").is_file()
+
+
+def test_ci_e2e_wine_fails_a_module_that_skipped_a_test(box: Box) -> None:
+    """A skip in CI is a scenario that silently did not run: the module fails although pytest passed."""
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    skipped = "SKIPPED [1] tests/e2e/test_real_fork.py:26: requires FL_E2E_FORK=1"
+    result = box.run(script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_OUTPUT=f"1 passed\n{skipped}")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "tests/e2e/test_real_fork.py skipped tests; every scenario of a requested tier must run" in result.stderr
+    assert skipped in result.stderr
+    assert "tests/e2e/test_real_fork.py exit 1" in result.stdout
+    (argv,) = box.docker_runs()
+    assert "-rs" in argv
+    passed = box.run(script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_OUTPUT="1 passed")
+    assert passed.returncode == 0, passed.stdout + passed.stderr
+    failed = box.run(script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_OUTPUT=skipped, FAKE_RUN_RC="4")
+    assert failed.returncode == 4, "pytest's own failure status wins"
 
 
 def test_ci_e2e_wine_refuses_a_tmpdir_in_home(box: Box) -> None:

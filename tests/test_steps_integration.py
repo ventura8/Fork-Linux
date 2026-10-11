@@ -10,7 +10,7 @@ import pytest
 from fixtures.fork_tree import install_fork
 from fixtures.setup_ctx import make_ctx
 
-from fork_linux import APP_ID, desktop_integration, gitconfig, resources
+from fork_linux import APP_ID, bootstrap, desktop_integration, gitconfig, resources
 from fork_linux.bootstrap import Ctx
 from fork_linux.procrun import RecordingRunner
 from fork_linux.steps import integration
@@ -195,6 +195,17 @@ def test_icon_extraction_failure_is_not_fatal(xdg: Path, tmp_path: Path) -> None
     assert scalable.read_bytes() == (resources.install_root() / "data" / "icons" / "hicolor" / "scalable" / "apps"
                                      / f"{APP_ID}.svg").read_bytes()
     assert integration.verify_icon(ctx)
+
+
+def test_f1_icon_reruns_when_fork_exe_changes(xdg: Path) -> None:
+    """Velopack replaced Fork.exe (in-app update): the icon step's inputs change, so it runs again."""
+    ctx = make_ctx()
+    install_fork(ctx.layout, "2.23.1")
+    ctx.state.set_step_marker(integration.ICON.id, integration.ICON.rev, bootstrap.inputs_hash(integration.ICON, ctx))
+    assert bootstrap.is_done(integration.ICON, ctx, cheap=True)
+    install_fork(ctx.layout, "2.23.2")
+    assert not bootstrap.is_done(integration.ICON, ctx, cheap=True)
+    assert integration.ICON in bootstrap.pending(ctx, [integration.ICON])
 
 
 def test_icon_step_revision() -> None:

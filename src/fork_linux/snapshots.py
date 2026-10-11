@@ -405,7 +405,10 @@ def _valid_info(info: Any) -> bool:
 
 
 def _verified_sizes(directory: Path) -> dict[str, int]:
-    """``{relpath: size}`` from ``meta.json``, after checking every listed file still has that size."""
+    """``{relpath: size}`` from ``meta.json``, after checking every listed file still has that size and mtime.
+
+    The mtime catches a hard-linked file that was rewritten in place with the same size.
+    """
     meta = _read_meta(directory)
     files = None if meta is None else meta.get("files")
     if not isinstance(files, dict):
@@ -418,7 +421,7 @@ def _verified_sizes(directory: Path) -> dict[str, int]:
             found = os.lstat(directory / rel)
         except OSError:
             raise _damaged(directory, f"{rel} is missing") from None
-        if not stat.S_ISREG(found.st_mode) or found.st_size != info[0]:
+        if not stat.S_ISREG(found.st_mode) or found.st_size != info[0] or found.st_mtime_ns != info[1]:
             raise _damaged(directory, f"{rel} has changed since the snapshot was taken")
         sizes[rel] = info[0]
     return sizes
@@ -528,6 +531,31 @@ def _restore_package(layout: ForkLayout, directory: Path, sizes: dict[str, int],
         with contextlib.suppress(FileNotFoundError):
             partial.unlink()
         raise
+
+
+def put_back_package(paths: Paths, layout: ForkLayout, version: str) -> bool:
+    """Put ``version``'s full package back into ``packages\\`` from its newest snapshot holding one.
+
+    Velopack deletes the installed version's full package as soon as it has staged a
+    newer one (E2E, F6); when the pin then drops that staged package, nothing would be
+    left to verify the installed Fork with (``doctor fork.integrity``) or to build the
+    next delta update from. Returns True when the package was put back; a package that
+    is there already, or no snapshot holding one, changes nothing. A damaged snapshot
+    raises :class:`IntegrityFailed`.
+    """
+    target = layout.full_package(version)
+    if os.path.lexists(target) or not versions.is_valid(version):
+        return False
+    wanted = versions.Version(version)
+    for snap in list_snapshots(paths):
+        if versions.Version(snap.fork_version) != wanted:
+            continue
+        directory = Path(snap.path)
+        sizes = _verified_sizes(directory)
+        if f"{PACKAGES}/{target.name}" in sizes:
+            _restore_package(layout, directory, sizes, version)
+            return os.path.lexists(target)
+    return False
 
 
 def restore(paths: Paths, layout: ForkLayout, snap: Snapshot, *, with_settings: bool = False) -> None:

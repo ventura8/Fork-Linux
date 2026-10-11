@@ -21,7 +21,11 @@ case $1 in
 esac
 
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || exit 127
-if [ -x "$here/fork-linux-host" ]; then
+# From an AppImage, $here is a mount that ends with this AppImage instance, before the
+# systemd unit below starts: the stable launcher fork-linux wrote is used instead.
+if [ -n "${FORK_LINUX_HELPER_DIR:-}" ] && [ -x "$FORK_LINUX_HELPER_DIR/fork-linux-host" ]; then
+	set -- "$FORK_LINUX_HELPER_DIR/fork-linux-host" "$@"
+elif [ -x "$here/fork-linux-host" ]; then
 	set -- "$here/fork-linux-host" "$@"
 elif [ -f "$here/fork-linux-host.in" ]; then
 	# A source checkout: the template is plain Python apart from its first line.

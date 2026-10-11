@@ -1031,6 +1031,37 @@ def test_fork_settings_ignores_keys_without_defaults() -> None:
     assert run(ctx, "fork.settings").status == "ok"
 
 
+def test_a23_env_manifest_reports_an_override_that_keeps_old_pins() -> None:
+    """A manifest override outlives upgrades: doctor says what it changes, and warns when it keeps old pins."""
+    ctx = make()
+    override = ctx.paths.manifest_override
+
+    def loaded() -> DoctorCtx:
+        return make(manifest=manifest_mod.load(override=override))
+
+    result = run(loaded(), "env.manifest")
+    assert result == Result("ok", f"no manifest override ({override} does not exist)")
+    override.parent.mkdir(parents=True, exist_ok=True)
+    packaged = manifest_mod.load()
+    override.write_text(json.dumps({"revision": packaged.revision}), encoding="utf-8")
+    assert run(loaded(), "env.manifest") == Result("ok", f"manifest override {override} changes nothing")
+    override.write_text(json.dumps({"fork": {"known_bad": {"2.23.1": "mine"}}}), encoding="utf-8")
+    result = run(loaded(), "env.manifest")
+    assert result.status == "info"
+    assert result.detail == f"manifest override {override} changes fork.known_bad.2.23.1"
+    entry = {"size": 1000, "sha256": "a" * 64, "full_nupkg_sha256": "b" * 64, "status": "testing", "tested_with": []}
+    versions = {f"2.30.{n}": entry for n in range(10)}
+    override.write_text(json.dumps({"fork": {"default": "2.30.0", "versions": versions}}), encoding="utf-8")
+    result = run(loaded(), "env.manifest")
+    assert result.status == "warn"
+    assert result.detail.startswith(f"manifest override {override} changes fork.default, fork.versions.2.30.0, ")
+    assert result.detail.endswith(", and 3 more; it replaces this release's fork.default")
+    assert result.hint == (
+        f"remove fork.default from {override} (or the file) to use the Wine build and Fork version "
+        "this fork-linux release was tested with"
+    )
+
+
 def test_fork_pending_update(monkeypatch: pytest.MonkeyPatch) -> None:
     from fork_linux import snapshots
 

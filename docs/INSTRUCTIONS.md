@@ -56,6 +56,7 @@ FL_CI_STAGE=compat FL_CI_CELL=jammy ./scripts/ci-docker.sh
 ./scripts/ci-packaging-matrix.sh               # 9 cells in parallel
 ./scripts/ci-pipeline.sh                       # everything, fail-fast, tee'd under logs/
 ./scripts/ci-e2e-wine.sh                       # CI's real tier: Fork under Wine (Xvfb, ~2.5 GB download, no seed)
+FL_E2E_FORK_UPDATES=1 FL_E2E_APP_UPGRADE=1 ./scripts/ci-e2e-wine.sh  # + both update tiers (as e2e-wine.yml), one fresh root per module
 ```
 
 ### Real Fork / Wine locally: containers only
@@ -68,6 +69,8 @@ directory was deleted while real-Fork tests ran on the host). With `FL_E2E_FORK=
 ```sh
 scripts/e2e-docker.sh --name e2e pytest tests/e2e              # the real tier, seeded
 scripts/e2e-docker.sh --name e2e --keep pytest tests/e2e -k 03 # reuse the previous prefix
+FL_E2E_FORK_UPDATES=1 scripts/e2e-docker.sh --name upd-fork pytest tests/e2e/test_fork_update.py  # Fork updates (run scripts/build-bridge.sh first)
+FL_E2E_APP_UPGRADE=1 scripts/e2e-docker.sh --name upd-app pytest tests/e2e/test_wine_app_upgrade.py  # app upgrades
 scripts/e2e-docker.sh --name look --keep shell -- bash         # xdotool / import on DISPLAY=:99
 scripts/e2e-docker.sh --name trace --ptrace shell -- strace -f -o /e2e/t.txt python3 -m fork_linux doctor
 ```
@@ -99,7 +102,7 @@ remove exactly what they recorded.
 
 ## 5. Releasing
 
-Bump `VERSION`, add a `debian/changelog` entry and a metainfo `<release>`, write
+Bump `VERSION`, add a `debian/changelog` entry, the RPM specs' `%changelog` entry and a metainfo `<release>`, write
 `docs/releases/vX.Y.Z.md` + `vX.Y.Z_github_description.md`, then
 `./scripts/release-verify-tag-version.sh vX.Y.Z`. Pushing the tag (maintainer only) runs
 `.github/workflows/release.yml`; `workflow_dispatch` with `dry_run` builds everything without

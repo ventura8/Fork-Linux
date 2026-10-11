@@ -16,4 +16,8 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 3. Bridge tier + real E2E, containers only (hard rule 18): `FL_CI_STAGE=bridge ./scripts/ci-docker.sh`,
    `scripts/e2e-docker.sh --name wine-bump pytest tests/e2e` (put the new tarball in
    `/var/tmp/fork-linux-e2e/seed` or let the container download it) or `./scripts/ci-e2e-wine.sh`.
+   An existing user's prefix moves to the new build on its next launch: also run the app-upgrade tier
+   (`FL_E2E_APP_UPGRADE=1 ... pytest tests/e2e/test_wine_app_upgrade.py`, A4 switches a set-up prefix to
+   another build and back) with the new build as `WINE_B`, and check that Fork itself starts on it: Fork
+   2.23.1 does not start on Kron4ek 11.19 staging (UPD-26 in `docs/qa/UPDATE-SCENARIOS.md`).
 4. Record results in `tests/e2e/RESULTS.md` and `docs/COMPATIBILITY.md` (evidence only).

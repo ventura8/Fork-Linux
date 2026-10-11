@@ -8,6 +8,7 @@ snapshots / updates tests.
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +68,20 @@ def install_fork(layout: ForkLayout, version: str = "2.23.2") -> None:
     layout.update_exe.write_bytes(b"MZ placeholder Update.exe")
     layout.packages_dir.mkdir(parents=True, exist_ok=True)
     (layout.packages_dir / f"Fork-{version}-full.nupkg").write_bytes(b"PK placeholder " + version.encode())
+
+
+def run_velopack_setup(layout: ForkLayout, version: str) -> None:
+    """What the official installer does (``Fork-<v>.exe --silent``, seen with the real one in the E2E tier).
+
+    It deletes Fork's whole install directory, user data included, lays out ``version``
+    and runs Fork's install hook, which starts a new ``logs\\fork.log``.
+    """
+    if layout.local_dir.is_dir() and not layout.local_dir.is_symlink():
+        shutil.rmtree(layout.local_dir)
+    install_fork(layout, version)
+    layout.logs_dir.mkdir(parents=True, exist_ok=True)
+    layout.fork_log.write_text(f"install hook of Fork {version}\n", encoding="utf-8")
+    layout.velopack_log.write_text(f"Velopack setup of Fork {version}\n", encoding="utf-8")
 
 
 def write_settings(layout: ForkLayout, data: dict[str, Any]) -> None:

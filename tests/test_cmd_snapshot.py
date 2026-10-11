@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from fork_linux import snapshots, updates
+from fork_linux import launcher, snapshots, updates
 from fork_linux.commands import snapshot as snapshot_cmd
 from fork_linux.config import Config
 from fork_linux.locking import FileLock
@@ -16,6 +16,7 @@ from fork_linux.state import FORK_VERSION, State
 
 from fixtures.cli_run import fork_running, isolate, layout, paths, run_cli, run_json
 from fixtures.fork_tree import install_fork, write_settings
+from fixtures.setup_ctx import make_ctx
 
 
 @pytest.fixture(autouse=True)
@@ -178,3 +179,23 @@ def test_rollback_saves_an_unsnapshotted_installed_version(capsys: pytest.Captur
     # Restoring the installed version itself (a repair) saves nothing either.
     assert run_json(capsys, "rollback", result["restored"]["id"], "--no-pin")["saved"] is None
     assert len(snapshots.list_snapshots(paths())) == 2
+
+
+def test_f4_unpin_after_rollback_restores_the_channel(capsys: pytest.CaptureFixture[str]) -> None:
+    """Rollback pins (channel Off); a pinned relaunch keeps it off; 'auto' brings the user's channel back."""
+    _snapshot("2.23.1")
+    _snapshot("2.23.2")
+    write_settings(layout(), {"ApplicationUpdateType": 1})
+    assert run_cli(capsys, "rollback", "--to-version", "2.23.1")[0] == 0
+    assert json.loads(layout().settings_file.read_text(encoding="utf-8"))["ApplicationUpdateType"] == 2
+    notes: list[str] = []
+    launcher._update_check(make_ctx(), notes)  # a relaunch while pinned changes nothing
+    assert notes == []
+    assert layout().installed_version() == "2.23.1"
+    assert run_cli(capsys, "config", "set", "fork.update_policy", "auto")[0] == 0
+    ctx = make_ctx()
+    launcher._update_check(ctx, notes)
+    ctx.state.save()
+    assert notes == ["Fork's own update check is back on (stable)"]
+    assert json.loads(layout().settings_file.read_text(encoding="utf-8"))["ApplicationUpdateType"] == 1
+    assert State.load(paths().state_file).get(updates.SAVED_UPDATE_TYPE) is None

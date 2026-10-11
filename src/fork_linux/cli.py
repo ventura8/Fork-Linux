@@ -242,6 +242,29 @@ def _parse(parser: argparse.ArgumentParser, argv: list[str]) -> argparse.Namespa
         _TRAP_EXITS.reset(token)
 
 
+# Commands the menu entry and the file managers start: nobody reads their stderr.
+DESKTOP_COMMANDS = frozenset({"run", "open"})
+
+
+def _tell_desktop(ctx: AppContext, message: str, hint: str) -> None:
+    """Show the error of a launch without a terminal in a dialog (zenity / kdialog), as setup's progress is."""
+    if getattr(ctx.args, "command", None) not in DESKTOP_COMMANDS:
+        return
+    from . import ui as ui_mod
+
+    try:
+        mode = ctx.config.get("ui", "progress")
+    except ForkLinuxError:
+        mode = "auto"
+    dialog = ui_mod.choose(ctx.env, gui=ctx.gui, mode=mode, runner=ctx.runner)
+    if isinstance(dialog, (ui_mod.TerminalUI, ui_mod.NullUI)):
+        return
+    try:
+        dialog.error(message, hint)
+    except (ForkLinuxError, OSError):
+        log.debug("could not show the error in a dialog", exc_info=True)
+
+
 def _dispatch(argv: list[str]) -> int:
     """Parse ``argv`` and run the selected command, mapping failures to exit codes."""
     parser = build_parser()
@@ -263,14 +286,15 @@ def _dispatch(argv: list[str]) -> int:
     except ForkLinuxError as exc:
         log.debug("%s failed", args.command, exc_info=True)
         print_error(exc.message, exc.hint)
+        _tell_desktop(ctx, exc.message, exc.hint)
         return int(exc.exit_code)
     except Exception as exc:
         log.debug("unexpected error in %s", args.command, exc_info=True)
         where = f"the details are in {log_file}; " if log_file is not None else ""
-        print_error(
-            f"unexpected {type(exc).__name__}: {exc}",
-            f"{where}please report it at {credits.LINKS['project_issues']}",
-        )
+        message = f"unexpected {type(exc).__name__}: {exc}"
+        hint = f"{where}please report it at {credits.LINKS['project_issues']}"
+        print_error(message, hint)
+        _tell_desktop(ctx, message, hint)
         return int(ExitCode.ERROR)
     finally:
         logging_setup.reset()

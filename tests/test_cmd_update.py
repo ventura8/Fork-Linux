@@ -10,14 +10,15 @@ from typing import Any
 
 import pytest
 
-from fork_linux import bootstrap, feeds, fork_install, snapshots, updates, wine_provider
+from fork_linux import bootstrap, feeds, fork_install, fork_userdata, snapshots, updates, wine_provider, winecmd
 from fork_linux.commands import update as update_cmd
-from fork_linux.errors import DownloadFailed, ForkLinuxError
+from fork_linux.errors import DownloadFailed, ForkLinuxError, SetupFailed
+from fork_linux.locking import FileLock
 from fork_linux.procrun import Completed, RecordingRunner
 from fork_linux.state import FORK_VERSION, WINE_BUILD
 
 from fixtures.cli_run import fork_running, isolate, layout, run_cli, run_json
-from fixtures.fork_tree import install_fork, write_settings
+from fixtures.fork_tree import install_fork, run_velopack_setup, write_settings
 from fixtures.setup_ctx import make_ctx
 
 
@@ -172,7 +173,7 @@ def installer(boot: bootstrap.Ctx, monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     def run_installer(runner: Any, env: Any, wine: Path, path: Path, pathmap: Any, **_kw: Any) -> None:
         version = planned["plan"].version
         installed.append(version)
-        install_fork(boot.layout, version)
+        run_velopack_setup(boot.layout, version)
 
     monkeypatch.setattr(fork_install, "download_installer", download)
     monkeypatch.setattr(fork_install, "run_installer", run_installer)
@@ -252,9 +253,48 @@ def test_fork_tofu_mismatch_is_an_integrity_failure(
     install_fork(boot.layout, "2.23.2")
     code, _out, err = run_cli(capsys, "update", "--fork", "--latest")
     assert code == 13
-    assert "does not match Fork's update feed" in err
-    assert "rollback --to-version 2.23.2" in err
+    assert "does not match Fork's update feed; Fork 2.23.2 was put back (snapshot 2.23.2-" in err
+    assert "nothing unverified was kept" in err
     assert boot.state.get(FORK_VERSION) is None
+
+
+def test_f3_tofu_mismatch_restores_the_previous_fork(
+    capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, installer: list[str], feed: list[Any]
+) -> None:
+    """UPD-1: an install that does not match the feed is undone at once, so it never starts."""
+    _prefix(boot)
+    install_fork(boot.layout, "2.23.2")
+    boot.state.set(updates.LAST_SEEN_VERSION, "2.23.2")
+    assert run_cli(capsys, "update", "--fork", "--latest")[0] == 13
+    assert installer == ["2.24.0"]
+    assert boot.layout.installed_version() == "2.23.2"
+    assert boot.layout.exe.read_bytes() == b"MZ placeholder Fork.exe 2.23.2"
+    assert not boot.layout.full_package("2.24.0").exists()
+    assert boot.layout.full_package("2.23.2").is_file()
+    assert boot.state.get(updates.LAST_SEEN_VERSION) == "2.23.2"
+    assert boot.state.get("fork.request") is None
+    assert boot.cache["steps"] == []
+    assert [snap.fork_version for snap in snapshots.list_snapshots(boot.paths)] == ["2.23.2"]
+
+
+def test_f3_tofu_mismatch_when_putting_the_old_fork_back_fails(
+    capsys: pytest.CaptureFixture[str],
+    boot: bootstrap.Ctx,
+    installer: list[str],
+    feed: list[Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prefix(boot)
+    install_fork(boot.layout, "2.23.2")
+
+    def broken_restore(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(snapshots, "restore", broken_restore)
+    code, _out, err = run_cli(capsys, "update", "--fork", "--latest")
+    assert code == 13
+    assert "putting Fork 2.23.2 back failed: disk full" in err
+    assert "do not start Fork 2.24.0; 'fork-linux rollback --to-version 2.23.2'" in err
 
 
 def test_fork_tofu_without_the_version_in_the_feed(
@@ -279,6 +319,171 @@ def test_fork_latest_records_the_request(
     result = run_json(capsys, "update", "--fork", "--latest")
     assert result["installed"] == "2.24.0"
     assert boot.state.get("fork.request") == {"source": "latest"}
+
+
+def test_f2_update_fork_keeps_user_data(
+    capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, installer: list[str]
+) -> None:
+    """Settings, accounts, custom commands and the repository list are Fork's: an update never touches them."""
+    _prefix(boot)
+    install_fork(boot.layout, "2.23.1")
+    write_settings(boot.layout, {"Theme": 1, "ApplicationUpdateType": 0, "Unknown": {"kept": True}})
+    boot.layout.accounts_file.write_text('{"accounts": ["secret"]}', encoding="utf-8")
+    boot.layout.custom_commands_file.write_text('[{"name": "mine"}]', encoding="utf-8")
+    boot.layout.forkdata_dir.mkdir(parents=True, exist_ok=True)
+    repos = boot.layout.forkdata_dir / "repositories.toml"
+    repos.write_text('source_dirs = ["Z:\\home\\tester"]\n[[repository]]\npath = "Z:\\src\\a"\n', encoding="utf-8")
+    files = [boot.layout.settings_file, boot.layout.accounts_file, boot.layout.custom_commands_file, repos]
+    before = {path: path.read_bytes() for path in files}
+    result = run_json(capsys, "update", "--fork")
+    assert (result["previous"], result["installed"]) == ("2.23.1", "2.23.2")
+    assert {path: path.read_bytes() for path in files} == before
+    (snap,) = snapshots.list_snapshots(boot.paths)
+    assert snap.fork_version == "2.23.1"
+    assert snap.method == "copy"  # the installer may rewrite current\ in place: never hard links here
+    assert not (Path(snap.path) / "data" / "accounts.json").exists()
+
+
+def test_f2_user_data_that_cannot_be_moved_aside_stops_the_update(
+    capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, installer: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The installer would delete the user's files: when they cannot be kept, nothing is installed."""
+    _prefix(boot)
+    install_fork(boot.layout, "2.23.1")
+    boot.layout.accounts_file.write_text('{"accounts": ["secret"]}', encoding="utf-8")
+    real_rename = os.rename
+
+    def rename(source: Any, target: Any) -> None:
+        if Path(target).parent.name == fork_userdata.STASH:
+            raise OSError(18, "Invalid cross-device link")
+        real_rename(source, target)
+
+    monkeypatch.setattr(os, "rename", rename)
+    code, _out, err = run_cli(capsys, "update", "--fork")
+    assert code == 1
+    assert "cannot move Fork's user data aside before installing" in err
+    assert "rollback" not in err
+    assert installer == []
+    assert boot.layout.installed_version() == "2.23.1"
+    assert boot.layout.accounts_file.read_text(encoding="utf-8") == '{"accounts": ["secret"]}'
+
+
+def test_f8_update_fork_offline_changes_nothing(
+    capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, installer: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """UPD-2: an unreachable feed or installer changes nothing and takes no snapshot."""
+    _prefix(boot)
+    install_fork(boot.layout, "2.23.2")
+
+    def unreachable(*_args: Any, **_kwargs: Any) -> str:
+        raise DownloadFailed("cannot reach git-fork.com", hint="check your network connection")
+
+    monkeypatch.setattr(feeds, "fetch_feed", unreachable)
+    code, _out, err = run_cli(capsys, "--offline", "update", "--fork", "--latest")
+    assert code == 12
+    assert "cannot reach git-fork.com" in err
+    monkeypatch.setattr(fork_install, "download_installer", unreachable)
+    assert run_cli(capsys, "update", "--fork", "--fork-version", "2.23.1", "--allow-untested")[0] == 12
+    assert installer == []
+    assert boot.layout.installed_version() == "2.23.2"
+    assert snapshots.list_snapshots(boot.paths) == []
+    assert boot.state.get(FORK_VERSION) is None
+    assert boot.cache["steps"] == []
+
+
+@pytest.mark.parametrize(
+    "document",
+    ["<html>maintenance</html>", json.dumps({"Assets": [{"PackageId": "Fork", "Version": "../2", "Type": "Full"}]})],
+)
+def test_f8_malformed_feed_installs_nothing(
+    capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, installer: list[str], feed: list[Any], document: str
+) -> None:
+    _prefix(boot)
+    install_fork(boot.layout, "2.23.2")
+    feed[0] = document
+    code, _out, err = run_cli(capsys, "update", "--fork", "--latest")
+    assert code == 13
+    assert "error: update feed: " in err
+    assert installer == []
+    assert snapshots.list_snapshots(boot.paths) == []
+    assert boot.layout.installed_version() == "2.23.2"
+
+
+def test_f11_interrupted_download_resumes_and_installs_nothing_partial(
+    capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, installer: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dropped download installs nothing and snapshots nothing; the retry completes the update."""
+    _prefix(boot)
+    install_fork(boot.layout, "2.23.1")
+    real_download = fork_install.download_installer
+    attempts: list[int] = []
+
+    def flaky(*args: Any, **kwargs: Any) -> Path:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise DownloadFailed("connection reset after 31 MiB", hint="run the command again to resume")
+        return real_download(*args, **kwargs)
+
+    monkeypatch.setattr(fork_install, "download_installer", flaky)
+    code, _out, err = run_cli(capsys, "update", "--fork")
+    assert code == 12
+    assert "run the command again to resume" in err
+    assert (installer, snapshots.list_snapshots(boot.paths)) == ([], [])
+    assert boot.layout.installed_version() == "2.23.1"
+    assert run_json(capsys, "update", "--fork")["installed"] == "2.23.2"
+    assert installer == ["2.23.2"]
+    assert [snap.fork_version for snap in snapshots.list_snapshots(boot.paths)] == ["2.23.1"]
+
+
+def test_f11_failed_install_names_the_snapshot(
+    capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, installer: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _prefix(boot)
+    install_fork(boot.layout, "2.23.1")
+
+    def fails(*_args: Any, **_kwargs: Any) -> None:
+        raise SetupFailed("fork_install", "the Fork installer exited with code 1", hint="run 'fork-linux setup' again")
+
+    monkeypatch.setattr(fork_install, "run_installer", fails)
+    code, _out, err = run_cli(capsys, "update", "--fork")
+    assert code == 11
+    (snap,) = snapshots.list_snapshots(boot.paths)
+    assert f"'fork-linux rollback --to-version 2.23.1' restores Fork 2.23.1 (snapshot {snap.id})" in err
+    assert "run 'fork-linux setup' again" not in err
+    boot.log_file = boot.paths.logs_dir / "setup.log"
+    code, _out, err = run_cli(capsys, "update", "--fork")
+    assert f"see {boot.log_file}; 'fork-linux rollback --to-version 2.23.1'" in err
+
+
+def test_f14_failed_update_keeps_the_rollback_target(
+    capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, installer: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """UPD-2: failed attempts add no snapshots, so pruning to [snapshots] keep never drops the previous version."""
+    _prefix(boot)
+    install_fork(boot.layout, "2.22.0")
+    snapshots.create(boot.paths, boot.layout, reason="before launch")
+    install_fork(boot.layout, "2.23.1")
+    snapshots.ensure_current(boot.paths, boot.layout, keep=2)
+
+    def unreachable(*_args: Any, **_kwargs: Any) -> Path:
+        raise DownloadFailed("offline")
+
+    monkeypatch.setattr(fork_install, "download_installer", unreachable)
+    for _attempt in range(3):
+        assert run_cli(capsys, "update", "--fork")[0] == 12
+    snapshots.ensure_current(boot.paths, boot.layout, keep=2)
+    assert sorted(snap.fork_version for snap in snapshots.list_snapshots(boot.paths)) == ["2.22.0", "2.23.1"]
+
+
+def test_f13_update_fork_respects_the_lock(
+    capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, installer: list[str]
+) -> None:
+    install_fork(boot.layout, "2.23.1")
+    with FileLock(boot.paths.lock_file, "setup"):
+        code, _out, err = run_cli(capsys, "update", "--fork")
+    assert code == 16
+    assert installer == []
+    assert snapshots.list_snapshots(boot.paths) == []
 
 
 def test_fork_needs_fork_closed(
@@ -344,6 +549,17 @@ def test_wine_switch(capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, ma
     assert boot.state.get(WINE_BUILD) == default
     assert boot.state.get("wine.provider") == "managed"
     assert boot.cache["steps"] == [None]
+
+
+def test_wine_switch_stops_a_prefix_that_stays_busy(
+    capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, managed: list[Path]
+) -> None:
+    boot.runner.responses["wineserver"] = [0, 1, 0]  # -k of the old build, -w times out, -k
+    code, out, _err = run_cli(capsys, "update", "--wine")
+    assert code == 0, out
+    assert [argv[-1] for argv in boot.runner.argvs] == ["-k", "-u", "-w", "-k"]
+    assert winecmd.SETTLE_WARNING in boot.ui.kinds("warn")
+    assert boot.state.get(WINE_BUILD) == boot.manifest.wine_default.id
 
 
 def test_wine_already_current(capsys: pytest.CaptureFixture[str], boot: bootstrap.Ctx, managed: list[Path]) -> None:

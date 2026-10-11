@@ -107,19 +107,41 @@ def _status(boot: Any, bctx: Any, step: Any) -> str:
     return "done" if boot.is_done(step, bctx) else "pending"
 
 
+def _step_row(boot: Any, bctx: Any, step: Any) -> dict[str, Any]:
+    """One step of ``--list-steps``.
+
+    ``status`` also verifies the step's result; ``recorded`` only says whether its marker
+    still matches this release's revision and inputs (``inputs_hash``), which is what a
+    launch checks: after an upgrade the steps that are no longer recorded run again.
+    """
+    row = {
+        "id": step.id,
+        "title": step.title,
+        "status": _status(boot, bctx, step),
+        "needs_network": step.needs_network,
+        "rev": step.rev,
+        "inputs_hash": None,
+        "recorded": None,
+    }
+    if not step.always:
+        row["inputs_hash"] = boot.inputs_hash(step, bctx)
+        row["recorded"] = boot.is_done(step, bctx, cheap=True)
+    return row
+
+
 def list_steps(ctx: AppContext, boot: Any, bctx: Any) -> int:
     """Print every step with its state."""
-    rows = [
-        {
-            "id": step.id,
-            "title": step.title,
-            "status": _status(boot, bctx, step),
-            "needs_network": step.needs_network,
-        }
-        for step in boot.default_steps()
-    ]
+    rows = [_step_row(boot, bctx, step) for step in boot.default_steps()]
     if ctx.json:
-        ctx.print_json({"schema": SCHEMA, "complete": bctx.state.get("setup.complete") is True, "steps": rows})
+        ctx.print_json(
+            {
+                "schema": SCHEMA,
+                "complete": bctx.state.get("setup.complete") is True,
+                "needs_setup": boot.needs_setup(bctx),
+                "revisions": {"bootstrap": bctx.manifest.bootstrap_revision, "manifest": bctx.manifest.revision},
+                "steps": rows,
+            }
+        )
     else:
         width = max(len(row["id"]) for row in rows)
         for row in rows:

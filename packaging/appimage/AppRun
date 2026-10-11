@@ -7,6 +7,9 @@
 #   --install-desktop   menu entry, icon, file-manager actions and ~/.local/bin/{fork,fork-linux}
 #                       links that start this AppImage (fork-linux desktop install --cli-alias)
 #   --remove-desktop    undo --install-desktop (fork-linux desktop remove)
+#   --libexec NAME ...  run the helper usr/lib/fork-linux/NAME (fork-linux-terminal, -explorer,
+#                       -open-url, -host): the stable launchers fork-linux writes for Wine's
+#                       registry and Fork's settings come through here (fork_linux/helpers.py)
 #   anything else       usr/bin/fork-linux with the arguments
 # FORK_LINUX_APPIMAGE tells fork-linux to point menu entries and links at the AppImage file.
 set -eu
@@ -34,6 +37,22 @@ case "${1:-}" in
 	--remove-desktop)
 		shift
 		exec "${PYTHON}" -I "${HERE}/usr/bin/fork-linux" desktop remove "$@"
+		;;
+	--libexec)
+		helper=${2:-}
+		case "${helper}" in
+			fork-linux-terminal | fork-linux-explorer | fork-linux-open-url) ;;
+			fork-linux-host)
+				shift 2
+				exec "${PYTHON}" -I "${HERE}/usr/lib/fork-linux/fork-linux-host" "$@"
+				;;
+			*)
+				echo "AppRun: --libexec: unknown helper '${helper}'" >&2
+				exit 2
+				;;
+		esac
+		shift 2
+		exec "${HERE}/usr/lib/fork-linux/${helper}" "$@"
 		;;
 esac
 exec "${PYTHON}" -I "${HERE}/usr/bin/fork-linux" "$@"

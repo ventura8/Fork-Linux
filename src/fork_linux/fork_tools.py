@@ -27,7 +27,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from . import resources
+from . import helpers
 from .errors import ForkLinuxError
 from .pathmap import PathMap
 from .paths import Paths
@@ -65,7 +65,7 @@ MERGE_ARGUMENTS = 'merge "$BASE" "$LOCAL" "$REMOTE" "$MERGED"'
 
 def script(name: str) -> Path | None:
     """Our executable helper script ``name`` in this installation's libexec directory, if present."""
-    path = resources.libexec_dir() / name
+    path = helpers.path(name)
     return path if path.is_file() and os.access(path, os.X_OK) else None
 
 

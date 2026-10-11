@@ -387,10 +387,7 @@ class _Translator:
             self.out.append(line)
             return index
         indent, name, equals, rest = match.groups()
-        if equals:
-            value, last = _parse_value(self.lines, index, rest)
-        else:
-            value, last = (None if rest.strip() and rest.strip()[0] not in "#;" else ""), index
+        value, last = self._value(index, equals, rest)
         physical = self.lines[index : last + 1]
         if value is None:
             self.out.extend(physical)
@@ -401,15 +398,31 @@ class _Translator:
             self.out.extend(f"{DROP_PREFIX} ({reason}): {raw}" for raw in physical)
             self.notes.append(f"{self.section.label(name)}: dropped ({reason})")
             return last
-        if key in PATH_KEYS and equals:
-            label = f"{self.section.label(name)} = {value!r}"
-            base = self.base if key in INCLUDE_KEYS else None
-            new = self._mapped(value, label, lambda: _translate_path(value, self.pathmap, self.home, base))
-            if new != value:
-                self.out.append(f"{indent}{name} = {_quote(new)}")
-                return last
-        self.out.extend(physical)
+        new = self._translated(key, name, value) if equals else value
+        if new != value:
+            self.out.append(f"{indent}{name} = {_quote(new)}")
+        else:
+            self.out.extend(physical)
         return last
+
+    def _value(self, index: int, equals: str, rest: str) -> tuple[str | None, int]:
+        """The entry's value and its last physical line; ``None`` for a line that is not an entry.
+
+        A bare ``name`` (no ``=``) is a boolean true, kept as ``""``; anything but a comment after it
+        makes the line invalid.
+        """
+        if equals:
+            return _parse_value(self.lines, index, rest)
+        stripped = rest.strip()
+        return (None if stripped and stripped[0] not in "#;" else ""), index
+
+    def _translated(self, key: str, name: str, value: str) -> str:
+        """``value`` with a Linux path of a path-valued ``key`` turned into a Windows one."""
+        if key not in PATH_KEYS:
+            return value
+        label = f"{self.section.label(name)} = {value!r}"
+        base = self.base if key in INCLUDE_KEYS else None
+        return self._mapped(value, label, lambda: _translate_path(value, self.pathmap, self.home, base))
 
     def _mapped(self, original: str, label: str, convert: Callable[[], str]) -> str:
         """``convert()``, or ``original`` (with a note) when the path is not reachable from Wine."""

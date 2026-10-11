@@ -13,6 +13,7 @@ from fixtures.setup_ctx import FakeWine, add_values, make_ctx, wine_info, write_
 
 from fork_linux import bootstrap
 from fork_linux import manifest as manifest_mod
+from fork_linux import winecmd
 from fork_linux import winetricks as winetricks_mod
 from fork_linux.bootstrap import Ctx
 from fork_linux.errors import (
@@ -130,6 +131,17 @@ def test_prefix_init_boots_without_mono_and_gecko(xdg: Path) -> None:
     assert prefix.verify_prefix_init(ctx)
     assert (ctx.paths.prefix.stat().st_mode & 0o777) == 0o700
     assert prefix.prefix_inputs(ctx) == {"wine": runtime.wine_inputs(ctx)}
+
+
+def test_prefix_init_stops_a_prefix_that_stays_busy(xdg: Path) -> None:
+    """Updating a prefix with .NET can leave a rundll32 dialog open: stopped, with a warning (A4)."""
+    ctx = make_ctx()
+    fake = FakeWine(ctx.paths.prefix)
+    ctx.runner = fake.runner({"wineserver": [1, 0]})
+    prefix.run_prefix_init(ctx)
+    assert [call["argv"][1:] for call in ctx.runner.calls] == [["wineboot", "--init"], ["-w"], ["-k"]]
+    assert prefix.verify_prefix_init(ctx)
+    assert winecmd.SETTLE_WARNING in ctx.ui.kinds("warn")
 
 
 def test_prefix_init_failure(xdg: Path) -> None:

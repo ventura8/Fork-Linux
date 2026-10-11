@@ -5,7 +5,9 @@ of its inputs, so ``setup`` resumes and re-runs exactly the steps whose inputs
 changed) plus a few facts other commands read, under well-known dotted keys:
 
 ``setup.complete`` (bool), ``fork.version`` (str), ``wine.provider`` (str),
-``wine.build`` (str).
+``wine.build`` (str). ``written_by`` names the fork-linux version that saved it
+last (:attr:`State.previous_writer` keeps the value found on load, so a
+downgrade can be noticed).
 
 Writes are atomic and the file is private (0600). A corrupt file is never
 silently replaced: :meth:`State.load` raises :class:`IntegrityFailed`.
@@ -21,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from . import fsutil
+from . import version as version_mod
 from .errors import ForkLinuxError, IntegrityFailed
 
 SCHEMA = 1
@@ -32,6 +35,7 @@ SETUP_COMPLETE = "setup.complete"
 FORK_VERSION = "fork.version"
 WINE_PROVIDER = "wine.provider"
 WINE_BUILD = "wine.build"
+WRITTEN_BY = "written_by"
 
 _STEPS = "steps"
 
@@ -94,6 +98,8 @@ class State:
         self.path = Path(path)
         self.data: dict[str, Any] = _fresh() if data is None else data
         self.is_new = is_new
+        writer = self.data.get(WRITTEN_BY)
+        self.previous_writer: str | None = writer if isinstance(writer, str) else None
 
     @classmethod
     def load(cls, path: Path) -> State:
@@ -164,7 +170,8 @@ class State:
         self._steps().pop(step_id, None)
 
     def save(self) -> None:
-        """Write the state atomically with mode 0600."""
+        """Write the state atomically with mode 0600, recording this fork-linux as its writer."""
+        self.data[WRITTEN_BY] = version_mod.get_version()
         text = json.dumps(self.data, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
         fsutil.atomic_write(self.path, text, mode=MODE)
         self.is_new = False

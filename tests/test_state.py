@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from fork_linux import state as state_mod
+from fork_linux import version as version_mod
 from fork_linux.errors import ExitCode, ForkLinuxError, IntegrityFailed
 from fork_linux.state import SCHEMA, State
 
@@ -209,3 +210,17 @@ def test_save_replaces_a_symlink_instead_of_following_it(path: Path, tmp_path: P
     assert not path.is_symlink()
     assert target.read_text(encoding="utf-8") == "untouched"
     assert os.stat(path).st_mode & 0o777 == 0o600
+
+
+def test_save_records_the_writer_and_load_keeps_the_previous_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "state.json"
+    fresh = State.load(path)
+    assert fresh.previous_writer is None
+    monkeypatch.setattr(version_mod, "get_version", lambda: "1.2.3")
+    fresh.save()
+    assert json.loads(path.read_text(encoding="utf-8"))["written_by"] == "1.2.3"
+    assert State.load(path).previous_writer == "1.2.3"
+    path.write_text(json.dumps({"schema": 1, "steps": {}, "written_by": 7}), encoding="utf-8")
+    assert State.load(path).previous_writer is None

@@ -279,6 +279,8 @@ class Manifest:
             raise _fail("schema", f"unsupported schema {schema} (this fork-linux understands {SCHEMA})")
         self._data = copy.deepcopy(top)
         self.overridden = overridden
+        # The dotted keys a user override changes in the packaged manifest (set by :func:`load`).
+        self.override_changes: tuple[str, ...] = ()
         self.revision = _str(top["revision"], "revision", _REVISION)
         self.bootstrap_revision = _int(top["bootstrap_revision"], "bootstrap_revision", 1)
         self._load_wine(top["wine"])
@@ -461,6 +463,17 @@ class Manifest:
         return copy.deepcopy(self._data)
 
 
+def changed_paths(base: Any, merged: Any, prefix: str = "") -> list[str]:
+    """The dotted keys where ``merged`` differs from ``base``, sorted (``_`` comment keys are ignored)."""
+    if not (isinstance(base, dict) and isinstance(merged, dict)):
+        return [] if base == merged else [prefix[:-1]]
+    found: list[str] = []
+    for key in sorted(set(base) | set(merged)):
+        if not key.startswith("_"):
+            found += changed_paths(base.get(key, _MISSING), merged.get(key, _MISSING), f"{prefix}{key}.")
+    return found
+
+
 def merge_patch(target: Any, patch: Any) -> Any:
     """Apply an RFC 7386 JSON merge patch to ``target`` and return the result (inputs untouched)."""
     if not isinstance(patch, dict):
@@ -517,13 +530,22 @@ def load(path: Path | None = None, override: Path | None = None) -> Manifest:
     if not isinstance(patch, dict):
         raise IntegrityFailed(f"manifest override {override} must be a JSON object", hint=_HINT)
     try:
-        merged = Manifest(merge_patch(data, patch), overridden=True)
+        document = merge_patch(data, patch)
+        merged = Manifest(document, overridden=True)
     except RecursionError:
         raise IntegrityFailed(f"manifest override {override} is nested too deeply", hint=_HINT) from None
+    except IntegrityFailed as exc:
+        # The packaged manifest is valid on its own: the override is what no longer fits
+        # (typically after an upgrade changed the manifest it was written against).
+        raise IntegrityFailed(
+            f"manifest override {override} does not fit this fork-linux's runtime manifest: {exc.message}",
+            hint=f"fix or remove {override}",
+        ) from None
     added = sorted(set(merged.allowed_hosts) - set(base.allowed_hosts))
     if added:
         raise IntegrityFailed(
             f"manifest override {override} may not add Fork download hosts: {', '.join(added)}",
             hint="Fork installers only come from the official hosts; remove fork.allowed_hosts from the override",
         )
+    merged.override_changes = tuple(changed_paths(data, document))
     return merged

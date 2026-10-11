@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from .. import desktop_integration, winecmd
+from .. import bootstrap, desktop_integration, winecmd
 from ..cli import AppContext
 from ..fork_layout import ForkLayout
 
@@ -69,6 +69,7 @@ def run_install(args: argparse.Namespace, ctx: AppContext) -> int:
 def run_remove(args: argparse.Namespace, ctx: AppContext) -> int:
     """Remove the integration."""
     removed = desktop_integration.remove(ctx.paths, ctx.env, runner=ctx.runner)
+    bootstrap.forget_markers(ctx.paths)  # the next launch re-creates Fork's icon and the menu entry
     _print_paths(ctx, "removed", removed, "nothing to remove", "removed")
     return 0
 

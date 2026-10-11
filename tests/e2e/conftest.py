@@ -106,6 +106,14 @@ def _seed(home: Path) -> None:
         shutil.copytree(winetricks_cache, target_cache)
 
 
+def _link_or_copy(source: str, target: str) -> None:
+    """Hard-link ``source`` to ``target``, or copy it across file systems."""
+    try:
+        os.link(source, target)
+    except OSError:
+        shutil.copy2(source, target)
+
+
 def _display_answers(display: str, env: dict[str, str]) -> bool:
     probe = subprocess.run(
         ["xdotool", "getdisplaygeometry"],
@@ -123,23 +131,29 @@ def _clean_path(path: str, real_home: str) -> str:
     return os.pathsep.join(keep)
 
 
-_FAILED: list[str] = []
+# The first failed step of each module (its scenario): ``{module file: test name}``.
+_FAILED: dict[str, str] = {}
+
+
+def _module_of(item: pytest.Item) -> str:
+    return item.nodeid.split("::", 1)[0]
 
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> Iterator[None]:
-    """Remember the first failed step: the scenario's steps build on each other."""
+    """Remember the first failed step of a module: the steps of its scenario build on each other."""
     outcome = yield
     report = outcome.get_result()
     if report.when == "call" and report.failed:
-        _FAILED.append(item.name)
+        _FAILED.setdefault(_module_of(item), item.name)
 
 
 @pytest.fixture(autouse=True)
-def _in_order() -> None:
-    """Fail fast once an earlier step of the scenario has failed."""
-    if _FAILED:
-        pytest.fail(f"an earlier E2E step failed ({_FAILED[0]})")
+def _in_order(request: pytest.FixtureRequest) -> None:
+    """Fail fast once an earlier step of the same scenario (module) has failed."""
+    failed = _FAILED.get(_module_of(request.node))
+    if failed is not None:
+        pytest.fail(f"an earlier E2E step failed ({failed})")
 
 
 class E2E:
@@ -177,6 +191,48 @@ class E2E:
     def prefix(self) -> Path:
         return self.home / ".local" / "share" / "fork-linux" / "prefix"
 
+    def make_dirs(self) -> None:
+        """The home with its XDG directories, a private runtime dir, shots / logs / repos and ``~/.wine``.
+
+        ``~/.wine/SENTINEL`` must survive everything, including ``uninstall --purge``.
+        """
+        for sub in (".config", ".local/share", ".cache", ".local/state"):
+            (self.home / sub).mkdir(parents=True, exist_ok=True)
+        (self.root / "run").mkdir(mode=0o700, exist_ok=True)
+        os.chmod(self.root / "run", 0o700)
+        for directory in (self.shots, self.logs, self.repos):
+            directory.mkdir(exist_ok=True)
+        (self.home / ".wine" / "SENTINEL").mkdir(parents=True, exist_ok=True)
+
+    def child(self, name: str) -> E2E:
+        """A fresh environment of its own in ``<root>/<name>`` (home, prefix, logs, shots) on the same display.
+
+        For a scenario that must not share the session's prefix: its downloads cache and winetricks cache
+        start as hard links (or copies) of the session's verified files.
+        """
+        child = E2E(self.root / name, self.display)
+        child.make_dirs()
+        for rel in (Path(".cache") / "fork-linux" / "downloads", Path(".cache") / "winetricks"):
+            if (self.home / rel).is_dir():
+                shutil.copytree(self.home / rel, child.home / rel, copy_function=_link_or_copy, dirs_exist_ok=True)
+        return child
+
+    def stop_wine(self) -> None:
+        """``wineserver -k`` for every prefix of this environment, with each managed runtime it installed."""
+        runtimes_dir = self.home / ".local" / "share" / "fork-linux" / "runtimes" / "wine"
+        runtimes = sorted(runtimes_dir.glob("*/bin/wineserver"))
+        for prefix in (self.prefix, self.root / "prefix2"):
+            if not prefix.is_dir():
+                continue
+            for server in runtimes:
+                subprocess.run(
+                    [str(server), "-k"],
+                    env={**self.env, "WINEPREFIX": str(prefix)},
+                    capture_output=True,
+                    timeout=60,
+                    check=False,
+                )
+
     def cli(self, *args: str, extra: dict[str, str] | None = None, timeout: float = 600, check: bool = True,
             cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         """``python3 -m fork_linux ARGS`` in the isolated environment."""
@@ -201,14 +257,7 @@ def e2e() -> Iterator[E2E]:
     root = _prepare_root(Path(os.environ.get("FL_E2E_ROOT") or tempfile.mkdtemp(prefix="fork-linux-e2e-")))
     display = os.environ.get("FL_E2E_DISPLAY", ":98")
     env = E2E(root, display)
-    for sub in (".config", ".local/share", ".cache", ".local/state"):
-        (env.home / sub).mkdir(parents=True, exist_ok=True)
-    (root / "run").mkdir(mode=0o700, exist_ok=True)
-    os.chmod(root / "run", 0o700)
-    for directory in (env.shots, env.logs, env.repos):
-        directory.mkdir(exist_ok=True)
-    # ~/.wine must survive everything, including uninstall --purge.
-    (env.home / ".wine" / "SENTINEL").mkdir(parents=True, exist_ok=True)
+    env.make_dirs()
     _seed(env.home)
     xvfb = None
     if not _display_answers(display, env.env):
@@ -226,24 +275,7 @@ def e2e() -> Iterator[E2E]:
     try:
         yield env
     finally:
-        _stop_all_wine(env)
+        env.stop_wine()
         if xvfb is not None:
             xvfb.terminate()
             xvfb.wait(timeout=10)
-
-
-def _stop_all_wine(env: E2E) -> None:
-    """``wineserver -k`` for every prefix of this run, with the managed runtime that served it."""
-    runtimes = sorted((env.home / ".local" / "share" / "fork-linux" / "runtimes" / "wine").glob("*/bin/wineserver"))
-    prefixes = [env.prefix, env.root / "prefix2"]
-    for prefix in prefixes:
-        if not prefix.is_dir():
-            continue
-        for server in runtimes:
-            subprocess.run(
-                [str(server), "-k"],
-                env={**env.env, "WINEPREFIX": str(prefix)},
-                capture_output=True,
-                timeout=60,
-                check=False,
-            )

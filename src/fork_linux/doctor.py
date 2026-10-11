@@ -358,6 +358,34 @@ def _skip(why: str) -> Result:
     return Result("info", f"skipped: {why}")
 
 
+# The pins an upgrade of fork-linux moves on: an override that sets them keeps the old ones.
+OVERRIDE_PINS = ("wine.default", "fork.default")
+OVERRIDE_LISTED = 8
+
+
+def check_manifest_override(ctx: DoctorCtx) -> Result:
+    """A user manifest override outlives upgrades: say what it changes, warn when it keeps old pins."""
+    override = ctx.paths.manifest_override
+    if not ctx.manifest.overridden:
+        return Result("ok", f"no manifest override ({override} does not exist)")
+    changes = ctx.manifest.override_changes
+    if not changes:
+        return Result("ok", f"manifest override {override} changes nothing")
+    listed = ", ".join(changes[:OVERRIDE_LISTED])
+    if len(changes) > OVERRIDE_LISTED:
+        listed += f", and {len(changes) - OVERRIDE_LISTED} more"
+    detail = f"manifest override {override} changes {listed}"
+    pins = [key for key in changes if key in OVERRIDE_PINS]
+    if not pins:
+        return Result("info", detail)
+    return Result(
+        "warn",
+        f"{detail}; it replaces this release's {', '.join(pins)}",
+        f"remove {', '.join(pins)} from {override} (or the file) to use the Wine build and Fork version "
+        "this fork-linux release was tested with",
+    )
+
+
 def _hive_ok(path: Path) -> bool:
     """True if ``path`` exists and declares a 64-bit prefix near its top."""
     head = _read_text(path, HIVE_HEAD_BYTES) or ""
@@ -1695,6 +1723,7 @@ CHECKS: list[Check] = [
     Check("env.user", "User account", "env", check_user),
     Check("env.display", "Display session", "env", check_display),
     Check("env.disk", "Free disk space", "env", check_disk),
+    Check("env.manifest", "Runtime manifest override", "env", check_manifest_override),
     Check("host.tools", "Host tools", "host", check_tools),
     Check("host.libs", "Host libraries", "host", check_libs),
     Check("host.fonts", "Host fonts", "host", check_fonts),
