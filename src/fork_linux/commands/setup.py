@@ -138,6 +138,25 @@ def _reset_text(bctx: Any) -> str:
     )
 
 
+def _stop_prefix(bctx: Any) -> None:
+    """End everything running in our prefix before it is deleted (a prefix without our marker: nothing).
+
+    ``wineserver -k`` first; then what an interrupted setup left behind (a winetricks script that
+    keeps starting installers) gets SIGTERM / SIGKILL, or deleting the prefix races it and fails
+    with "Directory not empty".
+    """
+    paths = bctx.paths
+    if paths.created_by_marker.is_symlink() or not paths.created_by_marker.exists():
+        return
+    try:
+        winecmd.wineserver(bctx.runner, bctx.wine_env(), bctx.wine(), "-k", timeout=60)
+    except ForkLinuxError as exc:
+        bctx.ui.warn(f"could not stop Wine in the prefix: {exc}")
+    stopped = procs.stop_prefix(paths.prefix, proc_root=bctx.proc_root)
+    if stopped:
+        bctx.ui.warn(f"stopped {len(stopped)} process(es) still running in {paths.prefix}")
+
+
 def reset(bctx: Any) -> None:
     """Ask, stop the prefix's Wine, delete the prefix (only if ours) and start a fresh state."""
     if not bctx.ui.confirm(RESET_TITLE, _reset_text(bctx), default=False):
@@ -149,10 +168,7 @@ def reset(bctx: Any) -> None:
     with FileLock(paths.lock_file, "setup"):
         procs.require_closed(paths.prefix, proc_root=bctx.proc_root)
         if paths.prefix.exists():
-            try:
-                winecmd.wineserver(bctx.runner, bctx.wine_env(), bctx.wine(), "-k", timeout=60)
-            except ForkLinuxError as exc:
-                bctx.ui.warn(f"could not stop Wine in the prefix: {exc}")
+            _stop_prefix(bctx)
             fsutil.safe_rmtree(paths.prefix, marker=paths.created_by_marker)
     kept = {key: bctx.state.get(key) for key in KEPT_ON_RESET if bctx.state.get(key) is not None}
     bctx.state = State.load(paths.state_file)
