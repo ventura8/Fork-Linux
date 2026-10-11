@@ -17,7 +17,9 @@ hands ``fork-linux-host VERB ARG`` to a process outside that tree:
    one ``FL_REQ_HANDOFF`` request: the daemon runs ``fork-linux-host VERB ARG``
    detached, in its own environment, so the tool inherits nothing from Wine;
 3. only when no daemon answers does the verb run here, inside Wine's tree, as
-   before; that last resort is written to ``<logs>/handoff.log`` and stderr.
+   before; that last resort is written to ``<logs>/handoff.log`` and stderr
+   (:func:`last_fallback` reads the newest line back for ``doctor``'s
+   ``desktop.handoff`` check).
 
 Inside Flatpak the verb always runs here: the host helper starts every tool on
 the host through ``flatpak-spawn --host``, outside Wine's tree and the sandbox.
@@ -37,7 +39,9 @@ import socket
 import struct
 import sys
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
 from . import sandbox
 from .errors import ForkLinuxError
@@ -54,6 +58,16 @@ TIMEOUT = 5.0
 LOG_NAME = "handoff.log"
 LOG_MAX = 64 * 1024
 _LOG_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_CLOEXEC | os.O_NOFOLLOW
+TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+FALLBACK_NOTE = "running inside Wine's process tree (the program inherits Wine's NoNewPrivs and seccomp filter)"
+# One line of handoff.log (note_fallback): time, program[pid], verb, the note, the reason.
+_LOG_LINE_RE = re.compile(
+    r"(?P<when>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z) "
+    + re.escape(PROG)
+    + r"\[[0-9]+\] (?P<verb>[a-z-]+): "
+    + re.escape(FALLBACK_NOTE)
+    + r": (?P<reason>.*)"
+)
 _TOKEN_RE = re.compile(r"[0-9a-fA-F]{64}")
 _PORT_RE = re.compile(r"[0-9]{1,5}")
 
@@ -189,7 +203,7 @@ def _cwd() -> str:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime(TIME_FORMAT)
 
 
 def note_fallback(env: Mapping[str, str], verb: str, reason: str) -> None:
@@ -198,10 +212,7 @@ def note_fallback(env: Mapping[str, str], verb: str, reason: str) -> None:
     Only the verb and the reason are written, never the path or URL. A log
     that cannot be written is skipped: the hand-off itself goes on.
     """
-    line = (
-        f"{_now()} {PROG}[{os.getpid()}] {verb}: running inside Wine's process tree "
-        f"(the program inherits Wine's NoNewPrivs and seccomp filter): {reason}\n"
-    )
+    line = f"{_now()} {PROG}[{os.getpid()}] {verb}: {FALLBACK_NOTE}: {reason}\n"
     sys.stderr.write(f"{PROG}: {line.split(' ', 2)[2]}")
     try:
         logs = Paths.from_env(env).logs_dir
@@ -216,6 +227,36 @@ def note_fallback(env: Mapping[str, str], verb: str, reason: str) -> None:
             os.close(fd)
     except (OSError, ForkLinuxError):
         return
+
+
+@dataclass(frozen=True)
+class Fallback:
+    """One hand-off that ran inside Wine's process tree (a ``handoff.log`` line)."""
+
+    when: datetime
+    verb: str
+    reason: str
+
+
+def last_fallback(logs_dir: Path) -> Fallback | None:
+    """The newest well-formed line of ``<logs_dir>/handoff.log`` (None without one); only reads."""
+    try:
+        with open(logs_dir / LOG_NAME, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            handle.seek(max(0, handle.tell() - LOG_MAX))
+            text = handle.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+    for line in reversed(text.splitlines()):
+        match = _LOG_LINE_RE.fullmatch(line)
+        if match is None:
+            continue
+        try:
+            when = datetime.strptime(match["when"], TIME_FORMAT).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        return Fallback(when, match["verb"], match["reason"])
+    return None
 
 
 def main(

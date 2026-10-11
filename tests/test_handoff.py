@@ -14,6 +14,7 @@ import stat
 import struct
 import threading
 from collections.abc import Callable, Iterator
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -347,3 +348,53 @@ def test_log_rotates_and_never_blocks(xdg: Path, monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(handoff.Paths, "from_env", broken)
     handoff.note_fallback(env, "open", "test")
+
+
+# -- reading the log back (doctor) ---------------------------------------------------------------
+
+
+def _line(when: str, verb: str = "terminal", reason: str = "no daemon") -> str:
+    return f"{when} {handoff.PROG}[42] {verb}: {handoff.FALLBACK_NOTE}: {reason}\n"
+
+
+def test_last_fallback_reads_what_note_fallback_wrote(xdg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    env = _env(xdg)
+    logs = _log(env).parent
+    assert handoff.last_fallback(logs) is None, "no log"
+    monkeypatch.setattr(handoff, "_now", lambda: "2026-10-11T09:08:07Z")
+    handoff.note_fallback(env, "open-url", "the daemon could not prove the token (x): y")
+    found = handoff.last_fallback(logs)
+    assert found == handoff.Fallback(
+        datetime(2026, 10, 11, 9, 8, 7, tzinfo=timezone.utc),
+        "open-url",
+        "the daemon could not prove the token (x): y",
+    )
+
+
+def test_last_fallback_takes_the_newest_well_formed_line(xdg: Path) -> None:
+    log = _log(_env(xdg))
+    log.parent.mkdir(parents=True)
+    log.write_text(
+        _line("2026-10-10T10:00:00Z", "reveal")
+        + _line("2026-10-11T11:00:00Z", "open", "newest")
+        + _line("2026-13-01T00:00:00Z")  # no such month
+        + "garbage\n"
+        + f"2026-10-12T00:00:00Z someone-else[1] open: {handoff.FALLBACK_NOTE}: x\n",
+        encoding="utf-8",
+    )
+    found = handoff.last_fallback(log.parent)
+    assert found is not None
+    assert (found.verb, found.reason, found.when.day) == ("open", "newest", 11)
+    log.write_text("garbage only\n", encoding="utf-8")
+    assert handoff.last_fallback(log.parent) is None
+
+
+def test_last_fallback_reads_only_the_tail(xdg: Path) -> None:
+    log = _log(_env(xdg))
+    log.parent.mkdir(parents=True)
+    log.write_text(_line("2026-10-11T11:00:00Z") + "x" * (2 * handoff.LOG_MAX) + "\n", encoding="utf-8")
+    assert handoff.last_fallback(log.parent) is None, "the old line lies before the last LOG_MAX bytes"
+    with open(log, "a", encoding="utf-8") as handle:
+        handle.write(_line("2026-10-11T12:00:00Z", "reveal"))
+    found = handoff.last_fallback(log.parent)
+    assert found is not None and found.verb == "reveal"

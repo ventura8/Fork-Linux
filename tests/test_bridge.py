@@ -251,6 +251,21 @@ def test_host_helper_installed_template_or_missing(kit: bridge_kit.Kit, monkeypa
     assert wrapper.stat().st_mtime_ns == mtime, "an up-to-date wrapper is not rewritten"
 
 
+def test_handoff_missing_only_looks(kit: bridge_kit.Kit) -> None:
+    ctx = _ctx(kit)
+    assert bridge.handoff_missing() == []
+    host = kit.libexec / resources.HOST_HELPER
+    host.chmod(0o644)
+    assert bridge.handoff_missing() == [resources.HOST_HELPER], "not executable"
+    host.unlink()
+    (kit.libexec / (resources.HOST_HELPER + ".in")).write_text("#!@PYTHON@ -I\n", encoding="utf-8")
+    assert bridge.handoff_missing() == [], "a source checkout's template"
+    assert not bridge.personas_dir(ctx.paths).exists(), "no wrapper is written"
+    (kit.libexec / (resources.HOST_HELPER + ".in")).unlink()
+    kit.helper.unlink()
+    assert bridge.handoff_missing() == [bridge.HELPER, resources.HOST_HELPER]
+
+
 def test_write_token(kit: bridge_kit.Kit) -> None:
     ctx = _ctx(kit)
     path, token = bridge.write_token(ctx.paths)

@@ -338,6 +338,15 @@ def ensure_personas(paths: Paths, helper: Path) -> dict[str, Path]:
     return found
 
 
+def _executable(path: Path) -> bool:
+    return path.is_file() and os.access(path, os.X_OK)
+
+
+def _template(installed: Path) -> Path:
+    """The source checkout's ``fork-linux-host.in`` next to where ``installed`` would be."""
+    return installed.with_name(installed.name + ".in")
+
+
 def host_helper(paths: Paths) -> Path | None:
     """The ``fork-linux-host`` the daemon runs for ``fl-launch.exe`` (None when missing).
 
@@ -345,9 +354,9 @@ def host_helper(paths: Paths) -> Path | None:
     wrapper in :func:`personas_dir` runs it with this Python.
     """
     installed = resources.host_helper_path()
-    if installed.is_file() and os.access(installed, os.X_OK):
+    if _executable(installed):
         return installed
-    template = installed.with_name(installed.name + ".in")
+    template = _template(installed)
     if not template.is_file():
         return None
     wrapper = _private_dir(personas_dir(paths)) / HOST_WRAPPER
@@ -572,6 +581,15 @@ def handoff_route(env: Mapping[str, str]) -> str:
     if sandbox.detect(env) == sandbox.FLATPAK:
         return "flatpak"
     return "systemd" if systemd_user_manager(env) else ""
+
+
+def handoff_missing() -> list[str]:
+    """What this installation lacks to start a hand-off daemon (:func:`start_handoff`); only looks."""
+    missing = [] if helper_path().is_file() else [HELPER]
+    installed = resources.host_helper_path()
+    if not _executable(installed) and not _template(installed).is_file():
+        missing.append(HOST_WRAPPER)
+    return missing
 
 
 def start_handoff(ctx: Any) -> Daemon | None:

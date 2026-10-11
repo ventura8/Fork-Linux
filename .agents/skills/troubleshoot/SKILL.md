@@ -10,6 +10,10 @@ Setup / launch failures, logs, Wine debug knobs.
 Canonical rules: [AGENTS.md](../../../AGENTS.md).
 
 - `fork-linux doctor --deep` (and `--json`), `fork-linux logs` / `logs --bundle`, `fork-linux run --debug --wine-debug +loaddll`.
+- A terminal / file manager / app Fork opens crashes (Tilix, Nemo: status 134) or a Snap app fails:
+  `fork-linux doctor --check desktop.handoff` (route: systemd user session, launcher daemon, flatpak-spawn --host;
+  warns on a recent `<logs>/handoff.log` line = the tool ran inside Wine's tree with `NoNewPrivs=1` + seccomp).
+  Design: bridge/README.md "Desktop hand-off".
 - Setup resumes at the failed step: `fork-linux setup --list-steps`, `--from-step STEP`, `--only STEP`.
 - Wrong or narrow interface text: `fork-linux doctor --check prefix.ui_font --check prefix.font_replacements --check prefix.font_smoothing`,
   then `fork-linux setup --only ui_font --only font_replacements` (design: `docs/spikes/S10-text-rendering.md`).

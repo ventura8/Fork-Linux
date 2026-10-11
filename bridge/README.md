@@ -149,6 +149,13 @@ therefore starts `fork-linux-host VERB ARG` from outside that tree, the first th
 `FORK_LINUX_HANDOFF=direct` skips 1 and 2 (diagnosis). Inside Flatpak step 2 is skipped:
 the helper starts every tool through `flatpak-spawn --host`.
 
+`fork-linux doctor --check desktop.handoff` names the route that applies (`systemd user
+session`, `launcher daemon (no systemd user session)` with the running daemon from
+`session.json` or the one the next launch starts, `flatpak-spawn --host`) without starting
+anything, and warns when the installation lacks the daemon's helper or `fork-linux-host`, when
+Fork runs without the daemon, or when the newest `handoff.log` line is newer than the last
+launch (`handoff.last_fallback`; without a recorded launch, the last 24 hours).
+
 The request is narrow on purpose: VERB is `terminal`, `reveal`, `open` or `open-url`; ARG is
 one non-empty argument of at most 8 KiB (`FL_HANDOFF_ARG_MAX`) that does not start with
 `-`; no other flag, no `ENV_SET` / `ENV_UNSET`, no `ANCHOR`. `fl_req_decode` refuses any

@@ -1279,6 +1279,162 @@ def test_desktop_cli_in_the_install_root(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert run(make(RecordingRunner(which_map={"fork": str(launcher)})), "desktop.cli").status == "ok"
 
 
+# -- desktop hand-off ----------------------------------------------------------------------------
+
+DAEMON_ROUTE = "launcher daemon (no systemd user session)"
+
+
+def _handoff_ctx(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, route: str = "", **kwargs: Any) -> DoctorCtx:
+    """A context whose hand-off route is ``route``, with an empty fake /proc (Fork not running)."""
+    from fork_linux import bridge
+
+    monkeypatch.setattr(bridge, "handoff_route", lambda env: route)
+    monkeypatch.setattr(bridge, "handoff_missing", lambda: [])
+    proc_root = tmp_path / "proc"
+    proc_root.mkdir()
+    return make(proc_root=proc_root, **kwargs)
+
+
+def _fork_runs(ctx: DoctorCtx) -> None:
+    """Fork (pid 200) runs in our prefix, next to a daemon (pid 300)."""
+    from fork_linux import bridge
+
+    _proc(ctx.proc_root, 200, {"WINEPREFIX": str(ctx.paths.prefix)})
+    (ctx.proc_root / "200" / "cmdline").write_bytes(b"C:\\users\\tester\\AppData\\Local\\Fork\\current\\Fork.exe\0")
+    _proc(ctx.proc_root, 300, None)
+    (ctx.proc_root / "300" / "cmdline").write_bytes(bridge.HELPER.encode() + b"\0--daemon\0--handoff-only\0")
+
+
+def _session(ctx: DoctorCtx, record: object = None, *, prefix: str = "", started: object = None) -> None:
+    """``session.json`` of the last launch: ``record`` as its daemon, launched at ``started``."""
+    session: dict[str, Any] = {"prefix": prefix or str(ctx.paths.prefix)}
+    if record is not None:
+        session["bridge"] = record
+    if started is not None:
+        session["started"] = started
+    ctx.paths.session_file.parent.mkdir(parents=True, exist_ok=True)
+    ctx.paths.session_file.write_text(json.dumps(session), encoding="utf-8")
+
+
+def _fell_back(ctx: DoctorCtx, when: str, verb: str = "terminal") -> None:
+    from fork_linux import handoff
+
+    ctx.paths.logs_dir.mkdir(parents=True, exist_ok=True)
+    with open(ctx.paths.logs_dir / handoff.LOG_NAME, "a", encoding="utf-8") as log:
+        log.write(f"{when} {handoff.PROG}[7] {verb}: {handoff.FALLBACK_NOTE}: no daemon in Fork's environment\n")
+
+
+@pytest.mark.parametrize(
+    ("route", "detail"),
+    [
+        ("systemd", "systemd user session: a transient 'systemd-run --user' unit starts Fork's terminals and apps"),
+        ("flatpak", "flatpak-spawn --host: the host helper starts Fork's terminals and apps on the host"),
+        ("", f"{DAEMON_ROUTE}: a hand-off-only daemon starts with Fork"),
+    ],
+)
+def test_desktop_handoff_routes(route: str, detail: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    assert run(_handoff_ctx(tmp_path, monkeypatch, route), "desktop.handoff") == Result("ok", detail)
+
+
+def test_desktop_handoff_route_comes_from_the_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from fork_linux import sandbox
+
+    monkeypatch.setattr(sandbox, "FLATPAK_INFO", tmp_path / "no-flatpak-info")
+    ctx = make(env={"FLATPAK_ID": "io.github.ventura8.ForkLinux"})
+    assert run(ctx, "desktop.handoff").detail.startswith("flatpak-spawn --host: ")
+
+
+def test_desktop_handoff_daemon_route_before_fork_starts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from fork_linux import bridge
+
+    ctx = _handoff_ctx(tmp_path, monkeypatch)
+    monkeypatch.setattr(bridge, "handoff_missing", lambda: [bridge.HELPER])
+    result = run(ctx, "desktop.handoff")
+    assert result.status == "warn"
+    assert result.detail == (
+        f"{DAEMON_ROUTE}: this installation has no fl-bridge-helper: Fork's terminals and apps would run "
+        "inside Wine's process tree"
+    )
+    assert "GTK 3 apps (Tilix, Nemo) may crash" in result.hint
+    assert "scripts/build-bridge.sh" in result.hint
+    ready = bridge.Readiness(True, [], [], (2, 53, 0))
+    monkeypatch.setattr(bridge, "check", lambda _ctx: ready)
+    assert run(ctx, "desktop.handoff") == Result(
+        "ok", f"{DAEMON_ROUTE}: the git bridge daemon starts with Fork and takes the hand-offs"
+    )
+
+
+def test_desktop_handoff_daemon_route_while_fork_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ctx = _handoff_ctx(tmp_path, monkeypatch)
+    _fork_runs(ctx)
+    _session(ctx, {"pid": 300, "port": 4242, "handoff": True})
+    assert run(ctx, "desktop.handoff") == Result("ok", f"{DAEMON_ROUTE}: the hand-off daemon runs (pid 300, port 4242)")
+    git_bridge = {"pid": 300, "port": 4243, "handoff": False}
+    _session(ctx, git_bridge)
+    assert run(ctx, "desktop.handoff").detail == f"{DAEMON_ROUTE}: the git bridge daemon runs (pid 300, port 4243)"
+    for record in ({"pid": 301, "handoff": True}, "not a record"):
+        _session(ctx, record)
+        result = run(ctx, "desktop.handoff")
+        assert result.status == "warn"
+        assert "Fork runs without the launcher's daemon" in result.detail
+        assert "close Fork and start it again with 'fork-linux run'" in result.hint
+        assert "'fork-linux git-bridge status'" in result.hint
+    _session(ctx, git_bridge, prefix="/elsewhere")
+    assert run(ctx, "desktop.handoff").status == "warn", "another prefix's session does not count"
+    ctx.paths.session_file.unlink()
+    assert run(ctx, "desktop.handoff").status == "warn", "no session at all"
+
+
+def test_desktop_handoff_warns_about_a_fallback_since_the_last_launch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = _handoff_ctx(tmp_path, monkeypatch)
+    _fork_runs(ctx)
+    record = {"pid": 300, "port": 4242, "handoff": True}
+    _session(ctx, record, started="2026-10-11T08:00:00+00:00")
+    _fell_back(ctx, "2026-10-11T07:59:59Z")
+    assert run(ctx, "desktop.handoff").status == "ok", "before this launch"
+    _fell_back(ctx, "2026-10-11T08:30:00Z", "open-url")
+    result = run(ctx, "desktop.handoff")
+    assert result.status == "warn"
+    assert result.detail == (
+        f"{DAEMON_ROUTE}: the hand-off daemon runs (pid 300, port 4242); the last hand-off (open-url, "
+        "2026-10-11 08:30:00 UTC) ran inside Wine's process tree: no daemon in Fork's environment"
+    )
+    assert result.hint.startswith("a program started inside Wine's process tree inherits Wine's NoNewPrivs")
+    assert "<logs>/handoff.log" in result.hint
+    # A launch recorded without a time zone is UTC.
+    _session(ctx, record, started="2026-10-11T09:00:00")
+    assert run(ctx, "desktop.handoff").status == "ok"
+
+
+@pytest.mark.parametrize("route", ["systemd", "flatpak"])
+def test_desktop_handoff_fallback_hints_per_route(route: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from datetime import datetime, timezone
+
+    ctx = _handoff_ctx(tmp_path, monkeypatch, route)
+    _fell_back(ctx, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    result = run(ctx, "desktop.handoff")
+    assert result.status == "warn"
+    assert result.detail.startswith(doctor.HANDOFF_ROUTES[route] + ": ")
+    assert result.hint == f"{doctor.HANDOFF_EFFECT}; {doctor.HANDOFF_REMEDY[route]}"
+
+
+def test_desktop_handoff_without_a_recorded_launch_counts_the_last_day(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    ctx = _handoff_ctx(tmp_path, monkeypatch, "systemd")
+    stamp = "%Y-%m-%dT%H:%M:%SZ"
+    _fell_back(ctx, (datetime.now(timezone.utc) - timedelta(days=2)).strftime(stamp))
+    assert run(ctx, "desktop.handoff").status == "ok"
+    _fell_back(ctx, (datetime.now(timezone.utc) - timedelta(hours=2)).strftime(stamp))
+    for started in (None, 12, "not a time"):
+        _session(ctx, started=started)
+        assert run(ctx, "desktop.handoff").status == "warn", started
+
+
 def test_license_reminder() -> None:
     ctx = make()
     assert run(ctx, "license.reminder").detail == "Fork license activations are tied to this Wine prefix"

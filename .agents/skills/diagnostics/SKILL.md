@@ -14,4 +14,7 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 - Text rendering checks: `host.fonts`, `prefix.ui_font` (Selawik; fix step `ui_font`), `prefix.font_replacements`,
   `prefix.font_smoothing` (fix step `registry`). `host.tools` treats zenity / kdialog as alternatives
   (`hostdeps.DIALOG_TOOLS`): one is suggested only when both are missing (kdialog on KDE).
+- `desktop.handoff`: how Fork's terminals and apps leave Wine's process tree (`bridge.handoff_route`; without
+  systemd: the running daemon in `session.json`, else the one the next launch starts) and a warn for a
+  `handoff.log` line newer than the last launch. Only reads: no daemon, no Wine.
 - Host libraries and their package names: `fork_linux.hostdeps` (also used by install.sh and `scripts/check-dep-names.py`).
