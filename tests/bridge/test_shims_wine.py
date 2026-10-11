@@ -186,23 +186,7 @@ class Env:
 
         The std streams are temp files, not pipes: a wineserver or Wine service started
         by this call may inherit them and outlive it, and must not hold the call open.
-        When Wine's own client loses its wineserver socket before the PE printed anything
-        ("wine client error: ... recvmsg: Connection reset by peer", seen in the coverage
-        stage), the PE never ran: the call is made once more.
         """
-        proc = self._run_once(args, stdin=stdin, cwd=cwd, env=env)
-        if not proc.stdout and proc.stderr.startswith(b"wine client error:"):
-            proc = self._run_once(args, stdin=stdin, cwd=cwd, env=env)
-        return proc
-
-    def _run_once(
-        self,
-        args: Sequence[str | Path],
-        *,
-        stdin: bytes,
-        cwd: Path | None,
-        env: dict[str, str] | None,
-    ) -> subprocess.CompletedProcess[bytes]:
         argv = [self.tools.wine, *[str(a) for a in args]]
         proc = self._run_once(argv, stdin, cwd, env)
         if _wine_transport_glitch(proc):
