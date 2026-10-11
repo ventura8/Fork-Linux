@@ -50,6 +50,8 @@ MAIN_GEOMETRY = '{"Left": 40, "Top": 30, "Width": 1500, "Height": 940, "WindowSt
 POLL = 0.4
 # Keys that a closing window can leave pressed on Xvfb's XTEST keyboard.
 STICKY_KEYS = ("alt", "ctrl", "shift", "super", "F4", "Return", "Escape", "Tab")
+# ``xwininfo -root -children`` lines of Wine's unnamed 1x1 helper windows (clipboard, desktop).
+WINE_HELPER_RE = re.compile(r"^\s+(0x[0-9a-f]+) \(has no name\): \(\)\s+1x1\+0\+0", re.MULTILINE)
 
 
 def fork_version() -> str:
@@ -230,6 +232,27 @@ class Screen:
         finally:
             owner.kill()
             owner.wait()
+
+    def clipboard(self) -> str:
+        """The text on the X clipboard (``xclip -o``; empty when nobody owns it), e.g. after Fork's
+        Copy Commit SHA.
+
+        Wine's clipboard thread queues its claim of the X selection (a new 1x1 window, then
+        ``XSetSelectionOwner``) without flushing it: the claim reaches the X server only when an X event
+        wakes that thread. On a desktop the window manager's events when the user switches to the program
+        that pastes do (checked under xfwm4: the owner appears once another window takes the focus); the
+        tier's bare Xvfb sends none, so a property is first set on Wine's unnamed 1x1 helper windows (the
+        clipboard thread's import window among them) to wake it.
+        """
+        for wid in WINE_HELPER_RE.findall(self.x_tool("xwininfo", "-root", "-children")):
+            self.x_tool("xprop", "-id", wid, "-f", "_FL_E2E_WAKE", "8s", "-set", "_FL_E2E_WAKE", "1")
+        time.sleep(0.5)
+        return self.x_tool("xclip", "-o", "-selection", "clipboard")
+
+    def x_tool(self, *argv: str) -> str:
+        """Run an X tool (``xwininfo``, ``xprop``, ``xclip``) on the display; its stdout (never fails)."""
+        result = subprocess.run(list(argv), env=self.env, capture_output=True, text=True, timeout=30, check=False)
+        return result.stdout
 
     def release_keys(self) -> None:
         """Release modifiers and keys a vanished window may have left pressed."""

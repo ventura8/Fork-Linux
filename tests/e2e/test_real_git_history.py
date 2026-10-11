@@ -175,21 +175,26 @@ def _open_tool_window(ui: ForkUI, command: str, file_name: str, pattern: str) ->
 
 
 def test_blame_window_opens_for_a_file(ui: ForkUI, installed: Any) -> None:
-    """Quick Launch > Blame opens the Blame window of a file.
+    """Quick Launch > Blame opens the Blame window of a file; each line names the commit that last
+    changed it (read back with the line's Copy Commit SHA).
 
     Scenarios: G-BLAME
     """
-    repo = _repo(installed, "annotated", {"code.py": "def hello():\n    return 1\n"})
-    (repo / "code.py").write_text("def hello():\n    return 2\n", encoding="utf-8")
+    repo = _repo(installed, "annotated", {"code.py": "def hello():\n    return 1\n# end\n"})
+    first = git(repo, "rev-parse", "HEAD")
+    (repo / "code.py").write_text("def hello():\n    return 2\n# end\n", encoding="utf-8")
     git(repo, "commit", "-qam", "return two", env=dated_env(5))
     ui.open(repo)
     blame = _open_tool_window(ui, "Blame", "code.py", r"^code\.py - Blame$")
+    time.sleep(2)
     installed.screen.screenshot("blame", blame)
-    assert blame.width > 500
+    assert ui.copy_revision_sha(blame, BLAME_ANNOTATION_X, BLAME_LINE_1_Y) == first
+    assert ui.copy_revision_sha(blame, BLAME_ANNOTATION_X, BLAME_LINE_2_Y) == git(repo, "rev-parse", "HEAD")
 
 
 def test_file_history_window_opens(ui: ForkUI, installed: Any) -> None:
-    """Quick Launch > File History opens the history window of a file.
+    """Quick Launch > File History opens the history window of a file: every commit that changed it,
+    newest first (rows read back with Copy Commit SHA).
 
     Scenarios: G-FILE-HISTORY
     """
@@ -199,8 +204,13 @@ def test_file_history_window_opens(ui: ForkUI, installed: Any) -> None:
         git(repo, "commit", "-qam", f"notes {index}", env=dated_env(index + 1))
     ui.open(repo)
     history = _open_tool_window(ui, "File History", "notes.txt", r"^notes\.txt - (File )?History$")
+    time.sleep(2)
     installed.screen.screenshot("file-history", history)
-    assert history.width > 500
+    revisions = git(repo, "log", "--format=%H", "--", "notes.txt").split()
+    assert len(revisions) == 4
+    for row in (0, 1, 3):
+        y = HISTORY_ROW_FIRST + row * HISTORY_ROW_PITCH
+        assert ui.copy_revision_sha(history, HISTORY_ROW_X, y) == revisions[row], f"File History row {row}"
 
 
 def _show_changes_of_top_commit(ui: ForkUI) -> Any:
@@ -354,6 +364,15 @@ def test_large_repository_opens_quickly(ui: ForkUI, installed: Any) -> None:
 
 
 SIDEBAR_SEARCH = (171, 181)
+# Inside the Blame window (1020x720) of test_blame_window_opens_for_a_file: the commit column of line 1
+# and of line 2 (which the inline diff of the newest commit shows below its removed version).
+BLAME_ANNOTATION_X = 250
+BLAME_LINE_1_Y = 112
+BLAME_LINE_2_Y = 145
+# Inside the History window (1020x720): its revision rows (three lines each).
+HISTORY_ROW_X = 200
+HISTORY_ROW_FIRST = 125
+HISTORY_ROW_PITCH = 62
 SELECTION_PROBE_X = 760
 SIDEBAR_FILTER_BOX = (150, 214)
 FILTER_FIRST_BRANCH = (110, 270)

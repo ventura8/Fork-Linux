@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 from fork_driver import git, wait_until
-from fork_ui import STAGE_BUTTON, ForkUI, new_repo
+from fork_ui import REPORT_CLOSE_FROM_BOTTOM, REPORT_CLOSE_FROM_RIGHT, STAGE_BUTTON, ForkUI, new_repo
 
 from fixtures import real_tier
 
@@ -26,9 +26,6 @@ WORKTREE_ENTRY = (120, 270)
 WORKTREE_MENU_DELETE_FROM_BOTTOM = 53
 REPOSITORY_MENU = (107, 16)
 REPOSITORY_MENU_GIT_LFS = 269
-# The Git Error report: its "Skip pre-commit hooks and commit" and Close buttons (from the bottom).
-ERROR_CLOSE_FROM_RIGHT = 48
-ERROR_CLOSE_FROM_BOTTOM = 33
 
 
 def _repo(e2e: Any, name: str, files: dict[str, str] | None = None) -> Path:
@@ -73,10 +70,8 @@ def test_git_flow_initialize(ui: ForkUI, installed: Any) -> None:
     """
     repo = _repo(installed, "gitflow-init")
     ui.open(repo)
-    ui.quick_launch("Git Flow")
-    ui.wait_dialog("Initialize Git Flow")
-    ui.screen.key("Return", settle=3.0)
-    wait_until(lambda: git(repo, "branch", "--list", "develop"), 60, "the develop branch")
+    ui.operate(lambda: ui.quick_dialog("Git Flow", None, "Initialize Git Flow"),
+               lambda: git(repo, "branch", "--list", "develop"), "the develop branch")
     assert git(repo, "config", "gitflow.branch.master") == "main"
     assert git(repo, "config", "gitflow.prefix.feature") == "feature/"
 
@@ -90,23 +85,26 @@ def test_lfs_files_are_committed_as_pointers(ui: ForkUI, installed: Any) -> None
     """
     repo = _repo(installed, "lfs-work")
     window = ui.open(repo)
-    before = ui.screen.windows()
-    ui.screen.click_in(window, *REPOSITORY_MENU)
-    menu = ui.screen.new_window(before, timeout=10)
-    ui.screen.hover(menu.x + 60, menu.y + REPOSITORY_MENU_GIT_LFS, settle=1.0)
-    submenu = ui.screen.new_window([*before, menu], timeout=10)
-    ui.screen.click(submenu.x + 60, submenu.y + 22, settle=3.0)
+    pre_push = repo / ".git" / "hooks" / "pre-push"
+
+    def initialize() -> None:
+        before = ui.screen.windows()
+        ui.screen.click_in(window, *REPOSITORY_MENU)
+        menu = ui.screen.new_window(before, timeout=10)
+        ui.screen.hover(menu.x + 60, menu.y + REPOSITORY_MENU_GIT_LFS, settle=1.0)
+        submenu = ui.screen.new_window([*before, menu], timeout=10)
+        ui.screen.click(submenu.x + 60, submenu.y + 22, settle=3.0)
+
+    ui.operate(initialize, lambda: pre_push.is_file() and "lfs" in pre_push.read_text(encoding="utf-8"),
+               "git lfs install's hooks")
     ui.dismiss_dialogs()
-    wait_until(lambda: "lfs" in (repo / ".git" / "hooks" / "pre-push").read_text(encoding="utf-8")
-               if (repo / ".git" / "hooks" / "pre-push").is_file() else None, 60, "git lfs install's hooks")
     (repo / ".gitattributes").write_text("*.bin filter=lfs diff=lfs merge=lfs -text\n", encoding="utf-8")
     (repo / "data.bin").write_bytes(os.urandom(4096))
     ui.refresh()
     ui.local_changes()
     ui.stage_all_by_double_click(repo, 2)
     assert "data.bin" in git(repo, "diff", "--cached", "--name-only")
-    ui.commit("add an lfs file")
-    wait_until(lambda: git(repo, "log", "-1", "--format=%s") == "add an lfs file" or None, 60, "the commit")
+    ui.commit_and_wait(repo, "add an lfs file")
     pointer = git(repo, "show", "HEAD:data.bin")
     assert pointer.startswith("version https://git-lfs.github.com/spec/v1"), pointer[:80]
     oid = next(line.split(":", 1)[1] for line in pointer.splitlines() if line.startswith("oid sha256:"))
@@ -130,9 +128,12 @@ def test_failing_builtin_hook_blocks_the_commit_with_bundled_git(ui: ForkUI, ins
     ui.local_changes()
     ui.click(ui.unstaged_row(0))
     ui.click(STAGE_BUTTON)
+    wait_until(lambda: git(repo, "diff", "--cached", "--name-only") == "a.txt" or None, 30, "a.txt to be staged")
     ui.commit("must be blocked")
     error = ui.wait_dialog("Git Error", timeout=60)
     ui.screen.screenshot("hook-bundled-error", error)
+    assert "builtin hook says no" in ui.dialog_text(error), "Fork's Git Error must show the hook's message"
     assert git(repo, "rev-parse", "HEAD") == head
-    ui.screen.click_in(error, error.width - ERROR_CLOSE_FROM_RIGHT, error.height - ERROR_CLOSE_FROM_BOTTOM)
+    # The Git Error report closes like the Merge Conflict report (same layout).
+    ui.screen.click_in(error, error.width - REPORT_CLOSE_FROM_RIGHT, error.height - REPORT_CLOSE_FROM_BOTTOM)
     ui.wait_no_dialog()

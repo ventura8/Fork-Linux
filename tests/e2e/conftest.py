@@ -97,6 +97,7 @@ MODULE_ORDER = (
     "test_real_git_remotes.py",
     "test_git_ops_remote_ssh.py",
     "test_real_git_advanced.py",
+    "test_git_ops_local.py",
     "test_real_integration.py",
     "test_real_display.py",
     "test_real_bridge.py",

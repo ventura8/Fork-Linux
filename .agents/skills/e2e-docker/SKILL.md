@@ -49,6 +49,12 @@ scripts/e2e-docker.sh --name shim --image fork-linux-ci-bridge:26.04 shell -- ba
   auth, sshd on a high port), `remote_ops.py` (bare remotes, Fetch / Pull / Push, tags, credential
   prompts and Clone, shared by the bundled-git and bridge modules). A failed test leaves
   `failed-<test>.png` in the shots directory.
+- Drive a Fork operation through `ForkUI.operate(start, done, what)`: it waits until native git
+  shows the effect and, when Fork reports Wine's failed start of its git (`Win32Exception ...
+  0x2db ... StartWithCreateProcess`, README "Known Wine limitations"), closes the report and runs
+  the step once more; any other Git Error fails at once with Fork's text. `Screen.clipboard()`
+  reads what Fork copied (Copy Commit SHA): it first wakes Wine's clipboard thread, whose claim of
+  the X selection a bare Xvfb never flushes.
 - Every test names its scenarios on a `Scenarios: ID, ...` docstring line; the registry is
   `tests/e2e/scenarios.json` (`python3 scripts/gen-scenarios-doc.py validate` / `write`).
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from fork_driver import DriverError, Fork, Window, fork_pids, git, wait_until
@@ -36,6 +37,8 @@ COMMIT_BUTTON = (1405, 911)
 # The hover buttons of a diff hunk (shown while the pointer is inside the hunk).
 HUNK_STAGE = (1369, 158)
 HUNK_DISCARD = (1430, 158)
+# A hunk of a staged file has one hover button: Unstage.
+HUNK_UNSTAGE = (1431, 156)
 # Line staging: a click in the diff's gutter selects that line; the change block's Stage button
 # (bottom right of the block) then stages the selected lines only.
 DIFF_GUTTER_X = 575
@@ -65,6 +68,32 @@ CHANGES_TAB = (450, 534)
 STAGE_ATTEMPTS = 3
 # Fork's AskPass window (520x185, titled with the repository's name): its text field.
 ASKPASS_FIELD = (335, 91)
+# The context menu of a revision in the Blame and History windows: "Copy Commit SHA" (from the bottom).
+REVISION_MENU_COPY_SHA = 46
+SHA_RE = re.compile(r"[0-9a-f]{40}")
+# A commit that has not happened this long after Ctrl+Enter is typed once more (see commit_and_wait).
+COMMIT_RETRY_AFTER = 20.0
+# The Close button of the Merge Conflict report (its text keeps the focus), from its bottom-right corner.
+REPORT_CLOSE_FROM_RIGHT = 48
+REPORT_CLOSE_FROM_BOTTOM = 33
+# Fork's "Git Error" report: a blank point of its text box (clear of the links git's output may hold).
+# Under Wine, Fork's start of a git process now and then fails ("Win32Exception (0x80004005): Unknown
+# error (0x2db) at ... StartWithCreateProcess", README "Known Wine limitations"); nothing ran, so a user
+# (and :meth:`ForkUI.operate`) tries once more.
+GIT_ERROR_TITLE = "Git Error"
+GIT_ERROR_TEXT = (650, 240)
+SPAWN_FAILURE = "StartWithCreateProcess"
+OPERATION_ATTEMPTS = 2
+# While a merge stops on a conflict Fork shows a banner: its Abort button (from the window's right edge).
+MERGE_BANNER_ABORT = (-37, 107)
+
+
+class GitErrorReported(DriverError):
+    """Fork showed a Git Error that is not Wine's failed start of a git process."""
+
+
+class SpawnFailures(DriverError):
+    """Wine failed to start Fork's git on every attempt of an operation."""
 
 
 class ForkUI:
@@ -120,6 +149,32 @@ class ForkUI:
     def wait_no_dialog(self, timeout: float = 60) -> None:
         """Wait until every dialog has closed (the operation was accepted)."""
         wait_until(lambda: not self.dialogs(), timeout, "Fork's dialog to close")
+
+    def accept(self, title: str) -> None:
+        """Wait for Fork's dialog ``title``, press its default button and wait for that dialog to close."""
+        self.answer(title)
+
+    def answer(self, title: str, text: str | None = None, *, replace: bool = False) -> None:
+        """Wait for Fork's dialog ``title``, type ``text`` into its focused field (``replace``: over what it
+        holds), press its default button and wait for that dialog (only) to close."""
+        dialog = self.wait_dialog(title)
+        if replace:
+            self.screen.key("ctrl+a")
+        if text is not None:
+            self.screen.type(text)
+        self.screen.key("Return", settle=1.0)
+        self.screen.wait_gone(dialog, timeout=60)
+
+    def quick_dialog(self, command: str, pick: str | None, title: str, text: str | None = None, *,
+                     replace: bool = False) -> None:
+        """A Quick Launch command whose dialog ``title`` is answered (:meth:`answer`)."""
+        self.quick_launch(command, pick)
+        self.answer(title, text, replace=replace)
+
+    def shortcut_dialog(self, keys: str, title: str, text: str | None = None) -> None:
+        """A shortcut (``ctrl+shift+b``...) whose dialog ``title`` is answered (:meth:`answer`)."""
+        self.keys(keys, settle=1.0)
+        self.answer(title, text)
 
     # -- keyboard paths ---------------------------------------------------------------------------
 
@@ -241,12 +296,16 @@ class ForkUI:
             self._double_click_until_staged(repo, staged)
 
     def _double_click_until_staged(self, repo: Path, staged: int) -> None:
+        def done() -> bool:
+            return len(git(repo, "diff", "--cached", "--name-only").split()) >= staged
+
         for attempt in range(1, STAGE_ATTEMPTS + 1):
-            self.click(self.unstaged_row(0), repeat=2)
             try:
-                wait_until(lambda: len(git(repo, "diff", "--cached", "--name-only").split()) >= staged or None,
-                           20, f"{staged} staged file(s)")
+                self.operate(lambda: self.click(self.unstaged_row(0), repeat=2), done, f"{staged} staged file(s)",
+                             timeout=20)
                 return
+            except (GitErrorReported, SpawnFailures):
+                raise
             except DriverError:
                 if attempt == STAGE_ATTEMPTS:
                     raise
@@ -259,6 +318,95 @@ class ForkUI:
         self.click(COMMIT_SUBJECT)
         time.sleep(0.8)
         self.screen.key("ctrl+Return", settle=1.5)
+
+    def operate(self, start: Callable[[], object], done: Callable[[], object], what: str,
+                timeout: float = 60) -> None:
+        """Run a Fork operation (``start``: open its dialog, answer it...) and wait until ``done`` (native git
+        shows its effect).
+
+        When Fork reports that Wine could not start its git process, the report is closed and the operation
+        started once more, as a user would; any other Git Error fails at once with Fork's text.
+        """
+        for attempt in range(1, OPERATION_ATTEMPTS + 1):
+            start()
+            outcome = wait_until(lambda: ("done" if done() else None) or self._git_error(), timeout, what)
+            if outcome == "done":
+                return
+            self.screen.screenshot(f"spawn-failure-{attempt}")
+        raise SpawnFailures(f"Wine could not start Fork's git {OPERATION_ATTEMPTS} times: {what}")
+
+    def _git_error(self) -> str | None:
+        """None while Fork shows no Git Error; "spawn" after closing a report of Wine's failed git start."""
+        report = self.screen.find(GIT_ERROR_TITLE)
+        if report is None:
+            return None
+        text = self.dialog_text(report)
+        self.screen.click_in(report, report.width - REPORT_CLOSE_FROM_RIGHT, report.height - REPORT_CLOSE_FROM_BOTTOM)
+        self.screen.wait_gone(report)
+        if SPAWN_FAILURE not in text:
+            raise GitErrorReported(f"Fork reported a git error: {text.strip()}")
+        return "spawn"
+
+    def dialog_text(self, dialog: Window) -> str:
+        """The text of a Fork report (Git Error): select all of it in its text box, copy, read the clipboard."""
+        self.screen.click_in(dialog, *GIT_ERROR_TEXT, settle=0.5)
+        self.screen.key("ctrl+a", "ctrl+c", settle=0.8)
+        return self.screen.clipboard()
+
+    def merge_into_conflict(self, branch: str) -> None:
+        """Merge ``branch`` (Quick Launch) where it conflicts, and close Fork's Merge Conflict report."""
+        self.quick_launch("Merge", branch)
+        self.accept("Merge Branch")
+        report = self.wait_dialog("Merge Conflict", timeout=60)
+        self.screen.click_in(report, report.width - REPORT_CLOSE_FROM_RIGHT, report.height - REPORT_CLOSE_FROM_BOTTOM)
+        self.wait_no_dialog()
+
+    def copy_revision_sha(self, window: Window, dx: int, dy: int) -> str:
+        """Copy Commit SHA from the context menu of the revision at an offset of a Blame or History window;
+        the SHA the X clipboard then holds (it must differ from what the clipboard held before)."""
+        before_text = self.screen.clipboard().strip()
+        before = self.screen.windows()
+        self.screen.click_in(window, dx, dy, button=3, settle=0.3)
+        menu = self.screen.new_window(before, timeout=10)
+        time.sleep(0.4)
+        self.screen.click(menu.x + MENU_TEXT_X, menu.y + menu.height - REVISION_MENU_COPY_SHA, settle=1.0)
+
+        def copied() -> str | None:
+            text = self.screen.clipboard().strip()
+            return text if text != before_text and SHA_RE.fullmatch(text) else None
+
+        return wait_until(copied, 20, "a new commit SHA on the clipboard")
+
+    def commit_and_wait(self, repo: Path, subject: str, description: str = "", *, amend: bool = False) -> None:
+        """Commit (:meth:`commit`) and wait until git's last commit has ``subject``.
+
+        Right after files are staged Fork still redraws Local Changes; a click on the commit box that
+        lands meanwhile leaves the keyboard in the file list, where the message's first space opens
+        Fork's Quick Look preview instead (seen with an LFS file). When no commit follows within
+        :data:`COMMIT_RETRY_AFTER` seconds, the preview is closed and the message typed once more (the
+        Amend box keeps its state). A commit that was only slow still counts: nothing is staged any more,
+        so the second Ctrl+Enter does nothing.
+        """
+        def committed() -> bool:
+            return git(repo, "log", "-1", "--format=%s", check=False) == subject
+
+        toggle_amend = [amend]
+
+        def start() -> None:
+            # The Amend box is clicked once: a retried commit finds it as the first attempt left it.
+            self.commit(subject, description, amend=toggle_amend.pop() if toggle_amend else False)
+
+        what = f"the commit {subject!r} in {repo.name}"
+        try:
+            self.operate(start, committed, what, timeout=COMMIT_RETRY_AFTER)
+            return
+        except (GitErrorReported, SpawnFailures):
+            raise
+        except DriverError:
+            self.screen.screenshot(f"commit-retry-{repo.name}")
+        self.screen.key("Escape", settle=0.8)
+        self.dismiss_dialogs()
+        self.operate(start, committed, what)
 
     def commit(self, subject: str, description: str = "", *, amend: bool = False) -> None:
         """Type a commit message in the Local Changes view and commit (Ctrl+Enter)."""
@@ -277,6 +425,21 @@ def wait_git(repo: Path, args: tuple[str, ...], expected: str, timeout: float = 
     """Wait until ``git ARGS`` in ``repo`` prints ``expected`` (Fork runs git in the background)."""
     return wait_until(lambda: git(repo, *args, check=False) == expected and expected or None, timeout,
                       f"git {' '.join(args)} == {expected!r} in {repo.name}")
+
+
+def conflicting_branches(repo: Path) -> tuple[str, str]:
+    """``main`` and ``other`` both change line 2 of ``shared.txt`` (which the repository must hold as
+    ``line 1..3``); ``main`` is checked out. Their commits, main's first."""
+    git(repo, "checkout", "-q", "-b", "other")
+    other = _commit_shared(repo, "line 2 other", "other edits line 2", 1)
+    git(repo, "checkout", "-q", "main")
+    return _commit_shared(repo, "line 2 main", "main edits line 2", 2), other
+
+
+def _commit_shared(repo: Path, line: str, message: str, index: int) -> str:
+    (repo / "shared.txt").write_text(f"line 1\n{line}\nline 3\n", encoding="utf-8")
+    git(repo, "commit", "-qam", message, env=dated_env(index))
+    return git(repo, "rev-parse", "HEAD")
 
 
 def wait_ref(repo: Path, ref: str, timeout: float = 60) -> str:

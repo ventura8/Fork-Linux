@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 from fork_driver import git, wait_until
-from fork_ui import ForkUI, dated_env, linear_history, new_repo, wait_ref
+from fork_ui import ForkUI, conflicting_branches, dated_env, linear_history, new_repo, wait_ref
 
 from fixtures import real_tier
 
@@ -26,9 +26,6 @@ FIRST_STASH = (80, 356)
 STASH_MENU_APPLY = 24
 STASH_MENU_DELETE_FROM_BOTTOM = 21
 APPLY_DELETE_AFTER_BOX = (203, 107)
-# The Close button of the Merge Conflict report, from its bottom-right corner.
-CLOSE_FROM_RIGHT = 48
-CLOSE_FROM_BOTTOM = 33
 # With a merge in progress Fork shows a banner: the Unstaged list moves down by its height.
 CONFLICTED_FILE = (420, 186)
 OPEN_IN_MERGER = (1026, 374)
@@ -57,21 +54,22 @@ def _current(repo: Path) -> str:
     return git(repo, "branch", "--show-current")
 
 
-def _accept(ui: ForkUI, title: str) -> None:
-    """Wait for Fork's dialog ``title``, press its default button and wait for that dialog to close."""
-    dialog = ui.wait_dialog(title)
-    ui.screen.key("Return", settle=1.0)
-    ui.screen.wait_gone(dialog, timeout=60)
+def _checkout(ui: ForkUI, repo: Path, branch: str) -> None:
+    """Checkout Branch (Quick Launch); Fork asks first only when there are local changes."""
+
+    def start() -> None:
+        ui.quick_launch("Checkout Branch", branch)
+        try:
+            ui.wait_dialog("Checkout Branch", timeout=5)
+        except AssertionError:
+            return
+        ui.accept("Checkout Branch")
+
+    ui.operate(start, lambda: _current(repo) == branch, f"the checkout of {branch}")
 
 
-def _accept_if_asked(ui: ForkUI, title: str) -> None:
-    """Fork asks before a checkout only when there are local changes; answer when it does."""
-    try:
-        ui.wait_dialog(title, timeout=5)
-    except AssertionError:
-        return
-    ui.screen.key("Return", settle=1.0)
-    ui.wait_no_dialog()
+def _has(repo: Path, ref: str) -> bool:
+    return bool(git(repo, "rev-parse", "--verify", "--quiet", ref, check=False))
 
 
 def test_branch_create_checkout_rename_delete(ui: ForkUI, installed: Any) -> None:
@@ -82,29 +80,16 @@ def test_branch_create_checkout_rename_delete(ui: ForkUI, installed: Any) -> Non
     repo = _repo(installed, "branches")
     head = linear_history(repo, 2)[-1]
     ui.open(repo)
-    ui.keys("ctrl+shift+b", settle=1.0)
-    ui.wait_dialog("Create Branch")
-    ui.screen.type("topic")
-    ui.screen.key("Return", settle=1.0)
-    ui.wait_no_dialog()
+    ui.operate(lambda: ui.shortcut_dialog("ctrl+shift+b", "Create Branch", "topic"),
+               lambda: _has(repo, "refs/heads/topic"), "the branch topic")
     assert wait_ref(repo, "refs/heads/topic") == head
     assert _current(repo) == "main"
-    ui.quick_launch("Checkout Branch", "topic")
-    _accept_if_asked(ui, "Checkout Branch")
-    wait_until(lambda: _current(repo) == "topic", 60, "the checkout of topic")
-    ui.quick_launch("Rename Branch", "topic")
-    ui.wait_dialog("Rename Local Branch")
-    ui.screen.key("ctrl+a")
-    ui.screen.type("renamed")
-    ui.screen.key("Return", settle=1.0)
-    ui.wait_no_dialog()
-    wait_until(lambda: _current(repo) == "renamed", 60, "the rename of topic")
-    ui.quick_launch("Checkout Branch", "main")
-    _accept_if_asked(ui, "Checkout Branch")
-    wait_until(lambda: _current(repo) == "main", 60, "the checkout of main")
-    ui.quick_launch("Delete Branch", "renamed")
-    _accept(ui, "Delete Branch")
-    wait_until(lambda: not git(repo, "branch", "--list", "renamed"), 60, "the deletion of renamed")
+    _checkout(ui, repo, "topic")
+    ui.operate(lambda: ui.quick_dialog("Rename Branch", "topic", "Rename Local Branch", "renamed", replace=True),
+               lambda: _current(repo) == "renamed", "the rename of topic")
+    _checkout(ui, repo, "main")
+    ui.operate(lambda: ui.quick_dialog("Delete Branch", "renamed", "Delete Branch"),
+               lambda: not git(repo, "branch", "--list", "renamed"), "the deletion of renamed")
 
 
 def test_merge_a_branch(ui: ForkUI, installed: Any) -> None:
@@ -118,9 +103,8 @@ def test_merge_a_branch(ui: ForkUI, installed: Any) -> None:
     git(repo, "checkout", "-q", "main")
     main = _commit(repo, "main.txt", "main\n", "main work", 2)
     ui.open(repo)
-    ui.quick_launch("Merge", "feature")
-    _accept(ui, "Merge Branch")
-    wait_until(lambda: git(repo, "rev-parse", "HEAD") != main, 60, "the merge commit")
+    ui.operate(lambda: ui.quick_dialog("Merge", "feature", "Merge Branch"),
+               lambda: git(repo, "rev-parse", "HEAD") != main, "the merge commit")
     parents = git(repo, "rev-list", "--parents", "-n", "1", "HEAD").split()
     assert parents[1:] == [main, feature]
     assert (repo / "feature.txt").is_file()
@@ -136,11 +120,9 @@ def test_rebase_onto_a_branch(ui: ForkUI, installed: Any) -> None:
     git(repo, "checkout", "-q", "-b", "topic", "HEAD~1")
     _commit(repo, "topic.txt", "topic\n", "topic work", 2)
     ui.open(repo)
-    ui.quick_launch("Rebase", "main")
-    _accept(ui, "Rebase")
     rebasing = repo / ".git" / "rebase-merge"
-    wait_until(lambda: not rebasing.exists() and git(repo, "rev-parse", "topic~1") == main, 60,
-               "topic to sit on main")
+    ui.operate(lambda: ui.quick_dialog("Rebase", "main", "Rebase"),
+               lambda: not rebasing.exists() and git(repo, "rev-parse", "topic~1") == main, "topic to sit on main")
     assert git(repo, "log", "-1", "--format=%s", "topic") == "topic work"
     assert _current(repo) == "topic"
 
@@ -188,9 +170,8 @@ def test_cherry_pick_a_commit(ui: ForkUI, installed: Any) -> None:
     ui.open(repo)
     ui.all_commits()
     ui.screen.screenshot("cherry-list")
-    ui.commit_menu(0, "cherry_pick")
-    _accept(ui, "Cherry Pick")
-    wait_until(lambda: git(repo, "rev-parse", "HEAD~1") == main, 60, "the cherry-picked commit")
+    ui.operate(lambda: _menu_dialog(ui, 0, "cherry_pick", "Cherry Pick"),
+               lambda: git(repo, "rev-parse", "HEAD~1") == main, "the cherry-picked commit")
     assert git(repo, "log", "-1", "--format=%s") == "commit to pick"
     assert (repo / "picked.txt").read_text(encoding="utf-8") == "picked\n"
 
@@ -204,9 +185,8 @@ def test_revert_a_commit(ui: ForkUI, installed: Any) -> None:
     added = _commit(repo, "added.txt", "added\n", "add a file", 1)
     ui.open(repo)
     ui.all_commits()
-    ui.commit_menu(0, "revert")
-    _accept(ui, "Revert")
-    wait_until(lambda: git(repo, "rev-parse", "HEAD~1") == added, 60, "the revert commit")
+    ui.operate(lambda: _menu_dialog(ui, 0, "revert", "Revert"),
+               lambda: git(repo, "rev-parse", "HEAD~1") == added, "the revert commit")
     assert git(repo, "log", "-1", "--format=%s").startswith("Revert")
     assert not (repo / "added.txt").exists()
 
@@ -220,9 +200,8 @@ def test_reset_the_branch(ui: ForkUI, installed: Any) -> None:
     shas = linear_history(repo, 3)
     ui.open(repo)
     ui.all_commits()
-    ui.commit_menu(2, "reset")
-    _accept(ui, "Reset Current Branch to Revision")
-    wait_until(lambda: git(repo, "rev-parse", "main") == shas[0], 60, "main to move back")
+    ui.operate(lambda: _menu_dialog(ui, 2, "reset", "Reset Current Branch to Revision"),
+               lambda: git(repo, "rev-parse", "main") == shas[0], "main to move back")
     assert (repo / "log.txt").read_text(encoding="utf-8") == "entry 0\nentry 1\nentry 2\n"
     assert git(repo, "status", "--porcelain") == " M log.txt"
 
@@ -235,13 +214,9 @@ def test_create_a_tag(ui: ForkUI, installed: Any) -> None:
     repo = _repo(installed, "tagging")
     head = linear_history(repo, 1)[-1]
     ui.open(repo)
-    ui.keys("ctrl+shift+g", settle=1.0)
-    ui.wait_dialog("Create Tag")
-    ui.screen.type("v1.0.0")
-    ui.screen.key("Return", settle=1.0)
-    ui.wait_no_dialog()
-    assert wait_until(lambda: git(repo, "rev-parse", "--verify", "--quiet", "v1.0.0^{commit}", check=False), 60,
-                      "the tag") == head
+    ui.operate(lambda: ui.shortcut_dialog("ctrl+shift+g", "Create Tag", "v1.0.0"),
+               lambda: _has(repo, "v1.0.0^{commit}"), "the tag")
+    assert git(repo, "rev-parse", "v1.0.0^{commit}") == head
 
 
 def _stash_menu(ui: ForkUI, from_top: int | None = None, from_bottom: int | None = None) -> None:
@@ -253,6 +228,17 @@ def _stash_menu(ui: ForkUI, from_top: int | None = None, from_bottom: int | None
     ui.screen.click(menu.x + 40, y, settle=1.0)
 
 
+def _menu_dialog(ui: ForkUI, row: int, item: str, title: str) -> None:
+    """A commit menu item whose dialog ``title`` is accepted."""
+    ui.commit_menu(row, item)
+    ui.accept(title)
+
+
+def _save_stash(ui: ForkUI, repo: Path, message: str) -> None:
+    ui.operate(lambda: ui.shortcut_dialog("ctrl+shift+h", "Save stash", message),
+               lambda: message in git(repo, "stash", "list"), f"the stash {message!r}")
+
+
 def test_stash_save_apply_pop_drop(ui: ForkUI, installed: Any) -> None:
     """Save Stash (Ctrl+Shift+H), Apply, Delete, and Apply with "delete after applying" (pop).
 
@@ -260,40 +246,42 @@ def test_stash_save_apply_pop_drop(ui: ForkUI, installed: Any) -> None:
     """
     repo = _repo(installed, "stashing", {"a.txt": "a\n"})
     (repo / "a.txt").write_text("stashed change\n", encoding="utf-8")
+    stashed = repo / "a.txt"
     ui.open(repo)
-    ui.keys("ctrl+shift+h", settle=1.0)
-    ui.wait_dialog("Save stash")
-    ui.screen.type("first stash")
-    ui.screen.key("Return", settle=1.0)
-    ui.wait_no_dialog()
-    wait_until(lambda: "first stash" in git(repo, "stash", "list"), 60, "the stash")
+    _save_stash(ui, repo, "first stash")
     assert git(repo, "status", "--porcelain") == ""
     ui.all_commits()
-    _stash_menu(ui, from_top=STASH_MENU_APPLY)
-    ui.screen.screenshot("stash-apply-dialog")
-    _accept(ui, "Apply Stash")
-    wait_until(lambda: (repo / "a.txt").read_text(encoding="utf-8") == "stashed change\n", 60, "the applied stash")
+
+    def apply() -> None:
+        _stash_menu(ui, from_top=STASH_MENU_APPLY)
+        ui.screen.screenshot("stash-apply-dialog")
+        ui.accept("Apply Stash")
+
+    ui.operate(apply, lambda: stashed.read_text(encoding="utf-8") == "stashed change\n", "the applied stash")
     assert "first stash" in git(repo, "stash", "list")
     git(repo, "checkout", "--", "a.txt")
-    _stash_menu(ui, from_bottom=STASH_MENU_DELETE_FROM_BOTTOM)
-    ui.screen.screenshot("stash-delete-dialog")
-    ui.screen.key("Return", settle=1.0)
-    ui.wait_no_dialog()
-    wait_until(lambda: git(repo, "stash", "list") == "", 60, "the stash to be dropped")
-    (repo / "a.txt").write_text("stashed change\n", encoding="utf-8")
-    ui.keys("ctrl+shift+h", settle=1.0)
-    ui.wait_dialog("Save stash")
-    ui.screen.type("second stash")
-    ui.screen.key("Return", settle=1.0)
-    ui.wait_no_dialog()
-    wait_until(lambda: "second stash" in git(repo, "stash", "list"), 60, "the second stash")
-    _stash_menu(ui, from_top=STASH_MENU_APPLY)
-    dialog = ui.wait_dialog("Apply Stash")
-    ui.screen.click_in(dialog, *APPLY_DELETE_AFTER_BOX)
-    ui.screen.screenshot("stash-pop-dialog", dialog)
-    ui.screen.key("Return", settle=1.0)
-    ui.wait_no_dialog()
-    wait_until(lambda: git(repo, "stash", "list") == "", 60, "the popped stash to be gone")
+
+    def drop() -> None:
+        _stash_menu(ui, from_bottom=STASH_MENU_DELETE_FROM_BOTTOM)
+        ui.screen.screenshot("stash-delete-dialog")
+        ui.accept("Delete Stash")
+
+    ui.operate(drop, lambda: git(repo, "stash", "list") == "", "the stash to be dropped")
+    stashed.write_text("stashed change\n", encoding="utf-8")
+    _save_stash(ui, repo, "second stash")
+    tick_delete_after = [True]
+
+    def pop() -> None:
+        _stash_menu(ui, from_top=STASH_MENU_APPLY)
+        dialog = ui.wait_dialog("Apply Stash")
+        if tick_delete_after:
+            # Ticked once: a retried pop finds the box as the first attempt left it.
+            ui.screen.click_in(dialog, *APPLY_DELETE_AFTER_BOX)
+            tick_delete_after.clear()
+        ui.screen.screenshot("stash-pop-dialog", dialog)
+        ui.accept("Apply Stash")
+
+    ui.operate(pop, lambda: git(repo, "stash", "list") == "", "the popped stash to be gone")
     assert (repo / "a.txt").read_text(encoding="utf-8") == "stashed change\n"
 
 
@@ -303,17 +291,9 @@ def test_conflict_resolution_in_forks_merger(ui: ForkUI, installed: Any) -> None
     Scenarios: G-CONFLICT-MERGER
     """
     repo = _repo(installed, "conflict", {"shared.txt": "line 1\nline 2\nline 3\n"})
-    git(repo, "checkout", "-q", "-b", "other")
-    other = _commit(repo, "shared.txt", "line 1\nline 2 other\nline 3\n", "other edits line 2", 1)
-    git(repo, "checkout", "-q", "main")
-    main = _commit(repo, "shared.txt", "line 1\nline 2 main\nline 3\n", "main edits line 2", 2)
+    main, other = conflicting_branches(repo)
     ui.open(repo)
-    ui.quick_launch("Merge", "other")
-    _accept(ui, "Merge Branch")
-    # The Merge Conflict report keeps the focus in its text: its Close button is clicked.
-    report = ui.wait_dialog("Merge Conflict", timeout=60)
-    ui.screen.click_in(report, report.width - CLOSE_FROM_RIGHT, report.height - CLOSE_FROM_BOTTOM)
-    ui.wait_no_dialog()
+    ui.merge_into_conflict("other")
     assert (repo / ".git" / "MERGE_HEAD").is_file()
     ui.local_changes()
     ui.click(CONFLICTED_FILE)
@@ -324,7 +304,6 @@ def test_conflict_resolution_in_forks_merger(ui: ForkUI, installed: Any) -> None
     ui.screen.click_in(merger, *MERGER_RESOLVE, settle=1.5)
     ui.wait_no_dialog()
     wait_until(lambda: "UU" not in git(repo, "status", "--porcelain"), 60, "the conflict to be resolved")
-    ui.commit_subject_and_commit()
-    wait_until(lambda: not (repo / ".git" / "MERGE_HEAD").exists(), 60, "the merge commit")
+    ui.operate(ui.commit_subject_and_commit, lambda: not (repo / ".git" / "MERGE_HEAD").exists(), "the merge commit")
     assert git(repo, "rev-list", "--parents", "-n", "1", "HEAD").split()[1:] == [main, other]
     assert (repo / "shared.txt").read_text(encoding="utf-8") == "line 1\nline 2 main\nline 3\n"

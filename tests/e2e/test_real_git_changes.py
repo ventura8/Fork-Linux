@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fork_driver import git, wait_until
+from fork_driver import git
 from fork_ui import (
     DIFF_GUTTER_X,
     HUNK_DISCARD,
@@ -47,8 +47,25 @@ def _cached(repo: Path) -> str:
     return git(repo, "diff", "--cached", "--name-only")
 
 
-def _wait_cached(repo: Path, expected: str) -> None:
-    wait_until(lambda: _cached(repo) == expected or None, 30, f"the index to hold {expected!r}")
+def _stage_first(ui: ForkUI, repo: Path, expected: str) -> None:
+    """Select the first Unstaged file and press Stage; the index then holds ``expected``."""
+
+    def start() -> None:
+        ui.click(ui.unstaged_row(0))
+        ui.click(STAGE_BUTTON)
+
+    ui.operate(start, lambda: _cached(repo) == expected, f"the index to hold {expected!r}")
+
+
+def _hunk_button(ui: ForkUI, window: Any, point: tuple[int, int], button: tuple[int, int],
+                 select: tuple[int, int] | None = None) -> None:
+    """Select the first Unstaged file, optionally a line of its diff, hover a point of the diff and press
+    one of the hover buttons."""
+    ui.click(ui.unstaged_row(0))
+    if select is not None:
+        ui.click(select)
+    ui.screen.hover(*window.point(*point))
+    ui.click(button)
 
 
 def test_stage_and_unstage_a_file(ui: ForkUI, installed: Any) -> None:
@@ -61,13 +78,14 @@ def test_stage_and_unstage_a_file(ui: ForkUI, installed: Any) -> None:
     (repo / "b.txt").write_text("b changed\n", encoding="utf-8")
     ui.open(repo)
     ui.local_changes()
-    ui.click(ui.unstaged_row(0))
-    ui.click(STAGE_BUTTON)
-    _wait_cached(repo, "a.txt")
+    _stage_first(ui, repo, "a.txt")
     installed.screen.screenshot("stage-file")
-    ui.click(ui.staged_row(0))
-    ui.click(UNSTAGE_BUTTON)
-    _wait_cached(repo, "")
+
+    def unstage() -> None:
+        ui.click(ui.staged_row(0))
+        ui.click(UNSTAGE_BUTTON)
+
+    ui.operate(unstage, lambda: _cached(repo) == "", "the index to be empty")
     assert git(repo, "status", "--porcelain").splitlines() == [" M a.txt", " M b.txt"]
 
 
@@ -81,11 +99,9 @@ def test_stage_one_hunk(ui: ForkUI, installed: Any) -> None:
                                 encoding="utf-8")
     window = ui.open(repo)
     ui.local_changes()
-    ui.click(ui.unstaged_row(0))
-    installed.screen.hover(*window.point(*FIRST_HUNK_POINT))
-    installed.screen.screenshot("stage-hunk-hover")
-    ui.click(HUNK_STAGE)
-    wait_until(lambda: "line 3 changed" in git(repo, "diff", "--cached"), 30, "the first hunk to be staged")
+    ui.operate(lambda: _hunk_button(ui, window, FIRST_HUNK_POINT, HUNK_STAGE),
+               lambda: "line 3 changed" in git(repo, "diff", "--cached"), "the first hunk to be staged")
+    installed.screen.screenshot("stage-hunk")
     staged = git(repo, "diff", "--cached")
     assert "line 35 changed" not in staged
     assert "line 35 changed" in git(repo, "diff")
@@ -100,12 +116,10 @@ def test_stage_one_line(ui: ForkUI, installed: Any) -> None:
     (repo / "a.txt").write_text("one\nfirst added\nsecond added\ntwo\n", encoding="utf-8")
     window = ui.open(repo)
     ui.local_changes()
-    ui.click(ui.unstaged_row(0))
-    ui.click((DIFF_GUTTER_X, FIRST_ADDED_LINE_Y))
-    installed.screen.hover(*window.point(FIRST_HUNK_POINT[0], FIRST_ADDED_LINE_Y))
-    installed.screen.screenshot("stage-line-selected")
-    ui.click(BLOCK_STAGE)
-    wait_until(lambda: "first added" in git(repo, "diff", "--cached"), 30, "the selected line to be staged")
+    ui.operate(lambda: _hunk_button(ui, window, (FIRST_HUNK_POINT[0], FIRST_ADDED_LINE_Y), BLOCK_STAGE,
+                                    select=(DIFF_GUTTER_X, FIRST_ADDED_LINE_Y)),
+               lambda: "first added" in git(repo, "diff", "--cached"), "the selected line to be staged")
+    installed.screen.screenshot("stage-line")
     assert "second added" not in git(repo, "diff", "--cached")
 
 
@@ -119,12 +133,13 @@ def test_discard_a_hunk(ui: ForkUI, installed: Any) -> None:
     (repo / "keep.txt").write_text("keep changed\n", encoding="utf-8")
     window = ui.open(repo)
     ui.local_changes()
-    ui.click(ui.unstaged_row(0))
-    installed.screen.hover(*window.point(*FIRST_HUNK_POINT))
-    ui.click(HUNK_DISCARD)
-    installed.screen.screenshot("discard-confirm")
-    installed.screen.key("Return", settle=1.5)
-    wait_until(lambda: (repo / "a.txt").read_text(encoding="utf-8") == FORTY, 30, "a.txt to be restored")
+
+    def discard() -> None:
+        _hunk_button(ui, window, FIRST_HUNK_POINT, HUNK_DISCARD)
+        installed.screen.screenshot("discard-confirm")
+        installed.screen.key("Return", settle=1.5)
+
+    ui.operate(discard, lambda: (repo / "a.txt").read_text(encoding="utf-8") == FORTY, "a.txt to be restored")
     assert (repo / "keep.txt").read_text(encoding="utf-8") == "keep changed\n"
 
 
@@ -137,12 +152,9 @@ def test_commit_with_a_utf8_message(ui: ForkUI, installed: Any) -> None:
     (repo / "a.txt").write_text("a changed\n", encoding="utf-8")
     ui.open(repo)
     ui.local_changes()
-    ui.click(ui.unstaged_row(0))
-    ui.click(STAGE_BUTTON)
-    _wait_cached(repo, "a.txt")
+    _stage_first(ui, repo, "a.txt")
     subject = "Grüße ümlaut ✓ 中文"
-    ui.commit(subject, "Zweite Zeile: ß")
-    wait_until(lambda: git(repo, "log", "-1", "--format=%s") == subject or None, 60, "the commit")
+    ui.commit_and_wait(repo, subject, "Zweite Zeile: ß")
     assert git(repo, "log", "-1", "--format=%b") == "Zweite Zeile: ß"
     assert git(repo, "log", "-1", "--format=%an <%ae>") == "E2E Test <e2e@example.invalid>"
     assert git(repo, "status", "--porcelain") == ""
@@ -159,8 +171,7 @@ def test_amend_the_last_commit(ui: ForkUI, installed: Any) -> None:
     parent = git(repo, "rev-parse", "HEAD~1")
     ui.open(repo)
     ui.local_changes()
-    ui.commit("amended message", amend=True)
-    wait_until(lambda: git(repo, "log", "-1", "--format=%s") == "amended message" or None, 60, "the amend")
+    ui.commit_and_wait(repo, "amended message", amend=True)
     assert git(repo, "rev-parse", "HEAD~1") == parent
     assert git(repo, "rev-list", "--count", "HEAD") == "2"
     assert "commit (amend)" in git(repo, "reflog", "-1")
@@ -176,10 +187,7 @@ def test_commit_template_prefills_the_message(ui: ForkUI, installed: Any) -> Non
     (repo / "a.txt").write_text("a changed\n", encoding="utf-8")
     ui.open(repo)
     ui.local_changes()
-    ui.click(ui.unstaged_row(0))
-    ui.click(STAGE_BUTTON)
-    _wait_cached(repo, "a.txt")
-    ui.commit_subject_and_commit()
-    installed.screen.screenshot("template-committed")
-    wait_until(lambda: git(repo, "log", "-1", "--format=%s") == "Template subject" or None, 60,
+    _stage_first(ui, repo, "a.txt")
+    ui.operate(ui.commit_subject_and_commit, lambda: git(repo, "log", "-1", "--format=%s") == "Template subject",
                "the commit with the template's message")
+    installed.screen.screenshot("template-committed")
