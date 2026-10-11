@@ -438,6 +438,24 @@ def test_f20_missing_current_is_reinstalled_and_reported(
     assert ctx.ui.kinds("notify") == []
 
 
+def test_f20_names_the_version_that_went_missing_after_a_self_update(
+    xdg: Path, downloads: list[InstallPlan], feeds: dict[str, Any]
+) -> None:
+    """Fork had updated itself past the version fork-linux installed: the notice names the one that vanished."""
+    ctx = make_ctx()
+    _drives(ctx)
+    ctx.runner = _installer_runner(ctx)
+    bootstrap.init_prefix_meta(ctx)
+    bootstrap.run_step(ctx, fork_steps.FORK_DOWNLOAD)
+    bootstrap.run_step(ctx, fork_steps.FORK_INSTALL)
+    ctx.state.set("fork.version", "2.23.1")  # what fork-linux installed (or a rollback restored) last
+    ctx.state.set(updates.LAST_SEEN_VERSION, "2.24.0")  # what Fork updated itself to, seen by the last launch
+    shutil.rmtree(ctx.layout.current_dir)
+    bootstrap.run_step(ctx, fork_steps.FORK_INSTALL)
+    assert ctx.ui.kinds("info") == ["Fork 2.24.0 was missing or incomplete; Fork 2.23.2 was installed again"]
+    assert ctx.state.get(updates.LAST_SEEN_VERSION) == "2.23.2"
+
+
 def test_f20_reinstall_keeps_the_users_files(xdg: Path, downloads: list[InstallPlan], feeds: dict[str, Any]) -> None:
     """The official installer wipes AppData\\Local\\Fork: a reinstall puts the user's files back unchanged."""
     ctx = make_ctx()

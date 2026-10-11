@@ -221,7 +221,8 @@ def run_install(ctx: Ctx) -> None:
     """
     chosen = None
     if not satisfied(ctx):
-        previous = ctx.state.get("fork.version")
+        # The version that went missing is the one last seen running (Fork may have updated itself).
+        previous = ctx.state.get(updates.LAST_SEEN_VERSION) or ctx.state.get("fork.version")
         missing = isinstance(previous, str) and ctx.layout.installed_version() is None
         chosen = _current_plan(ctx)
         installer = fork_install.download_installer(chosen, ctx.manifest, ctx.paths, offline=ctx.offline)
