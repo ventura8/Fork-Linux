@@ -1,7 +1,8 @@
 # Flatpak manifest of Fork for Linux (unofficial): io.github.ventura8.ForkLinux.
 #
-# Built on the org.winehq.Wine BaseApp (WoW64 build, freedesktop 25.08), so the Wine
-# provider inside the sandbox is "flatpak": the Wine from the BaseApp. Fork itself is never
+# Built on the org.winehq.Wine BaseApp (freedesktop 26.08; from 26.08 on, its stable branch is
+# the WoW64 build the separate wow64-25.08 branch used to be), so the Wine provider inside
+# the sandbox is "flatpak": the Wine from the BaseApp. Fork itself is never
 # bundled; it is downloaded from cdn.fork.dev at first run into the sandbox's data dir.
 # Every finish-arg carries a "# why:" comment (tests/test_packaging_release.py checks it and
 # keeps the list to an allowlist).
@@ -12,12 +13,12 @@
 ---
 id: io.github.ventura8.ForkLinux
 runtime: org.freedesktop.Platform
-runtime-version: '25.08'
+runtime-version: '26.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.mingw-w64
 base: org.winehq.Wine
-base-version: wow64-25.08
+base-version: stable-26.08
 command: fork-linux
 finish-args:
   # why: setup downloads Wine components, .NET and the Fork installer; Fork fetches and pushes

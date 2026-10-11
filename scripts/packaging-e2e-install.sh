@@ -33,6 +33,8 @@ MARKER="${TESTER_HOME}/.local/share/fork-linux/E2E_MARKER"
 SENTINEL="${TESTER_HOME}/.wine/E2E_SENTINEL"
 MARK_VALUE="fork-linux-e2e-${FORMAT}-$$-${RANDOM}"
 STAGE="/tmp/fl-e2e-${FORMAT}"
+TESTER_RUNTIME="/tmp/fl-e2e-runtime-${TESTER}"
+TESTER_SESSION_ENV=()
 
 fail() {
 	echo "E2E FAIL (${FORMAT}): $*" >&2
@@ -54,13 +56,32 @@ setup_tester() {
 	install -d -m 0755 "${STAGE}"
 	# A session-like runtime directory (flatpak run allocates its instance there).
 	install -d -o "${TESTER}" -m 0700 "/tmp/fl-e2e-runtime-${TESTER}"
+	if [[ "${FORMAT}" == snap ]]; then
+		setup_tester_session
+	fi
+}
+
+# snapd (2.7x, Ubuntu 26.04) tracks every snap process in a systemd scope and refuses users
+# without a systemd user session (forum.snapcraft.io/t/46210). A lingering user manager gives
+# the tester one; runuser then talks to it through its runtime dir and session bus.
+setup_tester_session() {
+	local uid
+	uid="$(id -u "${TESTER}")"
+	loginctl enable-linger "${TESTER}"
+	for _ in $(seq 1 60); do
+		[[ -S "/run/user/${uid}/bus" ]] && break
+		sleep 1
+	done
+	[[ -S "/run/user/${uid}/bus" ]] || fail "no systemd user session bus for ${TESTER}"
+	TESTER_RUNTIME="/run/user/${uid}"
+	TESTER_SESSION_ENV=("DBUS_SESSION_BUS_ADDRESS=unix:path=${TESTER_RUNTIME}/bus")
 }
 
 as_tester() {
 	runuser -u "${TESTER}" -- env -i \
 		HOME="${TESTER_HOME}" USER="${TESTER}" LOGNAME="${TESTER}" LANG=C.UTF-8 \
 		PATH="${TESTER_HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/snap/bin" \
-		XDG_RUNTIME_DIR="/tmp/fl-e2e-runtime-${TESTER}" \
+		XDG_RUNTIME_DIR="${TESTER_RUNTIME}" "${TESTER_SESSION_ENV[@]}" \
 		APPIMAGE_EXTRACT_AND_RUN=1 NO_CLEANUP=1 \
 		"$@"
 }

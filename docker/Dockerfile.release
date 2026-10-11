@@ -3,8 +3,8 @@
 # Image tag: fork-linux-ci-release:26.04
 # Builds the relocatable tarball, the AppImage and the Flatpak bundle
 # (scripts/release-portable.sh tarball|appimage|flatpak) and runs their packaging E2E
-# (scripts/packaging-e2e-install.sh). Snap builds use docker/Dockerfile.snap (core24 needs
-# Ubuntu 24.04). Source is bind-mounted at /src (no COPY).
+# (scripts/packaging-e2e-install.sh). Snap builds use docker/Dockerfile.snap (snapd needs
+# systemd as PID 1). Source is bind-mounted at /src (no COPY).
 FROM ubuntu:26.04
 
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
@@ -32,6 +32,14 @@ RUN curl -fsSL --proto '=https' -o /tmp/appimagetool.AppImage \
     && unsquashfs -q -o "${offset}" -d /opt/appimagetool /tmp/appimagetool.AppImage \
     && ln -s /opt/appimagetool/AppRun /usr/local/bin/appimagetool \
     && rm -f /tmp/appimagetool.AppImage
+
+# The AppImage type2 runtime: a dated immutable release, sha256-verified, handed to
+# appimagetool with --runtime-file (it would otherwise fetch the floating "continuous" build).
+ARG APPIMAGE_RUNTIME_VERSION=20251108
+ARG APPIMAGE_RUNTIME_SHA256=2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+RUN curl -fsSL --proto '=https' -o /opt/appimagetool/runtime-x86_64 \
+    "https://github.com/AppImage/type2-runtime/releases/download/${APPIMAGE_RUNTIME_VERSION}/runtime-x86_64" \
+    && echo "${APPIMAGE_RUNTIME_SHA256}  /opt/appimagetool/runtime-x86_64" | sha256sum -c -
 
 WORKDIR /src
 CMD ["./scripts/release-portable.sh", "tarball"]

@@ -42,7 +42,7 @@ EXPECTED = {
     "Dockerfile.rpm.opensuse": "fork-linux-ci-rpm-opensuse:16.0",
     "Dockerfile.arch": "fork-linux-ci-arch-pkg:base-devel-20261004.0.606936",
     "Dockerfile.release": "fork-linux-ci-release:26.04",
-    "Dockerfile.snap": "fork-linux-ci-snap:24.04",
+    "Dockerfile.snap": "fork-linux-ci-snap:26.04",
     "Dockerfile.e2e.wine": "fork-linux-ci-e2e-wine:26.04",
 }
 SCRIPTS = [

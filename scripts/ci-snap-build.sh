@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ci-snap-build.sh - build the fork-linux snap in docker/Dockerfile.snap (Ubuntu 24.04, systemd
+# ci-snap-build.sh - build the fork-linux snap in docker/Dockerfile.snap (Ubuntu 26.04, systemd
 # as PID 1 so snapd works) and run the snap packaging E2E in the same container.
 #
 # The container needs --privileged and the host cgroup tree (snapd mounts squashfs images
@@ -9,7 +9,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${ROOT}"
 
-IMAGE="fork-linux-ci-snap:24.04"
+IMAGE="fork-linux-ci-snap:26.04"
 CONTAINER="fork-linux-snap-build-$$"
 export FL_ARTIFACTS_DIR="${FL_ARTIFACTS_DIR:-${ROOT}/artifacts}"
 mkdir -p "${FL_ARTIFACTS_DIR}"
