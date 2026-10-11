@@ -123,6 +123,24 @@ a prefix 11.0 created (`System.IO.FileLoadException` in WPF's BAML reader), whic
 after going back rather than on 11.19 (UPD-26); once, the dotnet40 installer of the first setup sat idle
 for 20 minutes without a window (the run was stopped and repeated).
 
+## Integration run of the three modules (2026-10-11)
+
+On the integrated `fix/update-tests` tree, each module ran once in a fresh scratch root of its own,
+in `fork-linux-ci-e2e-wine:26.04` (seeded), the bridge built with `scripts/build-bridge.sh` and the two
+A6 bridge builds made from variant trees 0.9.1 / 0.9.2 (`build-version-variant.sh --tree-only`,
+`build-bridge.sh --out`), the way `scripts/ci-e2e-wine.sh` makes them:
+
+```
+scripts/e2e-docker.sh --name updint-real pytest --durations=0 tests/e2e/test_real_fork.py
+FL_E2E_FORK_UPDATES=1 scripts/e2e-docker.sh --name updint-fork pytest --durations=0 tests/e2e/test_fork_update.py
+FL_E2E_APP_UPGRADE=1 FL_E2E_BRIDGE_BUILDS=/e2e/bridge \
+  scripts/e2e-docker.sh --name updint-app --keep pytest --durations=0 tests/e2e/test_wine_app_upgrade.py
+```
+
+Result: `test_real_fork.py` **7 passed in 310 s**, `test_fork_update.py` **12 passed in 596 s**,
+`test_wine_app_upgrade.py` **7 passed in 854 s** (now in its own prefix, `<root>/app-upgrade`). The same
+three had passed once before on the tree without that change (7 in 411 s, 12 in 1115 s, 7 in 955 s).
+
 ## Manual scenario (timings and outcomes)
 
 | # | Step | Outcome | Time |
