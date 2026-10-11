@@ -22,7 +22,7 @@ Four setup steps, in this order (`src/fork_linux/steps/fonts.py`, `src/fork_linu
 | `fonts` | `winetricks corefonts` (Arial & co.) for documents and fallbacks; one retry | Arial present and `corefonts` in `winetricks.log` |
 | `ui_font` (rev 1) | Downloads **Selawik 1.01** — Microsoft's open-source stand-in for Segoe UI with matching metrics, SIL OFL 1.1 — from its GitHub release (pinned URL, size and sha256 in `runtime-manifest.json` → `ui_font`; host `github.com` only), copies exactly the face files the manifest lists into the prefix's `C:\windows\Fonts` (0644) and registers each face under `HKLM\Software\Microsoft\Windows NT\CurrentVersion\Fonts` (`Selawik Bold (TrueType)` = `selawkb.ttf`, ...) | every face file is a regular, non-empty file and every registry value is present |
 | `font_replacements` (rev 2) | `HKCU\Software\Wine\Fonts\Replacements` plus the system fonts in `HKCU\Control Panel\Desktop\WindowMetrics` | every replacement and every system font face |
-| `font_fallback` (rev 2) | A marked block of `FontFamilyMap`s naming installed Linux fonts at the top of every `FamilyMaps` section of WPF's `GlobalUserInterface.CompositeFont`, in every 64-bit copy (`WPF\`, `WPF\Fonts\`); see Finding 7 | every sound copy holds exactly the block the installed fonts call for (no copy at all, or a damaged one, is only warned about) |
+| `font_fallback` (rev 3) | A marked block of `FontFamilyMap`s naming installed Linux fonts at the top of every `FamilyMaps` section of WPF's `GlobalUserInterface.CompositeFont`, in the 64-bit copy the installed .NET reads (4.8: `WPF\`, 4.7.2: `WPF\Fonts\`); see Finding 7 | that copy holds exactly the block the installed fonts call for (that copy missing or damaged is only warned about) |
 
 Replacements written by `font_replacements`:
 
@@ -48,10 +48,10 @@ and `FontSmoothingOrientation` = 1.
 `fork-linux doctor`: `host.fonts` (a Linux font for Segoe UI Symbol and Consolas),
 `prefix.ui_font` (Selawik installed and registered; fix: step `ui_font`),
 `prefix.font_replacements` (replacements and system fonts; fix: step `font_replacements`),
-`prefix.font_fallback` (the composite font copies are patched for the installed fonts and name the
-folders, e.g. `24 scripts mapped in WPF's composite font (WPF\, WPF\Fonts\; CJK: Noto Sans CJK JP
-first)`; warns when a copy is stale, missing or damaged, or when Greek, Cyrillic, Hangul or Han has no
-Linux font; fix: step `font_fallback`),
+`prefix.font_fallback` (the copy the installed .NET reads is patched for the installed fonts and named,
+e.g. `24 scripts mapped in WPF's composite font (WPF\; CJK: Noto Sans CJK JP first)`; warns when that copy
+is stale, missing or damaged, or when Greek, Cyrillic, Hangul or Han has no Linux font; `info` when only a
+copy that .NET version never reads is damaged; fix: step `font_fallback`),
 `prefix.font_smoothing` (smoothing on, gamma 1000–2200; fix: step `registry`).
 
 ## Finding 7: WPF's composite font (fallback for non-Latin scripts)
@@ -83,7 +83,10 @@ The 32-bit `Framework\` copies are never read (Fork is x64 only) and are left al
 lost attempt (2026-10-10) also found that 4.7.2's PresentationCore builds the folder from the
 framework's `InstallPath` + `WPF\Fonts\` and 4.8's from `InstallPath` + `WPF\`.
 
-The `font_fallback` step therefore patches **every 64-bit copy that exists**. In each
+The `font_fallback` step therefore patches **the 64-bit copy the installed .NET reads**, chosen by
+`HKLM\Software\Microsoft\NET Framework Setup\NDP\v4\Full` `Release`: 528040 or more (4.8; a later
+4.8.x is assumed to keep the layout, not measured) → `WPF\`, below (4.7.2) → `WPF\Fonts\`; when the
+release cannot be read, every copy counts as read. A copy that version never reads is left alone. In each
 `FamilyMaps` section it inserts, right after the opening tag, one block between
 `<!-- fork-linux font_fallback begin… -->` and `<!-- fork-linux font_fallback end -->` lines: a
 `FontFamilyMap` per script naming only the candidate Linux fonts `fc-list` reports (Noto first,
@@ -95,14 +98,19 @@ zh-HK before its parent zh-Hant) and a generic map with the JP variant first, as
 * Idempotent: the block is removed and rebuilt on every run; with no suitable font installed the
   file goes back to Microsoft's. Removing the block restored Microsoft's bytes exactly in both
   prefixes (sha256 above).
-* Safe: every copy is read (`O_NOFOLLOW`, ≤ 8 MiB, regular file, no symlink anywhere below
-  `drive_c`), checked (no DTD, well-formed before and after, one `FamilyMaps` tag line per
-  section) and patched before it is written; a damaged copy is never written and setup only
-  warns about it, while a sound copy is still patched (the copies are independent files, and a
-  damaged `WPF\Fonts\` copy, which 4.8 never reads, must not cost 4.8 its fallback). With no
-  copy at all setup only warns. Writes are atomic and keep the BOM, CRLF and mode.
+* Safe: the copies that are read are loaded (`O_NOFOLLOW`, ≤ 8 MiB, regular file, no symlink
+  anywhere below `drive_c`), checked (no DTD, well-formed before and after, one `FamilyMaps` tag
+  line per section) and patched before any is written; a damaged one means nothing is written and
+  setup only warns. A damaged copy that the installed .NET never reads (a broken `WPF\Fonts\` on
+  4.8) does not cost Fork its fallback: it is left alone, setup does not warn, and doctor reports it
+  as `info` (only a fresh prefix, `fork-linux setup --reset`, restores it). With the copy that is
+  read missing, setup only warns. Writes are atomic and keep the BOM, CRLF and mode.
 * Inputs: the maps (they follow the installed fonts), so installing Noto later re-runs the step.
+  The .NET release is read only by `run` / `verify` (never by the inputs, which every launch
+  checks, so a launch never parses `system.reg`); the `dotnet` step sets it, before this step.
 * rev 2: the lost pre-release rev 1 patched only `WPF\`, which left a 4.7.2 prefix unpatched.
+* rev 3 (maintainer decision 2026-10-11): only the copy the installed .NET reads; rev 2 patched
+  every copy, so a 4.8 prefix it patched keeps a block in `WPF\Fonts\`, which is never read.
 
 ## Legal
 

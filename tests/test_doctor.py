@@ -665,29 +665,47 @@ def test_prefix_font_fallback_missing_and_damaged() -> None:
     assert result.status == "warn"
     assert result.detail.startswith("WPF's composite font is missing (C:\\windows\\Microsoft.NET\\Framework64")
     assert "setup --reset" in result.hint
+    # Without a readable .NET release every copy counts as read: one damaged copy blocks the fix.
     write_composite_font(pfx, "Fonts", text="<broken")
+    write_composite_font(pfx)
+    fallback_step.run(ctx.boot)
     result = run(ctx, "prefix.font_fallback")
     assert result.status == "warn"
-    assert "is damaged (not well-formed XML" in result.detail
-    assert "patched" not in result.detail
+    assert "Fonts" in result.detail and "is damaged (not well-formed XML" in result.detail
+    assert result.detail.endswith("; nothing was patched")
     assert "setup --reset" in result.hint
-    # A sound WPF\ copy (the one .NET 4.8 reads) is still patched, and named.
-    write_composite_font(pfx)
+    # .NET 4.8 reads only WPF\: the damaged WPF\Fonts\ copy no longer blocks it and is only reported.
+    write_release(pfx, 528049)
     assert run(ctx, "prefix.font_fallback").detail == (
         "WPF's composite font is not patched for the installed Linux fonts (WPF\\)"
     )
     fallback_step.run(ctx.boot)
     result = run(ctx, "prefix.font_fallback")
+    assert result.status == "info"
+    assert result.detail.startswith("4 scripts mapped in WPF's composite font (WPF\\; CJK: Noto Sans CJK JP first); ")
+    assert "Fonts" in result.detail and "is damaged (not well-formed XML" in result.detail
+    assert result.detail.endswith(", but .NET Framework 4.8 (release 528049) never reads it")
+    assert result.hint == fallback_step.UNREAD_HINT
+    assert doctor.get("prefix.font_fallback").fix_steps == ("font_fallback",)
+
+
+def test_prefix_font_fallback_damaged_copy_that_is_read() -> None:
+    ctx = make(RecordingRunner({"fc-list": CJK_FC_LIST}))
+    pfx = prefix(ctx)
+    write_release(pfx, 461814)
+    write_composite_font(pfx, "Fonts", text="<broken")
+    write_composite_font(pfx)
+    result = run(ctx, "prefix.font_fallback")
     assert result.status == "warn"
     assert "Fonts" in result.detail and "is damaged (not well-formed XML" in result.detail
-    assert result.detail.endswith("; patched: WPF\\")
-    assert "setup --reset" in result.hint
-    assert doctor.get("prefix.font_fallback").fix_steps == ("font_fallback",)
+    assert result.detail.endswith("; nothing was patched")
+    assert result.hint == fallback_step.REPAIR_HINT
 
 
 def test_prefix_font_fallback_names_the_folders() -> None:
     ctx = make(RecordingRunner({"fc-list": CJK_FC_LIST}))
     pfx = prefix(ctx)
+    write_release(pfx, 461814)
     write_composite_font(pfx, "Fonts")
     result = run(ctx, "prefix.font_fallback")
     assert result == Result(
@@ -699,18 +717,23 @@ def test_prefix_font_fallback_names_the_folders() -> None:
     assert run(ctx, "prefix.font_fallback") == Result(
         "ok", "4 scripts mapped in WPF's composite font (WPF\\Fonts\\; CJK: Noto Sans CJK JP first)"
     )
-    # .NET 4.8 has both copies; a new, unpatched WPF\ copy is named on its own.
+    # A WPF\ copy 4.7.2 never reads changes nothing.
     write_composite_font(pfx)
+    assert run(ctx, "prefix.font_fallback").status == "ok"
+    # .NET 4.8 reads WPF\, which is named on its own.
+    write_release(pfx, 528049)
     result = run(ctx, "prefix.font_fallback")
     assert result.detail == "WPF's composite font is not patched for the installed Linux fonts (WPF\\)"
     fallback_step.run(ctx.boot)
     assert run(ctx, "prefix.font_fallback").detail == (
-        "4 scripts mapped in WPF's composite font (WPF\\, WPF\\Fonts\\; CJK: Noto Sans CJK JP first)"
-    )
-    (pfx / "drive_c" / "windows" / "Microsoft.NET" / "Framework64" / "v4.0.30319" / "WPF" / "Fonts" /
-     fallback_step.COMPOSITE_FONT_NAME).unlink()
-    assert run(ctx, "prefix.font_fallback").detail == (
         "4 scripts mapped in WPF's composite font (WPF\\; CJK: Noto Sans CJK JP first)"
+    )
+    # Without a readable release both copies are read and named.
+    (pfx / "system.reg").unlink()
+    add_values(pfx, "system.reg", "Software\\Wine", [])
+    fallback_step.run(ctx.boot)
+    assert run(ctx, "prefix.font_fallback").detail == (
+        "4 scripts mapped in WPF's composite font (WPF\\, WPF\\Fonts\\; CJK: Noto Sans CJK JP first)"
     )
 
 
@@ -726,6 +749,13 @@ def test_prefix_font_fallback_without_cjk_fonts() -> None:
     # Package names checked in the distributions' repositories (Fedora 44, openSUSE Leap 16.0, Arch).
     assert "Fedora / openSUSE: google-noto-sans-fonts google-noto-sans-cjk-fonts;" in result.hint
     assert "Arch: noto-fonts noto-fonts-cjk" in result.hint
+    # A damaged copy the installed .NET never reads is named after the fonts warning.
+    write_release(pfx, 528049)
+    write_composite_font(pfx, "Fonts", text="<broken")
+    result = run(ctx, "prefix.font_fallback")
+    assert result.status == "warn"
+    assert result.detail.startswith("no Linux font for Hangul, Han text in Fork's interface (WPF\\); ")
+    assert result.detail.endswith(", but .NET Framework 4.8 (release 528049) never reads it")
 
 
 def test_prefix_font_smoothing() -> None:

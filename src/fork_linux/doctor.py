@@ -788,7 +788,10 @@ def check_font_replacements(ctx: DoctorCtx) -> Result:
 
 
 def check_font_fallback(ctx: DoctorCtx) -> Result:
-    """WPF's composite font maps non-Latin scripts (Cyrillic, Greek, CJK, ...) to installed Linux fonts."""
+    """WPF's composite font maps non-Latin scripts (Cyrillic, Greek, CJK, ...) to installed Linux fonts.
+
+    Only the copy the installed .NET reads counts; a damaged copy it never reads is reported (info).
+    """
     if not _has_prefix(ctx):
         return _skip(NO_PREFIX)
     maps = fallback_step.wanted_maps(ctx.boot)
@@ -796,26 +799,28 @@ def check_font_fallback(ctx: DoctorCtx) -> Result:
         copies = fallback_step.patched_composite_fonts(ctx.boot, maps)
     except fallback_step.Unpatchable as exc:
         return Result("warn", exc.message, exc.hint)
+    if copies.damaged:
+        detail = "; ".join(problem.message for problem in copies.damaged)
+        return Result("warn", f"{detail}; nothing was patched", fallback_step.REPAIR_HINT)
     folders = ", ".join(patch.folder for patch in copies.patches)
     stale = ", ".join(patch.folder for patch in copies.stale)
     if stale:
         return Result("warn", f"WPF's composite font is not patched for the installed Linux fonts ({stale})", _RUN_FIX)
-    if copies.damaged:
-        patched = f"; patched: {folders}" if folders else ""
-        detail = "; ".join(problem.message for problem in copies.damaged)
-        return Result("warn", detail + patched, fallback_step.REPAIR_HINT)
+    unread = "".join(
+        f"; {problem.message}, but {copies.dotnet} never reads it" for problem in copies.unread
+    )
     unmapped = fallback_step.unmapped_key_scripts(maps)
     if unmapped:
         return Result(
             "warn",
-            f"no Linux font for {', '.join(unmapped)} text in Fork's interface ({folders})",
+            f"no Linux font for {', '.join(unmapped)} text in Fork's interface ({folders}){unread}",
             fallback_step.FONTS_HINT,
         )
     scripts = len(fallback_step.mapped_scripts(maps))
-    return Result(
-        "ok",
-        f"{scripts} scripts mapped in WPF's composite font ({folders}; CJK: {fallback_step.han_first(maps)} first)",
-    )
+    detail = f"{scripts} scripts mapped in WPF's composite font ({folders}; CJK: {fallback_step.han_first(maps)} first)"
+    if unread:
+        return Result("info", detail + unread, fallback_step.UNREAD_HINT)
+    return Result("ok", detail)
 
 
 def _registry_result(ctx: DoctorCtx, key: str, name: str, expected: object, what: str) -> Result:

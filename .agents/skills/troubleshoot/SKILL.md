@@ -14,12 +14,14 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 - Wrong or narrow interface text: `fork-linux doctor --check prefix.ui_font --check prefix.font_replacements --check prefix.font_smoothing`,
   then `fork-linux setup --only ui_font --only font_replacements` (design: `docs/spikes/S10-text-rendering.md`).
 - Cyrillic / Greek in a narrow font, Korean or CJK punctuation missing (boxes or nothing):
-  `fork-linux doctor --check prefix.font_fallback`. It names the patched folders of WPF's composite font
-  (`WPF\` on .NET 4.8, `WPF\Fonts\` on the 4.7.2 fallback) and warns when no Linux font covers Greek,
-  Cyrillic, Hangul or Han (install the Noto fonts, e.g. `fonts-noto-core fonts-noto-cjk`), when a copy is not
-  patched (`fork-linux setup --only font_fallback`), when both copies are missing or when one is damaged
-  (setup only warned and never wrote that copy, but still patched a sound one, named after `patched:`;
-  `fork-linux setup --reset` rebuilds the prefix). Design: S10 Finding 7.
+  `fork-linux doctor --check prefix.font_fallback`. Only the copy of WPF's composite font the installed .NET
+  reads is patched and named (`WPF\` on .NET 4.8, `WPF\Fonts\` on the 4.7.2 fallback; by `NDP\v4\Full`
+  `Release`). It warns when no Linux font covers Greek, Cyrillic, Hangul or Han (install the Noto fonts, e.g.
+  `fonts-noto-core fonts-noto-cjk`), when that copy is not
+  patched (`fork-linux setup --only font_fallback`), missing or damaged (setup only warned and wrote nothing;
+  `fork-linux setup --reset` rebuilds the prefix). A damaged copy that .NET version never reads is `info`
+  ("..., but .NET Framework 4.8 (release …) never reads it"): Fork is not affected and the fix was applied;
+  only a fresh prefix restores that copy. Design: S10 Finding 7.
 - Downloads: `~/.cache/fork-linux/downloads` (ours), `~/.cache/fork-linux/winetricks` (winetricks' `W_CACHE`);
   `~/.cache/winetricks` is only read.
 - Locks: `$XDG_RUNTIME_DIR/fork-linux/setup.lock`. Logs: `~/.local/state/fork-linux/logs/`.

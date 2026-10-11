@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from fixtures.setup_ctx import FakeUI, FakeWine, composite_font_text, make_ctx, write_composite_font
+from fixtures.setup_ctx import FakeUI, FakeWine, composite_font_text, make_ctx, write_composite_font, write_release
 
 from fork_linux import bootstrap, steps
 from fork_linux.bootstrap import Ctx
@@ -18,6 +18,8 @@ FC_LIST = (
 )
 CJK = ("Noto Sans CJK JP", "Noto Sans CJK KR", "Noto Sans CJK SC", "Noto Sans CJK TC", "Noto Sans CJK HK")
 BOM = b"\xef\xbb\xbf"
+NET48 = 528049  # the releases measured in S10 Finding 7
+NET472 = 461814
 
 
 def _ctx(fc_list: str = FC_LIST) -> Ctx:
@@ -110,6 +112,19 @@ def test_locations_and_windows_paths() -> None:
     assert [ff.folder_name(sub) for sub in ff.COMPOSITE_FONT_LOCATIONS] == ["WPF\\", "WPF\\Fonts\\"]
 
 
+def test_the_installed_release_decides_which_copy_is_read() -> None:
+    assert ff.read_locations(NET48) == ff.read_locations(ff.NET48_RELEASE) == ((),)
+    assert ff.read_locations(NET472) == ff.read_locations(ff.NET48_RELEASE - 1) == (("Fonts",),)
+    assert ff.read_locations(None) == ff.COMPOSITE_FONT_LOCATIONS
+    assert ff.composite_font_wins(ff.read_locations(NET472)) == [
+        "C:\\windows\\Microsoft.NET\\Framework64\\v4.0.30319\\WPF\\Fonts\\GlobalUserInterface.CompositeFont"
+    ]
+    assert ff.dotnet_name(NET48) == ".NET Framework 4.8 (release 528049)"
+    assert ff.dotnet_name(NET472) == ".NET Framework 4.7.2 (release 461814)"
+    assert ff.dotnet_name(400000) == "the .NET Framework release 400000"
+    assert ff.dotnet_name(None) == "the installed .NET Framework (its release is unknown)"
+
+
 def test_no_copies_without_the_framework(xdg: Path) -> None:
     ctx = _ctx()
     assert ff.wpf_dir(ctx) is None
@@ -197,6 +212,7 @@ def test_dotnet472_only_copy_under_fonts_is_patched(xdg: Path) -> None:
 
 
 def test_both_copies_are_patched_and_only_stale_ones_rewritten(xdg: Path) -> None:
+    # Without a readable .NET release every copy counts as read.
     ctx = _ctx()
     wpf_copy = write_composite_font(ctx.paths.prefix)
     fonts_copy = write_composite_font(ctx.paths.prefix, "Fonts")
@@ -265,29 +281,91 @@ def test_missing_composite_font_only_warns(xdg: Path) -> None:
     assert len(warnings) == 1
     assert "WPF's composite font is missing" in warnings[0]
     assert "WPF\\Fonts\\GlobalUserInterface.CompositeFont do not exist" in warnings[0]
+    assert warnings[0].endswith("the installed .NET Framework (its release is unknown) reads it)")
     assert ff.verify(ctx)
 
 
-@pytest.mark.parametrize("damaged_sub", ["", "Fonts"])
-def test_a_damaged_copy_is_never_written_and_the_sound_one_is_patched(xdg: Path, damaged_sub: str) -> None:
-    # 4.8 reads only WPF\ and never WPF\Fonts\: a damaged copy must not cost the other its fallback.
+def test_a_missing_read_copy_only_warns_and_the_unread_one_is_left_alone(xdg: Path) -> None:
     ctx = _ctx()
-    good = write_composite_font(ctx.paths.prefix, "Fonts" if damaged_sub == "" else "")
-    bad = write_composite_font(ctx.paths.prefix, damaged_sub, text="<FontFamilyCollection>\n")
+    write_release(ctx.paths.prefix, NET48)
+    unread = write_composite_font(ctx.paths.prefix, "Fonts")
+    ff.run(ctx)
+    (warning,) = _warnings(ctx)
+    assert "v4.0.30319\\WPF\\GlobalUserInterface.CompositeFont does not exist; " in warning
+    assert warning.endswith(".NET Framework 4.8 (release 528049) reads it)")
+    assert unread.read_bytes() == _original()
+    assert ff.verify(ctx)
+
+
+@pytest.mark.parametrize(("release", "read_sub", "unread_sub"), [(NET48, "", "Fonts"), (NET472, "Fonts", "")])
+def test_a_damaged_copy_that_is_never_read_does_not_block_the_fix(
+    xdg: Path, release: int, read_sub: str, unread_sub: str
+) -> None:
+    # 4.8 reads only WPF\, 4.7.2 only WPF\Fonts\: a damaged copy the other one never reads is left alone.
+    ctx = _ctx()
+    write_release(ctx.paths.prefix, release)
+    read = write_composite_font(ctx.paths.prefix, read_sub)
+    bad = write_composite_font(ctx.paths.prefix, unread_sub, text="<FontFamilyCollection>\n")
     broken = bad.read_bytes()
     assert not ff.verify(ctx)
     ff.run(ctx)
     assert bad.read_bytes() == broken
-    assert good.read_bytes().count(ff.BEGIN.encode()) == 2
-    warnings = _warnings(ctx)
-    assert len(warnings) == 1
-    assert "is damaged (not well-formed XML" in warnings[0]
-    assert str(bad) in warnings[0]
+    assert read.read_bytes().count(ff.BEGIN.encode()) == 2
+    assert _warnings(ctx) == []  # setup does not warn: only the doctor reports it
     assert ff.verify(ctx)
     copies = ff.patched_composite_fonts(ctx)
+    assert [patch.path for patch in copies.patches] == [read]
+    assert copies.stale == copies.damaged == ()
+    (problem,) = copies.unread
+    assert str(bad) in problem.message and "is damaged (not well-formed XML" in problem.message
+    assert copies.dotnet == ff.dotnet_name(release)
+
+
+@pytest.mark.parametrize(("release", "read_sub", "unread_sub"), [(NET48, "", "Fonts"), (NET472, "Fonts", "")])
+def test_a_sound_copy_that_is_never_read_is_left_alone(
+    xdg: Path, release: int, read_sub: str, unread_sub: str
+) -> None:
+    ctx = _ctx()
+    write_release(ctx.paths.prefix, release)
+    read = write_composite_font(ctx.paths.prefix, read_sub)
+    unread = write_composite_font(ctx.paths.prefix, unread_sub)
+    ff.run(ctx)
+    assert read.read_bytes().count(ff.BEGIN.encode()) == 2
+    assert unread.read_bytes() == _original()
+    assert ff.verify(ctx)
+    copies = ff.patched_composite_fonts(ctx)
+    assert [patch.path for patch in copies.patches] == [read]
+    assert copies.unread == ()
+
+
+def test_a_damaged_copy_that_is_read_means_no_writes(xdg: Path) -> None:
+    ctx = _ctx()
+    write_release(ctx.paths.prefix, NET48)
+    bad = write_composite_font(ctx.paths.prefix, text="<FontFamilyCollection>\n")
+    unread = write_composite_font(ctx.paths.prefix, "Fonts")
+    broken = bad.read_bytes()
+    ff.run(ctx)
+    assert bad.read_bytes() == broken
+    assert unread.read_bytes() == _original()
+    (warning,) = _warnings(ctx)
+    assert str(bad) in warning and "is damaged (not well-formed XML" in warning
+    assert ff.verify(ctx)
+
+
+def test_with_an_unknown_release_one_damaged_copy_blocks_every_write(xdg: Path) -> None:
+    # All or nothing among the copies that are read: without a release, that is every copy.
+    ctx = _ctx()
+    good = write_composite_font(ctx.paths.prefix)
+    bad = write_composite_font(ctx.paths.prefix, "Fonts", text="<broken\n")
+    ff.run(ctx)
+    assert good.read_bytes() == _original()
+    assert bad.read_bytes() == BOM + b"<broken\r\n"
+    (warning,) = _warnings(ctx)
+    assert str(bad) in warning
+    copies = ff.patched_composite_fonts(ctx)
     assert [patch.path for patch in copies.patches] == [good]
-    assert copies.stale == ()
-    assert [str(bad) in problem.message for problem in copies.damaged] == [True]
+    assert copies.patches[0].stale and copies.stale == ()
+    assert ff.verify(ctx)
 
 
 def test_every_copy_damaged_means_no_writes(xdg: Path) -> None:
@@ -366,7 +444,7 @@ def test_a_result_that_is_not_xml_is_never_written(xdg: Path) -> None:
 
 def test_step_order_and_revision(xdg: Path) -> None:
     assert ff.STEPS == (ff.FONT_FALLBACK,)
-    assert ff.FONT_FALLBACK.rev == 2
+    assert ff.FONT_FALLBACK.rev == 3
     assert not ff.FONT_FALLBACK.needs_network
     ids = steps.STEP_IDS
     assert ids.index("font_fallback") == ids.index("font_replacements") + 1
@@ -377,17 +455,21 @@ def test_step_order_and_revision(xdg: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("verb", "folders"), [("dotnet48", ["WPF\\", "WPF\\Fonts\\"]), ("dotnet472", ["WPF\\Fonts\\"])]
+    ("verb", "read", "unread"), [("dotnet48", "WPF\\", "Fonts"), ("dotnet472", "WPF\\Fonts\\", None)]
 )
-def test_after_the_dotnet_fallback_the_fonts_copy_is_patched(xdg: Path, verb: str, folders: list[str]) -> None:
+def test_after_dotnet_the_copy_that_version_reads_is_patched(
+    xdg: Path, verb: str, read: str, unread: str | None
+) -> None:
     ctx = _ctx()
     fake = FakeWine(ctx.paths.prefix)
     fake.winetricks(["winetricks", "-q", verb])
     ff.run(ctx)
     copies = ff.patched_composite_fonts(ctx)
-    assert [patch.folder for patch in copies.patches] == folders
-    assert copies.damaged == ()
+    assert [patch.folder for patch in copies.patches] == [read]
+    assert copies.damaged == copies.unread == ()
     assert all(ff.BEGIN.encode() in patch.current and not patch.stale for patch in copies.patches)
+    if unread is not None:
+        assert (_wpf(ctx) / unread / ff.COMPOSITE_FONT_NAME).read_bytes() == _original()
 
 
 def test_upgrading_an_already_patched_prefix_rebuilds_the_block(xdg: Path) -> None:
@@ -414,3 +496,22 @@ def test_upgrading_an_already_patched_prefix_rebuilds_the_block(xdg: Path) -> No
         assert data == expected  # the BOM is kept, the old block is gone, one fresh block per section
         assert b"older fork-linux" not in data
         assert data.count(ff.BEGIN.encode()) == 2
+
+
+def test_upgrading_a_rev_2_dotnet48_prefix_leaves_the_unread_copy_alone(xdg: Path) -> None:
+    """Rev 2 patched both 4.8 copies; rev 3 keeps WPF\\ current and no longer writes WPF\\Fonts\\."""
+    ctx = _ctx("DejaVu Sans\n")
+    write_release(ctx.paths.prefix, NET48)
+    copies = [write_composite_font(ctx.paths.prefix, sub) for sub in ("", "Fonts")]
+    old_maps = ff.wanted_maps(ctx)
+    for path in copies:
+        path.write_bytes(ff.patch_file(path, old_maps).updated)
+    unread_before = copies[1].read_bytes()
+    ctx.state.set_step_marker(ff.FONT_FALLBACK.id, 2, bootstrap.inputs_hash(ff.FONT_FALLBACK, ctx))
+    assert not bootstrap.is_done(ff.FONT_FALLBACK, ctx, cheap=True)
+    ctx.cache.clear()
+    ctx.runner = RecordingRunner({"fc-list": FC_LIST})
+    bootstrap.run_step(ctx, ff.FONT_FALLBACK)
+    assert bootstrap.is_done(ff.FONT_FALLBACK, ctx)
+    assert b"Noto Sans CJK JP" in copies[0].read_bytes()
+    assert copies[1].read_bytes() == unread_before

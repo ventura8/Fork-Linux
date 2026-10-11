@@ -231,9 +231,9 @@ def test_02_doctor_has_no_failures(e2e: Any) -> None:
     assert failed == []
     warned = {check["id"] for check in report["checks"] if check["status"] == "warn"}
     assert warned == set(), f"unexpected warnings: {warned}"
-    # The image's Noto fonts are mapped in WPF's composite font (.NET 4.8: both copies).
+    # The image's Noto fonts are mapped in the copy of WPF's composite font .NET 4.8 reads.
     fallback = next(check for check in report["checks"] if check["id"] == "prefix.font_fallback")
-    assert "WPF\\" in fallback["detail"]
+    assert "(WPF\\; " in fallback["detail"]
     assert "CJK: Noto Sans CJK JP first" in fallback["detail"]
 
 

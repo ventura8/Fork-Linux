@@ -164,7 +164,7 @@ What fork-linux connects for you:
 - **Show in File Explorer / Open In File Explorer** opens your Linux file manager with the file selected; **Open** on a file uses your Linux default application.
 - **File dialogs** (Open repository, Clone) do not accept Linux paths such as `/home/you/src`: type `H:\src` (the `H:` drive is your home) or `Z:\home\you\src`, or browse through `/`.
 - New clones go to your Linux home by default, never into the Wine prefix.
-- **Non-Latin text** (Cyrillic, Greek, Chinese, Japanese, Korean, ...) in repository names, branches and commit messages uses your Linux fonts: setup points WPF's font fallback at the installed Noto fonts (or DejaVu / Liberation). If such text shows as boxes or not at all, install the Noto fonts (Debian / Ubuntu: `fonts-noto-core fonts-noto-cjk`) and run `fork-linux doctor --fix`.
+- **Non-Latin text** (Cyrillic, Greek, Chinese, Japanese, Korean, ...) in repository names, branches and commit messages uses your Linux fonts: setup points WPF's font fallback at the installed Noto fonts (or DejaVu / Liberation). If such text shows as boxes or not at all, install them (Debian / Ubuntu: `fonts-noto-core fonts-noto-cjk`; Fedora / openSUSE: `google-noto-sans-fonts google-noto-sans-cjk-fonts`; Arch: `noto-fonts noto-fonts-cjk`) and run `fork-linux doctor --fix`.
 
 Known Wine limitations:
 

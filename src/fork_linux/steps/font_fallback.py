@@ -19,19 +19,25 @@ Spike S10 Finding 7 (strace of Fork under Wine) showed which file WPF reads:
 
 Fork is x64 only, so the 32-bit ``Framework`` copies are never touched.
 
+Which copy that is depends on the installed .NET (``NDP\\v4\\Full`` ``Release``):
+4.8 (``Release`` >= 528040; a later 4.8.x is assumed to keep its layout) reads
+``WPF\\``, older releases (4.7.2) read ``WPF\\Fonts\\``; when the release cannot be
+read, every copy counts as read.
+
 The step inserts one marked block of ``FontFamilyMap`` entries at the top of
 every ``<FontFamily.FamilyMaps>`` section (one per ``OS`` section of the
-collection; maps are matched in order, so ours win) of every copy that
-exists. Each entry names only Linux fonts that ``fc-list`` reports, so a
-script without an installed font keeps Microsoft's maps. The block is
-rebuilt from scratch on every run (idempotent; removing it gives back
-Microsoft's file byte for byte), and with no suitable font installed the file
-is restored. Each copy is read, patched and checked as XML before it is
-written; a damaged copy is never written and setup only warns about it (the
-doctor check ``prefix.font_fallback`` reports it), while the sound copies are
-still patched: the copies are independent files, and 4.8 never reads its
-``WPF\\Fonts\\`` copy. Files are written atomically, keep their byte-order
-mark, line endings and mode, and are never reached through a symlink.
+collection; maps are matched in order, so ours win) of the copy (or copies)
+the installed .NET reads; a copy it never reads is left alone. Each entry
+names only Linux fonts that ``fc-list`` reports, so a script without an
+installed font keeps Microsoft's maps. The block is rebuilt from scratch on
+every run (idempotent; removing it gives back Microsoft's file byte for byte),
+and with no suitable font installed the file is restored. Every copy that is
+read is loaded, patched and checked as XML before any is written; if one of
+them is damaged nothing is written and setup only warns. A damaged copy the
+installed .NET never reads does not block the fix: it is left alone and only
+the doctor check ``prefix.font_fallback`` reports it. Files are written
+atomically, keep their byte-order mark, line endings and mode, and are never
+reached through a symlink.
 """
 
 from __future__ import annotations
@@ -48,6 +54,7 @@ from typing import Any
 from .. import fsutil
 from ..bootstrap import Ctx, Step
 from ..errors import ForkLinuxError
+from . import dotnet as dotnet_step
 from . import fonts as fonts_step
 
 log = logging.getLogger(__name__)
@@ -57,6 +64,10 @@ COMPOSITE_FONT_NAME = "GlobalUserInterface.CompositeFont"
 WPF_DIR_PARTS = ("windows", "Microsoft.NET", "Framework64", "v4.0.30319", "WPF")
 # Sub-folders of WPF\ holding a copy WPF may read: WPF\ itself (4.8) and WPF\Fonts\ (4.7.2).
 COMPOSITE_FONT_LOCATIONS: tuple[tuple[str, ...], ...] = ((), ("Fonts",))
+# .NET Framework 4.8's lowest Release value (Microsoft's version table; 4.7.2 is 461808 / 461814).
+# 4.8 and later read WPF\, older releases WPF\Fonts\ (S10 Finding 7).
+NET48_RELEASE = 528040
+NET472_RELEASE = 461808
 FRAMEWORK64_WIN = "C:\\windows\\Microsoft.NET\\Framework64\\v4.0.30319\\"
 # Microsoft's file is ~265 KB; anything far larger is not a composite font.
 MAX_BYTES = 8 * 1024 * 1024
@@ -72,6 +83,9 @@ BEGIN_LINE = (
 )
 INDENT = "    "
 REPAIR_HINT = "repair the .NET Framework: 'fork-linux setup --reset' builds a fresh prefix"
+UNREAD_HINT = (
+    "nothing to do for Fork; for an intact .NET Framework, 'fork-linux setup --reset' builds a fresh prefix"
+)
 FORBIDDEN = ("<!DOCTYPE", "<!ENTITY")
 
 # -- which Linux fonts serve which script ----------------------------------------------------------
@@ -151,7 +165,7 @@ FONTS_HINT = (
 
 
 class Unpatchable(ForkLinuxError):
-    """No composite font copy exists, or one copy is damaged: that copy is never written."""
+    """The copy the installed .NET reads is missing, or a copy is damaged: that copy is never written."""
 
 
 @dataclass(frozen=True)
@@ -187,14 +201,23 @@ class Patch:
 
 @dataclass(frozen=True)
 class Copies:
-    """Every copy found: the sound ones with their ``patches``, and why the ``damaged`` ones cannot be patched."""
+    """The copies the installed .NET (``dotnet``) reads, patched all or nothing, and the damaged ones it never reads.
+
+    ``patches`` are the sound copies that are read, ``damaged`` says why a copy
+    that is read cannot be patched (then nothing is written) and ``unread``
+    why a copy the installed .NET never reads is damaged (it is left alone).
+    """
 
     patches: tuple[Patch, ...]
     damaged: tuple[Unpatchable, ...]
+    unread: tuple[Unpatchable, ...] = ()
+    dotnet: str = ""
 
     @property
     def stale(self) -> tuple[Patch, ...]:
-        """The sound copies that must be rewritten."""
+        """The copies to rewrite: none while a copy that is read is damaged."""
+        if self.damaged:
+            return ()
         return tuple(patch for patch in self.patches if patch.stale)
 
 
@@ -265,9 +288,27 @@ def wpf_dir(ctx: Ctx) -> Path | None:
     return found if found is not None and found.is_dir() else None
 
 
-def composite_font_wins() -> list[str]:
-    """The Windows paths of the copies WPF may read."""
-    return [FRAMEWORK64_WIN + folder_name(sub) + COMPOSITE_FONT_NAME for sub in COMPOSITE_FONT_LOCATIONS]
+def composite_font_wins(locations: tuple[tuple[str, ...], ...] = COMPOSITE_FONT_LOCATIONS) -> list[str]:
+    """The Windows paths of the copies in ``locations`` (default: every copy WPF may read)."""
+    return [FRAMEWORK64_WIN + folder_name(sub) + COMPOSITE_FONT_NAME for sub in locations]
+
+
+def read_locations(release: int | None) -> tuple[tuple[str, ...], ...]:
+    """The copies a .NET Framework ``Release`` reads: ``WPF\\`` from 4.8 on, else ``WPF\\Fonts\\``; unknown: all."""
+    if release is None:
+        return COMPOSITE_FONT_LOCATIONS
+    return ((),) if release >= NET48_RELEASE else (("Fonts",),)
+
+
+def dotnet_name(release: int | None) -> str:
+    """How messages name the installed .NET Framework."""
+    if release is None:
+        return "the installed .NET Framework (its release is unknown)"
+    if release >= NET48_RELEASE:
+        return f".NET Framework 4.8 (release {release})"
+    if release >= NET472_RELEASE:
+        return f".NET Framework 4.7.2 (release {release})"
+    return f"the .NET Framework release {release}"
 
 
 def folder_name(sub: tuple[str, ...]) -> str:
@@ -400,19 +441,28 @@ def _patch_or_problem(path: Path, maps: list[FamilyMap], folder: str) -> Patch |
 
 
 def patched_composite_fonts(ctx: Ctx, maps: list[FamilyMap] | None = None) -> Copies:
-    """Every copy with its patched bytes, or why it is damaged; :class:`Unpatchable` when none exists."""
+    """The copies the installed .NET reads, patched (or why they are damaged), and the damaged copies it never reads.
+
+    Raises :class:`Unpatchable` when no copy that is read exists.
+    """
+    release = dotnet_step.release(ctx)
+    reads = {folder_name(sub) for sub in read_locations(release)}
     found = composite_fonts(ctx)
-    if not found:
-        wanted = " and ".join(composite_font_wins())
+    if not any(folder in reads for folder, _path in found):
+        wanted = composite_font_wins(read_locations(release))
+        verb = "does" if len(wanted) == 1 else "do"
         raise Unpatchable(
-            f"WPF's composite font is missing ({wanted} do not exist)",
+            f"WPF's composite font is missing ({' and '.join(wanted)} {verb} not exist; "
+            f"{dotnet_name(release)} reads it)",
             hint=REPAIR_HINT,
         )
     chosen = wanted_maps(ctx) if maps is None else maps
-    results = [_patch_or_problem(path, chosen, folder) for folder, path in found]
+    results = [(folder in reads, _patch_or_problem(path, chosen, folder)) for folder, path in found]
     return Copies(
-        tuple(item for item in results if isinstance(item, Patch)),
-        tuple(item for item in results if isinstance(item, Unpatchable)),
+        tuple(item for read, item in results if read and isinstance(item, Patch)),
+        tuple(item for read, item in results if read and isinstance(item, Unpatchable)),
+        tuple(item for read, item in results if not read and isinstance(item, Unpatchable)),
+        dotnet_name(release),
     )
 
 
@@ -435,7 +485,7 @@ def _warn(ctx: Ctx, problem: Unpatchable) -> None:
 
 
 def run(ctx: Ctx) -> None:
-    """Patch every stale sound copy; only warn about a missing composite font or a damaged copy."""
+    """Patch the stale copies the installed .NET reads; only warn about a missing or damaged one."""
     try:
         copies = patched_composite_fonts(ctx)
     except Unpatchable as exc:
@@ -443,13 +493,15 @@ def run(ctx: Ctx) -> None:
         return
     for problem in copies.damaged:
         _warn(ctx, problem)
+    for problem in copies.unread:
+        log.info("font_fallback: left alone, %s never reads it: %s", copies.dotnet, problem.message)
     for patch in copies.stale:
         log.info("font_fallback: patching %s", patch.path)
         write_patch(patch)
 
 
 def verify(ctx: Ctx) -> bool:
-    """Every sound copy is current; a missing composite font or a damaged copy was only warned about."""
+    """Every copy that is read is current; a missing or damaged one was only warned about."""
     try:
         copies = patched_composite_fonts(ctx)
     except Unpatchable:
@@ -461,7 +513,8 @@ FONT_FALLBACK = Step(
     id="font_fallback",
     title="Mapping non-Latin scripts to Linux fonts",
     # rev 2: every copy (WPF\ and WPF\Fonts\, for .NET 4.7.2), not only WPF\.
-    rev=2,
+    # rev 3: only the copy the installed .NET reads; a damaged copy it never reads no longer blocks it.
+    rev=3,
     weight=1,
     run=run,
     verify=verify,

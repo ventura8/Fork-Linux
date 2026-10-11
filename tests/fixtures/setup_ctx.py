@@ -215,7 +215,7 @@ class FakeWine:
         self,
         prefix: Path,
         *,
-        release: int = 528049,
+        release: int | None = None,
         fail: tuple[str, ...] = (),
         layout: ForkLayout | None = None,
     ) -> None:
@@ -280,7 +280,9 @@ class FakeWine:
                 handle.writelines(verb + "\n" for verb in verbs)
         for verb in verbs:
             if verb.startswith("dotnet"):
-                write_release(self.prefix, self.release)
+                # The releases measured in S10 Finding 7, unless the test asks for another one.
+                default = 461814 if verb == "dotnet472" else 528049
+                write_release(self.prefix, default if self.release is None else self.release)
                 # WPF's composite font: .NET 4.8 has copies in WPF\ and WPF\Fonts\, 4.7.2 only in WPF\Fonts\.
                 for sub in ("Fonts",) if verb == "dotnet472" else ("", "Fonts"):
                     write_composite_font(self.prefix, sub)
