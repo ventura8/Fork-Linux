@@ -186,6 +186,30 @@ def test_wayland_driver(closed: Any) -> None:
         weston.wait(timeout=30)
 
 
+def test_restart_replaces_a_fork_without_a_window(closed: Any) -> None:
+    """A Fork that lost its window keeps the fast path busy (``run`` shows nothing); ``run --restart`` ends it
+    and starts Fork again.
+
+    Scenarios: L-RESTART
+    """
+    e2e = closed
+    repo = _repo(e2e, "launch-restart")
+    window = e2e.fork.start(repo)
+    stuck = fork_pids(e2e.prefix)
+    e2e.screen.xdotool("windowclose", window.id, check=True)
+    wait_until(lambda: e2e.fork.main_window() is None, 30, "Fork's window to be gone")
+    time.sleep(3)
+    assert fork_pids(e2e.prefix) == stuck, "Fork.exe ended with its window"
+    forwarded = e2e.fork.launch(repo)
+    assert forwarded.wait(timeout=FAST_PATH_SECONDS) == 0
+    time.sleep(5)
+    assert e2e.fork.main_window() is None, "the fast path showed a window after all"
+    e2e.fork.launch(repo, args=("--restart",))
+    assert e2e.fork.wait_main().is_main
+    restarted = fork_pids(e2e.prefix)
+    assert restarted and not set(restarted) & set(stuck)
+
+
 def test_no_setup_refuses_pending_steps(installed: Any) -> None:
     """``run --no-setup`` with an incomplete setup exits 10 instead of setting up.
 

@@ -14,12 +14,14 @@ copied into the repository (AGENTS.md hard rule 4).
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
@@ -448,6 +450,16 @@ def git(repo: Path, *args: str, check: bool = True, env: Mapping[str, str] | Non
     if check and result.returncode != 0:
         raise DriverError(f"git {' '.join(args)} in {repo} failed: {result.stderr.strip()}")
     return result.stdout.rstrip("\n")
+
+
+@functools.cache
+def remotes_dir() -> Path:
+    """A new directory under ``/tmp`` for this session's bare remotes.
+
+    Fork's git reaches ``/tmp`` through the overlay's url rewrites (the E2E root is not under one of the
+    rewritten tops); a new directory per session lets a kept container run the tests again.
+    """
+    return Path(tempfile.mkdtemp(prefix="fl-e2e-remotes-", dir="/tmp"))
 
 
 def windows_path(path: Path) -> str:

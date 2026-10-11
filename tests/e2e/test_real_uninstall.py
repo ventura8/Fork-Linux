@@ -50,15 +50,20 @@ def test_uninstall_keeps_the_prefix_and_fork(installed: Any) -> None:
 
 
 def test_purge_refuses_while_fork_runs(installed: Any) -> None:
-    """``uninstall --purge --yes`` while Fork runs exits 15 and deletes nothing.
+    """``uninstall --purge --yes`` while Fork runs exits 15 and deletes nothing, also with another prefix selected.
 
-    Scenarios: U-FORK-RUNNING
+    Scenarios: U-FORK-RUNNING, U-FORK-RUNNING-OTHER-PREFIX
     """
     e2e = installed
     if not fork_pids(e2e.prefix):
         e2e.fork.start(make_repo(e2e.repos / "purge-running", {".gitignore": "*.tmp\n"}))
     result = e2e.cli("uninstall", "--purge", "--yes", check=False)
     assert result.returncode == FORK_RUNNING, result.stderr
+    # Another prefix selected: the purge would still delete the data directory with the running one.
+    other = e2e.home / ".local" / "share" / "fork-linux" / "prefix2"
+    result = e2e.cli("uninstall", "--purge", "--yes", extra={"FORK_LINUX_PREFIX": str(other)}, check=False)
+    assert result.returncode == FORK_RUNNING, result.stderr
+    assert str(e2e.prefix) in result.stderr
     assert e2e.prefix.is_dir()
     assert (e2e.home / ".local" / "share" / "fork-linux" / "runtimes").is_dir()
     e2e.fork.close()

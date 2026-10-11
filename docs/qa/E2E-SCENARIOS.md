@@ -15,18 +15,18 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | Area | Scenarios | In this repository | Pending merge |
 |---|---|---|---|
 | Setup | 23 | 22 | 1 |
-| Launch | 15 | 15 | 0 |
-| Git operations through Fork's UI | 55 | 55 | 0 |
+| Launch | 16 | 16 | 0 |
+| Git operations through Fork's UI | 57 | 57 | 0 |
 | OS integration | 22 | 22 | 0 |
 | Native-git bridge | 9 | 9 | 0 |
 | Doctor and repository fixes | 13 | 13 | 0 |
-| Uninstall | 7 | 7 | 0 |
+| Uninstall | 8 | 8 | 0 |
 | Snapshots and rollback | 7 | 7 | 0 |
 | Fork updates | 11 | 0 | 11 |
 | Fork for Linux upgrades | 12 | 0 | 12 |
 | Desktop environments | 70 | 0 | 70 |
 | Non-Latin font fallback | 3 | 0 | 3 |
-| **Total** | 247 | 150 | 97 |
+| **Total** | 251 | 154 | 97 |
 
 ## Setup
 
@@ -74,6 +74,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | L-DRIVER-WAYLAND | --wayland runs Fork with Wine's Wayland driver | real-fork | this repository | `tests/e2e/test_real_launch.py::test_wayland_driver` |
 | L-NO-SETUP | run --no-setup with an incomplete setup exits 10 | real-fork | this repository | `tests/e2e/test_real_launch.py::test_no_setup_refuses_pending_steps` |
 | L-NO-HOOKS | run --no-hooks skips the snapshot and settings hooks | real-fork | this repository | `tests/e2e/test_real_launch.py::test_no_hooks_skips_the_pre_launch_hooks` |
+| L-RESTART | run --restart ends a Fork that lost its window (the fast path shows nothing) and starts Fork again | real-fork | this repository | `tests/e2e/test_real_launch.py::test_restart_replaces_a_fork_without_a_window` |
 | L-SETUP-INCOMPLETE-GUI | A launch with pending setup steps shows a progress dialog, then Fork | real-fork | this repository | `tests/e2e/test_real_launch.py::test_pending_setup_runs_behind_a_progress_dialog` |
 
 ## Git operations through Fork's UI
@@ -124,12 +125,14 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | G-TAG-PUSH | Push tags | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_push_tags` |
 | G-HTTP-BASIC-AUTH | An HTTP remote with a password: Git Credential Manager asks | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_http_with_basic_auth` |
 | G-HTTP-CREDENTIALS-STORED | The password is stored (DPAPI) and not asked again | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_http_with_basic_auth` |
+| G-HTTP-FORK-PROMPT | When Git Credential Manager cannot show its window, Fork's own prompt asks and GCM still keeps the account | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_forks_own_prompt_when_gcm_cannot_ask` |
 | G-SSH-KEY | ssh remote with the user's key and config (bundled ssh) | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_ssh_with_a_shared_key` |
 | G-CLONE-FILE | Clone a file:// URL into the Linux home | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_clone_a_file_url` |
 | G-CLONE-HTTPS | Clone a public HTTPS repository | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_clone_a_public_https_repository` |
 | G-WORKTREE | Worktrees: create, open as a tab, remove; native git understands them | real-fork | this repository | `tests/e2e/test_real_git_advanced.py::test_worktree_create_open_remove` |
 | G-GITFLOW | Git Flow: initialize (bundled git); start a feature (native-git bridge with git-flow) | real-fork | this repository | `tests/e2e/test_real_git_advanced.py::test_git_flow_initialize`<br>`tests/e2e/test_real_bridge.py::test_git_flow_start_feature` |
-| G-LFS | Git LFS: initialize, commit a tracked file as a pointer, push its object | real-fork | this repository | `tests/e2e/test_real_git_advanced.py::test_lfs_files_are_committed_as_pointers_and_pushed` |
+| G-LFS | Git LFS: initialize, commit a tracked file as a pointer (bundled git-lfs) | real-fork | this repository | `tests/e2e/test_real_git_advanced.py::test_lfs_files_are_committed_as_pointers` |
+| G-LFS-PUSH | Git LFS: a push uploads the object with the commit (native-git bridge runs the pre-push hook) | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_lfs_push_uploads_the_object` |
 | G-HOOK-BUNDLED | Bundled git: a failing builtin-only pre-commit hook stops the commit | real-fork | this repository | `tests/e2e/test_real_git_advanced.py::test_failing_builtin_hook_blocks_the_commit_with_bundled_git` |
 | G-HOOK-BRIDGE | Native-git bridge: a failing hook that runs programs stops the commit | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_failing_pre_commit_hook_blocks_the_commit` |
 | G-SUBMODULE | Update a submodule (native-git bridge) | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_submodule_update_works` |
@@ -151,7 +154,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | I-DESKTOP-MENU | The menu entry starts Fork; Fork's icon at every size | real-fork | this repository | `tests/e2e/test_real_integration.py::test_menu_entry_with_forks_icon_starts_fork` |
 | I-CLI-ALIAS | desktop install --cli-alias (the AppImage's --install-desktop) links fork into ~/.local/bin | packaging | this repository | `packaging:appimage:appimage_assert` |
 | I-FILE-MANAGER-ACTIONS | Every file manager's Open in Fork action opens the file's repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_file_manager_actions_open_the_files_repository` |
-| I-DESKTOP-REMOVE | desktop remove deletes exactly what desktop install created | real-fork | this repository | `tests/e2e/test_real_integration.py::test_desktop_remove_deletes_exactly_what_was_installed` |
+| I-DESKTOP-REMOVE | desktop remove deletes exactly what desktop install created (with the folders it made) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_desktop_remove_deletes_exactly_what_was_installed` |
 | I-GIT-BASH | Git Bash as Fork's terminal (it exits at once under Wine): doctor warns; unset, the Linux terminal is back | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_git_bash_terminal_is_flagged_and_replaced` |
 | I-SSH-SYNC | ssh sync shares ~/.ssh keys and config with Fork's bundled ssh | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_ssh_with_a_shared_key` |
 | I-EXTERNAL-DIFF | Diff in Linux: the Linux diff tool, Fork waits | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_linux_diff_tool_runs_and_fork_waits` |
@@ -201,6 +204,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 |---|---|---|---|---|
 | U-KEEP-PREFIX | uninstall removes the integration and keeps Fork and its prefix | real-fork | this repository | `tests/e2e/test_real_uninstall.py::test_uninstall_keeps_the_prefix_and_fork` |
 | U-FORK-RUNNING | uninstall --purge refuses while Fork runs | real-fork | this repository | `tests/e2e/test_real_uninstall.py::test_purge_refuses_while_fork_runs` |
+| U-FORK-RUNNING-OTHER-PREFIX | uninstall --purge with another prefix selected refuses while Fork runs in a prefix of the data directory | real-fork | this repository | `tests/e2e/test_real_uninstall.py::test_purge_refuses_while_fork_runs` |
 | U-LICENSE-WARNING | uninstall --purge warns about license activations and needs the word purge | real-fork | this repository | `tests/e2e/test_real_uninstall.py::test_purge_shows_the_license_warning_and_needs_the_word` |
 | U-KEEP-DOWNLOADS | uninstall --purge --keep-downloads keeps the download caches | real-fork | this repository | `tests/e2e/test_real_uninstall.py::test_purge_keep_downloads_keeps_the_caches` |
 | U-PURGE | uninstall --purge deletes everything fork-linux created, nothing else | real-fork | this repository | `tests/e2e/test_real_uninstall.py::test_purge_deletes_only_what_we_created` |

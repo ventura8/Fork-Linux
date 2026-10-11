@@ -319,7 +319,8 @@ def test_file_manager_actions_open_the_files_repository(desk: Any, installed: An
 
 
 def test_desktop_remove_deletes_exactly_what_was_installed(desk: Any, installed: Any) -> None:
-    """``desktop remove`` deletes the menu entry, icons and actions it installed, nothing else.
+    """``desktop remove`` deletes the menu entry, icons and actions it installed (and the folders it had to
+    create for them), nothing else.
 
     Scenarios: I-DESKTOP-REMOVE
     """
@@ -328,6 +329,8 @@ def test_desktop_remove_deletes_exactly_what_was_installed(desk: Any, installed:
     keep = share / "applications" / "someone-else.desktop"
     keep.parent.mkdir(parents=True, exist_ok=True)
     keep.write_text("[Desktop Entry]\nType=Application\nName=Other\nExec=true\n", encoding="utf-8")
+    installed.cli("desktop", "remove")
+    folders = _folders(installed)
     installed.cli("desktop", "install", "--file-managers", "all")
     before = json.loads(installed.cli("desktop", "status", "--json").stdout)
     files = [Path(entry["path"]) for entry in before["entries"]]
@@ -339,3 +342,11 @@ def test_desktop_remove_deletes_exactly_what_was_installed(desk: Any, installed:
     assert after["installed"] is False and after["entries"] == []
     assert not [path for path in files if path.exists()], "desktop remove left files behind"
     assert keep.is_file()
+    assert sorted(_folders(installed) - folders) == [], "desktop remove left the folders it created behind"
+
+
+def _folders(e2e: Any) -> set[Path]:
+    """The folders under the data and config homes, without fork-linux's own (Fork, the prefix)."""
+    roots = (e2e.home / ".local" / "share", e2e.home / ".config", e2e.home / ".local" / "bin")
+    return {path for root in roots if root.is_dir() for path in root.rglob("*")
+            if path.is_dir() and path.relative_to(root).parts[0] != "fork-linux"}

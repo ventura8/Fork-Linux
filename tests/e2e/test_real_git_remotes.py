@@ -11,14 +11,15 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
 from typing import Any
 
 import pytest
-from fork_driver import git, make_repo, wait_until, windows_path
-from fork_ui import ForkUI
+from fork_driver import git, make_repo, remotes_dir, wait_until, windows_path
+from fork_ui import ASKPASS_FIELD, ForkUI
 from git_servers import HttpGitServer, SshServer
 
 from fixtures import real_tier
@@ -27,7 +28,7 @@ if os.environ.get("FL_E2E_FORK") != "1":
     pytest.skip("requires FL_E2E_FORK=1 (the official Fork under Wine)", allow_module_level=True)
 real_tier.enforce()
 
-REMOTES = Path("/tmp/fl-e2e-remotes")
+REMOTES = remotes_dir()
 GCM_TITLE = "Git Credential Manager"
 # Inside Git Credential Manager's prompt (420x312): the user name and password fields.
 GCM_USER_Y = 167
@@ -40,7 +41,6 @@ CLONE_SECONDS = 120.0
 
 def _remote(e2e: Any, name: str) -> tuple[Path, Path]:
     """A bare remote ``REMOTES/<name>.git`` and the repository its first commit came from."""
-    REMOTES.mkdir(parents=True, exist_ok=True)
     seed = make_repo(e2e.repos / f"{name}-seed", {".gitignore": "*.tmp\n", "a.txt": "a\n"})
     bare = REMOTES / f"{name}.git"
     subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)], check=True, timeout=120)
@@ -139,18 +139,38 @@ def test_push_tags(ui: ForkUI, installed: Any) -> None:
     ui.screen.key("Escape", settle=1.0)
 
 
-def _answer_credentials(ui: ForkUI, user: str, password: str) -> None:
-    """Git Credential Manager's own window (the overlay makes it Fork's git's helper) asks for the account.
+def _answer_credentials(ui: ForkUI, repo: str, user: str, password: str) -> str:
+    """Answer the first credential prompt of an HTTP remote; return which one asked (``gcm`` or ``fork``).
 
-    Its window takes no keyboard focus by itself (no window manager), so its fields are clicked.
+    Git Credential Manager (the overlay makes it the helper of Fork's git) asks in its own window. Under
+    Wine it sometimes ends without one on the first prompt after Fork starts (about 1 in 6 fresh starts,
+    never in a running session); git then asks through Fork's own prompt (one for the user name, one for
+    the password) and still hands the account to GCM to keep. Neither window takes the keyboard by itself
+    (no window manager), so their fields are clicked.
     """
-    window = wait_until(lambda: _any_window(ui, GCM_TITLE), 120, "Git Credential Manager's prompt")
-    ui.screen.screenshot("gcm-prompt", window)
-    ui.screen.click_in(window, window.width // 2, GCM_USER_Y)
-    ui.screen.type(user)
-    ui.screen.click_in(window, window.width // 2, GCM_PASSWORD_Y)
-    ui.screen.type(password)
-    ui.screen.key("Return", settle=2.0)
+    def prompt() -> tuple[str, Any] | None:
+        gcm = _any_window(ui, GCM_TITLE)
+        if gcm is not None:
+            return "gcm", gcm
+        fork = _any_window(ui, re.escape(repo))
+        return ("fork", fork) if fork is not None else None
+
+    kind, window = wait_until(prompt, 120, "a credential prompt")
+    ui.screen.screenshot(f"{kind}-credential-prompt", window)
+    if kind == "gcm":
+        ui.screen.click_in(window, window.width // 2, GCM_USER_Y)
+        ui.screen.type(user)
+        ui.screen.click_in(window, window.width // 2, GCM_PASSWORD_Y)
+        ui.screen.type(password)
+        ui.screen.key("Return", settle=2.0)
+        return kind
+    for answer in (user, password):
+        window = wait_until(lambda: _any_window(ui, re.escape(repo)), 60, "Fork's credential prompt")
+        ui.screen.click_in(window, *ASKPASS_FIELD)
+        ui.screen.type(answer)
+        ui.screen.key("Return", settle=1.0)
+        ui.screen.wait_gone(window)
+    return kind
 
 
 def _any_window(ui: ForkUI, title: str) -> Any:
@@ -158,26 +178,24 @@ def _any_window(ui: ForkUI, title: str) -> Any:
     return next((window for window in ui.screen.any_windows(f"^{title}$")), None)
 
 
-def test_fetch_and_push_over_http_with_basic_auth(ui: ForkUI, installed: Any) -> None:
-    """An HTTP remote with a password: Git Credential Manager asks once and keeps it (DPAPI): the pull and
-    the push that follow ask nothing.
+def _http_with_a_password(ui: ForkUI, installed: Any, name: str, extra: dict[str, str]) -> str:
+    """Fetch, pull and push through Fork to an HTTP remote with basic auth, Fork started with ``extra``.
 
-    Scenarios: G-HTTP-BASIC-AUTH, G-HTTP-CREDENTIALS-STORED
+    Only the first fetch may ask for the account; return which prompt asked (``gcm`` or ``fork``).
     """
-    bare, seed = _remote(installed, "http")
+    bare, seed = _remote(installed, name)
     with HttpGitServer(REMOTES) as server:
         token = base64.b64encode(f"{server.user}:{server.password}".encode()).decode()
-        work = _clone(server.url(bare.name), installed.repos / "http-work",
+        work = _clone(server.url(bare.name), installed.repos / f"{name}-work",
                       "-c", f"http.extraHeader=Authorization: Basic {token}")
         theirs = _new_commit(seed, "theirs.txt", "their work")
         git(seed, "push", "-q", "origin", "main")
-        # Git Credential Manager's trace (GCM_TRACE) goes to the tier's logs: it says why GCM did not prompt.
         installed.fork.ensure_closed()
-        installed.fork.start(work, extra={"GCM_TRACE": windows_path(installed.logs / "gcm-trace.log")})
+        installed.fork.start(work, extra=extra)
         ui.open(work)
         ui.keys("ctrl+shift+f", settle=1.0)
         _accept(ui, "Fetch")
-        _answer_credentials(ui, server.user, server.password)
+        asked_by = _answer_credentials(ui, work.name, server.user, server.password)
         wait_until(lambda: git(work, "rev-parse", "origin/main") == theirs, 90, "the fetch over HTTP")
         ui.keys("ctrl+shift+l", settle=1.0)
         _accept(ui, "Pull")
@@ -187,8 +205,33 @@ def test_fetch_and_push_over_http_with_basic_auth(ui: ForkUI, installed: Any) ->
         ui.keys("ctrl+shift+p", settle=1.0)
         _accept(ui, "Push")
         wait_until(lambda: _remote_head(bare) == ours, 90, "the push over HTTP")
-        assert not _any_window(ui, GCM_TITLE), "the stored credentials must be used without asking again"
+        asking = _any_window(ui, GCM_TITLE) or _any_window(ui, re.escape(work.name))
+        assert asking is None, "the kept credentials must be used without asking again"
         assert any("git-receive-pack" in line and " 200 " in line for line in server.requests)
+    installed.fork.ensure_closed()
+    return asked_by
+
+
+def test_fetch_and_push_over_http_with_basic_auth(ui: ForkUI, installed: Any) -> None:
+    """An HTTP remote with a password: Git Credential Manager asks once (or Fork's own prompt, when GCM cannot
+    open its window) and keeps the account (DPAPI): the pull and the push that follow ask nothing.
+
+    Scenarios: G-HTTP-BASIC-AUTH, G-HTTP-CREDENTIALS-STORED
+    """
+    # Git Credential Manager's trace goes to the tier's logs: it shows what GCM did (and where it stopped).
+    asked_by = _http_with_a_password(ui, installed, "http",
+                                     {"GCM_TRACE": windows_path(installed.logs / "gcm-trace.log")})
+    print(f"credential prompt: {asked_by}")
+
+
+def test_forks_own_prompt_when_gcm_cannot_ask(ui: ForkUI, installed: Any) -> None:
+    """When Git Credential Manager cannot show its window, Fork's own prompt asks for the account, and GCM
+    still keeps it: the pull and the push that follow ask nothing.
+
+    Scenarios: G-HTTP-FORK-PROMPT
+    """
+    # GCM_INTERACTIVE=never makes GCM refuse to prompt: what happens when its window cannot open under Wine.
+    assert _http_with_a_password(ui, installed, "http-fork-prompt", {"GCM_INTERACTIVE": "never"}) == "fork"
 
 
 def _ssh_user_setup(e2e: Any, server: SshServer) -> str:
@@ -209,7 +252,8 @@ def _ssh_user_setup(e2e: Any, server: SshServer) -> str:
 
 
 def test_fetch_and_push_over_ssh_with_a_shared_key(ui: ForkUI, installed: Any) -> None:
-    """ssh remotes with the user's own key and config, shared with Fork's bundled ssh by ``ssh sync``.
+    """ssh remotes with the user's own key and config, shared with Fork's bundled ssh by ``ssh sync`` (a dry run
+    afterwards has nothing to do).
 
     Scenarios: G-SSH-KEY, I-SSH-SYNC
     """
@@ -224,6 +268,9 @@ def test_fetch_and_push_over_ssh_with_a_shared_key(ui: ForkUI, installed: Any) -
         assert synced.returncode == 0
         status = installed.cli("ssh", "status", "--json").stdout
         assert "id_e2e" in status
+        # Already shared: a dry run has nothing to do.
+        dry = installed.cli("ssh", "sync", "--dry-run").stdout
+        assert "nothing would change" in dry and "would link" not in dry, dry
         work = _clone(f"file://{bare}", installed.repos / "ssh-work")
         git(work, "remote", "set-url", "origin", f"{alias}:{bare}")
         _fetch_pull_push(ui, work, seed, bare)

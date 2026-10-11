@@ -8,7 +8,6 @@ cannot run under Wine: that part is covered with the native-git bridge in
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +21,6 @@ if os.environ.get("FL_E2E_FORK") != "1":
     pytest.skip("requires FL_E2E_FORK=1 (the official Fork under Wine)", allow_module_level=True)
 real_tier.enforce()
 
-REMOTES = Path("/tmp/fl-e2e-remotes")
 # The sidebar of a repository with one worktree: the worktree's entry; the Repository menu.
 WORKTREE_ENTRY = (120, 270)
 WORKTREE_MENU_DELETE_FROM_BOTTOM = 53
@@ -83,20 +81,14 @@ def test_git_flow_initialize(ui: ForkUI, installed: Any) -> None:
     assert git(repo, "config", "gitflow.prefix.feature") == "feature/"
 
 
-def test_lfs_files_are_committed_as_pointers_and_pushed(ui: ForkUI, installed: Any) -> None:
-    """Repository > Git LFS > Initialize, then a tracked file committed in Fork is an LFS pointer and
-    its content reaches the remote's LFS store on push (Fork's bundled git-lfs).
+def test_lfs_files_are_committed_as_pointers(ui: ForkUI, installed: Any) -> None:
+    """Repository > Git LFS > Initialize, then a tracked file committed in Fork is an LFS pointer with its
+    content in the local LFS store (Fork's bundled git-lfs). Pushing it runs LFS's pre-push hook, which
+    needs the git bridge (README, "Known Wine limitations"): ``test_real_bridge.py`` pushes it.
 
     Scenarios: G-LFS
     """
-    REMOTES.mkdir(parents=True, exist_ok=True)
-    seed = _repo(installed, "lfs-seed")
-    bare = REMOTES / "lfs.git"
-    subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)], check=True, timeout=120)
-    repo = installed.repos / "lfs-work"
-    subprocess.run(["git", "clone", "-q", f"file://{bare}", str(repo)], check=True, timeout=120)
-    git(repo, "config", "user.name", "E2E Test")
-    git(repo, "config", "user.email", "e2e@example.invalid")
+    repo = _repo(installed, "lfs-work")
     window = ui.open(repo)
     before = ui.screen.windows()
     ui.screen.click_in(window, *REPOSITORY_MENU)
@@ -117,12 +109,8 @@ def test_lfs_files_are_committed_as_pointers_and_pushed(ui: ForkUI, installed: A
     wait_until(lambda: git(repo, "log", "-1", "--format=%s") == "add an lfs file" or None, 60, "the commit")
     pointer = git(repo, "show", "HEAD:data.bin")
     assert pointer.startswith("version https://git-lfs.github.com/spec/v1"), pointer[:80]
-    ui.keys("ctrl+shift+p", settle=1.0)
-    ui.wait_dialog("Push")
-    ui.screen.key("Return", settle=2.0)
     oid = next(line.split(":", 1)[1] for line in pointer.splitlines() if line.startswith("oid sha256:"))
-    wait_until(lambda: (bare / "lfs" / "objects" / oid[:2] / oid[2:4] / oid).is_file(), 120,
-               "the LFS object on the remote")
+    assert (repo / ".git" / "lfs" / "objects" / oid[:2] / oid[2:4] / oid).is_file()
 
 
 def test_failing_builtin_hook_blocks_the_commit_with_bundled_git(ui: ForkUI, installed: Any) -> None:

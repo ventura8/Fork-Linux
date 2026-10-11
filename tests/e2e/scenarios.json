@@ -493,6 +493,19 @@
     ]
   },
   {
+    "id": "L-RESTART",
+    "area": "launch",
+    "title": "run --restart ends a Fork that lost its window (the fast path shows nothing) and starts Fork again",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_launch.py::test_restart_replaces_a_fork_without_a_window"
+    ]
+  },
+  {
     "id": "L-SETUP-INCOMPLETE-GUI",
     "area": "launch",
     "title": "A launch with pending setup steps shows a progress dialog, then Fork",
@@ -1078,6 +1091,19 @@
     ]
   },
   {
+    "id": "G-HTTP-FORK-PROMPT",
+    "area": "git",
+    "title": "When Git Credential Manager cannot show its window, Fork's own prompt asks and GCM still keeps the account",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_git_remotes.py::test_forks_own_prompt_when_gcm_cannot_ask"
+    ]
+  },
+  {
     "id": "G-SSH-KEY",
     "area": "git",
     "title": "ssh remote with the user's key and config (bundled ssh)",
@@ -1146,14 +1172,27 @@
   {
     "id": "G-LFS",
     "area": "git",
-    "title": "Git LFS: initialize, commit a tracked file as a pointer, push its object",
+    "title": "Git LFS: initialize, commit a tracked file as a pointer (bundled git-lfs)",
     "tiers": [
       "real-fork"
     ],
     "provided_by": "this-branch",
     "pending_merge": false,
     "tests": [
-      "tests/e2e/test_real_git_advanced.py::test_lfs_files_are_committed_as_pointers_and_pushed"
+      "tests/e2e/test_real_git_advanced.py::test_lfs_files_are_committed_as_pointers"
+    ]
+  },
+  {
+    "id": "G-LFS-PUSH",
+    "area": "git",
+    "title": "Git LFS: a push uploads the object with the commit (native-git bridge runs the pre-push hook)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_bridge.py::test_lfs_push_uploads_the_object"
     ]
   },
   {
@@ -1367,7 +1406,7 @@
   {
     "id": "I-DESKTOP-REMOVE",
     "area": "integration",
-    "title": "desktop remove deletes exactly what desktop install created",
+    "title": "desktop remove deletes exactly what desktop install created (with the folders it made)",
     "tiers": [
       "real-fork"
     ],
@@ -1823,6 +1862,19 @@
     "id": "U-FORK-RUNNING",
     "area": "uninstall",
     "title": "uninstall --purge refuses while Fork runs",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_uninstall.py::test_purge_refuses_while_fork_runs"
+    ]
+  },
+  {
+    "id": "U-FORK-RUNNING-OTHER-PREFIX",
+    "area": "uninstall",
+    "title": "uninstall --purge with another prefix selected refuses while Fork runs in a prefix of the data directory",
     "tiers": [
       "real-fork"
     ],

@@ -60,6 +60,8 @@ MENU_TEXT_X = 60
 SUBMENU_FIRST_ITEM = 21
 # The lower pane of All Commits: its Changes tab.
 CHANGES_TAB = (450, 534)
+# Fork's AskPass window (520x185, titled with the repository's name): its text field.
+ASKPASS_FIELD = (335, 91)
 
 
 class ForkUI:

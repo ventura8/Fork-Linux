@@ -19,8 +19,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fork_driver import fork_pids, git, processes, wait_until, windows_path
-from fork_ui import STAGE_BUTTON, ForkUI, new_repo
+from fork_driver import fork_pids, git, processes, remotes_dir, wait_until, windows_path
+from fork_ui import ASKPASS_FIELD, STAGE_BUTTON, ForkUI, new_repo
 from git_servers import HttpGitServer, SshServer
 
 from fixtures import real_tier
@@ -32,7 +32,7 @@ real_tier.enforce()
 REPO = Path(__file__).resolve().parents[2]
 SHIM_GIT = "C:\\fork-linux\\gitInstance\\bin\\git.exe"
 DAEMON_EXIT_SECONDS = 20.0
-REMOTES = Path("/tmp/fl-e2e-remotes")
+REMOTES = remotes_dir()
 # The Linux tools the bridge's host actions start: a stand-in "meld" records what it was given.
 MELD_STUB = """#!/bin/sh
 log="{log}"
@@ -55,8 +55,6 @@ SUBMODULES_HEADER = (90, 380)
 FIRST_SUBMODULE = (120, 402)
 # The submodule's menu: Open, Open Git Bash, Open In Shell, Show in File Explorer, History, Update...
 SUBMODULE_MENU_UPDATE = 169
-# Fork's AskPass window (520x185): its text field.
-ASKPASS_FIELD = (335, 91)
 
 
 def _shims_built() -> bool:
@@ -198,7 +196,6 @@ def test_submodule_update_works(bridged: Any, installed: Any) -> None:
     Scenarios: G-SUBMODULE
     """
     ui, extra, _log = bridged
-    REMOTES.mkdir(parents=True, exist_ok=True)
     sub = _repo(installed, "bridge-subproj", {"s.txt": "s\n"})
     subprocess.run(["git", "clone", "-q", "--bare", str(sub), str(REMOTES / "bridge-subproj.git")], check=True)
     # The submodule comes from a (public) HTTP server: git refuses file:// submodules since 2.38.1.
@@ -243,6 +240,36 @@ def test_git_flow_start_feature(bridged: Any, installed: Any) -> None:
     ui.screen.key("Return", settle=3.0)
     wait_until(lambda: git(repo, "branch", "--show-current") == "feature/login", 60, "the feature branch")
     assert git(repo, "rev-parse", "feature/login") == git(repo, "rev-parse", "develop")
+
+
+def test_lfs_push_uploads_the_object(bridged: Any, installed: Any) -> None:
+    """Push of an LFS repository: Linux git runs LFS's pre-push hook, so the object reaches the remote's LFS
+    store with the commit. (Fork's bundled git runs that hook with msys ``sh``, which can hang under Wine.)
+
+    Scenarios: G-LFS-PUSH
+    """
+    ui, extra, _log = bridged
+    seed = _repo(installed, "bridge-lfs-seed", {"a.txt": "a\n"})
+    bare = REMOTES / "bridge-lfs.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)], check=True, timeout=120)
+    work = installed.repos / "bridge-lfs-work"
+    subprocess.run(["git", "clone", "-q", f"file://{bare}", str(work)], check=True, timeout=120)
+    git(work, "config", "user.name", "E2E Test")
+    git(work, "config", "user.email", "e2e@example.invalid")
+    git(work, "lfs", "install", "--local")
+    (work / ".gitattributes").write_text("*.bin filter=lfs diff=lfs merge=lfs -text\n", encoding="utf-8")
+    (work / "data.bin").write_bytes(os.urandom(4096))
+    git(work, "add", ".gitattributes", "data.bin")
+    git(work, "commit", "-qm", "add an lfs file")
+    pointer = git(work, "show", "HEAD:data.bin")
+    oid = next(line.split(":", 1)[1] for line in pointer.splitlines() if line.startswith("oid sha256:"))
+    _start(ui, work, extra)
+    ui.keys("ctrl+shift+p", settle=1.0)
+    ui.wait_dialog("Push")
+    ui.screen.key("Return", settle=2.0)
+    head = git(work, "rev-parse", "HEAD")
+    wait_until(lambda: git(bare, "rev-parse", "main") == head or None, 120, "the pushed commit on the remote")
+    assert (bare / "lfs" / "objects" / oid[:2] / oid[2:4] / oid).is_file(), "the push left the LFS object behind"
 
 
 def test_linux_diff_tool_runs_and_fork_waits(bridged: Any, installed: Any) -> None:
@@ -309,7 +336,6 @@ def _ssh_setup(e2e: Any, server: SshServer, *, passphrase: str) -> tuple[Path, P
 
 
 def _ssh_remote(e2e: Any, name: str, config: Path) -> tuple[Path, Path]:
-    REMOTES.mkdir(parents=True, exist_ok=True)
     seed = _repo(e2e, f"{name}-seed", {"a.txt": "a\n"})
     bare = REMOTES / f"{name}.git"
     subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)], check=True)
