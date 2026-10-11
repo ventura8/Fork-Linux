@@ -55,7 +55,9 @@ Each desktop is one `docker/Dockerfile.e2e.de.<desktop>` plus one entry in
 
 ## The session (`tests/e2e_de/dekit.py`)
 
-`Session.start()` runs, in order, and waits for each to be really up: Xvfb (1920x1080, 96 DPI),
+`Session.start()` runs, in order, and waits for each to be really up: Xvfb (1920x1080, 96 DPI,
+`-noreset`: an X server whose last client leaves resets and deletes `Xft.dpi`, which once left
+KDE's session waiting for kcminit's `Xft.dpi` after kcminit had exited and before kded6 connected),
 `dbus-daemon --session` on `$XDG_RUNTIME_DIR/bus` (so D-Bus activated services such as `xfconfd`,
 the portals and the file manager inherit the session's environment), the desktop's settings
 daemon (until it has published `Xft.dpi`), its window manager (until `_NET_SUPPORTING_WM_CHECK`
@@ -574,8 +576,9 @@ Fork's run.
   `org.gnome.desktop.interface`, so asking GNOME's keys first read scale 2 with text 1.25 as 125 %
   while every X client got 240 DPI; Cinnamon's own probe is now `Xft.dpi`
   (`DESKTOP_PROBES["cinnamon"]`).
-- cinnamon's window manager names itself "Mutter (Muffin)" and, like mutter, frames only decorated windows: Fork's
-  undecorated main window stays a child of the root window (`frames_undecorated=False`).
+- cinnamon's window manager names itself "Mutter (Muffin)" and, like mutter, frames only
+  decorated windows: Fork's undecorated main window stays a child of the root window
+  (`frames_undecorated=False`).
   Started without a user action, a relaunched Fork may open behind the window the user used last
   (focus-stealing prevention): step 08 activates it before its screenshot, as a click would.
 - Nemo: `nemo --no-default-window` (its FileManager1 D-Bus service) owns

@@ -48,7 +48,7 @@ SCREEN = "1920x1080x24"
 SESSION_MARKER = "FL_E2E_DE_SESSION"
 FILE_MANAGER1 = "org.freedesktop.FileManager1"
 # How long a session component may take to come up (an upper bound: every wait returns as soon as
-# it is there). 30 s was too short for kcminit + kded6 on a host busy with other desktop sessions.
+# it is there; a busy host with several desktop sessions and real-Fork runs needs the margin).
 START_TIMEOUT = 60.0
 # How long a query of the X server may take. While a client holds a server grab the server answers
 # nobody else: on MATE the window manager now and then held one for a minute or more (marco waiting
@@ -430,7 +430,13 @@ class Session:
             self.spawn("x-server", [*self.desktop.x_server, self.display])
             self._wait_display(f"the X server {self.display}")
             return
-        self.spawn("xvfb", ["Xvfb", self.display, "-screen", "0", SCREEN, "-dpi", "96", "-nolisten", "tcp"])
+        # -noreset: a server whose last client disconnects otherwise resets, which deletes the root
+        # window's RESOURCE_MANAGER (Xft.dpi). When kcminit had published Xft.dpi and exited before
+        # kded6 connected, Xvfb reset and KDE's session never became ready (once in each of two
+        # real-Fork runs). A desktop session's X server never runs out of clients.
+        self.spawn(
+            "xvfb", ["Xvfb", self.display, "-screen", "0", SCREEN, "-dpi", "96", "-nolisten", "tcp", "-noreset"]
+        )
         self._wait_display("Xvfb")
 
     def _wait_display(self, what: str) -> None:
