@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.28.0
 # CI image for Fork for Linux (unofficial) — coverage stage (Ubuntu 26.04)
 # Image tag: fork-linux-ci-coverage:26.04
 # Runs (scripts/ci-docker.sh, FL_CI_STAGE=coverage): pytest with the coverage gates of

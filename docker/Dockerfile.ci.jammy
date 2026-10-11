@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.28.0
 # Compat cell: Ubuntu 22.04 (jammy) — the oldest supported baseline (Python 3.10).
 # Image tag: fork-linux-ci-jammy:22.04
 # Source is bind-mounted at /src; nothing is copied into the image.

@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.28.0
 # CI image for Fork for Linux (unofficial) — compat cell: Ubuntu 24.04 (noble)
 # Image tag: fork-linux-ci-noble:24.04
 # Runs (scripts/ci-docker.sh, FL_CI_STAGE=compat FL_CI_CELL=noble): meson build + meson test,

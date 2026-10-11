@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.28.0
 # Fedora RPM packaging image for Fork for Linux (unofficial) — Fedora 44
 # Image tag: fork-linux-ci-rpm-fedora:44
 # Runs scripts/release-rpm.sh fedora (rpmbuild + rpmlint, no filters) and the packaging E2E

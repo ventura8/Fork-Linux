@@ -77,7 +77,7 @@ def test_every_expected_dockerfile_exists_and_nothing_else() -> None:
 
 @pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.name)
 def test_buildkit_frontend_is_pinned(path: Path) -> None:
-    assert _text(path).splitlines()[0] == "# syntax=docker/dockerfile:1.27.0"
+    assert _text(path).splitlines()[0] == "# syntax=docker/dockerfile:1.28.0"
 
 
 @pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.name)

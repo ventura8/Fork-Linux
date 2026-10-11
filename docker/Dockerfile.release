@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.28.0
 # Portable release image for Fork for Linux (unofficial) — Ubuntu 26.04
 # Image tag: fork-linux-ci-release:26.04
 # Builds the relocatable tarball, the AppImage and the Flatpak bundle

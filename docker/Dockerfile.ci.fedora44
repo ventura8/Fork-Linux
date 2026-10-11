@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.28.0
 # CI image for Fork for Linux (unofficial) — compat cell: Fedora 44
 # Image tag: fork-linux-ci-fedora44:44
 # Runs (scripts/ci-docker.sh, FL_CI_STAGE=compat FL_CI_CELL=fedora44): meson build + meson test,

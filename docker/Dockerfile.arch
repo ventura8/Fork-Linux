@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.28.0
 # Arch Linux packaging image for Fork for Linux (unofficial) — base-devel, dated snapshot tag
 # Image tag: fork-linux-ci-arch-pkg:base-devel-20261004.0.606936
 # Runs scripts/release-arch.sh (makepkg as the unprivileged "builder" user, .SRCINFO check)

@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.28.0
 # CI image for Fork for Linux (unofficial) — compat cell: Debian 13 (trixie)
 # Image tag: fork-linux-ci-debian13:13.7
 # Runs (scripts/ci-docker.sh, FL_CI_STAGE=compat FL_CI_CELL=debian13): meson build + meson test,

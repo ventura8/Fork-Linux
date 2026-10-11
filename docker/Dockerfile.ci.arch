@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.28.0
 # CI image for Fork for Linux (unofficial) — compat cell: Arch Linux (dated base snapshot)
 # Image tag: fork-linux-ci-arch:base-20261004.0.606936
 # Runs (scripts/ci-docker.sh, FL_CI_STAGE=compat FL_CI_CELL=arch): meson build + meson test,

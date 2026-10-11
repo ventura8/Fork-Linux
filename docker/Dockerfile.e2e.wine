@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.28.0
 # Real end-to-end image for Fork for Linux (unofficial) — Ubuntu 26.04
 # Image tag: fork-linux-ci-e2e-wine:26.04
 # scripts/ci-e2e-wine.sh (CI) and scripts/e2e-docker.sh (local; the only way to run real
