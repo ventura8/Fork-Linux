@@ -109,7 +109,7 @@ jobs:
       # .deb (its dependencies carry the t64 alternatives) and the PPA covers jammy.
       - name: Upload ${{ matrix.format }} artifacts
         if: matrix.format != 'deb-jammy'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: release-${{ matrix.format }}
           path: |
@@ -138,7 +138,7 @@ jobs:
           persist-credentials: false
 
       - name: Download the artifacts
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@v8.0.2
         with:
           path: release-artifacts
           pattern: release-*
@@ -167,7 +167,7 @@ jobs:
 
       - name: Keep the dry-run results
         if: env.DRY_RUN == 'true'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: release-dry-run
           path: release-artifacts/SHA256SUMS
@@ -191,7 +191,7 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - name: Download the snap
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@v8.0.2
         with:
           name: release-snap
           path: snap

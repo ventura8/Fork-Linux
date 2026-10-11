@@ -98,7 +98,7 @@ def test_coverage_job_runs_c_coverage_then_sonar_like_ubuntu_hello() -> None:
     assert "fetch-depth: 0" in coverage
     c_cov = coverage.index("./scripts/ci-c-coverage.sh")
     check = coverage.index("./scripts/ci-sonar.sh --check-token")
-    scan = coverage.index("uses: SonarSource/sonarqube-scan-action@v8.2.2")
+    scan = coverage.index("uses: SonarSource/sonarqube-scan-action@v8.3.0")
     assert c_cov < check < scan
     assert coverage.count("SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}") == 2
     assert coverage.count(f"if: {FORK_PR_GUARD}") >= 2
