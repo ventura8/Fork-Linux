@@ -8,16 +8,19 @@ registry batch applies the settings Fork needs under Wine (spike S1).
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from .. import fsutil, registry, resources, winecmd, winetricks
+from .. import fsutil, procs, registry, resources, winecmd, winetricks
 from ..bootstrap import Ctx, Step
 from ..errors import ForkLinuxError, SetupFailed
 from ..registry import RegBatch
 from . import runtime
+
+log = logging.getLogger(__name__)
 
 WINEBOOT_TIMEOUT = 600
 BOOT_DLL_OVERRIDES = "mscoree,mshtml="
@@ -94,6 +97,7 @@ def run_verbs(ctx: Ctx, step_id: str, verbs: Sequence[str]) -> None:
     """
     cache = ctx.paths.winetricks_cache_dir
     winetricks.seed_cache(cache, ctx.paths.legacy_winetricks_cache_dir)
+    stop_leftovers(ctx)
     offset = _log_size(ctx.log_file)
     result = winetricks.run_verbs(
         ctx.runner, runtime.winetricks_path(ctx), ctx.wine_env(), list(verbs), log_file=ctx.log_file, cache=cache
@@ -109,6 +113,21 @@ def run_verbs(ctx: Ctx, step_id: str, verbs: Sequence[str]) -> None:
             "then run 'fork-linux setup' again (it resumes)",
         )
     raise SetupFailed(step_id, failed, hint="check your network connection; winetricks' output is in the setup log")
+
+
+def stop_leftovers(ctx: Ctx) -> None:
+    """End what still runs in the prefix before winetricks or a rebuild changes it.
+
+    The steps that call this need Fork closed, so anything left is an interrupted setup's (a
+    winetricks script that keeps starting installers would break the next install, and made
+    deleting the prefix fail with "Directory not empty"): ``wineserver -k``, then a signal.
+    """
+    if not procs.prefix_pids(ctx.paths.prefix):
+        return
+    winecmd.wineserver(ctx.runner, ctx.wine_env(), ctx.wine(), "-k")
+    stopped = procs.stop_prefix(ctx.paths.prefix)
+    if stopped:
+        log.warning("stopped %d process(es) an interrupted setup left in %s", len(stopped), ctx.paths.prefix)
 
 
 def _log_size(log_file: Path | None) -> int:

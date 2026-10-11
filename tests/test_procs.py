@@ -123,3 +123,48 @@ def test_read_is_capped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     path.write_bytes(b"A" * 100)
     monkeypatch.setattr(procs, "MAX_BYTES", 10)
     assert procs._read(path) == b"A" * 10
+
+
+class _Clock:
+    """A clock that advances by ``step`` seconds per reading."""
+
+    def __init__(self, step: float) -> None:
+        self.now = 0.0
+        self.step = step
+
+    def __call__(self) -> float:
+        self.now += self.step
+        return self.now
+
+
+def test_stop_prefix_terms_then_kills_what_is_left(proc: Path, prefix: Path) -> None:
+    # E2E: an interrupted setup left winetricks starting Wine programs; deleting the prefix then failed.
+    env = {"WINEPREFIX": str(prefix)}
+    _process(proc, 301, env=env, cmdline=["/bin/bash", "winetricks", "dotnet48"])
+    _process(proc, 302, env=env, cmdline=["wineserver"])
+    _process(proc, 303, env={"WINEPREFIX": "/elsewhere"}, cmdline=["wine"])
+    sent: list[tuple[int, int]] = []
+
+    def kill(pid: int, number: int) -> None:
+        sent.append((pid, number))
+        if pid == 302:
+            # Gone already (it exited after wineserver -k): the /proc entry goes with it.
+            (proc / str(pid) / "environ").unlink()
+            raise ProcessLookupError(pid)
+        if number == procs.signal.SIGKILL:
+            (proc / str(pid) / "environ").unlink()
+
+    stopped = procs.stop_prefix(prefix, proc_root=proc, kill=kill, sleep=lambda _s: None, clock=_Clock(1.0))
+    assert stopped == [301, 302]
+    # SIGTERM was ignored: SIGKILL once the grace period is over; 303 is another prefix's.
+    assert (301, procs.signal.SIGTERM) in sent
+    assert (301, procs.signal.SIGKILL) in sent
+    assert all(pid != 303 for pid, _number in sent)
+
+
+def test_stop_prefix_gives_up_after_its_timeout(proc: Path, prefix: Path) -> None:
+    _process(proc, 401, env={"WINEPREFIX": str(prefix)}, cmdline=["wine"])
+    with pytest.raises(procs.ForkLinuxError, match="processes still run in .*: 401"):
+        procs.stop_prefix(prefix, proc_root=proc, kill=lambda _pid, _number: None, sleep=lambda _s: None,
+                          clock=_Clock(10.0))
+    assert procs.stop_prefix(prefix / "nothing-here", proc_root=proc) == []
