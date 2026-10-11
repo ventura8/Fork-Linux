@@ -24,12 +24,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# A linked worktree's .git points into the main repository's git dir: mount that read-only at
+# its own path so git ls-files (fl_create_source_tarball) works inside.
+GIT_MOUNT=()
+GIT_COMMON="$(git -C "${ROOT}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+if [[ -n "${GIT_COMMON}" && "${GIT_COMMON}" != "${ROOT}/"* ]]; then
+	GIT_MOUNT=(-v "${GIT_COMMON}:${GIT_COMMON}:ro")
+fi
+
 DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.snap -t "${IMAGE}" .
 
 docker run -d --name "${CONTAINER}" --privileged --cgroupns=host \
 	-v /sys/fs/cgroup:/sys/fs/cgroup:rw \
 	-v /sys/kernel/security:/sys/kernel/security:rw \
-	-v "${ROOT}:/src:rw" -w /src "${IMAGE}" >/dev/null
+	-v "${ROOT}:/src:rw" "${GIT_MOUNT[@]}" -w /src "${IMAGE}" >/dev/null
 
 echo "==> waiting for systemd in ${CONTAINER}"
 ready=0
