@@ -69,6 +69,37 @@ def test_every_image_has_a_recipe_and_every_recipe_an_image() -> None:
     assert sorted(path.name.rsplit(".", 1)[1] for path in DOCKERFILES) == sorted(desktops.DESKTOPS)
 
 
+def _workflow_matrix(workflow: str, job: str) -> list[str]:
+    """The ``desktop`` matrix of ``job`` in ``.github/workflows/<workflow>``."""
+    text = (REPO / ".github" / "workflows" / workflow).read_text(encoding="utf-8")
+    body = re.search(rf"^  {job}:\n(.*?)(?=^  [\w-]+:\n|\Z)", text, re.MULTILINE | re.DOTALL)
+    assert body is not None, f"{workflow} has no job {job}"
+    matrix = re.search(r"^\s+desktop: \[(.*?)\]", body.group(1), re.MULTILINE)
+    assert matrix is not None, f"{workflow} {job} has no desktop matrix"
+    return [item.strip() for item in matrix.group(1).split(",")]
+
+
+@pytest.mark.parametrize(
+    ("workflow", "job"),
+    [("check.yml", "e2e-de"), ("e2e-wine.yml", "e2e-de")],
+    ids=["integration-on-every-pr", "real-fork-weekly"],
+)
+def test_every_desktop_is_in_the_ci_matrices(workflow: str, job: str) -> None:
+    """A desktop with an image and a recipe runs in CI: its integration tier on every pull request
+    (check.yml) and its real-Fork tier with the Xvfb one (e2e-wine.yml), each desktop once."""
+    matrix = _workflow_matrix(workflow, job)
+    assert len(matrix) == len(set(matrix))
+    assert sorted(matrix) == sorted(desktops.DESKTOPS)
+
+
+def test_the_local_matrix_runs_every_image() -> None:
+    """scripts/ci-e2e-de-matrix.sh (the pipeline's e2e-de stage) runs every Dockerfile's desktop."""
+    text = (REPO / "scripts" / "ci-e2e-de-matrix.sh").read_text(encoding="utf-8")
+    assert '"${ROOT}"/docker/Dockerfile.e2e.de.*' in text
+    pipeline = (REPO / "scripts" / "ci-pipeline.sh").read_text(encoding="utf-8")
+    assert "./scripts/ci-e2e-de-matrix.sh" in pipeline
+
+
 @pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.name)
 def test_image_tag_and_packages(path: Path) -> None:
     key = path.name.rsplit(".", 1)[1]

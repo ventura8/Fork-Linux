@@ -19,13 +19,14 @@ When running the Docker CI gate (`scripts/ci-pipeline.sh` / `ci-docker.sh` / `ci
 | `ci-lint.log` | Lint stage (`FL_CI_STAGE=lint`) |
 | `ci-coverage.log` | Coverage stage (`FL_CI_STAGE=coverage`) |
 | `ci-bridge.log` | Bridge stage (`FL_CI_STAGE=bridge`) |
+| `ci-e2e-de.log` | Desktop integration stage of `ci-pipeline.sh` (`./scripts/ci-e2e-de-matrix.sh`, 7 desktops) |
 | `ci-matrix-summary.log` | Compat matrix launcher summary |
 | `ci-matrix/<cell>.log` | Per-distro compat cell (`jammy`, `noble`, `resolute`, `debian13`, `fedora44`, `leap16`, `arch`) |
 | `ci-packaging-summary.log` | Packaging matrix launcher summary |
 | `ci-packaging/<format>.log` | Per-format packaging cell (`deb`, `deb-jammy`, `rpm-fedora`, `rpm-opensuse`, `arch`, `snap`, `appimage`, `flatpak`, `tarball`) |
 | `ci-e2e-wine.log` | Real Wine + Fork end-to-end run (`./scripts/ci-e2e-wine.sh`) |
 | `e2e-wine/` | `./scripts/ci-e2e-wine.sh`: `pytest.log` + text logs copied from its scratch root |
-| `e2e-de/<NAME>.log`, `e2e-de/<NAME>/` | `./scripts/ci-e2e-de.sh <desktop> [--fork]` (NAME `de-<desktop>[-fork]`): the pytest tee + text logs copied from `/var/tmp/fork-linux-e2e/<NAME>`; `e2e-de/matrix-<NAME>.out` from `ci-e2e-de-matrix.sh` |
+| `e2e-de/<NAME>.log`, `e2e-de/<NAME>/` | `./scripts/ci-e2e-de.sh <desktop> [--fork]` (NAME `de-<desktop>[-fork]`): the pytest tee + text logs copied from `/var/tmp/fork-linux-e2e/<NAME>`; `e2e-de/matrix-<NAME>.out` from `ci-e2e-de-matrix.sh`; CI uploads `logs/e2e-de/` per desktop (`check.yml` and `e2e-wine.yml` job `e2e-de`) |
 | `e2e-docker/<NAME>/` | `./scripts/e2e-docker.sh --name NAME …`: `pytest.log` (pytest mode) + text logs (`*.log *.json *.txt` < 20 MB, never `drive_c`) copied from the scratch root `/var/tmp/fork-linux-e2e/<NAME>`; screenshots stay there (`root/shots/`) |
 
 Real-Fork / Wine runs happen **only in containers** (AGENTS.md hard rule 18): never point a

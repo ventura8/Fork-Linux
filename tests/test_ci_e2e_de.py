@@ -102,7 +102,7 @@ class DeBox:
     def run(self, *args: str, **extra: str) -> subprocess.CompletedProcess[str]:
         env = {
             key: value for key, value in os.environ.items()
-            if not key.startswith(("FL_E2E_", "FL_REAL_", "FAKE_", "BUILDX_")) and key != "TMPDIR"
+            if not key.startswith(("FL_E2E_", "FL_REAL_", "FL_CI_", "FAKE_", "BUILDX_")) and key != "TMPDIR"
         }
         env.update(
             {
@@ -244,6 +244,22 @@ def test_a_failed_tarball_build_stops_before_the_tier(box: DeBox) -> None:
     assert "release tarball did not build" in result.stderr
     assert [argv for argv in box.docker("run") if IMAGE in argv and "pytest" in argv] == []
     assert "meson: error" in (box.wt / "logs" / "e2e-de" / "de-xfce" / "tarball.log").read_text(encoding="utf-8")
+
+
+def test_github_actions_builds_through_buildx_with_the_actions_cache(box: DeBox) -> None:
+    """check.yml (FL_CI_DOCKER_CACHE=gha): the job's buildx builder loads each image, one cache scope per image."""
+    assert box.run("xfce", FL_CI_DOCKER_CACHE="gha").returncode == 0
+    assert box.docker("build") == []
+    builds = [argv for argv in box.docker("buildx") if argv[1:2] == ["build"]]
+    by_tag = {argv[argv.index("-t") + 1]: argv for argv in builds}
+    assert sorted(by_tag) == sorted([IMAGE, RELEASE_IMAGE])
+    for tag, argv in by_tag.items():
+        scope = tag.split(":", 1)[0]
+        assert _opts(argv, "--cache-from") == [f"type=gha,scope={scope}"]
+        assert _opts(argv, "--cache-to") == [f"type=gha,mode=max,scope={scope}"]
+        assert "--load" in argv
+        assert argv[-1] == str(box.wt.resolve() / "docker")
+    assert box.tier_run()
 
 
 def test_images_are_reused_when_their_dockerfile_did_not_change(box: DeBox) -> None:

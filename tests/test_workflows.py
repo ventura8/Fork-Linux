@@ -25,6 +25,9 @@ UPSTREAM = (WORKFLOWS / "upstream-watch.yml").read_text(encoding="utf-8")
 ALL = {"check.yml": CHECK, "release.yml": RELEASE, "e2e-wine.yml": E2E, "upstream-watch.yml": UPSTREAM}
 COMPAT_CELLS = ["jammy", "noble", "resolute", "debian13", "fedora44", "leap16", "arch"]
 FORMATS = ["deb", "deb-jammy", "rpm-fedora", "rpm-opensuse", "arch", "snap", "appimage", "flatpak", "tarball"]
+# The desktop E2E tier: one docker/Dockerfile.e2e.de.<desktop> each (tests/test_e2e_de_recipes.py
+# checks the images, the recipes and these matrices against each other).
+DESKTOPS = ["xfce", "gnome", "kde", "cinnamon", "mate", "budgie", "lxqt"]
 FORK_PR_GUARD = (
     "github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository"
 )
@@ -80,7 +83,7 @@ def test_check_has_no_job_gates() -> None:
 
 def test_check_jobs_and_matrices() -> None:
     jobs = re.findall(r"^  ([\w-]+):\n    (?:if|runs-on|strategy)", CHECK, re.MULTILINE)
-    assert jobs == ["lint", "coverage", "bridge", "compat", "packaging"]
+    assert jobs == ["lint", "coverage", "bridge", "compat", "e2e-de", "packaging"]
     compat = _job(CHECK, "compat")
     assert _matrix(compat, "cell") == COMPAT_CELLS
     assert "fail-fast: false" in compat
@@ -91,6 +94,18 @@ def test_check_jobs_and_matrices() -> None:
     assert "./scripts/ci-packaging-cell.sh" in packaging
     for stage in ("lint", "coverage", "bridge"):
         assert f"FL_CI_STAGE: {stage}" in _job(CHECK, stage)
+
+
+def test_check_runs_every_desktops_integration_tier() -> None:
+    job = _job(CHECK, "e2e-de")
+    assert _matrix(job, "desktop") == DESKTOPS
+    assert "fail-fast: false" in job
+    # Every PR, fork PRs too: no Wine, no download, no secret.
+    assert "if:" not in job.split("steps:", 1)[0]
+    assert './scripts/ci-e2e-de.sh "${{ matrix.desktop }}"\n' in job
+    assert "--fork" not in job
+    assert "FL_CI_DOCKER_CACHE: gha" in job
+    assert re.findall(r"path: (\S+)", job) == ["logs/e2e-de/"]
 
 
 def test_coverage_job_runs_c_coverage_then_sonar_like_ubuntu_hello() -> None:
@@ -154,8 +169,20 @@ def test_e2e_wine_uploads_logs_only() -> None:
     assert "workflow_dispatch:" in E2E
     assert "./scripts/ci-e2e-wine.sh" in E2E
     paths = re.findall(r"path: (\S+)", E2E)
-    assert paths == ["logs/e2e-wine/"]
+    assert paths == ["logs/e2e-wine/", "logs/e2e-de/"]
     assert "actions/cache" not in E2E
+    assert "FL_CI_DOCKER_CACHE" not in E2E
+
+
+def test_e2e_wine_runs_the_real_fork_tier_under_every_desktop() -> None:
+    job = _job(E2E, "e2e-de")
+    assert _matrix(job, "desktop") == DESKTOPS
+    assert "fail-fast: false" in job
+    assert './scripts/ci-e2e-de.sh "${{ matrix.desktop }}" --fork' in job
+    # Same triggers as the Xvfb tier: weekly, on demand, release-branch PRs from this repository.
+    assert job.split("runs-on:", 1)[0] == _job(E2E, "e2e").split("runs-on:", 1)[0]
+    # Fresh downloads: no seed, no cache of any download.
+    assert "FL_E2E_SEED" not in job and "seed" not in job
 
 
 def test_upstream_watch_flow() -> None:
@@ -200,8 +227,9 @@ def test_local_runners_mirror_the_matrices() -> None:
     packaging = (ROOT / "scripts" / "ci-packaging-matrix.sh").read_text(encoding="utf-8")
     assert f"FORMATS=({' '.join(FORMATS)})" in packaging
     pipeline = (ROOT / "scripts" / "ci-pipeline.sh").read_text(encoding="utf-8")
-    stages = re.findall(r"^stage (\w+)", pipeline, re.MULTILINE)
-    assert stages == ["lint", "coverage", "bridge", "matrix", "packaging"]
+    stages = re.findall(r"^stage ([\w-]+)", pipeline, re.MULTILINE)
+    assert stages == ["lint", "coverage", "bridge", "matrix", "e2e-de", "packaging"]
+    assert "stage e2e-de ./scripts/ci-e2e-de-matrix.sh\n" in pipeline
     assert "set -euo pipefail" in pipeline
     assert "tee" in pipeline
 
