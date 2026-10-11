@@ -100,8 +100,10 @@ RELATIVE_WORKTREES_KEY = "worktree.useRelativePaths"
 RELATIVE_WORKTREES_MIN = (2, 48)
 GIT_VERSION_CACHE = "host-git-version.json"
 # Overrides that only make sense for Fork's bundled git under Wine; native git (the bridge) tracks
-# modes, line endings and symlinks itself.
-BUNDLED_ONLY_KEYS = frozenset({"core.filemode", "core.autocrlf", "core.symlinks"})
+# modes, line endings and symlinks itself, and reads the file stat data it wrote into the index
+# (bundled git sees no inode, device or owner under Wine: without core.checkStat=minimal every file
+# Linux git indexed looks changed, and "git apply --index" refuses it).
+BUNDLED_ONLY_KEYS = frozenset({"core.filemode", "core.autocrlf", "core.symlinks", "core.checkstat"})
 GIT_VERSION_TIMEOUT = 5.0
 _GIT_VERSION_RE = re.compile(r"git version (\d+)\.(\d+)(?:\.(\d+))?", re.ASCII)
 
@@ -651,7 +653,7 @@ def env_overrides(
     at least 2.48 (so native git can use worktrees Fork creates) and the user
     did not set that key. With ``native`` (the git bridge runs the Linux git)
     the keys only bundled git needs (:data:`BUNDLED_ONLY_KEYS`: file modes,
-    line endings, symlinks) are left out, so native git sees real modes. An
+    line endings, symlinks, stat checks) are left out, so native git sees real modes. An
     empty result means no override at all.
     """
     pairs: list[tuple[str, str]] = []

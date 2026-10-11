@@ -183,10 +183,10 @@ plus `FL_WINE`, `WINEPREFIX`, `WINESERVER`, `WINELOADER`, `WINEDEBUG`, `WINEDLLO
 for the personas. Do **not** put Wine's Windows-only variables into it.
 
 > **`GIT_CONFIG_COUNT` overlay.** The launcher's bundled-git overlay (`core.filemode=false`,
-> `core.autocrlf=false`, `core.symlinks=true` via `GIT_CONFIG_COUNT/KEY/VALUE`) is
-> inherited by Fork and **forwarded by the shim to native git**. Native git tracks modes and
-> symlinks correctly, so when the bridge runs native git the launcher drops exactly those
-> three keys (`gitconfig.BUNDLED_ONLY_KEYS`; other `[git] env_overrides`, `safe.directory=*`
+> `core.autocrlf=false`, `core.symlinks=true`, `core.checkStat=minimal` via
+> `GIT_CONFIG_COUNT/KEY/VALUE`) is inherited by Fork and **forwarded by the shim to native
+> git**. Native git tracks modes, symlinks and its own index stat data correctly, so when the
+> bridge runs native git the launcher drops exactly those keys (`gitconfig.BUNDLED_ONLY_KEYS`; other `[git] env_overrides`, `safe.directory=*`
 > and `worktree.useRelativePaths` stay). Record mode forwards to bundled git and keeps them.
 
 ## Install layout

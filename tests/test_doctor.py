@@ -1062,7 +1062,7 @@ def test_git_overlay() -> None:
     prefix(ctx)
     result = run(ctx, "git.overlay")
     assert result.status == "warn"
-    assert "core.filemode=false, core.autocrlf=false" in result.detail
+    assert "core.filemode=false, core.autocrlf=false, core.checkStat=minimal" in result.detail
     from fork_linux import gitconfig
 
     overlay = gitconfig.overlay_path(ctx.paths, USER)
