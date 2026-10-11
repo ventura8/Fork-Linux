@@ -158,6 +158,17 @@ def test_e2e_wine_uploads_logs_only() -> None:
     assert "actions/cache" not in E2E
 
 
+def test_e2e_wine_shards_cover_every_real_tier_module_once() -> None:
+    named = re.findall(r"tests/e2e/test_real_\w+\.py", E2E)
+    modules = sorted(f"tests/e2e/{path.name}" for path in (ROOT / "tests" / "e2e").glob("test_*.py"))
+    assert sorted(named) == modules
+    assert len(set(named)) == len(named)
+    assert "fail-fast: false" in E2E
+    # The bridge scenarios need the shims: built before the tier runs.
+    assert E2E.index("./scripts/build-bridge.sh") < E2E.index("./scripts/ci-e2e-wine.sh")
+    assert UPSTREAM.index("./scripts/build-bridge.sh") < UPSTREAM.index("./scripts/ci-e2e-wine.sh")
+
+
 def test_upstream_watch_flow() -> None:
     assert "schedule:" in UPSTREAM
     order = [

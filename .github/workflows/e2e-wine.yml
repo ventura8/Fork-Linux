@@ -1,8 +1,9 @@
 ---
 name: E2E (real Fork under Wine)
 
-# The real tier: managed Wine + .NET + the official Fork installer under Xvfb (about 20
-# minutes, ~2.5 GB of downloads made on the runner). Weekly, on demand, and on same-repo PRs
+# The real tier: managed Wine + .NET + the official Fork installer under Xvfb, every scenario of
+# docs/qa/E2E-SCENARIOS.md in five parallel shards (each about 20-40 minutes, ~2.5 GB of
+# downloads made on the runner). Weekly, on demand, and on same-repo PRs
 # from release branches (feature/vX.Y.Z). Uploads logs only: no screenshots (they show Fork's
 # logo), no binaries, and the Fork installer is never cached (AGENTS.md hard rules 1, 4).
 on:
@@ -27,20 +28,48 @@ jobs:
        startsWith(github.head_ref, 'feature/v'))
     runs-on: ubuntu-26.04
     timeout-minutes: 90
+    # One shard per job (each sets up its own prefix): every module of tests/e2e is in exactly
+    # one shard (tests/test_workflows.py), and each shard stays well under the timeout.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: core
+            tests: >-
+              tests/e2e/test_real_setup_errors.py tests/e2e/test_real_fork.py
+              tests/e2e/test_real_launch.py tests/e2e/test_real_display.py
+              tests/e2e/test_real_doctor.py tests/e2e/test_real_snapshots.py
+          - shard: git-ui
+            tests: >-
+              tests/e2e/test_real_git_history.py tests/e2e/test_real_git_changes.py
+              tests/e2e/test_real_git_branches.py tests/e2e/test_real_git_advanced.py
+          - shard: remotes-integration
+            tests: tests/e2e/test_real_git_remotes.py tests/e2e/test_real_integration.py
+          - shard: bridge
+            tests: tests/e2e/test_real_bridge.py
+          - shard: setup-uninstall
+            tests: tests/e2e/test_real_setup_variants.py tests/e2e/test_real_uninstall.py
     steps:
       - name: Checkout source
         uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - name: Real setup + Fork window + doctor + snapshot/rollback (Xvfb)
-        run: ./scripts/ci-e2e-wine.sh
+      - name: Build the native-git bridge (the bridge scenarios need its shims)
+        run: ./scripts/build-bridge.sh
+
+      - name: Real Fork under Wine, shard ${{ matrix.shard }} (Xvfb)
+        env:
+          TESTS: ${{ matrix.tests }}
+        run: |
+          read -r -a tests <<<"${TESTS}"
+          ./scripts/ci-e2e-wine.sh "${tests[@]}"
 
       - name: Keep the logs (text only)
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: e2e-wine-logs
+          name: e2e-wine-logs-${{ matrix.shard }}
           path: logs/e2e-wine/
           if-no-files-found: ignore
           retention-days: 14

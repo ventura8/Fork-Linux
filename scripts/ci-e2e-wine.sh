@@ -13,7 +13,12 @@
 # source tree and that root. It shares scripts/lib-e2e-docker.sh (scratch checks, host-wide
 # slots, image build, logs-only copy) with scripts/e2e-docker.sh, the local runner.
 #
+# The bridge scenarios (tests/e2e/test_real_bridge.py) need the shims built first:
+# ./scripts/build-bridge.sh (its own CI image; e2e-wine.yml runs it before this script).
+#
 # Usage: ./scripts/ci-e2e-wine.sh [pytest args...]
+#   With test paths (tests/e2e/test_real_*.py: one CI shard), only those run; otherwise the
+#   whole tests/e2e tier runs and the arguments are extra pytest options (-k, -x, ...).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -46,6 +51,13 @@ fl_e2e_own_dir "${LOCK_DIR}" "lock directory"
 fl_e2e_acquire_slot "${LOCK_DIR}" "${FL_E2E_SLOTS:-3}"
 
 USER_NAME="$(fl_e2e_user)"
+targets=(tests/e2e)
+for arg in "$@"; do
+	if [[ "${arg}" == tests/* ]]; then
+		targets=()
+		break
+	fi
+done
 status=0
 docker run --rm --init \
 	--name "${CONTAINER}" \
@@ -62,7 +74,7 @@ docker run --rm --init \
 	-v "${SCRATCH}:/e2e:rw" \
 	-w /src \
 	"${IMAGE}" \
-	python3 -m pytest -v -p no:cacheprovider --basetemp=/e2e/pytest tests/e2e "$@" \
+	python3 -m pytest -v -p no:cacheprovider --basetemp=/e2e/pytest "${targets[@]}" "$@" \
 	9>&- 2>&1 | tee "${LOG_DIR}/pytest.log" 9>&- || status=$?
 
 # Logs only: text files from the scratch root, never images, executables or archives.

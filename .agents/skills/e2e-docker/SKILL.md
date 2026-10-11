@@ -35,6 +35,21 @@ scripts/e2e-docker.sh --name shim --image fork-linux-ci-bridge:26.04 shell -- ba
   `root/home/.cache`, everything else of the E2E root is rebuilt).
 - `--ptrace` adds only `CAP_SYS_PTRACE`. Never `--privileged`.
 
+## The real tier (tests/e2e)
+
+- `test_real_*.py` modules share one prefix and run in `conftest.py`'s `MODULE_ORDER` (setup
+  errors, the main setup, launch, Fork's git UI, OS integration, display, bridge, doctor,
+  snapshots, setup variants, uninstall last). Iterate on one module without a new setup:
+  `FL_E2E_REUSE=1 scripts/e2e-docker.sh --name my-run --keep pytest tests/e2e/test_real_launch.py`
+  (the first run of that name sets up; `--keep` and `FL_E2E_REUSE=1` keep the prefix after it).
+- Build the bridge first for `test_real_bridge.py`: `scripts/build-bridge.sh` (its own image).
+- Helpers: `fork_driver.py` (windows, keys, clicks, screenshots, Fork sessions, git),
+  `fork_ui.py` (Fork's layout in the seeded 1500x940 window and its keyboard paths: Quick Launch,
+  shortcuts, context menus clicked from their bottom edge), `git_servers.py` (HTTP with basic
+  auth, sshd on a high port). A failed test leaves `failed-<test>.png` in the shots directory.
+- Every test names its scenarios on a `Scenarios: ID, ...` docstring line; the registry is
+  `tests/e2e/scenarios.json` (`python3 scripts/gen-scenarios-doc.py validate` / `write`).
+
 ## What the container sees
 
 `/src` (this worktree, read-only), the git common dir (read-only, same path), `/e2e` (the scratch

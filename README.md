@@ -140,7 +140,7 @@ fork-linux git-bridge disable    # back to Fork's bundled git at the next start
 
 What it changes, verified with Fork 2.23.2:
 
-- **Hooks run natively**: a `pre-commit` hook that fails now blocks the commit and Fork shows its output (bundled git skips such hooks and commits anyway). **Submodule update**, pushes and fetches to `file://` / `/home/…` remotes, and interactive rebase from Fork's dialog work; commits keep exec bits and symlinks.
+- **Hooks run natively**: a `pre-commit` hook that fails now blocks the commit and Fork shows its output (bundled git skips such hooks and commits anyway). **Submodule update**, pushes and fetches to `file://` / `/home/…` remotes, interactive rebase from Fork's dialog and **Git Flow** (with `git-flow` installed) work; commits keep exec bits and symlinks.
 - **Open in Shell / Console** and **Diff in Linux (fork-linux)** (Ctrl+D on a changed file) open your Linux terminal and diff tool (meld, kdiff3, Beyond Compare or VS Code), and Fork waits for the diff tool.
 - Each git call is much faster (about 13 ms against about 90 ms for bundled git).
 
@@ -169,6 +169,7 @@ Known Wine limitations:
 
 - **Hooks that start other programs are silently skipped** by Fork's bundled git under Wine (its `sh` dies after the first program, and the commit still succeeds). `fork-linux doctor` lists affected repositories; commit there from a terminal, or enable the git bridge (see [Git bridge](#git-bridge-experimental-opt-in)), which runs them with Linux git.
 - **Symlinks** look like modified files to Fork (and committing them through Fork's git turns them into plain files); **submodule update / init** does nothing; **Git Bash** exits at once. Use a terminal for these; the git bridge fixes submodules and symlink-preserving commits.
+- **Git Flow**: *Initialize* works, but *Start Feature* (git-flow's shell scripts) silently does nothing with Fork's bundled git. With the git bridge it runs with your Linux git: install your distribution's `git-flow` package.
 - **Spell checking** does nothing under Wine; keep it disabled.
 - **GitHub account sign-in (OAuth) can crash Fork under Wine.** Use a GitHub personal access token instead. Credentials are stored with DPAPI inside the prefix.
 - **Wayland**: Fork runs through XWayland by default; Wine's native Wayland driver is opt-in and experimental.

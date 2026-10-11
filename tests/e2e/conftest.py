@@ -8,10 +8,20 @@ Containers only: run it with ``scripts/e2e-docker.sh pytest tests/e2e`` (CI:
 Gated: nothing here runs unless ``FL_E2E_FORK=1`` (each test module skips itself). The tier downloads (or
 reuses) the pinned Wine runtime, winetricks verbs and the official Fork
 installer, builds a real prefix (~2.5 GB, ~4-10 minutes) and drives Fork's
-windows with ``xdotool``. Everything lives under one root directory with a
+windows with ``xdotool`` (``fork_driver.py``). Everything lives under one root directory with a
 fake ``HOME`` and XDG directories, so the real home and ``~/.wine`` are never
 touched; screenshots stay in ``<root>/shots`` (they show Fork's logo: never
 copy them into the repository).
+
+The modules share one prefix and run in ``MODULE_ORDER`` (cheap error paths first, then the
+main setup, Fork's UI, and the destructive ones last: setup variants, uninstall). Each test
+function names the scenarios of ``tests/e2e/scenarios.json`` it covers on a docstring line
+``Scenarios: ID, ID`` (``tests/test_e2e_scenarios.py`` checks both ways). A module that sets
+``CHAIN = True`` is one scenario in steps: after a failed step its later tests fail fast.
+
+Safety: tests only ever create or delete files inside the root. A test that makes Fork (a
+Windows program, which sees the whole container through ``Z:``) delete files does so in a
+repository under ``<root>/repos`` that holds no symlink pointing outside the root.
 
 Environment:
 
@@ -20,6 +30,9 @@ Environment:
   downloads, winetricks cache) is kept and everything else is rebuilt. The root
   must be absolute and symlink-free, and must not be ``/`` or be, contain or lie
   inside a home directory; a non-empty root without the tier's marker is refused.
+* ``FL_E2E_REUSE=1``: also keep the previous run's prefix, runtimes and settings (``home/.local``,
+  ``home/.config``) so a developer can re-run one module without a new setup
+  (``scripts/e2e-docker.sh --keep``); CI never sets it.
 * ``FL_E2E_SEED``: a directory whose files (``wine-*.tar.xz``,
   ``Fork-*.exe``, ``winetricks-*``, ``selawik-*.zip``) are copied into the download cache; our
   code re-verifies every one of them by size and sha256.
@@ -35,16 +48,18 @@ Environment:
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fork_driver import Fork, Screen, fork_pids, fork_version
+from fork_ui import ForkUI
 
 from fixtures import real_tier
 
@@ -69,7 +84,40 @@ TOOLS = ("Xvfb", "xdotool", "magick", "git")
 SEED_PATTERNS = ("wine-*.tar.xz", "Fork-*.exe", "winetricks-*", "selawik-*.zip")
 SCREEN = "1600x1000x24"
 # Host variables that would point the tier at the real session or another Wine.
-DROPPED = ("WAYLAND_DISPLAY", "XAUTHORITY", "GNOME_SETUP_DISPLAY", "PYTHONPATH", "FORK_LINUX_LIBDIR")
+DROPPED = ("WAYLAND_DISPLAY", "XAUTHORITY", "GNOME_SETUP_DISPLAY", "PYTHONPATH", "FORK_LINUX_LIBDIR",
+           "DBUS_SESSION_BUS_ADDRESS", "GIT_EDITOR", "QT_QPA_PLATFORM", "SSH_AUTH_SOCK")
+# The order the modules run in (one shared prefix; destructive modules last).
+MODULE_ORDER = (
+    "test_real_setup_errors.py",
+    "test_real_fork.py",
+    "test_real_launch.py",
+    "test_real_git_history.py",
+    "test_real_git_changes.py",
+    "test_real_git_branches.py",
+    "test_real_git_remotes.py",
+    "test_real_git_advanced.py",
+    "test_real_integration.py",
+    "test_real_display.py",
+    "test_real_bridge.py",
+    "test_real_doctor.py",
+    "test_real_snapshots.py",
+    "test_real_setup_variants.py",
+    "test_real_uninstall.py",
+)
+SETUP_TIMEOUT = 3600.0
+# Kept by FL_E2E_REUSE=1 (home/<name>); home/.cache is always kept.
+REUSED = (".cache", ".local", ".config")
+
+
+def _module_rank(item: pytest.Item) -> int:
+    name = Path(str(item.fspath)).name
+    return MODULE_ORDER.index(name) if name in MODULE_ORDER else len(MODULE_ORDER)
+
+
+def pytest_collection_modifyitems(session: pytest.Session, config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Run the modules in ``MODULE_ORDER``; tests keep their file order inside a module."""
+    order = {id(item): index for index, item in enumerate(items)}
+    items.sort(key=lambda item: (_module_rank(item), order[id(item)]))
 
 
 def _require_tools() -> None:
@@ -79,13 +127,14 @@ def _require_tools() -> None:
 
 
 def _prepare_root(root: Path) -> Path:
-    """Create ``root`` or clean a previous run in it (keeping ``home/.cache``).
+    """Create ``root`` or clean a previous run in it (keeping ``home/.cache``, more with FL_E2E_REUSE=1).
 
     ``real_tier.prepare_root`` refuses ``/``, home directories, symlink components and
     unmarked non-empty roots, and deletes only inside the root without following symlinks.
     """
+    keep = REUSED if os.environ.get("FL_E2E_REUSE") == "1" else (".cache",)
     try:
-        return real_tier.prepare_root(root, ROOT_MARKER, keep=(".cache",))
+        return real_tier.prepare_root(root, ROOT_MARKER, keep=keep)
     except real_tier.RefusedPath as exc:
         pytest.exit(f"E2E root refused: {exc}", returncode=2)
 
@@ -123,35 +172,50 @@ def _clean_path(path: str, real_home: str) -> str:
     return os.pathsep.join(keep)
 
 
-_FAILED: list[str] = []
+_FAILED: dict[str, str] = {}
 
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> Iterator[None]:
-    """Remember the first failed step: the scenario's steps build on each other."""
+    """Remember the first failed step of each module (``CHAIN = True`` modules fail fast after it)."""
     outcome = yield
     report = outcome.get_result()
     if report.when == "call" and report.failed:
-        _FAILED.append(item.name)
+        _FAILED.setdefault(Path(str(item.fspath)).name, item.name)
+        _screenshot_failure(item)
+
+
+def _screenshot_failure(item: pytest.Item) -> None:
+    """Keep the screen of a failed test in the shots directory (never the repository)."""
+    funcargs = getattr(item, "funcargs", {})
+    tier = funcargs.get("e2e") or funcargs.get("installed")
+    if tier is None:
+        return
+    try:
+        tier.screen.screenshot(f"failed-{item.name}")
+    except (OSError, subprocess.SubprocessError):
+        return
 
 
 @pytest.fixture(autouse=True)
-def _in_order() -> None:
-    """Fail fast once an earlier step of the scenario has failed."""
-    if _FAILED:
-        pytest.fail(f"an earlier E2E step failed ({_FAILED[0]})")
+def _in_order(request: pytest.FixtureRequest) -> None:
+    """In a ``CHAIN = True`` module, fail fast once an earlier step has failed."""
+    module = Path(str(request.node.fspath)).name
+    if getattr(request.module, "CHAIN", False) and module in _FAILED:
+        pytest.fail(f"an earlier step of this scenario failed ({_FAILED[module]})")
 
 
 class E2E:
-    """The isolated environment of one tier run."""
+    """The isolated environment of one tier run (or of one variant ``home`` inside it)."""
 
-    def __init__(self, root: Path, display: str) -> None:
+    def __init__(self, root: Path, display: str, home: Path | None = None) -> None:
         self.root = root
-        self.home = root / "home"
+        self.home = home or root / "home"
         self.display = display
         self.shots = root / "shots"
         self.logs = root / "logs"
         self.repos = root / "repos"
+        self.run_dir = self.home.parent / "run" if home is not None else root / "run"
         real_home = os.environ.get("HOME", str(Path.home()))
         env = {key: value for key, value in os.environ.items() if not key.startswith(("WINE", "FORK_LINUX_"))}
         for key in DROPPED:
@@ -163,7 +227,7 @@ class E2E:
                 "XDG_DATA_HOME": str(self.home / ".local" / "share"),
                 "XDG_CACHE_HOME": str(self.home / ".cache"),
                 "XDG_STATE_HOME": str(self.home / ".local" / "state"),
-                "XDG_RUNTIME_DIR": str(root / "run"),
+                "XDG_RUNTIME_DIR": str(self.run_dir),
                 "PYTHONPATH": str(SRC),
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "DISPLAY": display,
@@ -172,26 +236,49 @@ class E2E:
             }
         )
         self.env = env
+        self.screen = Screen(env, self.shots)
+        self.fork = Fork(self.screen, env, self.prefix, self.logs, root)
+
+    def make_dirs(self) -> None:
+        """The XDG directories, a private 0700 runtime directory and the tier's own folders."""
+        for sub in (".config", ".local/share", ".cache", ".local/state"):
+            (self.home / sub).mkdir(parents=True, exist_ok=True)
+        self.run_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(self.run_dir, 0o700)
+        for directory in (self.shots, self.logs, self.repos):
+            directory.mkdir(parents=True, exist_ok=True)
 
     @property
     def prefix(self) -> Path:
         return self.home / ".local" / "share" / "fork-linux" / "prefix"
 
     def cli(self, *args: str, extra: dict[str, str] | None = None, timeout: float = 600, check: bool = True,
-            cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+            cwd: Path | None = None, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
         """``python3 -m fork_linux ARGS`` in the isolated environment."""
-        result = subprocess.run(
-            [sys.executable, "-m", "fork_linux", *args],
-            env={**self.env, **(extra or {})},
-            cwd=str(cwd or self.root),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
+        result = self.fork.cli(*args, extra=extra, timeout=timeout, cwd=cwd or self.root, stdin=stdin)
         if check and result.returncode != 0:
             pytest.fail(f"fork-linux {' '.join(args)} exited {result.returncode}:\n{result.stdout}\n{result.stderr}")
         return result
+
+    def variant(self, name: str) -> E2E:
+        """A second, empty user (own HOME and XDG directories) under ``<root>/variants/<name>``."""
+        base = self.root / "variants" / name
+        if base.exists():
+            real_tier.remove_inside(base, self.root)
+        variant = E2E(self.root, self.display, home=base / "home")
+        variant.make_dirs()
+        return variant
+
+    def setup_args(self) -> tuple[str, ...]:
+        """The setup command line every run uses (the tested Fork version, no dialogs)."""
+        return ("setup", "--accept-fork-eula", "--no-gui", "--fork-version", fork_version())
+
+    def setup_complete(self) -> bool:
+        """True when no setup step of the main prefix would run (``setup.complete`` is only the last run's)."""
+        listed = self.cli("setup", "--list-steps", "--json", check=False)
+        if listed.returncode != 0:
+            return False
+        return all(row["status"] in ("done", "always") for row in json.loads(listed.stdout)["steps"])
 
 
 @pytest.fixture(scope="session")
@@ -201,19 +288,14 @@ def e2e() -> Iterator[E2E]:
     root = _prepare_root(Path(os.environ.get("FL_E2E_ROOT") or tempfile.mkdtemp(prefix="fork-linux-e2e-")))
     display = os.environ.get("FL_E2E_DISPLAY", ":98")
     env = E2E(root, display)
-    for sub in (".config", ".local/share", ".cache", ".local/state"):
-        (env.home / sub).mkdir(parents=True, exist_ok=True)
-    (root / "run").mkdir(mode=0o700, exist_ok=True)
-    os.chmod(root / "run", 0o700)
-    for directory in (env.shots, env.logs, env.repos):
-        directory.mkdir(exist_ok=True)
+    env.make_dirs()
     # ~/.wine must survive everything, including uninstall --purge.
     (env.home / ".wine" / "SENTINEL").mkdir(parents=True, exist_ok=True)
     _seed(env.home)
     xvfb = None
     if not _display_answers(display, env.env):
         xvfb = subprocess.Popen(
-            ["Xvfb", display, "-screen", "0", SCREEN, "-nolisten", "tcp"],
+            ["Xvfb", display, "-screen", "0", SCREEN, "-nolisten", "tcp", "-noreset"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -232,10 +314,22 @@ def e2e() -> Iterator[E2E]:
             xvfb.wait(timeout=10)
 
 
+@pytest.fixture(scope="session")
+def installed(e2e: E2E) -> E2E:
+    """The main prefix, set up (``test_real_fork.py`` times the first setup; later modules reuse it)."""
+    if not e2e.setup_complete():
+        e2e.cli(*e2e.setup_args(), timeout=SETUP_TIMEOUT)
+    return e2e
+
+
 def _stop_all_wine(env: E2E) -> None:
-    """``wineserver -k`` for every prefix of this run, with the managed runtime that served it."""
-    runtimes = sorted((env.home / ".local" / "share" / "fork-linux" / "runtimes" / "wine").glob("*/bin/wineserver"))
-    prefixes = [env.prefix, env.root / "prefix2"]
+    """``wineserver -k`` for every prefix of this run, with every managed runtime of every home."""
+    homes = [env.home, *sorted((env.root / "variants").glob("*/home"))]
+    runtimes = [server for home in homes
+                for server in sorted((home / ".local" / "share" / "fork-linux" / "runtimes" / "wine").glob(
+                    "*/bin/wineserver"))]
+    prefixes = [home / ".local" / "share" / "fork-linux" / "prefix" for home in homes]
+    prefixes.append(env.root / "prefix2")
     for prefix in prefixes:
         if not prefix.is_dir():
             continue
@@ -247,3 +341,30 @@ def _stop_all_wine(env: E2E) -> None:
                 timeout=60,
                 check=False,
             )
+
+
+@pytest.fixture(scope="module")
+def ui(installed: E2E) -> Iterator[ForkUI]:
+    """One Fork session for a module's UI tests (each opens its repositories as tabs); closed after."""
+    installed.fork.ensure_closed()
+    yield ForkUI(installed.fork)
+    installed.fork.ensure_closed()
+
+
+@pytest.fixture
+def closed(installed: E2E) -> Iterator[E2E]:
+    """The installed tier with Fork closed before and after the test."""
+    installed.fork.ensure_closed()
+    yield installed
+    installed.fork.ensure_closed()
+
+
+@pytest.fixture(autouse=True)
+def _no_leftover_dialogs(request: pytest.FixtureRequest) -> Iterator[None]:
+    """After each test, close what a failed step left open in Fork (a dialog, a menu)."""
+    yield
+    if "e2e" not in request.fixturenames:
+        return
+    tier = request.getfixturevalue("e2e")
+    if fork_pids(tier.prefix):
+        ForkUI(tier.fork).dismiss_dialogs()

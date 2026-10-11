@@ -543,6 +543,18 @@ def test_ci_e2e_wine_uses_a_fresh_wiped_scratch_and_no_seed(box: Box) -> None:
         assert row["fds"]["9"] is False
 
 
+def test_ci_e2e_wine_runs_only_the_shard_it_is_given(box: Box) -> None:
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    shard = ["tests/e2e/test_real_bridge.py", "tests/e2e/test_real_doctor.py", "-x"]
+    result = box.run(*shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir))
+    assert result.returncode == 0, result.stdout + result.stderr
+    argv = box.docker_runs()[0]
+    image = _image_index(argv, "fork-linux-ci-e2e-wine:26.04")
+    assert argv[image + 1:][-4:] == ["--basetemp=/e2e/pytest", *shard]
+    assert "tests/e2e" not in argv[image + 1:]
+
+
 def test_ci_e2e_wine_refuses_a_tmpdir_in_home(box: Box) -> None:
     result = box.run(script="ci-e2e-wine.sh", TMPDIR=str(box.home))
     assert result.returncode == 2

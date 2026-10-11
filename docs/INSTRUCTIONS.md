@@ -80,6 +80,12 @@ Logs land in `logs/e2e-docker/<NAME>/`; screenshots stay in `<scratch>/root/shot
 never commit them). At most `FL_E2E_SLOTS` (default 3) such containers run at once on the host.
 Runbook: [`.agents/skills/e2e-docker/SKILL.md`](../.agents/skills/e2e-docker/SKILL.md).
 
+The real tier covers every user-facing scenario listed in
+[`docs/qa/E2E-SCENARIOS.md`](qa/E2E-SCENARIOS.md), generated from the registry
+`tests/e2e/scenarios.json`: a new feature or fix adds its scenario there and a test in
+`tests/e2e/test_real_*.py` that names it on a `Scenarios:` docstring line, then
+`python3 scripts/gen-scenarios-doc.py write`. The bridge scenarios need `scripts/build-bridge.sh` first.
+
 Read every `logs/ci-packaging/<format>.log` after a packaging run (exit 0 is not enough).
 
 ## 4. Packaging
