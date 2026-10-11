@@ -17,7 +17,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | Setup | 23 | 22 | 1 |
 | Launch | 15 | 15 | 0 |
 | Git operations through Fork's UI | 55 | 55 | 0 |
-| OS integration | 21 | 21 | 0 |
+| OS integration | 22 | 22 | 0 |
 | Native-git bridge | 9 | 9 | 0 |
 | Doctor and repository fixes | 13 | 13 | 0 |
 | Uninstall | 7 | 7 | 0 |
@@ -26,7 +26,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | Fork for Linux upgrades | 12 | 0 | 12 |
 | Desktop environments | 70 | 0 | 70 |
 | Non-Latin font fallback | 3 | 0 | 3 |
-| **Total** | 246 | 149 | 97 |
+| **Total** | 247 | 150 | 97 |
 
 ## Setup
 
@@ -148,7 +148,8 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | I-HOME-DRIVE | File dialogs reach the Linux home as H: | real-fork | this repository | `tests/e2e/test_real_integration.py::test_home_drive_in_a_file_dialog` |
 | I-PREFERENCES-PERSIST | Preferences survive a restart | real-fork | this repository | `tests/e2e/test_real_integration.py::test_preferences_survive_a_restart` |
 | I-SETTINGS-CLI | fork-linux settings set/get/restore/apply-defaults (refused while Fork runs) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_fork_settings_from_the_command_line` |
-| I-DESKTOP-MENU | The menu entry starts Fork; Fork's icon at every size; --cli-alias links fork into ~/.local/bin | real-fork | this repository | `tests/e2e/test_real_integration.py::test_menu_entry_with_forks_icon_starts_fork` |
+| I-DESKTOP-MENU | The menu entry starts Fork; Fork's icon at every size | real-fork | this repository | `tests/e2e/test_real_integration.py::test_menu_entry_with_forks_icon_starts_fork` |
+| I-CLI-ALIAS | desktop install --cli-alias (the AppImage's --install-desktop) links fork into ~/.local/bin | packaging | this repository | `packaging:appimage:appimage_assert` |
 | I-FILE-MANAGER-ACTIONS | Every file manager's Open in Fork action opens the file's repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_file_manager_actions_open_the_files_repository` |
 | I-DESKTOP-REMOVE | desktop remove deletes exactly what desktop install created | real-fork | this repository | `tests/e2e/test_real_integration.py::test_desktop_remove_deletes_exactly_what_was_installed` |
 | I-GIT-BASH | Git Bash as Fork's terminal (it exits at once under Wine): doctor warns; unset, the Linux terminal is back | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_git_bash_terminal_is_flagged_and_replaced` |

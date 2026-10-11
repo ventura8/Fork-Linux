@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fork_driver import git, make_repo, wait_until
+from fork_driver import git, make_repo, wait_until, windows_path
 from fork_ui import ForkUI
 from git_servers import HttpGitServer, SshServer
 
@@ -171,6 +171,9 @@ def test_fetch_and_push_over_http_with_basic_auth(ui: ForkUI, installed: Any) ->
                       "-c", f"http.extraHeader=Authorization: Basic {token}")
         theirs = _new_commit(seed, "theirs.txt", "their work")
         git(seed, "push", "-q", "origin", "main")
+        # Git Credential Manager's trace (GCM_TRACE) goes to the tier's logs: it says why GCM did not prompt.
+        installed.fork.ensure_closed()
+        installed.fork.start(work, extra={"GCM_TRACE": windows_path(installed.logs / "gcm-trace.log")})
         ui.open(work)
         ui.keys("ctrl+shift+f", settle=1.0)
         _accept(ui, "Fetch")

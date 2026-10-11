@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fork_driver import fork_pids, make_repo, processes, wait_until
+from fork_driver import fork_pids, make_repo, processes, wait_until, windows_path
 
 from fixtures import real_tier
 
@@ -24,11 +24,6 @@ real_tier.enforce()
 
 FAST_PATH_SECONDS = 30.0
 GITIGNORE = {".gitignore": "*.tmp\n"}
-
-
-def _win(path: Path) -> str:
-    """The Windows path Fork sees for a Linux path (the ``Z:`` drive)."""
-    return "Z:" + str(path).replace("/", "\\")
 
 
 def _workspace_repositories(e2e: Any) -> list[str]:
@@ -60,8 +55,8 @@ def test_dot_in_a_subdirectory_opens_the_repository_root(closed: Any) -> None:
     time.sleep(3)
     e2e.fork.close()
     repositories = _workspace_repositories(e2e)
-    assert _win(target) in repositories
-    assert not any(repo.startswith(_win(target / "docs")) for repo in repositories)
+    assert windows_path(target) in repositories
+    assert not any(repo.startswith(windows_path(target / "docs")) for repo in repositories)
 
 
 def test_file_manager_file_opens_its_repository(closed: Any) -> None:
@@ -76,7 +71,7 @@ def test_file_manager_file_opens_its_repository(closed: Any) -> None:
     assert forwarded.wait(timeout=FAST_PATH_SECONDS) == 0
     time.sleep(3)
     e2e.fork.close()
-    assert _win(target) in _workspace_repositories(e2e)
+    assert windows_path(target) in _workspace_repositories(e2e)
 
 
 def test_open_command_adds_a_tab(closed: Any) -> None:
@@ -92,7 +87,7 @@ def test_open_command_adds_a_tab(closed: Any) -> None:
     assert len(fork_pids(e2e.prefix)) == 1
     time.sleep(3)
     e2e.fork.close()
-    assert _win(target) in _workspace_repositories(e2e)
+    assert windows_path(target) in _workspace_repositories(e2e)
 
 
 def test_missing_path_is_a_usage_error(closed: Any) -> None:

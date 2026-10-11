@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fork_driver import fork_pids, git, make_repo, wait_until
+from fork_driver import fork_pids, git, make_repo, wait_until, windows_path
 from fork_ui import ForkUI
 
 from fixtures import real_tier
@@ -253,12 +253,7 @@ def test_menu_entry_with_forks_icon_starts_fork(desk: Any, installed: Any) -> No
     Scenarios: I-DESKTOP-MENU
     """
     ui, _log, extra = desk
-    installed.cli("desktop", "install", "--file-managers", "none", "--cli-alias")
-    alias = installed.home / ".local" / "bin" / "fork"
-    assert alias.exists(), "desktop install --cli-alias links fork into ~/.local/bin"
-    assert installed.cli("version").stdout.strip() in subprocess.run(
-        [str(alias), "--version"], env=installed.env, capture_output=True, text=True, timeout=60, check=True
-    ).stdout
+    installed.cli("desktop", "install", "--file-managers", "none")
     applications = installed.home / ".local" / "share" / "applications"
     entry = applications / f"{APP_ID}.desktop"
     assert entry.is_file()
@@ -318,7 +313,7 @@ def test_file_manager_actions_open_the_files_repository(desk: Any, installed: An
     ui.fork.close()
     workspaces = installed.fork.settings()["Workspaces"]["All"]
     known = {repo for workspace in workspaces for repo in workspace["Repositories"]}
-    missing = [repo.name for repo in opened if "Z:" + str(repo).replace("/", "\\") not in known]
+    missing = [repo.name for repo in opened if windows_path(repo) not in known]
     assert not missing, f"not opened in Fork: {missing}"
     ui.fork.start(opened[0], extra=extra)
 

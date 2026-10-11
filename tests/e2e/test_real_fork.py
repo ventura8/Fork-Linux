@@ -14,7 +14,7 @@ import time
 from typing import Any
 
 import pytest
-from fork_driver import fork_pids, fork_version, make_repo
+from fork_driver import fork_pids, fork_version, make_repo, windows_path
 
 from fixtures import real_tier
 
@@ -85,7 +85,7 @@ def test_03_first_launch_opens_the_repository(e2e: Any) -> None:
     # Fork's default folder for new clones is the Linux home from the very first start.
     toml = (e2e.fork.local_dir / "ForkData" / "repositories.toml").read_text(encoding="utf-8")
     line = next(line for line in toml.splitlines() if line.startswith("source_dirs"))
-    assert "Z:" + str(e2e.home).replace("/", "\\") in line
+    assert windows_path(e2e.home) in line
 
 
 def test_04_second_tab_and_fork_alias(e2e: Any) -> None:

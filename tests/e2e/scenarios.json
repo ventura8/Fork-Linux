@@ -1328,7 +1328,7 @@
   {
     "id": "I-DESKTOP-MENU",
     "area": "integration",
-    "title": "The menu entry starts Fork; Fork's icon at every size; --cli-alias links fork into ~/.local/bin",
+    "title": "The menu entry starts Fork; Fork's icon at every size",
     "tiers": [
       "real-fork"
     ],
@@ -1336,6 +1336,19 @@
     "pending_merge": false,
     "tests": [
       "tests/e2e/test_real_integration.py::test_menu_entry_with_forks_icon_starts_fork"
+    ]
+  },
+  {
+    "id": "I-CLI-ALIAS",
+    "area": "integration",
+    "title": "desktop install --cli-alias (the AppImage's --install-desktop) links fork into ~/.local/bin",
+    "tiers": [
+      "packaging"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "packaging:appimage:appimage_assert"
     ]
   },
   {

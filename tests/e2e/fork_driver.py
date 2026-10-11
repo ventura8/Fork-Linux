@@ -450,6 +450,11 @@ def git(repo: Path, *args: str, check: bool = True, env: Mapping[str, str] | Non
     return result.stdout.rstrip("\n")
 
 
+def windows_path(path: Path) -> str:
+    """The Windows path Fork and its programs see for a Linux path (Wine's ``Z:`` drive)."""
+    return "Z:" + str(path).replace("/", "\\")
+
+
 def make_repo(path: Path, files: Mapping[str, str] | None = None, *, message: str = "initial") -> Path:
     """A new repository at ``path`` with ``files`` committed on ``main`` (a README by default)."""
     path.mkdir(parents=True, exist_ok=True)

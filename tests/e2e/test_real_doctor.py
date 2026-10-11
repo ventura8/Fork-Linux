@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import select
 import subprocess
 import sys
@@ -18,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fork_driver import git, make_repo
+from fork_driver import git, make_repo, windows_path
 
 from fixtures import real_tier
 
@@ -83,7 +84,7 @@ def test_fix_points_the_source_folder_at_the_home(closed: Any) -> None:
     e2e.cli("doctor", "--fix", "--check", "fork.source_dirs")
     assert _check(e2e, "fork.source_dirs")["status"] == "ok"
     fixed = toml.read_text(encoding="utf-8")
-    assert "Z:" + str(e2e.home).replace("/", "\\") in fixed
+    assert windows_path(e2e.home) in fixed
     backups = e2e.home / ".local" / "share" / "fork-linux" / "settings-backups"
     assert any(name.startswith("repositories.toml.") for name in os.listdir(backups)), "no backup was made"
 
@@ -272,7 +273,7 @@ def test_config_get_set_unset_list_path_edit(closed: Any) -> None:
     e2e.cli("config", "set", "snapshots.keep", "3")
     assert e2e.cli("config", "get", "snapshots.keep").stdout.strip() == "3"
     listed = e2e.cli("config", "list").stdout
-    assert any(line.startswith("snapshots.keep") and line.rstrip().endswith("3") for line in listed.splitlines())
+    assert re.search(r"^snapshots\.keep\s+= 3\s+\(", listed, re.MULTILINE), listed
     refused = e2e.cli("config", "set", "snapshots.keep", "many", check=False)
     assert refused.returncode == 2
     editor = e2e.root / "e2e-editor.sh"

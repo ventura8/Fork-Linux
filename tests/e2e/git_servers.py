@@ -29,7 +29,7 @@ def free_port() -> int:
 class _GitHttpServer(ThreadingHTTPServer):
     """The HTTP server with what its handlers need: the repositories, the user and the log."""
 
-    def __init__(self, port: int, root: Path, user: str, authorization: str) -> None:
+    def __init__(self, port: int, root: Path, user: str, authorization: str | None) -> None:
         super().__init__(("127.0.0.1", port), _GitHandler)
         self.root = root
         self.user = user
@@ -47,7 +47,8 @@ class _GitHandler(BaseHTTPRequestHandler):
         self.server.requests.append(fmt % args)
 
     def _authorized(self) -> bool:
-        return self.headers.get("Authorization", "") == self.server.authorization
+        expected = self.server.authorization
+        return expected is None or self.headers.get("Authorization", "") == expected
 
     def _body(self) -> bytes:
         if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
@@ -114,15 +115,16 @@ class _GitHandler(BaseHTTPRequestHandler):
 
 
 class HttpGitServer:
-    """Smart HTTP for the bare repositories in ``root``, behind basic auth with a test password."""
+    """Smart HTTP for the bare repositories in ``root``, behind basic auth with a test password
+    (``auth=False``: open to anyone, like a public server)."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, auth: bool = True) -> None:
         self.root = root
         self.user = "e2e-user"
         self.password = "e2e-" + secrets.token_hex(8)
         self.port = free_port()
         token = base64.b64encode(f"{self.user}:{self.password}".encode()).decode()
-        self._server = _GitHttpServer(self.port, root, self.user, f"Basic {token}")
+        self._server = _GitHttpServer(self.port, root, self.user, f"Basic {token}" if auth else None)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
 
     def url(self, name: str) -> str:

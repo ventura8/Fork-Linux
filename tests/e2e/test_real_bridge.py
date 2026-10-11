@@ -19,9 +19,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fork_driver import fork_pids, git, processes, wait_until
+from fork_driver import fork_pids, git, processes, wait_until, windows_path
 from fork_ui import STAGE_BUTTON, ForkUI, new_repo
-from git_servers import SshServer
+from git_servers import HttpGitServer, SshServer
 
 from fixtures import real_tier
 
@@ -201,28 +201,28 @@ def test_submodule_update_works(bridged: Any, installed: Any) -> None:
     REMOTES.mkdir(parents=True, exist_ok=True)
     sub = _repo(installed, "bridge-subproj", {"s.txt": "s\n"})
     subprocess.run(["git", "clone", "-q", "--bare", str(sub), str(REMOTES / "bridge-subproj.git")], check=True)
-    sup = _repo(installed, "bridge-super")
-    # A top-level submodule path: Fork lists "a/b" under a folder "a" in the sidebar.
-    git(sup, "-c", "protocol.file.allow=always", "submodule", "add", "-q", f"file://{REMOTES}/bridge-subproj.git",
-        "subrepo")
-    git(sup, "commit", "-qm", "add submodule")
-    subprocess.run(["git", "clone", "-q", "--bare", str(sup), str(REMOTES / "bridge-super.git")], check=True)
-    clone = installed.repos / "bridge-super-clone"
-    subprocess.run(["git", "clone", "-q", f"file://{REMOTES}/bridge-super.git", str(clone)], check=True)
-    assert not (clone / "subrepo" / "s.txt").exists()
-    window = _start(ui, clone, extra)
-    ui.all_commits()
-    ui.screen.click_in(window, *SUBMODULES_HEADER)
-    ui.screen.key("Right", settle=1.0)
-    ui.screen.screenshot("submodule-sidebar")
-    before = ui.screen.windows()
-    ui.screen.click_in(window, *FIRST_SUBMODULE, button=3)
-    menu = ui.screen.new_window(before, timeout=10)
-    ui.screen.screenshot("submodule-menu")
-    ui.screen.click(menu.x + 60, menu.y + SUBMODULE_MENU_UPDATE, settle=2.0)
-    if ui.dialogs():
-        ui.screen.key("Return", settle=2.0)
-    wait_until(lambda: (clone / "subrepo" / "s.txt").is_file(), 120, "the submodule checkout")
+    # The submodule comes from a (public) HTTP server: git refuses file:// submodules since 2.38.1.
+    with HttpGitServer(REMOTES, auth=False) as server:
+        sup = _repo(installed, "bridge-super")
+        git(sup, "submodule", "add", "-q", server.url("bridge-subproj.git"), "subrepo")
+        git(sup, "commit", "-qm", "add submodule")
+        subprocess.run(["git", "clone", "-q", "--bare", str(sup), str(REMOTES / "bridge-super.git")], check=True)
+        clone = installed.repos / "bridge-super-clone"
+        subprocess.run(["git", "clone", "-q", f"file://{REMOTES}/bridge-super.git", str(clone)], check=True)
+        assert not (clone / "subrepo" / "s.txt").exists()
+        window = _start(ui, clone, extra)
+        ui.all_commits()
+        ui.screen.click_in(window, *SUBMODULES_HEADER)
+        ui.screen.key("Right", settle=1.0)
+        ui.screen.screenshot("submodule-sidebar")
+        before = ui.screen.windows()
+        ui.screen.click_in(window, *FIRST_SUBMODULE, button=3)
+        menu = ui.screen.new_window(before, timeout=10)
+        ui.screen.screenshot("submodule-menu")
+        ui.screen.click(menu.x + 60, menu.y + SUBMODULE_MENU_UPDATE, settle=2.0)
+        if ui.dialogs():
+            ui.screen.key("Return", settle=2.0)
+        wait_until(lambda: (clone / "subrepo" / "s.txt").is_file(), 120, "the submodule checkout")
 
 
 def test_git_flow_start_feature(bridged: Any, installed: Any) -> None:
@@ -457,7 +457,7 @@ def test_git_calls_meet_the_latency_budget(bridged: Any, installed: Any) -> None
            "WINEDLLOVERRIDES": "winemenubuilder.exe="}
     driver = REPO / "build-bridge" / "bridge" / "tests" / "fl-testdriver.exe"
     bundled = next(iter(sorted((installed.fork.local_dir / "Fork" / "gitInstance").glob("*/bin/git.exe"))))
-    cwd = "Z:" + str(repo).replace("/", "\\")
+    cwd = windows_path(repo)
 
     def bench(exe: str) -> dict[str, Any]:
         result = subprocess.run([session["wine"], str(driver), "bench", "30", "--cwd", cwd, "--", exe, "rev-parse",
@@ -466,7 +466,7 @@ def test_git_calls_meet_the_latency_budget(bridged: Any, installed: Any) -> None
         return json.loads(line)
 
     through_bridge = bench(SHIM_GIT)
-    bundled_git = bench("Z:" + str(bundled).replace("/", "\\"))
+    bundled_git = bench(windows_path(bundled))
     assert through_bridge["ok"] == through_bridge["n"] and bundled_git["ok"] == bundled_git["n"]
     assert through_bridge["p50_ms"] < bundled_git["p50_ms"], (through_bridge, bundled_git)
 
