@@ -16,7 +16,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 |---|---|---|---|
 | Setup | 23 | 23 | 0 |
 | Launch | 16 | 16 | 0 |
-| Git operations through Fork's UI | 57 | 57 | 0 |
+| Git operations through Fork's UI | 62 | 62 | 0 |
 | OS integration | 22 | 22 | 0 |
 | Native-git bridge | 9 | 9 | 0 |
 | Doctor and repository fixes | 13 | 13 | 0 |
@@ -26,7 +26,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | Fork for Linux upgrades | 11 | 0 | 11 |
 | Desktop environments | 112 | 0 | 112 |
 | Non-Latin font fallback | 1 | 0 | 1 |
-| **Total** | 290 | 155 | 135 |
+| **Total** | 295 | 160 | 135 |
 
 ## Setup
 
@@ -95,6 +95,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | G-LARGE-REPO | A repository with 5000 commits and 3000 files opens with its whole history | real-fork | this repository | `tests/e2e/test_real_git_history.py::test_large_repository_opens_quickly` |
 | G-STAGE-FILE | Stage a file | real-fork | this repository | `tests/e2e/test_real_git_changes.py::test_stage_and_unstage_a_file` |
 | G-UNSTAGE-FILE | Unstage a file | real-fork | this repository | `tests/e2e/test_real_git_changes.py::test_stage_and_unstage_a_file` |
+| G-UNSTAGE-HUNK | Unstage one hunk of a staged file | real-fork | this repository | `tests/e2e/test_git_ops_local.py::test_unstage_one_hunk` |
 | G-STAGE-HUNK | Stage one hunk | real-fork | this repository | `tests/e2e/test_real_git_changes.py::test_stage_one_hunk` |
 | G-STAGE-LINE | Stage one line | real-fork | this repository | `tests/e2e/test_real_git_changes.py::test_stage_one_line` |
 | G-DISCARD | Discard a change (confirmed) | real-fork | this repository | `tests/e2e/test_real_git_changes.py::test_discard_a_hunk` |
@@ -107,28 +108,30 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | G-BRANCH-RENAME | Rename a branch | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_branch_create_checkout_rename_delete` |
 | G-BRANCH-DELETE | Delete a branch | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_branch_create_checkout_rename_delete` |
 | G-MERGE | Merge a branch | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_merge_a_branch` |
+| G-MERGE-ABORT | Abort a conflicted merge from Fork's banner | real-fork | this repository | `tests/e2e/test_git_ops_local.py::test_abort_a_conflicted_merge` |
 | G-REBASE | Rebase onto a branch | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_rebase_onto_a_branch` |
 | G-REBASE-INTERACTIVE | Interactive rebase in Fork's window: squash and drop | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_interactive_rebase_squash_and_drop` |
 | G-CHERRY-PICK | Cherry-pick a commit | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_cherry_pick_a_commit` |
 | G-REVERT | Revert a commit | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_revert_a_commit` |
 | G-RESET | Reset the branch to a commit | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_reset_the_branch` |
 | G-TAG-CREATE | Create a tag | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_create_a_tag` |
+| G-TAG-DELETE | Delete a tag (an annotated tag beside it is kept) | real-fork | this repository | `tests/e2e/test_git_ops_local.py::test_delete_a_tag` |
 | G-STASH-SAVE | Save a stash | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_stash_save_apply_pop_drop` |
 | G-STASH-APPLY | Apply a stash | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_stash_save_apply_pop_drop` |
 | G-STASH-POP | Pop a stash (apply and delete) | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_stash_save_apply_pop_drop` |
 | G-STASH-DROP | Delete a stash | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_stash_save_apply_pop_drop` |
 | G-CONFLICT-MERGER | Resolve a merge conflict in Fork's own merger | real-fork | this repository | `tests/e2e/test_real_git_branches.py::test_conflict_resolution_in_forks_merger` |
-| G-FETCH-FILE | Fetch from a file:// remote on the Linux side | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url` |
-| G-PULL-FILE | Pull from a file:// remote | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url` |
-| G-PUSH-FILE | Push to a file:// remote | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url` |
-| G-REMOTE-LINUX-PATH | A remote given as a bare Linux path (git clone /path) works | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_linux_path` |
-| G-TAG-PUSH | Push tags | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_push_tags` |
-| G-HTTP-BASIC-AUTH | An HTTP remote with a password: Git Credential Manager asks | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_http_with_basic_auth` |
+| G-FETCH-FILE | Fetch from a file:// remote on the Linux side | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url`<br>`tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_file_url` |
+| G-PULL-FILE | Pull from a file:// remote | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url`<br>`tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_file_url` |
+| G-PUSH-FILE | Push to a file:// remote | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url`<br>`tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_file_url` |
+| G-REMOTE-LINUX-PATH | A remote given as a bare Linux path (git clone /path) works | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_linux_path`<br>`tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_linux_path` |
+| G-TAG-PUSH | Push tags | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_push_tags`<br>`tests/e2e/test_git_ops_remote_bridge.py::test_push_tags` |
+| G-HTTP-BASIC-AUTH | An HTTP remote with a password: Git Credential Manager asks | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_http_with_basic_auth`<br>`tests/e2e/test_git_ops_remote_bridge.py::test_fetch_and_push_over_http_with_basic_auth` |
 | G-HTTP-CREDENTIALS-STORED | The password is stored (DPAPI) and not asked again | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_http_with_basic_auth` |
 | G-HTTP-FORK-PROMPT | When Git Credential Manager cannot show its window, Fork's own prompt asks and GCM still keeps the account | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_forks_own_prompt_when_gcm_cannot_ask` |
 | G-SSH-KEY | ssh remote with the user's key and config (bundled ssh) | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_ssh_with_a_shared_key` |
-| G-CLONE-FILE | Clone a file:// URL into the Linux home | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_clone_a_file_url` |
-| G-CLONE-HTTPS | Clone a public HTTPS repository | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_clone_a_public_https_repository` |
+| G-CLONE-FILE | Clone a file:// URL into the Linux home | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_clone_a_file_url`<br>`tests/e2e/test_git_ops_remote_bridge.py::test_clone_a_file_url` |
+| G-CLONE-HTTPS | Clone a public HTTPS repository | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_clone_a_public_https_repository`<br>`tests/e2e/test_git_ops_remote_bridge.py::test_clone_a_public_https_repository` |
 | G-WORKTREE | Worktrees: create, open as a tab, remove; native git understands them | real-fork | this repository | `tests/e2e/test_real_git_advanced.py::test_worktree_create_open_remove` |
 | G-GITFLOW | Git Flow: initialize (bundled git); start a feature (native-git bridge with git-flow) | real-fork | this repository | `tests/e2e/test_real_git_advanced.py::test_git_flow_initialize`<br>`tests/e2e/test_real_bridge.py::test_git_flow_start_feature` |
 | G-LFS | Git LFS: initialize, commit a tracked file as a pointer (bundled git-lfs) | real-fork | this repository | `tests/e2e/test_real_git_advanced.py::test_lfs_files_are_committed_as_pointers` |
@@ -137,7 +140,9 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | G-HOOK-BRIDGE | Native-git bridge: a failing hook that runs programs stops the commit | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_failing_pre_commit_hook_blocks_the_commit` |
 | G-SUBMODULE | Update a submodule (native-git bridge) | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_submodule_update_works` |
 | G-SSH-AGENT | ssh through the user's ssh-agent (native-git bridge) | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_fetch_over_ssh_with_the_agent` |
+| G-SSH-AGENT-BUNDLED | Bundled ssh cannot use the Linux ssh-agent (the git bridge is needed) | real-fork | this repository | `tests/e2e/test_git_ops_remote_ssh.py::test_bundled_ssh_cannot_use_the_agent` |
 | G-SSH-PASSPHRASE | ssh key with a passphrase asked by Fork (native-git bridge) | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_fetch_over_ssh_with_a_passphrase_prompt` |
+| G-SSH-PASSPHRASE-BUNDLED | A key with a passphrase is named by ssh sync and doctor; bundled ssh fails without asking | real-fork | this repository | `tests/e2e/test_git_ops_remote_ssh.py::test_a_passphrase_key_is_named_and_bundled_ssh_cannot_ask` |
 
 ## OS integration
 

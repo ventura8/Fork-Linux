@@ -701,6 +701,19 @@
     ]
   },
   {
+    "id": "G-UNSTAGE-HUNK",
+    "area": "git",
+    "title": "Unstage one hunk of a staged file",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_local.py::test_unstage_one_hunk"
+    ]
+  },
+  {
     "id": "G-STAGE-HUNK",
     "area": "git",
     "title": "Stage one hunk",
@@ -857,6 +870,19 @@
     ]
   },
   {
+    "id": "G-MERGE-ABORT",
+    "area": "git",
+    "title": "Abort a conflicted merge from Fork's banner",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_local.py::test_abort_a_conflicted_merge"
+    ]
+  },
+  {
     "id": "G-REBASE",
     "area": "git",
     "title": "Rebase onto a branch",
@@ -935,6 +961,19 @@
     ]
   },
   {
+    "id": "G-TAG-DELETE",
+    "area": "git",
+    "title": "Delete a tag (an annotated tag beside it is kept)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_local.py::test_delete_a_tag"
+    ]
+  },
+  {
     "id": "G-STASH-SAVE",
     "area": "git",
     "title": "Save a stash",
@@ -1009,7 +1048,8 @@
     "provided_by": "this-branch",
     "pending_merge": false,
     "tests": [
-      "tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url"
+      "tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_file_url"
     ]
   },
   {
@@ -1022,7 +1062,8 @@
     "provided_by": "this-branch",
     "pending_merge": false,
     "tests": [
-      "tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url"
+      "tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_file_url"
     ]
   },
   {
@@ -1035,7 +1076,8 @@
     "provided_by": "this-branch",
     "pending_merge": false,
     "tests": [
-      "tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url"
+      "tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_file_url",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_file_url"
     ]
   },
   {
@@ -1048,7 +1090,8 @@
     "provided_by": "this-branch",
     "pending_merge": false,
     "tests": [
-      "tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_linux_path"
+      "tests/e2e/test_real_git_remotes.py::test_fetch_pull_push_with_a_linux_path",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_fetch_pull_push_with_a_linux_path"
     ]
   },
   {
@@ -1061,7 +1104,8 @@
     "provided_by": "this-branch",
     "pending_merge": false,
     "tests": [
-      "tests/e2e/test_real_git_remotes.py::test_push_tags"
+      "tests/e2e/test_real_git_remotes.py::test_push_tags",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_push_tags"
     ]
   },
   {
@@ -1074,7 +1118,8 @@
     "provided_by": "this-branch",
     "pending_merge": false,
     "tests": [
-      "tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_http_with_basic_auth"
+      "tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_http_with_basic_auth",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_fetch_and_push_over_http_with_basic_auth"
     ]
   },
   {
@@ -1126,7 +1171,8 @@
     "provided_by": "this-branch",
     "pending_merge": false,
     "tests": [
-      "tests/e2e/test_real_git_remotes.py::test_clone_a_file_url"
+      "tests/e2e/test_real_git_remotes.py::test_clone_a_file_url",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_clone_a_file_url"
     ]
   },
   {
@@ -1139,7 +1185,8 @@
     "provided_by": "this-branch",
     "pending_merge": false,
     "tests": [
-      "tests/e2e/test_real_git_remotes.py::test_clone_a_public_https_repository"
+      "tests/e2e/test_real_git_remotes.py::test_clone_a_public_https_repository",
+      "tests/e2e/test_git_ops_remote_bridge.py::test_clone_a_public_https_repository"
     ]
   },
   {
@@ -1248,6 +1295,19 @@
     ]
   },
   {
+    "id": "G-SSH-AGENT-BUNDLED",
+    "area": "git",
+    "title": "Bundled ssh cannot use the Linux ssh-agent (the git bridge is needed)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_remote_ssh.py::test_bundled_ssh_cannot_use_the_agent"
+    ]
+  },
+  {
     "id": "G-SSH-PASSPHRASE",
     "area": "git",
     "title": "ssh key with a passphrase asked by Fork (native-git bridge)",
@@ -1258,6 +1318,19 @@
     "pending_merge": false,
     "tests": [
       "tests/e2e/test_real_bridge.py::test_fetch_over_ssh_with_a_passphrase_prompt"
+    ]
+  },
+  {
+    "id": "G-SSH-PASSPHRASE-BUNDLED",
+    "area": "git",
+    "title": "A key with a passphrase is named by ssh sync and doctor; bundled ssh fails without asking",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_remote_ssh.py::test_a_passphrase_key_is_named_and_bundled_ssh_cannot_ask"
     ]
   },
   {
