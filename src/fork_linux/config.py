@@ -144,9 +144,6 @@ SCHEMA: dict[str, dict[str, KeySpec]] = {
             kind="choice",
             choices=("link", "copy"),
         ),
-        "agent_bridge": KeySpec(
-            "off", "Experimental: let Fork's ssh use your ssh-agent ($SSH_AUTH_SOCK).", kind="bool"
-        ),
     },
     "git": {
         "config_overlay": KeySpec(
