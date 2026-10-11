@@ -15,8 +15,9 @@ root under `/var/tmp/fork-linux-e2e/`, the read-only seed for the real-Fork tier
 | Desktop | Image | Integration tier | Real-Fork tier | Evidence |
 |---|---|---|---|---|
 | Xubuntu 26.04, XFCE 4.20 (xfwm4, xfsettingsd, Thunar 4.20 + its FileManager1, xfce4-terminal, garcon menu, Greybird / Greybird-dark) | `fork-linux-e2e-de-xfce:26.04` | ✅ 13/13 | ✅ 9/9 (setup 235 s from the seed, tier 292 s) | local `scripts/ci-e2e-de.sh xfce [--fork]`, 2026-10-11 |
+| Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, kcminit + kded6, Dolphin 25.12 + its FileManager1 and our service menu, Konsole, Kickoff's menu through kbuildsycoca6, Kubuntu / Kubuntu Dark global themes) | `fork-linux-e2e-de-kde:26.04` | ✅ 14/14 | ✅ 9/9 (setup 308 s from the seed, tier 369 s) | local `scripts/ci-e2e-de.sh kde [--fork]`, 2026-10-11 |
 
-GNOME, KDE Plasma, Cinnamon, MATE, Budgie and LXQt follow the same pattern: one
+GNOME, Cinnamon, MATE, Budgie and LXQt follow the same pattern: one
 `docker/Dockerfile.e2e.de.<desktop>` plus one entry in `tests/e2e_de/desktops.py` (see "Adding a
 desktop").
 
@@ -52,21 +53,21 @@ daemon (until it has published `Xft.dpi`), its window manager (until `_NET_SUPPO
 names it) and its file-manager service (until `org.freedesktop.FileManager1` has an owner). The
 environment is what the desktop's display manager exports (for Xubuntu: `XDG_CURRENT_DESKTOP=XFCE`,
 `DESKTOP_SESSION=xubuntu`, `XDG_MENU_PREFIX=xfce-`, `XDG_CONFIG_DIRS=/etc/xdg/xdg-xubuntu:/etc/xdg`,
-...). Every process of the session carries `FL_E2E_DE_SESSION` or its `DISPLAY`; `stop()` ends
-exactly those.
+...; a value may name `{home}`, the session's home, as KDE's `XDG_CONFIG_DIRS` does). Every
+process of the session carries `FL_E2E_DE_SESSION` or its `DISPLAY`; `stop()` ends exactly those.
 
 ## Integration tier (`test_de_integration.py`, no Wine)
 
 | Test | What the desktop itself shows |
 |---|---|
 | install from the release tarball | `install.sh --from-tarball --no-deps`: `fork-linux --version` is `VERSION`, `desktop status` is ok |
-| menu entry | `desktop-file-validate`; the desktop's menu library lists it under Development (XFCE: garcon, the panel's library, through `python3-gi`); `gio launch` of the entry starts fork-linux, which asks its first-run license question (zenity), then declined |
-| file manager "Open in Fork" | the action is installed next to the desktop's own (XFCE: Xubuntu's "Open Terminal Here" kept in `uca.xml`); the file manager's real context menu (keys from the recipe) runs `fork-linux open --from-file-manager <folder>` |
-| theme light / dark | the desktop's own setting (XFCE: `/Net/ThemeName` Greybird / Greybird-dark) -> `theme.detect` of the installed package |
-| scale per case | XFCE: default 100 %, Window Scaling 2x 200 %, custom DPI 192 200 % -> `display.scale_percent` |
+| menu entry | `desktop-file-validate`; the desktop's menu library lists it under Development (XFCE: garcon, the panel's library, through `python3-gi`; KDE: `kbuildsycoca6 --menutest`, the menu KService builds for Kickoff); the desktop's own launcher (`Desktop.menu_launcher`: `gio launch`; KDE: `kioclient exec`, KIO's application launcher) starts fork-linux, which asks its first-run license question (zenity), then declined |
+| file manager "Open in Fork" | the action is installed next to the desktop's own (XFCE: Xubuntu's "Open Terminal Here" kept in `uca.xml`; KDE: an executable service menu in `~/.local/share/kio/servicemenus` for `inode/directory`); the file manager's real context menu (keys from the recipe) runs `fork-linux open --from-file-manager <folder>` |
+| theme light / dark | the desktop's own setting (XFCE: `/Net/ThemeName` Greybird / Greybird-dark; KDE: the Global Theme Kubuntu / Kubuntu Dark) -> `theme.detect` of the installed package |
+| scale per case | XFCE: default 100 %, Window Scaling 2x 200 %, custom DPI 192 200 %; KDE: default 100 %, global scale 200 % and 150 %, Force font DPI 192 200 % -> `display.scale_percent` |
 | terminal | `fork-linux-host terminal DIR` opens the desktop's terminal (window class) with a shell whose cwd is DIR (`/proc`) |
 | reveal | `fork-linux-host reveal FILE` -> FileManager1 -> a file-manager window on its folder |
-| open file / open URL | `fork-linux-host open` -> xdg-open -> the default application (a stub registered with `xdg-mime`; XFCE hands web links to its own preferred browser, so the stub is also the `helpers.rc` WebBrowser) |
+| open file / open URL | `fork-linux-host open` -> xdg-open -> the default application (a stub registered with `xdg-mime`; XFCE hands web links to its own preferred browser, so the stub is also the `helpers.rc` WebBrowser; KDE asks kdeglobals' `BrowserApplication` first, so the stub is also named there, as Default Applications does) |
 | doctor | only `wine.present`, `prefix.exists`, `fork.installed` fail before setup; no warnings |
 
 ## Real-Fork tier (`test_de_fork.py`, `FL_E2E_DE_FORK=1`)
@@ -111,15 +112,58 @@ with `Theme=1` and a dark window;
 - A screenshot is judged only once it is drawn (not one flat colour, `forkui.drawn_screenshot`);
   a blank one writes `logs/<name>-x11.txt` (windows, `xwininfo -tree`, processes) for the report.
 
+## KDE Plasma facts the recipe relies on
+
+- Kubuntu 26.04 logs in to Plasma on Wayland by default; the X11 session is the separate
+  `plasma-session-x11` package (`startplasma-x11`, `plasmax11.desktop`), which the image installs.
+  The recipe's environment is what sddm and `startplasma-x11` export (`XDG_CURRENT_DESKTOP=KDE`,
+  `DESKTOP_SESSION=plasmax11`, `KDE_FULL_SESSION=true`, `KDE_SESSION_VERSION=6`,
+  `XDG_MENU_PREFIX=plasma-`), with `XDG_CONFIG_DIRS` starting with `~/.config/kdedefaults` (startplasma)
+  and ending with Kubuntu's `/usr/share/kubuntu-default-settings/kf5-settings`
+  (`/etc/xdg/plasma-workspace/env/env.sh`), where `LookAndFeelPackage=org.kubuntu.desktop` and
+  `BrowserApplication=firefox_firefox.desktop` come from. Without `XDG_MENU_PREFIX=plasma-`,
+  `kbuildsycoca6` looks for an `applications.menu` that Plasma does not ship (only
+  `plasma-applications.menu`) and builds an empty menu.
+- `plasma_session` runs kcminit's startup modules before kded6; `kcminit kcm_fonts_init` publishes
+  `Xft.dpi` (96, or kcmfonts' `forceFontDPI`). kded6 alone publishes no `Xft.dpi`.
+- A Global Theme (`plasma-apply-lookandfeel`, System Settings > Colors & Themes) writes its colour
+  scheme to `~/.config/kdedefaults/kdeglobals`, not to `~/.config/kdeglobals`: `kreadconfig6` sees
+  `ColorScheme=BreezeDark` only through `XDG_CONFIG_DIRS`. fork-linux's KDE probe also reads
+  `LookAndFeelPackage` (`org.kubuntudark.desktop`), so a session without kdedefaults is dark too.
+- Scale on X11: Display Configuration's global scale writes kdeglobals `[KScreen] ScaleFactor` /
+  `ScreenScaleFactors` and kcmfonts `forceFontDPI` (96 x scale) and publishes `Xft.dpi`; Text &
+  Fonts' "Force font DPI" writes `forceFontDPI` and publishes `Xft.dpi` the same way (libkrdb, as
+  `kcminit kcm_fonts_init` at login). Plasma 6.6's `startplasma-x11` exports only
+  `QT_SCREEN_SCALE_FACTORS`, no `GDK_SCALE` / `GDK_DPI_SCALE`, so `Xft.dpi` (then `forceFontDPI`)
+  is what fork-linux reads: 200 % -> 192, 150 % -> 144.
+- Dolphin reads the service menus each time it opens a context menu: one added while Dolphin runs
+  shows up at once (no restart, unlike Thunar and Nautilus). KF6 keeps service menus out of
+  KService's sycoca (no `kbuildsycoca6` needed), and KIO ignores a user service menu that is not
+  executable. "Open in Fork" (`X-KDE-Priority=TopLevel`) is the 7th item of the folder's context
+  menu (after Create New, Open Folder With..., Add to Places, Sort By, Change View Mode, Open
+  Terminal Here).
+- `fork-linux-host terminal` opens Konsole (`DESKTOP_TERMINALS["KDE"]`, `--workdir`); Kubuntu's
+  Konsole profile is `kubuntu.profile`. `reveal` reaches Dolphin through FileManager1
+  (`dolphin --daemon`, D-Bus activated), which selects the file.
+- Web links: KIO hands http(s) URLs to kdeglobals' `BrowserApplication` first and falls back to
+  `mimeapps.list` when that entry is not installed (in the image, Kubuntu's Firefox snap is not).
+- On a Kubuntu without zenity, fork-linux asks through kdialog (`ui.KDialogUI`); with both
+  installed `auto` picks zenity (kdialog has no progress window). Checked by hand in this image
+  with kdialog added and `[ui] progress = kdialog`: the license question is a kdialog window
+  titled "Fork license agreement", Escape declines it and fork-linux exits with "Fork's license
+  agreement was declined; nothing was downloaded".
+- Not covered: Plasma on Wayland (kwin_wayland + Xwayland), Kubuntu 26.04's default session.
+
 ## Adding a desktop
 
 1. `docker/Dockerfile.e2e.de.<key>` (copy the XFCE one: `FROM ubuntu:26.04`, `# Image tag:
    fork-linux-e2e-de-<key>:26.04`, the same Wine host libraries and tier tools, plus the desktop's
    real components).
-2. A `Desktop` entry in `tests/e2e_de/desktops.py` (session variables, settings daemon, window
+2. A `Desktop` entry in `tests/e2e_de/desktops.py` (session variables, where `{home}` is the
+   session's home, settings daemon, window
    manager, file manager + service, terminal, theme and scale commands as the desktop's own
-   settings dialogs run them, reset commands, context-menu keys), and a checker in
-   `test_de_integration.py` for any new integration kind or menu reader.
+   settings dialogs run them, reset commands, context-menu keys, the menu's launcher), and a
+   checker in `test_de_integration.py` for any new integration kind, menu reader or browser kind.
 3. `tests/test_docker.py` `EXPECTED`; `tests/test_e2e_de_recipes.py` keeps images, recipes and
    checkers in step on its own.
 4. Run both tiers, record the result in the matrix above and in `docs/COMPATIBILITY.md`.

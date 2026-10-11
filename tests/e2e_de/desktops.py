@@ -30,12 +30,15 @@ INTEGRATION_KINDS = (THUNAR_UCA, NAUTILUS_EXTENSION, DOLPHIN_SERVICEMENU, NEMO_A
 
 # How the desktop's menu is read back (one reader per kind in test_de_integration.py).
 MENU_GARCON = "garcon"
-MENU_READERS = (MENU_GARCON,)
+MENU_KSYCOCA = "kbuildsycoca"
+MENU_READERS = (MENU_GARCON, MENU_KSYCOCA)
 
 # How the desktop picks the web browser that xdg-open hands http(s) links to.
 BROWSER_XFCE_HELPERS = "xfce-helpers"
 BROWSER_XDG_MIME = "xdg-mime"
-BROWSER_KINDS = (BROWSER_XFCE_HELPERS, BROWSER_XDG_MIME)
+# KDE: System Settings > Default Applications also names the browser in kdeglobals, which KIO asks first.
+BROWSER_KDE = "kde-browser-application"
+BROWSER_KINDS = (BROWSER_XFCE_HELPERS, BROWSER_XDG_MIME, BROWSER_KDE)
 
 LIGHT = "light"
 DARK = "dark"
@@ -82,6 +85,8 @@ class Desktop:
     open_in_fork_keys: tuple[str, ...]
     # The window manager reparents (frames) Fork's undecorated main window.
     frames_undecorated: bool = True
+    # The command (the .desktop file appended) that starts a menu entry as the desktop's menu does.
+    menu_launcher: Command = ("gio", "launch")
     # A command whose success means the settings daemon has published its settings.
     settings_ready: Command = ("true",)
     packages: tuple[str, ...] = field(default=())
@@ -145,4 +150,99 @@ XFCE = Desktop(
     packages=("xfwm4", "xfce4-settings", "xfconf", "thunar", "xfce4-terminal", "exo-utils", "xubuntu-default-settings"),
 )
 
-DESKTOPS: dict[str, Desktop] = {desktop.key: desktop for desktop in (XFCE,)}
+def _kconfig(file: str, group: str, key: str, value: str | None) -> Command:
+    """``kwriteconfig6`` of one key (``None`` deletes it), as KDE's settings modules write it."""
+    action = ("--delete",) if value is None else (value,)
+    return ("kwriteconfig6", "--file", file, "--group", group, "--key", key, *action)
+
+
+def _plasma_global_theme(package: str) -> Command:
+    """System Settings > Colors & Themes > Global Theme (writes ~/.config/kdedefaults)."""
+    return ("plasma-apply-lookandfeel", "--apply", package)
+
+
+# What System Settings' Text & Fonts and Display Configuration modules do on X11 after writing
+# kcmfonts' forceFontDPI (and what kcminit does at the next login): publish it as Xft.dpi.
+_KDE_FONTS_INIT = ("kcminit", "kcm_fonts_init")
+
+
+def _kde_global_scale(factor: str, dpi: str) -> tuple[Command, ...]:
+    """Display Configuration > Global scale, as kcm_kscreen applies it on X11."""
+    return (
+        _kconfig("kdeglobals", "KScreen", "ScaleFactor", factor),
+        _kconfig("kdeglobals", "KScreen", "ScreenScaleFactors", f"screen={factor};"),
+        _kconfig("kcmfonts", "General", "forceFontDPI", dpi),
+        _KDE_FONTS_INIT,
+    )
+
+
+KDE = Desktop(
+    key="kde",
+    title="Kubuntu 26.04 (KDE Plasma 6.6 on X11: kwin_x11, kded6, Dolphin 25.12, Konsole, Breeze)",
+    # What sddm + startplasma-x11 export for the "Plasma (X11)" session, with Kubuntu's defaults
+    # (kubuntu-settings-desktop: /etc/xdg/plasma-workspace/env/env.sh adds its kf5-settings, where
+    # LookAndFeelPackage=org.kubuntu.desktop); startplasma puts ~/.config/kdedefaults first, where
+    # a Global Theme writes its colour scheme.
+    session_env={
+        "XDG_CURRENT_DESKTOP": "KDE",
+        "DESKTOP_SESSION": "plasmax11",
+        "XDG_SESSION_DESKTOP": "KDE",
+        "XDG_SESSION_TYPE": "x11",
+        "XDG_MENU_PREFIX": "plasma-",
+        "XDG_CONFIG_DIRS": "{home}/.config/kdedefaults:/etc/xdg:/usr/share/kubuntu-default-settings/kf5-settings",
+        "XDG_DATA_DIRS": "/usr/local/share/:/usr/share/:/var/lib/snapd/desktop",
+        "KDE_FULL_SESSION": "true",
+        "KDE_SESSION_VERSION": "6",
+        "KDE_APPLICATIONS_AS_SCOPE": "1",
+    },
+    # plasma_session runs kcminit's startup modules (Xft.* and the widget style), then kded6.
+    settings_daemon=("sh", "-c", "kcminit kcm_fonts_init kcm_style_init && exec kded6"),
+    window_manager=("kwin_x11", "--replace"),
+    wm_name="KWin",
+    # D-Bus activation of org.freedesktop.FileManager1 runs "dolphin --daemon".
+    file_manager="dolphin",
+    file_manager_service=("dolphin", "--daemon"),
+    file_manager_class="dolphin",
+    provides_file_manager1=True,
+    integration=DOLPHIN_SERVICEMENU,
+    menu_reader=MENU_KSYCOCA,
+    terminal="konsole",
+    terminal_class="konsole",
+    # Global Theme: Kubuntu's default and Kubuntu Dark.
+    themes={
+        LIGHT: (_plasma_global_theme("org.kubuntu.desktop"),),
+        DARK: (_plasma_global_theme("org.kubuntudark.desktop"),),
+    },
+    # Display Configuration > Global scale; Text & Fonts > Force font DPI.
+    scales=(
+        ScaleCase("default", 100),
+        ScaleCase("global-scale-200", 200, _kde_global_scale("2", "192")),
+        ScaleCase("global-scale-150", 150, _kde_global_scale("1.5", "144")),
+        ScaleCase("force-font-dpi-192", 200, (_kconfig("kcmfonts", "General", "forceFontDPI", "192"), _KDE_FONTS_INIT)),
+    ),
+    reset=(
+        _plasma_global_theme("org.kubuntu.desktop"),
+        _kconfig("kdeglobals", "General", "ColorScheme", None),
+        _kconfig("kdeglobals", "KScreen", "ScaleFactor", None),
+        _kconfig("kdeglobals", "KScreen", "ScreenScaleFactors", None),
+        _kconfig("kcmfonts", "General", "forceFontDPI", None),
+        _KDE_FONTS_INIT,
+    ),
+    browser=BROWSER_KDE,
+    menu_launcher=("kioclient", "exec"),
+    # Dolphin's context menu of the folder it shows: Create New, Open Folder With..., Add to Places,
+    # Sort By, Change View Mode, Open Terminal Here, Open in Fork (our TopLevel service menu).
+    open_in_fork_keys=("Menu", *("Down",) * 7, "Return"),
+    # kcminit has published Xft.dpi and kded6 serves its modules on the bus.
+    settings_ready=(
+        "sh", "-c",
+        "xrdb -query | grep -q '^Xft.dpi:' && gdbus introspect --session --dest org.kde.kded6 --object-path /kded",
+    ),
+    packages=(
+        "kwin-x11", "kded6", "plasma-workspace", "plasma-session-x11", "dolphin", "konsole", "kde-cli-tools",
+        "libkf6config-bin", "libkf6service-bin", "breeze", "kubuntu-settings-desktop", "xdg-desktop-portal-kde",
+    ),
+)
+
+
+DESKTOPS: dict[str, Desktop] = {desktop.key: desktop for desktop in (XFCE, KDE)}

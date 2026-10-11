@@ -178,7 +178,7 @@ class Session:
                 SESSION_MARKER: self.session_id,
             }
         )
-        env.update(self.desktop.session_env)
+        env.update({name: value.replace("{home}", str(home)) for name, value in self.desktop.session_env.items()})
         return env
 
     def expand(self, argv: Sequence[str]) -> list[str]:

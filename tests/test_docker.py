@@ -46,6 +46,7 @@ EXPECTED = {
     "Dockerfile.e2e.wine": "fork-linux-ci-e2e-wine:26.04",
     # desktop E2E tier (scripts/ci-e2e-de.sh), one image per desktop
     "Dockerfile.e2e.de.xfce": "fork-linux-e2e-de-xfce:26.04",
+    "Dockerfile.e2e.de.kde": "fork-linux-e2e-de-kde:26.04",
 }
 SCRIPTS = [
     "scripts/ci-docker.sh",

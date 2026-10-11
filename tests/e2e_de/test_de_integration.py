@@ -147,6 +147,11 @@ def stub(session: dekit.Session, desktop: desktops.Desktop) -> Path:
                 """),
         )
         _write(session.home / ".config" / "xfce4" / "helpers.rc", "WebBrowser=fl-e2e-browser\n")
+    if desktop.browser == desktops.BROWSER_KDE:
+        # Default Applications > Web browser also names it in kdeglobals: KIO hands http(s) links to
+        # BrowserApplication first (Kubuntu's default: the Firefox snap), else to mimeapps.list.
+        session.run(["kwriteconfig6", "--file", "kdeglobals", "--group", "General", "--key", "BrowserApplication",
+                     "fl-e2e-stub.desktop"])
     return calls
 
 
@@ -178,7 +183,33 @@ def _garcon_entries(session: dekit.Session) -> list[dict[str, object]]:
     return json.loads(session.run(["python3", "-I", "-c", GARCON_READER]).stdout)
 
 
-MENU_READERS: dict[str, Callable[[dekit.Session], list[dict[str, object]]]] = {desktops.MENU_GARCON: _garcon_entries}
+def _desktop_entry_exec(session: dekit.Session, menu_id: str) -> str:
+    """``Exec`` of the desktop entry ``menu_id`` that wins in the XDG data directories, read by KConfig."""
+    for base in (session.env["XDG_DATA_HOME"], *session.env.get("XDG_DATA_DIRS", "/usr/share").split(":")):
+        path = Path(base) / "applications" / menu_id
+        if path.is_file():
+            argv = ["kreadconfig6", "--file", str(path), "--group", "Desktop Entry", "--key", "Exec"]
+            return session.run(argv).stdout.strip()
+    return ""
+
+
+def _ksycoca_entries(session: dekit.Session) -> list[dict[str, object]]:
+    """Every entry of Plasma's application menu as KService builds it for Kickoff and Kicker from
+    ``$XDG_MENU_PREFIX``applications.menu (``kbuildsycoca6 --menutest``: menu path, entry id)."""
+    found: list[dict[str, object]] = []
+    for line in session.run(["kbuildsycoca6", "--menutest"], timeout=120).stdout.splitlines():
+        menu, sep, rest = line.partition("\t")
+        menu_id = rest.split("\t", 1)[0]
+        if sep and menu_id:
+            path = [part for part in menu.split("/") if part]
+            found.append({"path": path, "id": menu_id, "command": _desktop_entry_exec(session, menu_id)})
+    return found
+
+
+MENU_READERS: dict[str, Callable[[dekit.Session], list[dict[str, object]]]] = {
+    desktops.MENU_GARCON: _garcon_entries,
+    desktops.MENU_KSYCOCA: _ksycoca_entries,
+}
 
 
 # -- file-manager integration checks -----------------------------------------------------------
@@ -209,8 +240,31 @@ def _check_thunar_uca(session: dekit.Session, installed: dekit.Installed) -> Non
     dekit.wait_for(lambda: not dekit.pids_of("thunar"), 30, "Thunar to quit")
 
 
+DOLPHIN_SERVICEMENU_FILE = (".local", "share", "kio", "servicemenus", "fork-linux-open.desktop")
+
+
+def _check_dolphin_servicemenu(session: dekit.Session, _installed: dekit.Installed) -> None:
+    """Our service menu is where KIO reads the user's service menus, executable (KIO ignores a user
+    service menu that is not), offered for folders, and runs ``open --from-file-manager``. Dolphin
+    reads the service menus each time it opens a context menu: no restart."""
+    path = session.home.joinpath(*DOLPHIN_SERVICEMENU_FILE)
+    assert path.is_file(), "fork-linux added no Dolphin service menu"
+    assert os.access(path, os.X_OK), "KIO ignores a service menu that is not executable"
+
+    def read(group: str, key: str) -> str:
+        argv = ["kreadconfig6", "--file", str(path), "--group", group, "--key", key]
+        return session.run(argv).stdout.strip()
+
+    assert "KonqPopupMenu/Plugin" in read("Desktop Entry", "X-KDE-ServiceTypes")
+    assert "inode/directory" in read("Desktop Entry", "MimeType").split(";")
+    actions = [name for name in read("Desktop Entry", "Actions").split(";") if name]
+    assert any(OPEN_ACTION in read(f"Desktop Action {name}", "Exec") for name in actions), actions
+    assert dekit.pids_of("dolphin"), "Dolphin's service (FileManager1) is not running"
+
+
 INTEGRATION_CHECKS: dict[str, Callable[[dekit.Session, dekit.Installed], None]] = {
     desktops.THUNAR_UCA: _check_thunar_uca,
+    desktops.DOLPHIN_SERVICEMENU: _check_dolphin_servicemenu,
 }
 
 
@@ -237,7 +291,7 @@ def test_menu_entry_is_valid_listed_and_starts_fork_linux(
     assert entries, f"{desktop.menu_reader} does not list {menu_file.name}"
     assert entries[0]["path"] == ["Development"], entries
     assert str(entries[0]["command"]).startswith(str(session.home / ".local" / "bin" / "fork-linux"))
-    session.spawn("menu-launch", ["gio", "launch", str(menu_file)])
+    session.spawn("menu-launch", [*desktop.menu_launcher, str(menu_file)])
     askers = _decline_consent(session)
     assert any(" run" in cmdline for cmdline in askers), askers
 
