@@ -303,11 +303,20 @@ def test_an_unpinned_fork_version_with_allow_untested_goes_on(harness: Harness) 
 
 
 def test_wine_choice_is_saved_only_when_it_changes(harness: Harness) -> None:
-    harness.run("--only", "consent", "--accept-fork-eula", "--wine", "system")
+    root = str(harness.wine_root)
+    harness.run("--only", "consent", "--accept-fork-eula", "--wine", root)
     first = harness.paths.config_file.read_text()
-    harness.run("--only", "consent", "--wine", "system")
+    harness.run("--only", "consent", "--wine", root)
     assert harness.paths.config_file.read_text() == first
-    assert "provider = system" in first
+    assert f"provider = {root}" in first
+
+
+@pytest.mark.parametrize("choice", ["flatpak", "system", "/nonexistent/wine"])
+def test_a_wine_choice_that_cannot_work_is_refused_and_not_saved(harness: Harness, choice: str) -> None:
+    with pytest.raises(WineUnavailable):
+        harness.run("--accept-fork-eula", "--wine", choice)
+    assert not harness.paths.config_file.is_file() or "provider" not in harness.paths.config_file.read_text()
+    assert not harness.paths.state_file.exists()
 
 
 def test_runner_type_is_recording(harness: Harness) -> None:

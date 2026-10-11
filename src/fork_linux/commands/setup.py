@@ -13,7 +13,7 @@ import importlib
 import os
 from typing import Any
 
-from .. import fork_install, fsutil, procs, winecmd
+from .. import fork_install, fsutil, procs, wine_provider, winecmd
 from .. import manifest as manifest_mod
 from ..cli import AppContext
 from ..errors import Declined, ForkLinuxError, UsageError
@@ -183,11 +183,25 @@ def check_fork_request(args: argparse.Namespace, ctx: AppContext) -> None:
     fork_install.plan(manifest, requested=args.fork_version, allow_untested=args.allow_untested)
 
 
+def check_wine_choice(args: argparse.Namespace, ctx: AppContext) -> None:
+    """Refuse a ``--wine`` choice that cannot work here before it is saved as ``wine.provider``.
+
+    A saved choice is used by every later setup and launch, so a Flatpak provider outside the
+    Flatpak, a missing system Wine or a wrong path would break them all. The managed Wine is
+    downloaded by setup itself and needs no check.
+    """
+    if not args.wine or args.wine == "managed":
+        return
+    manifest = manifest_mod.load(override=ctx.paths.manifest_override)
+    wine_provider.resolve(ctx.config, manifest, ctx.paths, ctx.runner, ctx.env, choice=args.wine)
+
+
 def run(args: argparse.Namespace, ctx: AppContext) -> int:
     """Run the pending setup steps (or list them)."""
     boot = _bootstrap()
     check_selection(boot, args)
     check_fork_request(args, ctx)
+    check_wine_choice(args, ctx)
     bctx = _make_ctx(args, ctx)
     if args.list_steps:
         return list_steps(ctx, boot, bctx)
