@@ -272,7 +272,7 @@ v1.0.0 was built in phases; rows marked **(planned)** do not exist yet. When you
 > Pinned images, split stages and parallel per-distro cells are hard rules for agents touching Docker or CI.
 
 * **Pinned everything** — explicit version tags only, **never `latest`**, never floating aliases, never commit SHAs:
-  - Docker bases: `ubuntu:26.04` (baseline), `ubuntu:22.04` (jammy), `ubuntu:24.04` (noble), `debian:13`, `fedora:44`, `opensuse/leap:16.0`, a dated `archlinux:base-YYYYMMDD.0.N` tag. BuildKit frontend `# syntax=docker/dockerfile:1.27.0`.
+  - Docker bases: `ubuntu:26.04` (baseline), `ubuntu:22.04` (jammy), `ubuntu:24.04` (noble), `debian:13.7` (latest point release), `fedora:44`, `opensuse/leap:16.0`, a dated `archlinux:base-YYYYMMDD.0.N` tag. BuildKit frontend `# syntax=docker/dockerfile:1.27.0`.
   - GHA runners: `runs-on: ubuntu-26.04` (declared in `.github/actionlint.yaml`). GHA actions pinned to explicit tags (e.g. `actions/checkout@v7.0.1`).
   - Pip in CI images: exact `==` pins. Apt / dnf / zypper / pacman packages are locked by the pinned base image; no unpinned `curl | bash` installers.
 * **Image tags** carry an explicit version suffix: `fork-linux-ci-<stage-or-cell>:<distro-version>` (present: `fork-linux-ci-jammy:22.04`, `fork-linux-ci-bridge:26.04`). Never rely on Docker's implicit `:latest`.

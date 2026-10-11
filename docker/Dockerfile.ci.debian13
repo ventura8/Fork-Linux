@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1.27.0
 # CI image for Fork for Linux (unofficial) — compat cell: Debian 13 (trixie)
-# Image tag: fork-linux-ci-debian13:13
+# Image tag: fork-linux-ci-debian13:13.7
 # Runs (scripts/ci-docker.sh, FL_CI_STAGE=compat FL_CI_CELL=debian13): meson build + meson test,
 # py_compile and the pytest suite (no coverage floors), as an unprivileged user.
 # Source is bind-mounted at /src (no COPY).
-FROM debian:13
+FROM debian:13.7
 
 ENV LANG=C.UTF-8
 ENV DEBIAN_FRONTEND=noninteractive
-# Apt packages are distro-locked by debian:13 (no floating apt versions).
+# Apt packages are distro-locked by debian:13.7 (no floating apt versions).
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean \

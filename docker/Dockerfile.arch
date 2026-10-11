@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.27.0
 # Arch Linux packaging image for Fork for Linux (unofficial) — base-devel, dated snapshot tag
-# Image tag: fork-linux-ci-arch-pkg:base-devel-20260906.0.587075
+# Image tag: fork-linux-ci-arch-pkg:base-devel-20261004.0.606936
 # Runs scripts/release-arch.sh (makepkg as the unprivileged "builder" user, .SRCINFO check)
 # and the packaging E2E (scripts/packaging-e2e-install.sh arch). Source bind-mounted at /src.
-FROM archlinux:base-devel-20260906.0.587075
+FROM archlinux:base-devel-20261004.0.606936
 
 # The dated base tag pins the starting point; pacman -Syu brings it to the current repos
 # (Arch has no frozen release repositories).
