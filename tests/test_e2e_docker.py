@@ -67,7 +67,11 @@ if [[ "$1" == "-n" ]]; then nb=1; shift; fi
 target="$(basename "$(readlink "/proc/$$/fd/$1")")"
 printf '{"tool": "flock", "nonblocking": %s, "lock": "%s"}\\n' "$nb" "$target" >> "$FAKE_LOG"
 for busy in ${FAKE_FLOCK_BUSY:-}; do
-    if [[ "$busy" == "$target" && "$nb" == 1 ]]; then exit 1; fi
+    if [[ "$busy" == "$target" && "$nb" == 1 ]]; then
+        # FAKE_FLOCK_BUSY_TRIES=N: a busy slot frees up after N tries (default: never).
+        tries="$(grep -cF -- "\\"$target\\"" "$FAKE_LOG")"
+        if [[ -z "${FAKE_FLOCK_BUSY_TRIES:-}" || "$tries" -le "$FAKE_FLOCK_BUSY_TRIES" ]]; then exit 1; fi
+    fi
 done
 exit 0
 """
@@ -431,14 +435,25 @@ def test_slots_are_tried_in_order_then_taken(box: Box) -> None:
     assert "holding E2E slot 3/3" in result.stdout
 
 
-def test_all_slots_busy_waits_on_one(box: Box) -> None:
-    result = box.run("--name", NAME, "pytest", FL_E2E_SLOTS="2", FAKE_FLOCK_BUSY="slot-1 slot-2")
+def test_all_slots_busy_takes_the_first_that_frees_up(box: Box) -> None:
+    result = box.run("--name", NAME, "pytest", FL_E2E_SLOTS="2", FL_E2E_SLOT_POLL="0",
+                     FAKE_FLOCK_BUSY="slot-1 slot-2", FAKE_FLOCK_BUSY_TRIES="2")
     assert result.returncode == 0, result.stderr
     flocks = [(row["lock"], row["nonblocking"]) for row in box.calls("flock")]
-    assert flocks[:3] == [(f"name-{NAME}", 1), ("slot-1", 1), ("slot-2", 1)]
-    assert flocks[3][1] == 0 and flocks[3][0] in ("slot-1", "slot-2")
-    assert "all 2 E2E slots are busy" in result.stdout
+    # Never a blocking wait on one slot: every round tries them all, slot-1 frees up on its third try.
+    assert flocks == [(f"name-{NAME}", 1), ("slot-1", 1), ("slot-2", 1), ("slot-1", 1), ("slot-2", 1), ("slot-1", 1)]
+    assert result.stdout.count("all 2 E2E slots are busy") == 1
+    assert "holding E2E slot 1/2" in result.stdout
     assert len(box.docker_runs()) == 1
+    assert "FL_E2E_SLOT_POLL" not in " ".join(box.docker_runs()[0])
+
+
+@pytest.mark.parametrize("poll", ["-1", "x", "1000"])
+def test_bad_slot_poll(box: Box, poll: str) -> None:
+    result = box.run("--name", NAME, "pytest", FL_E2E_SLOT_POLL=poll)
+    assert result.returncode == 1
+    assert "FL_E2E_SLOT_POLL must be a number of seconds" in result.stderr
+    assert box.docker_runs() == []
 
 
 @pytest.mark.parametrize("slots", ["0", "abc", "100", ""])

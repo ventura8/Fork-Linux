@@ -52,8 +52,9 @@ host: no `$HOME`, no host X socket. `FL_E2E_*` variables you set are passed thro
 ## Slots
 
 At most `FL_E2E_SLOTS` (default 3) of these containers run host-wide: each run tries every
-`/var/tmp/fork-linux-e2e/locks/slot-<n>` without blocking, then waits on one ("all N E2E slots
-are busy"). Do not raise it to get around a busy host.
+`/var/tmp/fork-linux-e2e/locks/slot-<n>` without blocking; while all are busy ("all N E2E slots
+are busy") it tries them all again every `FL_E2E_SLOT_POLL` seconds (default 5) and takes the
+first that frees up. Do not raise it to get around a busy host.
 
 ## Never
 

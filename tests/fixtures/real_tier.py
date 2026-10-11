@@ -38,8 +38,10 @@ SETTINGS = frozenset(
         "FL_E2E_FORK_VERSION",
         "FL_E2E_SCRATCH",
         "FL_E2E_SLOTS",
+        "FL_E2E_SLOT_POLL",
         "FL_E2E_LOCK_DIR",
         "FL_E2E_IMAGE",
+        "FL_E2E_BRIDGE_BUILDS",
     }
 )
 
