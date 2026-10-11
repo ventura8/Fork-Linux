@@ -1,5 +1,40 @@
 # E2E results: official Fork 2.23.2 on the managed Wine runtime
 
+## 2026-10-11 (evening): the OS-integration area again, on `fix/integration`'s latest code
+
+**Scope.** The setup, launch, integration, display, bridge, doctor, rollback and uninstall modules
+(91 tests: S-, L-, I-, B-, D-, R- and U- scenarios, plus the G- tests that live in the bridge
+module), after merging `fix/integration` (d2f0241). Each run: `scripts/e2e-docker.sh --name
+osint-rN pytest -p no:randomly` over those ten modules, from a fresh scratch root.
+
+| Run | Result | Time | Failure |
+|---|---|---|---|
+| 1 | 91/91 | 54:20 | |
+| 2 | 90/91 | 52:28 | B-PERFORMANCE: 1 of 30 bundled `git.exe` calls failed (Wine's process-start transient) |
+| 3 | 90/91 | 52:00 | G-GITFLOW: Fork's *Git Error* `OS Error 731` on the last step of *Initialize Git Flow* |
+| 4 | 91/91 | 50:11 | |
+| 5 | 91/91 | 51:53 | |
+
+Runs 4 and 5 ran the final code.
+
+New checks: Diff and Merge in Linux now prove that Fork waits (the stand-in tool reads Fork's files
+only after a pause, and `fl-launch.exe` runs as long as the tool and ends with it); a conflict where
+both branches added the file goes through Merge in Linux; the Selawik test also opens a diff and
+checks that Consolas is drawn with the host's monospace font (DejaVu Sans Mono in the image).
+
+Fixed:
+
+1. **Merge in Linux did nothing when both branches added the file.** Fork 2.23.2 passes an empty
+   `$BASE` then, and `fork-linux-host merge` refused it (exit 2, no message). The tool now gets an
+   empty base file next to Fork's local copy, deleted after the tool exits (1107c5a).
+2. **`setup --reset` raced what an interrupted setup left running** (the same "Directory not empty"
+   as the .NET rebuild): it now ends those processes before deleting the prefix, and does nothing
+   to a prefix without our marker (dfdb2f7).
+3. B-PERFORMANCE runs a series again (logged) when Wine fails one of its calls (182486f).
+4. ForkUI recognises Wine's failed git start in both of Fork's reports (`StartWithCreateProcess` and
+   `os error 731`); G-GITFLOW closes it as a user would, and the README names the Git Flow case
+   (49a2e74).
+
 ## 2026-10-11: every user-facing scenario, end to end (`fix/e2e-coverage`)
 
 **Catalog.** `tests/e2e/scenarios.json` lists 290 user-facing scenarios, and
