@@ -62,3 +62,13 @@ def test_scanner_image_is_pinned_and_token_never_in_argv() -> None:
     assert "--env SONAR_TOKEN" in text
     assert "SONAR_TOKEN=$" not in text
     assert SCRIPT.stat().st_mode & 0o111
+
+
+def test_local_scan_never_replaces_mains_analysis() -> None:
+    """Every branch except main is filed under its own name; a detached HEAD is refused."""
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "-Dsonar.branch.name=${branch}" in text
+    assert 'if [[ "${branch}" != "main" ]]' in text
+    assert 'branch="${FL_SONAR_BRANCH:-$(git -C "${ROOT}" symbolic-ref --short -q HEAD || true)}"' in text
+    assert 'if [[ -z "${branch}" ]]' in text
+    assert '--volume "${common_dir}:${common_dir}:ro"' in text
