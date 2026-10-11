@@ -244,6 +244,31 @@ def test_override_adds_versions_and_sets_default(tmp_path: Path) -> None:
     assert entry.requires_tofu is False
 
 
+def test_a23_override_changes_lists_what_the_override_replaces(tmp_path: Path) -> None:
+    """The keys an override changes on top of this release's manifest (comments and equal values ignored)."""
+    packaged = manifest.load()
+    assert packaged.override_changes == ()
+    same_default = packaged.fork_default
+    patch = {
+        "_comment": "mine",
+        "fork": {"default": "2.24.0", "versions": {"2.24.0": extra_version()}, "known_bad": None},
+        "wine": {"default": packaged.wine_default.id},
+        "revision": packaged.revision,
+    }
+    m = manifest.load(override=write(tmp_path, "o.json", patch))
+    assert m.override_changes == ("fork.default", "fork.known_bad", "fork.versions.2.24.0")
+    assert same_default != "2.24.0"
+    unchanged = manifest.load(override=write(tmp_path, "same.json", {"revision": packaged.revision}))
+    assert (unchanged.overridden, unchanged.override_changes) == (True, ())
+
+
+def test_changed_paths() -> None:
+    assert manifest.changed_paths({"a": {"b": 1, "_c": 1}}, {"a": {"b": 1, "_c": 2}}) == []
+    assert manifest.changed_paths({"a": 1}, {"a": [1]}) == ["a"]
+    assert manifest.changed_paths({"a": {"b": 1}}, {"a": {}, "d": {"e": 1}}) == ["a.b", "d"]
+    assert manifest.changed_paths(1, 1) == []
+
+
 def test_override_null_deletes_a_key(tmp_path: Path) -> None:
     m = manifest.load(override=write(tmp_path, "o.json", {"fork": {"known_bad": None}}))
     assert "known_bad" not in m.as_dict()["fork"]
