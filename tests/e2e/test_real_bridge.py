@@ -240,12 +240,21 @@ def test_git_flow_start_feature(bridged: Any, installed: Any) -> None:
     ui.quick_launch("Git Flow")
     ui.wait_dialog("Initialize Git Flow")
     ui.screen.key("Return", settle=3.0)
-    wait_until(lambda: git(repo, "branch", "--list", "develop"), 60, "the develop branch")
-    ui.quick_launch("Git Flow: Start Feature")
-    ui.wait_dialog("Start Git Flow feature")
-    ui.screen.type("login")
-    ui.screen.key("Return", settle=3.0)
-    wait_until(lambda: git(repo, "branch", "--show-current") == "feature/login", 60, "the feature branch")
+    # Its last step sets gitflow.path.hooks. When Wine fails to start that git call (Fork's Git Error
+    # shows "os error 731", README), the user closes the report: develop and the prefixes are set, and
+    # git-flow then uses .git/hooks.
+    wait_until(lambda: git(repo, "config", "gitflow.path.hooks", check=False) or ui.git_error(), 60,
+               "git-flow's initialization")
+    assert git(repo, "branch", "--list", "develop")
+    assert git(repo, "config", "gitflow.prefix.feature") == "feature/"
+
+    def start_feature() -> None:
+        ui.quick_launch("Git Flow: Start Feature")
+        ui.wait_dialog("Start Git Flow feature")
+        ui.screen.type("login")
+        ui.screen.key("Return", settle=3.0)
+
+    ui.operate(start_feature, lambda: git(repo, "branch", "--show-current") == "feature/login", "the feature branch")
     assert git(repo, "rev-parse", "feature/login") == git(repo, "rev-parse", "develop")
 
 

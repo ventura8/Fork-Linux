@@ -77,12 +77,13 @@ COMMIT_RETRY_AFTER = 20.0
 REPORT_CLOSE_FROM_RIGHT = 48
 REPORT_CLOSE_FROM_BOTTOM = 33
 # Fork's "Git Error" report: a blank point of its text box (clear of the links git's output may hold).
-# Under Wine, Fork's start of a git process now and then fails ("Win32Exception (0x80004005): Unknown
-# error (0x2db) at ... StartWithCreateProcess", README "Known Wine limitations"); nothing ran, so a user
-# (and :meth:`ForkUI.operate`) tries once more.
+# Under Wine, Fork's start of a git process now and then fails (GLE 731, docs/spikes/B2-rendezvous.md;
+# README "Known Wine limitations"); nothing ran, so a user (and :meth:`ForkUI.operate`) tries once more.
+# Fork reports it as "Win32Exception (0x80004005): Unknown error (0x2db) at ... StartWithCreateProcess",
+# or, from its Git Flow commands, "run '...git.exe config ...': OS Error 731 (...) (os error 731)".
 GIT_ERROR_TITLE = "Git Error"
 GIT_ERROR_TEXT = (650, 240)
-SPAWN_FAILURE = "StartWithCreateProcess"
+SPAWN_FAILURES = ("StartWithCreateProcess", "(os error 731)")
 OPERATION_ATTEMPTS = 2
 # While a merge stops on a conflict Fork shows a banner: its Abort button (from the window's right edge).
 MERGE_BANNER_ABORT = (-37, 107)
@@ -329,13 +330,13 @@ class ForkUI:
         """
         for attempt in range(1, OPERATION_ATTEMPTS + 1):
             start()
-            outcome = wait_until(lambda: ("done" if done() else None) or self._git_error(), timeout, what)
+            outcome = wait_until(lambda: ("done" if done() else None) or self.git_error(), timeout, what)
             if outcome == "done":
                 return
             self.screen.screenshot(f"spawn-failure-{attempt}")
         raise SpawnFailures(f"Wine could not start Fork's git {OPERATION_ATTEMPTS} times: {what}")
 
-    def _git_error(self) -> str | None:
+    def git_error(self) -> str | None:
         """None while Fork shows no Git Error; "spawn" after closing a report of Wine's failed git start."""
         report = self.screen.find(GIT_ERROR_TITLE)
         if report is None:
@@ -343,7 +344,7 @@ class ForkUI:
         text = self.dialog_text(report)
         self.screen.click_in(report, report.width - REPORT_CLOSE_FROM_RIGHT, report.height - REPORT_CLOSE_FROM_BOTTOM)
         self.screen.wait_gone(report)
-        if SPAWN_FAILURE not in text:
+        if not any(marker in text for marker in SPAWN_FAILURES):
             raise GitErrorReported(f"Fork reported a git error: {text.strip()}")
         return "spawn"
 
