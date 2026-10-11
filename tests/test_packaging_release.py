@@ -219,6 +219,8 @@ def test_e2e_asserts_what_agents_md_requires() -> None:
         'echo "==> E2E remove',
         'echo "==> E2E reinstall',
         'runuser -u "${TESTER}"',
+        "check_root_refused",
+        "refusing to run as root",
     ):
         assert needle in e2e, needle
 

@@ -40,6 +40,10 @@ def _setup_path() -> None:
 
 def _main() -> int:
     """Run fork-linux (or fork, chosen by the program name)."""
+    if os.geteuid() == 0:
+        # Root could write bytecode caches into a packaged tree (/usr/share/fork-linux): files the
+        # package manager does not know, left behind by every removal, even after a refused run.
+        sys.dont_write_bytecode = True
     _setup_path()
     from fork_linux.cli import main
 

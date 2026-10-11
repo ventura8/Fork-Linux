@@ -81,6 +81,7 @@ def test_template_shape() -> None:
     assert "FORK_LINUX_LIBDIR" in text
     assert '"share" / "fork-linux"' in text
     assert "main(prog=sys.argv[0])" in text
+    assert "os.geteuid() == 0:" in text and "sys.dont_write_bytecode = True" in text
     compile(text.replace("@PYTHON@", sys.executable), str(TEMPLATE), "exec")
 
 

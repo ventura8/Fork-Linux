@@ -5,7 +5,8 @@
 # container of scripts/ci-snap-build.sh) against artifacts/. Cycle (AGENTS.md §4.9):
 #   install -> assert -> upgrade (install again) -> assert -> remove -> assert removed ->
 #   reinstall -> assert
-# The program is always run as the unprivileged user "tester" (hard rule 9). Asserts:
+# The program is run as the unprivileged user "tester" (hard rule 9); only check_root_refused
+# runs it as root, to check that it refuses. Asserts:
 #   * fork-linux --version and fork --version print VERSION
 #   * fork-linux doctor --offline --json works with no Wine present (JSON, exit 0 or 17)
 #   * the shims (win64/fl-shim.exe, fl-launch.exe) are PE32+ x86-64
@@ -13,6 +14,8 @@
 #     (tarball, AppImage, snap); the distro packages and the Flatpak ship the glibc PIE
 #     build (bridge/README.md "Install layout"), so ET_DYN is accepted there
 #   * the desktop entry validates; metainfo, man pages and completions are installed
+#   * deb / rpm / arch: as root, fork-linux setup refuses (exit 19) and creates nothing, not even a
+#     bytecode cache in /usr/share/fork-linux
 #   * tester's ~/.local/share/fork-linux/E2E_MARKER and ~/.wine/E2E_SENTINEL survive every step
 #
 # Usage: ./scripts/packaging-e2e-install.sh <format>
@@ -207,12 +210,37 @@ cycle() {
 	"${assert_fn}"
 }
 
+# Hard rule 9: run as root, fork-linux refuses (exit 19 = UNSUPPORTED_ENV) before it creates or
+# downloads anything; --allow-root lets a command run (containers and CI only).
+check_root_refused() {
+	local home rc=0 out before
+	home="$(mktemp -d "${STAGE}/root-home.XXXXXX")"
+	before="$(find /usr/share/fork-linux | sort)"
+	env -i HOME="${home}" PATH=/usr/bin:/bin LANG=C.UTF-8 \
+		fork-linux setup --accept-fork-eula --no-gui >"${STAGE}/root.out" 2>"${STAGE}/root.err" || rc=$?
+	if ((rc != 19)); then
+		cat "${STAGE}/root.err" >&2
+		fail "fork-linux setup as root exited ${rc} (expected 19 = refused)"
+	fi
+	grep -q "refusing to run as root" "${STAGE}/root.err" || fail "setup as root did not say why it refused"
+	[[ -z "$(ls -A "${home}")" ]] || fail "setup as root created files in its home: $(ls -A "${home}")"
+	out="$(env -i HOME="${home}" PATH=/usr/bin:/bin LANG=C.UTF-8 fork-linux --allow-root version)" ||
+		fail "fork-linux --allow-root version failed"
+	[[ "${out}" == *"fork-linux ${VERSION}"* ]] || fail "fork-linux --allow-root version printed '${out}'"
+	# Nothing (no bytecode cache) is written into the packaged tree, so the removal stays clean.
+	[[ "$(find /usr/share/fork-linux | sort)" == "${before}" ]] ||
+		fail "running as root changed /usr/share/fork-linux: $(diff <(echo "${before}") <(find /usr/share/fork-linux | sort))"
+	rm -rf -- "${home:?}"
+	echo "ok  refused as root (exit 19); --allow-root runs"
+}
+
 system_assert() {
 	local helper_kind="$1"
 	assert_installed /usr "${helper_kind}" "/usr/share/applications/${APP_ID}.desktop" fork-linux
 	local out
 	out="$(as_tester fork --version)" || fail "fork --version failed"
 	[[ "${out}" == *"${VERSION}"* ]] || fail "fork --version printed '${out}'"
+	check_root_refused
 }
 dyn_assert() { system_assert dyn; }
 
