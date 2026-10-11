@@ -10,10 +10,18 @@ under Wine (agent sockets, connection sharing, Linux commands) are commented
 out with the reason. Files we manage are listed in a small manifest, so a key
 removed from ``~/.ssh`` disappears from the prefix too, and a key the user
 created inside Wine is never overwritten.
+
+Keys protected by a passphrase are shared too, but Fork's bundled ssh cannot use
+them under Wine: it never shows its passphrase prompt (msys ssh cannot start the
+askpass program) and cannot reach the Linux ssh-agent either. :func:`needs_passphrase`
+finds them, so ``ssh sync`` and ``doctor`` can point at the git bridge, whose Linux
+ssh asks through Fork's prompt and uses the agent.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
 import contextlib
 import glob
 import json
@@ -43,6 +51,16 @@ PRIVATE_MODE = 0o600
 PUBLIC_MODE = 0o644
 MAX_INCLUDE_DEPTH = 16
 MSYS_DRIVE = "/z"
+# Private key formats: OpenSSH's own (the cipher is named inside the base64 body) and PEM.
+OPENSSH_KEY_RE = re.compile(r"-----BEGIN OPENSSH PRIVATE KEY-----(.*?)-----END OPENSSH PRIVATE KEY-----", re.S)
+OPENSSH_MAGIC = b"openssh-key-v1\0"
+PEM_ENCRYPTED = ("Proc-Type: 4,ENCRYPTED", "-----BEGIN ENCRYPTED PRIVATE KEY-----")
+MAX_KEY_BYTES = 64 * 1024
+NOT_KEYS = frozenset({"known_hosts", "config"})
+PASSPHRASE_PROBLEM = "Fork's bundled ssh cannot ask for a key's passphrase under Wine, nor use ssh-agent"
+PASSPHRASE_HINT = (
+    "the git bridge ('fork-linux git-bridge enable') runs Linux ssh instead, which asks through Fork and uses the agent"
+)
 
 _NO_SOCKETS = "connection sharing needs Unix sockets that Wine's ssh cannot use"
 # Directives commented out, with the reason shown in the generated file.
@@ -81,6 +99,8 @@ class SyncReport:
     removed: list[Path] = field(default_factory=list)
     # Already exactly as this sync would make them (nothing is written).
     unchanged: list[Path] = field(default_factory=list)
+    # Shared private keys protected by a passphrase (names relative to ~/.ssh).
+    passphrase_keys: list[str] = field(default_factory=list)
 
 
 def _split_args(value: str) -> list[str]:
@@ -299,6 +319,38 @@ def _host_keys(host_ssh: Path, referenced: Iterable[Path]) -> list[tuple[str, Pa
     return sorted(found.items())
 
 
+def _is_private_key(rel: str) -> bool:
+    """True for a shared name that is a private key (not a public key, certificate, known_hosts or config)."""
+    return not rel.endswith(".pub") and rel not in NOT_KEYS
+
+
+def _openssh_cipher(body: str) -> bytes | None:
+    """The cipher an OpenSSH-format private key is encrypted with (``b"none"``: no passphrase)."""
+    try:
+        blob = base64.b64decode("".join(body.split()), validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    if not blob.startswith(OPENSSH_MAGIC):
+        return None
+    start = len(OPENSSH_MAGIC) + 4
+    size = int.from_bytes(blob[len(OPENSSH_MAGIC):start], "big")
+    return blob[start:start + size]
+
+
+def needs_passphrase(key: Path) -> bool:
+    """True when the private key file ``key`` is protected by a passphrase (unreadable: False)."""
+    try:
+        with open(key, "rb") as handle:
+            text = handle.read(MAX_KEY_BYTES).decode("ascii", errors="replace")
+    except OSError:
+        return False
+    if any(marker in text for marker in PEM_ENCRYPTED):
+        return True
+    match = OPENSSH_KEY_RE.search(text)
+    cipher = _openssh_cipher(match.group(1)) if match else None
+    return cipher not in (None, b"none")
+
+
 def _read_manifest(wine_ssh: Path) -> set[str]:
     """Names (relative to the Wine ``.ssh``) that a previous sync created."""
     try:
@@ -403,6 +455,8 @@ class _Syncer:
             self.report.skipped.append(dest)
             return
         self.current.add(rel)
+        if _is_private_key(rel) and needs_passphrase(source):
+            self.report.passphrase_keys.append(rel)
         if _in_place(source, dest, link=link):
             self.report.unchanged.append(dest)
         elif link:
@@ -584,4 +638,5 @@ def status(paths: Paths, user: str, host_home: Path) -> dict[str, Any]:
         "broken_links": _broken_links(wine_ssh) if is_dir else [],
         "config": config,
         "stale_config": config == "stale",
+        "passphrase_keys": [rel for rel in managed if _is_private_key(rel) and needs_passphrase(wine_ssh / rel)],
     }

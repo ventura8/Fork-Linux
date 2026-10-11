@@ -58,6 +58,7 @@ def _report_dict(report: ssh_sync.SyncReport) -> dict[str, Any]:
         "skipped": [str(path) for path in report.skipped],
         "removed": [str(path) for path in report.removed],
         "unchanged": [str(path) for path in report.unchanged],
+        "passphrase_keys": list(report.passphrase_keys),
     }
 
 
@@ -92,6 +93,15 @@ def _print_sync(data: dict[str, Any], *, dry_run: bool) -> None:
         print(f"commented out: {item['directive']} ({item['reason']})")
     if not config_changed and not any(data[key] for key in ("linked", "copied", "removed", "skipped")):
         print(_nothing(dry_run, len(data["unchanged"])))
+    _print_passphrase_keys(data["passphrase_keys"])
+
+
+def _print_passphrase_keys(keys: list[str]) -> None:
+    """Name the shared keys that need a passphrase, which Fork's bundled ssh cannot ask for."""
+    for name in keys:
+        print(f"needs a passphrase: {name}")
+    if keys:
+        print(f"note: {ssh_sync.PASSPHRASE_PROBLEM}; {ssh_sync.PASSPHRASE_HINT}")
 
 
 def _nothing(dry_run: bool, unchanged: int) -> str:
@@ -125,3 +135,4 @@ def _print_status(info: dict[str, Any]) -> None:
         print(f"insecure:    {name}")
     for name in info["broken_links"]:
         print(f"broken link: {name}")
+    _print_passphrase_keys(info["passphrase_keys"])

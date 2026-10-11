@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import stat
@@ -587,6 +588,7 @@ def test_status_before_sync(paths: Paths, host: Path) -> None:
         "broken_links": [],
         "config": "none",
         "stale_config": False,
+        "passphrase_keys": [],
     }
 
 
@@ -673,3 +675,47 @@ def test_translate_config_drops_linux_commands_and_libraries(host: Path) -> None
         ssh_sync.DROPPED["securitykeyprovider"],
     ]
     assert f"    {ssh_sync.DROP_PREFIX} (it loads a Linux library): SecurityKeyProvider internal" in text.splitlines()
+
+
+def _openssh_key(cipher: bytes, magic: bytes = ssh_sync.OPENSSH_MAGIC) -> str:
+    """An OpenSSH-format private key whose body names ``cipher`` (the rest does not matter here)."""
+    body = base64.b64encode(magic + len(cipher).to_bytes(4, "big") + cipher + b"\0\0\0\4none").decode()
+    return f"-----BEGIN OPENSSH PRIVATE KEY-----\n{body[:20]}\n{body[20:]}\n-----END OPENSSH PRIVATE KEY-----\n"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (_openssh_key(b"none"), False),
+        (_openssh_key(b"aes256-ctr"), True),
+        (_openssh_key(b"aes256-ctr", magic=b"other-format-v1\0"), False),
+        ("-----BEGIN OPENSSH PRIVATE KEY-----\n%%%\n-----END OPENSSH PRIVATE KEY-----\n", False),
+        ("-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,AB\n", True),
+        ("-----BEGIN ENCRYPTED PRIVATE KEY-----\nMIIF\n-----END ENCRYPTED PRIVATE KEY-----\n", True),
+        ("-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----\n", False),
+        ("-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n", False),
+        ("PRIVATE id_rsa\n", False),
+    ],
+)
+def test_needs_passphrase(tmp_path: Path, text: str, expected: bool) -> None:
+    key = tmp_path / "id_key"
+    key.write_text(text, encoding="utf-8")
+    assert ssh_sync.needs_passphrase(key) is expected
+
+
+def test_needs_passphrase_of_an_unreadable_key(tmp_path: Path) -> None:
+    assert not ssh_sync.needs_passphrase(tmp_path / "missing")
+    assert not ssh_sync.needs_passphrase(tmp_path)
+
+
+def test_sync_and_status_name_the_keys_that_need_a_passphrase(paths: Paths, host: Path) -> None:
+    (host / ".ssh" / "id_rsa").write_text(_openssh_key(b"aes256-ctr"), encoding="utf-8")
+    (host / ".ssh" / "id_ed25519").write_text(_openssh_key(b"none"), encoding="utf-8")
+    # A public key or known_hosts that happened to hold such text is never named.
+    (host / ".ssh" / "known_hosts").write_text(_openssh_key(b"aes256-ctr"), encoding="utf-8")
+    _config(host, "Host x\n")
+    assert ssh_sync.sync(paths, USER, host).passphrase_keys == ["id_rsa"]
+    assert ssh_sync.sync(paths, USER, host, dry_run=True).passphrase_keys == ["id_rsa"]
+    assert ssh_sync.status(paths, USER, host)["passphrase_keys"] == ["id_rsa"]
+    (host / ".ssh" / "id_rsa").write_text(_openssh_key(b"none"), encoding="utf-8")
+    assert ssh_sync.status(paths, USER, host)["passphrase_keys"] == []

@@ -49,8 +49,10 @@ def test_sync_dry_run_then_for_real(capsys: pytest.CaptureFixture[str], host_ssh
     assert result["dry_run"] is False
     assert any(path.endswith("id_ed25519") for path in result["copied"])
     assert set(result) == {
-        "dry_run", "linked", "copied", "dropped_directives", "config_path", "skipped", "removed", "unchanged"
+        "dry_run", "linked", "copied", "dropped_directives", "config_path", "skipped", "removed", "unchanged",
+        "passphrase_keys",
     }
+    assert result["passphrase_keys"] == []
     # Already shared: a dry run and a real run both say that nothing changes.
     code, out, _err = run_cli(capsys, "ssh", "sync", "--mode", "copy", "--no-config", "--dry-run")
     assert "would link" not in out
@@ -121,3 +123,20 @@ def test_status_problems(capsys: pytest.CaptureFixture[str], monkeypatch: pytest
     assert "NOT private" in out
     assert "insecure:    id_rsa" in out
     assert "broken link: gone" in out
+
+
+def test_sync_and_status_name_keys_that_need_a_passphrase(
+    capsys: pytest.CaptureFixture[str], host_ssh: Path
+) -> None:
+    (host_ssh / "id_ed25519").write_text(
+        "-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,00\n\nAAAA\n"
+        "-----END RSA PRIVATE KEY-----\n",
+        encoding="utf-8",
+    )
+    out = run_cli(capsys, "ssh", "sync")[1]
+    assert "needs a passphrase: id_ed25519\n" in out
+    assert f"note: {ssh_sync.PASSPHRASE_PROBLEM}; {ssh_sync.PASSPHRASE_HINT}\n" in out
+    assert run_json(capsys, "ssh", "sync", "--dry-run")["passphrase_keys"] == ["id_ed25519"]
+    status = run_cli(capsys, "ssh", "status")[1]
+    assert "needs a passphrase: id_ed25519\n" in status
+    assert run_json(capsys, "ssh", "status")["passphrase_keys"] == ["id_ed25519"]

@@ -1427,6 +1427,22 @@ def check_ssh_config(ctx: DoctorCtx) -> Result:
     )
 
 
+def check_ssh_passphrase(ctx: DoctorCtx) -> Result:
+    """Shared keys with a passphrase: Fork's bundled ssh cannot ask for it under Wine (the bridge's ssh can)."""
+    why = _ssh_wanted(ctx)
+    if why:
+        return Result("info", why)
+    if not _has_prefix(ctx):
+        return _skip(NO_PREFIX)
+    keys = ssh_sync.status(ctx.paths, ctx.user, ctx.host_home)["passphrase_keys"]
+    if not keys:
+        return Result("ok", "no shared key needs a passphrase")
+    names = ", ".join(keys)
+    if _bridge_ready(ctx):
+        return Result("ok", f"{names} need(s) a passphrase: the git bridge's Linux ssh asks for it")
+    return Result("warn", f"{names} need(s) a passphrase: {ssh_sync.PASSPHRASE_PROBLEM}", ssh_sync.PASSPHRASE_HINT)
+
+
 def check_git_overlay(ctx: DoctorCtx) -> Result:
     """Fork's git sees a translated ``~/.gitconfig``; the env overrides are valid."""
     try:
@@ -1705,6 +1721,7 @@ CHECKS: list[Check] = [
     Check("repo.filemode", "Repository core.filemode", "repo", check_repo_filemode, fixer=fix_repo_filemode),
     Check("ssh.dir", "ssh keys", "ssh", check_ssh_dir, fix_steps=("ssh_sync",)),
     Check("ssh.config", "ssh config", "ssh", check_ssh_config, fix_steps=("ssh_sync",)),
+    Check("ssh.passphrase", "ssh key passphrases", "ssh", check_ssh_passphrase),
     Check("git.overlay", "git config overlay", "git", check_git_overlay, fix_steps=("git_overlay",)),
     Check("git.selftest", "Bundled git self-test", "git", check_git_selftest, deep=True),
     Check("bridge.status", "Native-git bridge", "bridge", check_bridge),

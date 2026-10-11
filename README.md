@@ -142,6 +142,7 @@ What it changes, verified with Fork 2.23.2:
 
 - **Hooks run natively**: a `pre-commit` hook that fails now blocks the commit and Fork shows its output (bundled git skips such hooks and commits anyway). **Submodule update**, pushes and fetches to `file://` / `/home/…` remotes, interactive rebase from Fork's dialog and **Git Flow** (with `git-flow` installed) work; commits keep exec bits and symlinks.
 - **Open in Shell / Console** and **Diff in Linux (fork-linux)** (Ctrl+D on a changed file) open your Linux terminal and diff tool (meld, kdiff3, Beyond Compare or VS Code), and Fork waits for the diff tool.
+- **ssh and HTTPS** use your Linux ssh (with your ssh-agent; a key's passphrase is asked in Fork's own prompt) and your Linux credential helpers; without a helper, Fork's prompt asks for the user name and password.
 - Each git call is much faster (about 13 ms against about 90 ms for bundled git).
 
 How it works: when Fork starts, fork-linux starts a small helper (`fl-bridge-helper`) outside Wine and points Fork at its own shims in `C:\fork-linux\gitInstance`. The helper lives as long as Fork does — also across Fork's own "Restart and Update" — and stops a few seconds after Fork closes. Only the `[git] bridge` setting and Fork's terminal / diff / merge tool entries change; your `~/.gitconfig` (and its credential helpers, signing and editors) is what git uses.
@@ -174,6 +175,7 @@ Known Wine limitations:
 - **Git Flow**: *Initialize* works, but *Start Feature* (git-flow's shell scripts) silently does nothing with Fork's bundled git. With the git bridge it runs with your Linux git: install your distribution's `git-flow` package.
 - **Spell checking** does nothing under Wine; keep it disabled.
 - **Now and then a pane shows `Win32Exception ... StartWithCreateProcess`** instead of a diff: Wine failed to start one of Fork's git processes. Select the commit or file again (or press F5).
+- **ssh keys with a passphrase and ssh-agent** do not work with Fork's bundled ssh: under Wine it cannot show its passphrase prompt nor reach your agent, and the fetch or push fails with `Permission denied (publickey)`. `fork-linux ssh sync` and `fork-linux doctor` name such keys. Enable the git bridge (see [Git bridge](#git-bridge-experimental-opt-in)): your Linux ssh then uses the agent, or asks for the passphrase through Fork. Keys without a passphrase work either way.
 - **GitHub account sign-in (OAuth) can crash Fork under Wine.** Use a GitHub personal access token instead. For HTTPS remotes Fork's git uses Git Credential Manager: it asks once for the user name and password (or token) and keeps them with DPAPI inside the prefix. When its window cannot open under Wine (now and then on the first prompt after Fork starts), Fork's own prompt asks instead, and the account is kept just the same.
 - **Wayland**: Fork runs through XWayland by default; Wine's native Wayland driver is opt-in and experimental.
 - **License activations**: each new Wine prefix may count as a new machine for your Fork license (3 per license). **Deactivate the license in Fork before `fork-linux uninstall --purge`** or before deleting the prefix.
