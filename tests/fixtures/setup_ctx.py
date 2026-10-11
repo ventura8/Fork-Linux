@@ -4,7 +4,8 @@
 Wine, wineserver and winetricks would, with the effects the steps verify:
 ``wineboot`` writes 64-bit hives and the drive links, ``regedit /S`` merges the
 batch into ``user.reg`` / ``system.reg``, ``winetricks dotnet48`` records the
-.NET release and ``corefonts`` drops ``arial.ttf``. :func:`ui_font_archive`
+.NET release (and writes WPF's composite font where that version keeps it) and ``corefonts``
+drops ``arial.ttf``. :func:`ui_font_archive`
 builds a stand-in for the pinned interface font zip, so no test downloads it.
 """
 
@@ -214,7 +215,7 @@ class FakeWine:
         self,
         prefix: Path,
         *,
-        release: int = 528049,
+        release: int | None = None,
         fail: tuple[str, ...] = (),
         layout: ForkLayout | None = None,
     ) -> None:
@@ -279,7 +280,12 @@ class FakeWine:
                 handle.writelines(verb + "\n" for verb in verbs)
         for verb in verbs:
             if verb.startswith("dotnet"):
-                write_release(self.prefix, self.release)
+                # The releases measured in S10 Finding 7, unless the test asks for another one.
+                default = 461814 if verb == "dotnet472" else 528049
+                write_release(self.prefix, default if self.release is None else self.release)
+                # WPF's composite font: .NET 4.8 has copies in WPF\ and WPF\Fonts\, 4.7.2 only in WPF\Fonts\.
+                for sub in ("Fonts",) if verb == "dotnet472" else ("", "Fonts"):
+                    write_composite_font(self.prefix, sub)
             elif verb == "corefonts":
                 fonts = self.prefix / "drive_c" / "windows" / "Fonts"
                 fonts.mkdir(parents=True, exist_ok=True)
@@ -287,3 +293,63 @@ class FakeWine:
             elif verb == "win10":
                 add_values(self.prefix, "user.reg", "Software\\Wine", ['"Version"="win10"'])
         return 0
+
+
+# -- WPF's composite font ------------------------------------------------------------------------
+
+WPF_PARTS = ("windows", "Microsoft.NET", "Framework64", "v4.0.30319", "WPF")
+COMPOSITE_SECTION = """  <FontFamily
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/composite-font"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:System="clr-namespace:System;assembly=mscorlib"
+    Baseline="0.9"
+    LineSpacing="1.2"
+    OS="{os}">
+    <FontFamily.FamilyNames>
+      <System:String x:Key="en-US">Global User Interface</System:String>
+    </FontFamily.FamilyNames>
+    <!-- Character to family lookups (in lookup order) -->
+    <FontFamily.FamilyMaps>
+      <FontFamilyMap
+          Unicode = "0000-052F"
+          Target  = "Segoe UI, Tahoma"
+          Scale   = "1.0" />
+      <FontFamilyMap Unicode="3000-30FF" Language="ja" Target="Yu Gothic UI, Meiryo" />
+      <FontFamilyMap Unicode="3000-30FF" Target="Yu Gothic UI, Meiryo, Malgun Gothic" />
+    </FontFamily.FamilyMaps>
+  </FontFamily>
+"""
+
+
+def composite_font_text(sections: tuple[str, ...] = ("Windows10", "WindowsXPSP2")) -> str:
+    """A small stand-in for WPF's ``GlobalUserInterface.CompositeFont`` (one section per OS)."""
+    body = "\n".join(COMPOSITE_SECTION.format(os=name) for name in sections)
+    return (
+        "<!-- a stand-in for Microsoft's file, written by the tests -->\n\n"
+        '<FontFamilyCollection\n  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/composite-font">\n\n'
+        f"{body}\n</FontFamilyCollection>\n"
+    )
+
+
+def write_composite_font(
+    prefix: Path,
+    sub: str = "",
+    *,
+    text: str | None = None,
+    bom: bool = True,
+    newline: str = "\r\n",
+    mode: int = 0o644,
+) -> Path:
+    """Write a composite font under ``Framework64\\v4.0.30319\\WPF`` (``sub="Fonts"``: 4.7.2's folder).
+
+    Like Microsoft's file it has a UTF-8 byte-order mark and CRLF line endings by default.
+    """
+    folder = prefix / "drive_c" / Path(*WPF_PARTS)
+    if sub:
+        folder = folder / sub
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / "GlobalUserInterface.CompositeFont"
+    content = (composite_font_text() if text is None else text).replace("\n", newline)
+    path.write_bytes((b"\xef\xbb\xbf" if bom else b"") + content.encode("utf-8"))
+    path.chmod(mode)
+    return path

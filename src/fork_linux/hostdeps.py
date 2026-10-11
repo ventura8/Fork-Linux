@@ -77,7 +77,7 @@ _PACKAGE_TABLE: tuple[tuple[str, str, str, str, str], ...] = (
     ("libXcomposite.so.1", "libxcomposite1", "libXcomposite", "libXcomposite1", "libxcomposite"),
     ("libXinerama.so.1", "libxinerama1", "libXinerama", "libXinerama1", "libxinerama"),
     ("libXfixes.so.3", "libxfixes3", "libXfixes", "libXfixes3", "libxfixes"),
-    ("libGL.so.1", "libgl1", "libglvnd-glx", "libGL1", "libglvnd"),
+    ("libGL.so.1", "libgl1", "libglvnd-glx", "libglvnd", "libglvnd"),
     ("libvulkan.so.1", "libvulkan1", "vulkan-loader", "libvulkan1", "vulkan-icd-loader"),
     ("libdbus-1.so.3", "libdbus-1-3", "dbus-libs", "libdbus-1-3", "dbus"),
     ("libasound.so.2", "libasound2t64|libasound2", "alsa-lib", "libasound2", "alsa-lib"),
@@ -99,6 +99,17 @@ _PACKAGE_TABLE: tuple[tuple[str, str, str, str, str], ...] = (
 _TABLE_FAMILIES = ("debian", "fedora", "suse", "arch")
 PACKAGES: dict[str, dict[str, str]] = {
     family: {row[0]: row[column] for row in _PACKAGE_TABLE} for column, family in enumerate(_TABLE_FAMILIES, 1)
+}
+
+# The Noto fonts (core + CJK) font_fallback maps non-Latin scripts to, per family: every package
+# format with weak dependencies recommends them (scripts/check-dep-names.py checks the recipes),
+# and doctor's prefix.font_fallback hint names them. Checked in the pinned images: Ubuntu 22.04 /
+# 24.04 / 26.04, Debian 13, Fedora 44, openSUSE Leap 16.0, Arch.
+NOTO_FONTS: dict[str, tuple[str, ...]] = {
+    "debian": ("fonts-noto-core", "fonts-noto-cjk"),
+    "fedora": ("google-noto-sans-fonts", "google-noto-sans-cjk-fonts"),
+    "suse": ("google-noto-sans-fonts", "google-noto-sans-cjk-fonts"),
+    "arch": ("noto-fonts", "noto-fonts-cjk"),
 }
 
 INSTALL_COMMANDS = {

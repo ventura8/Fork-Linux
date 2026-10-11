@@ -8,10 +8,13 @@ distribution family. This script checks that every packaging recipe asks for exa
 * debian/control ``Depends`` lists the Debian names (with the ``a | b`` t64 alternatives);
 * the RPM specs require every library by soname (``libX.so.N()(64bit)``) and every tool;
 * packaging/arch/PKGBUILD.in ``depends`` lists the Arch names;
+* each recipe recommends the Noto fonts of ``NOTO_FONTS`` (Debian / RPM ``Recommends``, Arch
+  ``optdepends``): font_fallback maps non-Latin scripts to them;
 * none of them depends on the distribution's ``wine`` package (AGENTS.md §4.9).
 
 With ``--available FAMILY`` (inside that distribution's image) it also asks the package
-manager whether each name exists. Exit status 0 when consistent, 1 otherwise.
+manager whether each name exists, the Noto fonts included. Exit status 0 when consistent,
+1 otherwise.
 """
 
 from __future__ import annotations
@@ -129,6 +132,25 @@ def _declared() -> dict[str, list[str]]:
     return declared
 
 
+def _noto_problems(hostdeps: ModuleType) -> list[str]:
+    """Every recipe that does not recommend its family's Noto fonts (weak dependencies only)."""
+    control = _read(CONTROL)
+    weak = {
+        f"{CONTROL} Recommends": (set(debian_field(control, "Recommends")), "debian"),
+        "packaging/arch/PKGBUILD.in optdepends": (
+            {opt.split(":")[0] for opt in arch_optdepends(_read(PKGBUILD_IN))},
+            "arch",
+        ),
+    }
+    for spec_family, family in (("fedora", "fedora"), ("opensuse", "suse")):
+        rel = f"packaging/rpm/{spec_family}/fork-linux.spec"
+        weak[f"{rel} Recommends"] = (set(rpm_field(_read(rel), "Recommends")), family)
+    found = []
+    for where, (have, family) in weak.items():
+        found += _missing(where, have, {name: name for name in hostdeps.NOTO_FONTS[family]})
+    return found
+
+
 def problems() -> list[str]:
     """Every inconsistency between the recipes and hostdeps."""
     hostdeps = _hostdeps()
@@ -143,6 +165,7 @@ def problems() -> list[str]:
     for family in ("fedora", "opensuse"):
         rel = f"packaging/rpm/{family}/fork-linux.spec"
         found += _missing(f"{rel} Requires", set(rpm_requires(_read(rel))), wanted_rpm)
+    found += _noto_problems(hostdeps)
     found += _missing(
         "packaging/arch/PKGBUILD.in depends",
         set(arch_depends(_read(PKGBUILD_IN))),
@@ -173,6 +196,9 @@ def unavailable(family: str) -> list[str]:
         options = hostdeps.PACKAGES[family][name].split("|")
         if not any(_manager_has(family, option) for option in options):
             missing.append(f"{family}: none of {', '.join(options)} exists (for {name})")
+    for name in hostdeps.NOTO_FONTS[family]:
+        if not _manager_has(family, name):
+            missing.append(f"{family}: {name} does not exist (recommended Noto fonts)")
     return missing
 
 

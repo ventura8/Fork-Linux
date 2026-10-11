@@ -17,5 +17,6 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 - Caching: `FL_CI_DOCKER_CACHE=gha|local|none`, `FL_CI_FORCE_BUILD=1`, `FL_CI_PARALLEL_BUILD=1` in the matrix.
 - Real-Fork image `fork-linux-ci-e2e-wine:26.04` (`docker/Dockerfile.e2e.wine`): CI via `scripts/ci-e2e-wine.sh`, locally
   only via `scripts/e2e-docker.sh` (hard rule 18; shared code in `scripts/lib-e2e-docker.sh`). `ci-docker.sh --inside`
-  refuses outside a container.
+  refuses outside a container. It carries `fonts-noto-core` / `fonts-noto-cjk`: without them `prefix.font_fallback`
+  warns and the E2E doctor step (no warnings allowed) fails.
 - When you change an image, script or cell: update AGENTS.md §4.8, this skill and `tests/test_docker.py` in the same change.

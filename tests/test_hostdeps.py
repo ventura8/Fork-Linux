@@ -11,6 +11,7 @@ import pytest
 from fork_linux import hostdeps
 from fork_linux.errors import ForkLinuxError
 from fork_linux.procrun import Completed, RecordingRunner, Runner
+from fork_linux.steps import font_fallback
 
 UBUNTU = """PRETTY_NAME="Ubuntu 26.04 LTS"
 NAME="Ubuntu"
@@ -240,7 +241,7 @@ def test_install_hint_debian() -> None:
     ("family", "command"),
     [
         ("fedora", "sudo dnf install cabextract unzip gnutls libglvnd-glx libglvnd-egl"),
-        ("suse", "sudo zypper install cabextract unzip libgnutls30 libGL1 libEGL1"),
+        ("suse", "sudo zypper install cabextract unzip libgnutls30 libglvnd libEGL1"),
         ("arch", "sudo pacman -S cabextract unzip gnutls libglvnd"),
     ],
 )
@@ -295,3 +296,14 @@ def test_missing_required_tools_accepts_wget_or_aria2c() -> None:
 
 def test_missing_required_tools_lists_tools_before_downloader() -> None:
     assert hostdeps.missing_required_tools(_Which(set())) == ["cabextract", "unzip", "curl"]
+
+
+def test_noto_fonts_table_and_the_doctor_hint_agree() -> None:
+    assert set(hostdeps.NOTO_FONTS) == {"debian", "fedora", "suse", "arch"}
+    # The hint names Fedora and openSUSE together.
+    assert hostdeps.NOTO_FONTS["fedora"] == hostdeps.NOTO_FONTS["suse"]
+    assert font_fallback.FONTS_HINT == (
+        "install the Noto fonts (Debian / Ubuntu: fonts-noto-core fonts-noto-cjk; Fedora / openSUSE: "
+        "google-noto-sans-fonts google-noto-sans-cjk-fonts; Arch: noto-fonts noto-fonts-cjk), "
+        "then run 'fork-linux doctor --fix'"
+    )

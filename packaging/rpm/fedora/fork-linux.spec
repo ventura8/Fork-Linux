@@ -46,6 +46,8 @@ Requires:       libGL.so.1()(64bit)
 Recommends:     (zenity or kdialog)
 Recommends:     git
 Recommends:     xdg-utils
+Recommends:     google-noto-sans-fonts
+Recommends:     google-noto-sans-cjk-fonts
 Recommends:     7zip
 Recommends:     libvulkan.so.1()(64bit)
 Recommends:     libdbus-1.so.3()(64bit)

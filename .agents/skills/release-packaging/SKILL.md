@@ -16,5 +16,9 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 - AUR: `./scripts/aur-render.sh [--tarball FILE]` → `artifacts/aur/{PKGBUILD,.SRCINFO}`.
 - Rules (AGENTS.md §4.9): no maintainer scripts, amd64 only, never the distro `wine`, lintian `--fail-on error` without
   overrides, rpmlint without filters (any E/W fails), Flatpak finish-args each with `# why:`.
-- Dependency names come from `fork_linux.hostdeps`: `python3 scripts/check-dep-names.py [--available FAMILY]`.
+- Dependency names come from `fork_linux.hostdeps`: `python3 scripts/check-dep-names.py [--available FAMILY]`
+  (run `--available` inside the family's pinned image, as root, after `apt-get update` / `zypper refresh` /
+  `pacman -Sy`). The Noto fonts (`hostdeps.NOTO_FONTS`, core + CJK) are weak dependencies wherever the format has
+  them: deb / rpm `Recommends`, Arch `optdepends`; snap, Flatpak, AppImage and the tarball have no such mechanism
+  (doctor's `prefix.font_fallback` hint names the packages).
 - Snap needs `--privileged` + host cgroups (systemd in Docker); Flatpak needs `--privileged` and Flathub runtimes.

@@ -43,6 +43,8 @@ Recommends:
  git,
  xdg-utils,
  fontconfig,
+ fonts-noto-core,
+ fonts-noto-cjk,
  7zip | p7zip-full,
  libvulkan1,
  libdbus-1-3,
