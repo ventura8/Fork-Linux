@@ -114,7 +114,7 @@ Downloads are cached in `~/.cache/fork-linux/` (winetricks' .NET and font downlo
 | `ssh sync [--dry-run] [--mode link\|copy] [--no-config] \| status` | Share your SSH keys and config with Fork |
 | `git-bridge enable \| disable \| status \| record on\|off` | Experimental native-git bridge (opt-in; `record` forwards to bundled git for debugging) |
 | `logs [--wine \| --fork \| --velopack \| --setup \| --all] [--follow \| --path \| --bundle]` | Show logs or create a redacted bug-report bundle |
-| `uninstall [--purge] [--keep-downloads] [--yes]` | Remove integrations; `--purge` also removes the prefix, runtimes and caches (`--keep-downloads` keeps the downloaded Wine, Fork, .NET and fonts) |
+| `uninstall [--purge] [--keep-downloads] [--yes]` | Remove integrations; `--purge` also removes the prefix (with every other prefix in `~/.local/share/fork-linux/`), runtimes and caches (`--keep-downloads` keeps the downloaded Wine, Fork, .NET and fonts) |
 | `about` / `credits`, `version`, `status` | Credits, version, setup and Fork status |
 
 Exit codes are stable and documented in [AGENTS.md §5](AGENTS.md#5-standard-exit-code-mapping) (for example `10` not set up, `13` integrity check failed, `15` Fork is running).

@@ -178,12 +178,34 @@ def test_purge_of_another_prefix_needs_fork_closed_in_the_default_one(
     assert removed == []
 
 
-def test_purged_prefixes() -> None:
+def test_purged_prefixes(tmp_path: Path) -> None:
     where = paths()
     assert uninstall._purged_prefixes(where) == [where.prefix]
     other = where.data_dir.parent / "elsewhere"
     moved = dataclasses.replace(where, prefix=other)
     assert uninstall._purged_prefixes(moved) == [other, where.data_dir / "prefix"]
+    # Every prefix fork-linux created in the data directory goes with it.
+    second = where.data_dir / "prefix2"
+    (second / ".fork-linux").mkdir(parents=True)
+    (second / ".fork-linux" / "created-by").write_text("fork-linux\n", encoding="utf-8")
+    (where.data_dir / "runtimes").mkdir()
+    (where.data_dir / "linked").symlink_to(second)
+    assert uninstall._purged_prefixes(moved) == [other, where.data_dir / "prefix", second]
+    assert uninstall._purged_prefixes(dataclasses.replace(where, prefix=second)) == [second, where.data_dir / "prefix"]
+
+
+def test_purge_needs_fork_closed_in_every_prefix_of_the_data_dir(
+    capsys: pytest.CaptureFixture[str], removed: list[int], ours: Paths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    third = ours.data_dir / "prefix3"
+    (third / ".fork-linux").mkdir(parents=True)
+    (third / ".fork-linux" / "created-by").write_text("fork-linux\n", encoding="utf-8")
+    monkeypatch.setattr(procs, "fork_pids", lambda prefix, **_kw: [4242] if prefix == third else [])
+    code, _out, err = run_cli(capsys, "uninstall", "--purge", "--yes")
+    assert code == 15
+    assert str(third) in err
+    assert third.is_dir()
+    assert removed == []
 
 
 def _ctx(where: Paths, home: Path, runner: RecordingRunner | None = None) -> AppContext:
@@ -256,6 +278,15 @@ def test_running_wine_is_stopped_first(tmp_path: Path, xdg: Path, monkeypatch: p
     where.session_file.write_text('{"wineserver": 5}', encoding="utf-8")
     assert uninstall._stop_wine(ctx) is True
     assert runner.calls[1]["argv"] == [str(managed), "-k"]
+    # Each prefix the purge deletes that still runs something is asked; an idle one is not.
+    second = where.data_dir / "prefix2"
+    (second / ".fork-linux").mkdir(parents=True)
+    (second / ".fork-linux" / "created-by").write_text("fork-linux\n", encoding="utf-8")
+    monkeypatch.setattr(procs, "prefix_pids", lambda prefix, **_kw: [78] if prefix == second else [])
+    assert uninstall._stop_wine(ctx) is True
+    assert [call["env"]["WINEPREFIX"] for call in runner.calls[2:]] == [str(second)]
+    monkeypatch.setattr(procs, "prefix_pids", lambda prefix, **_kw: [])
+    assert uninstall._stop_wine(ctx) is False
 
 
 def test_ask(monkeypatch: pytest.MonkeyPatch) -> None:
