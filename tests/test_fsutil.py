@@ -8,7 +8,9 @@ import io
 import os
 import shutil
 import stat
+import sys
 import tarfile
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 
 import pytest
@@ -738,7 +740,14 @@ def test_safe_extract_without_tarfile_filter(tmp_path: Path, monkeypatch: pytest
     monkeypatch.setattr(fsutil, "_extract_options", dict)
     archive = _make_tar(tmp_path / "a.tar", [_file("suid", b"x", 0o4755), _dir("d", 0o1777)])
     dest = tmp_path / "out"
-    fsutil.safe_extract(archive, dest)
+    # Python 3.12 and 3.13 announce the 3.14 default filter when extract() gets none.
+    announces: AbstractContextManager[object] = (
+        pytest.warns(DeprecationWarning, match="filter")
+        if sys.version_info[:2] in ((3, 12), (3, 13))
+        else nullcontext()
+    )
+    with announces:
+        fsutil.safe_extract(archive, dest)
     assert _mode(dest / "suid") == 0o755
     assert not _mode(dest / "d") & stat.S_ISVTX
 
