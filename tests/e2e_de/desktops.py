@@ -32,7 +32,8 @@ INTEGRATION_KINDS = (THUNAR_UCA, NAUTILUS_EXTENSION, DOLPHIN_SERVICEMENU, NEMO_A
 MENU_GARCON = "garcon"
 MENU_KSYCOCA = "kbuildsycoca"
 MENU_LXQT_PANEL = "lxqt-panel"
-MENU_READERS = (MENU_GARCON, MENU_KSYCOCA, MENU_LXQT_PANEL)
+MENU_GNOME_SHELL = "gnome-shell"
+MENU_READERS = (MENU_GARCON, MENU_KSYCOCA, MENU_LXQT_PANEL, MENU_GNOME_SHELL)
 
 # How the desktop picks the web browser that xdg-open hands http(s) links to.
 BROWSER_XFCE_HELPERS = "xfce-helpers"
@@ -95,6 +96,10 @@ class Desktop:
     menu_folder: tuple[str, ...] = ("Development",)
     # The command (the .desktop file appended) that starts a menu entry as the desktop's menu does.
     menu_launcher: Command = ("gio", "launch")
+    # The window manager is a Wayland compositor with its own rootless Xwayland (mutter 50 has no
+    # X11 mode): it starts right after the session bus instead of Xvfb, and its command writes
+    # DISPLAY, XAUTHORITY and WAYLAND_DISPLAY to $XDG_RUNTIME_DIR/session.env (dekit.SESSION_ENV).
+    wayland_compositor: bool = False
     # A command whose success means the settings daemon has published its settings.
     settings_ready: Command = ("true",)
     packages: tuple[str, ...] = field(default=())
@@ -410,4 +415,113 @@ LXQT = Desktop(
     ),
 )
 
-DESKTOPS: dict[str, Desktop] = {desktop.key: desktop for desktop in (XFCE, KDE, LXQT)}
+
+def _gnome_interface(key: str, value: str) -> Command:
+    """``gsettings set`` of one ``org.gnome.desktop.interface`` key, as GNOME's Settings writes it."""
+    return ("gsettings", "set", "org.gnome.desktop.interface", key, value)
+
+
+# Settings > Displays > Scale, then "Keep Changes": mutter's DisplayConfig applies the scale to its
+# monitor persistently (~/.config/monitors.xml); gsd-xsettings then republishes Xft.dpi.
+_MUTTER_SCALE = """
+import sys, gi
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib
+NAME = PATH = "org.gnome.Mutter.DisplayConfig"
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+def call(method, args=None):
+    reply = bus.call_sync(NAME, "/" + PATH.replace(".", "/"), NAME, method, args, None, 0, -1, None)
+    return reply.unpack()
+serial, monitors, _logical, _properties = call("GetCurrentState")
+connector, modes = monitors[0][0][0], monitors[0][1]
+mode = next(item[0] for item in modes if item[6].get("is-current"))
+config = [(0, 0, float(sys.argv[1]), 0, True, [(connector, mode, {})])]
+call("ApplyMonitorsConfig", GLib.Variant("(uua(iiduba(ssa{sv}))a{sv})", (serial, 2, config, {})))
+"""
+
+
+def _mutter_scale(scale: str) -> Command:
+    return ("python3", "-I", "-c", _MUTTER_SCALE, scale)
+
+
+# What gnome-shell hands gnome-session once its Xwayland is up (the session's DISPLAY,
+# XAUTHORITY, WAYLAND_DISPLAY), and the D-Bus activation environment gnome-session updates.
+_MUTTER_HAND_OVER = (
+    'env | grep -E "^(DISPLAY|XAUTHORITY|WAYLAND_DISPLAY)=" > "$XDG_RUNTIME_DIR/session.env.new"'
+    ' && dbus-update-activation-environment DISPLAY XAUTHORITY WAYLAND_DISPLAY'
+    ' && mv "$XDG_RUNTIME_DIR/session.env.new" "$XDG_RUNTIME_DIR/session.env" && exec sleep infinity'
+)
+
+GNOME = Desktop(
+    key="gnome",
+    title="Ubuntu 26.04 (GNOME 50: mutter + Xwayland, gsd-xsettings, Nautilus 50, Ptyxis, Yaru)",
+    # What gdm + gnome-session export for the "Ubuntu" session (Wayland only since GNOME 49);
+    # ubuntu-settings' gschema overrides (Yaru) apply to XDG_CURRENT_DESKTOP "ubuntu".
+    # GDK_BACKEND=x11 is the tier's: GTK apps then open on Xwayland, where xdotool sees them.
+    session_env={
+        "XDG_CURRENT_DESKTOP": "ubuntu:GNOME",
+        "DESKTOP_SESSION": "ubuntu",
+        "XDG_SESSION_DESKTOP": "ubuntu",
+        "XDG_SESSION_TYPE": "wayland",
+        "XDG_MENU_PREFIX": "gnome-",
+        "XDG_CONFIG_DIRS": "/etc/xdg/xdg-ubuntu:/etc/xdg",
+        "XDG_DATA_DIRS": "/usr/share/ubuntu:/usr/local/share/:/usr/share/:/var/lib/snapd/desktop",
+        "GNOME_SHELL_SESSION_MODE": "ubuntu",
+        # gnome-session sets it for compatibility; xdg-open recognises GNOME by it (or by
+        # gnome-session's org.gnome.SessionManager), as "ubuntu:GNOME" is not "GNOME*".
+        "GNOME_DESKTOP_SESSION_ID": "this-is-deprecated",
+        "GDK_BACKEND": "x11",
+    },
+    settings_daemon=("/usr/libexec/gsd-xsettings",),
+    window_manager=(
+        "mutter", "--wayland", "--headless", "--virtual-monitor", "1920x1080", "--", "sh", "-c", _MUTTER_HAND_OVER,
+    ),
+    wm_name="Mutter",
+    wayland_compositor=True,
+    # Nautilus's D-Bus service owns org.freedesktop.FileManager1 (and quits when idle).
+    file_manager="nautilus",
+    file_manager_service=("nautilus", "--gapplication-service"),
+    file_manager_class="org.gnome.Nautilus",
+    provides_file_manager1=True,
+    integration=NAUTILUS_EXTENSION,
+    # gnome-shell's app grid: every app that should be shown, in a folder only when
+    # org.gnome.desktop.app-folders puts it in one (ours is on the top level).
+    menu_reader=MENU_GNOME_SHELL,
+    menu_folder=(),
+    # Ubuntu 26.04's terminal, which xdg-terminal-exec picks.
+    terminal="ptyxis",
+    terminal_class="ptyxis",
+    # Settings > Appearance > Style: Ubuntu's panel sets the color scheme and the Yaru variant.
+    themes={
+        LIGHT: (_gnome_interface("color-scheme", "default"), _gnome_interface("gtk-theme", "Yaru")),
+        DARK: (_gnome_interface("color-scheme", "prefer-dark"), _gnome_interface("gtk-theme", "Yaru-dark")),
+    },
+    # Settings > Displays > Scale; Settings > Accessibility > Large Text (text scaling 1.25).
+    scales=(
+        ScaleCase("default", 100),
+        ScaleCase("display-200", 200, (_mutter_scale("2"),)),
+        ScaleCase("large-text-125", 125, (_gnome_interface("text-scaling-factor", "1.25"),)),
+        ScaleCase(
+            "display-200-large-text-250", 250, (_mutter_scale("2"), _gnome_interface("text-scaling-factor", "1.25"))
+        ),
+    ),
+    reset=(
+        _gnome_interface("color-scheme", "default"),
+        _gnome_interface("gtk-theme", "Yaru"),
+        _gnome_interface("text-scaling-factor", "1.0"),
+        _mutter_scale("1"),
+    ),
+    browser=BROWSER_XDG_MIME,
+    # Nautilus 50 opens the folder's context menu with the Menu key (not Shift+F10); "Open in Fork"
+    # is the second item from the bottom, above Properties.
+    open_in_fork_keys=("Menu", "Up", "Up", "Return"),
+    # mutter reparents only decorated X windows: Fork's own title bar leaves it unframed.
+    frames_undecorated=False,
+    settings_ready=("sh", "-c", "xrdb -query | grep -q '^Xft.dpi:'"),
+    packages=(
+        "mutter", "xwayland", "gnome-settings-daemon", "ubuntu-settings", "yaru-theme-gtk", "nautilus",
+        "python3-nautilus", "ptyxis", "xdg-terminal-exec", "xdg-desktop-portal-gnome",
+    ),
+)
+
+DESKTOPS: dict[str, Desktop] = {desktop.key: desktop for desktop in (XFCE, KDE, LXQT, GNOME)}

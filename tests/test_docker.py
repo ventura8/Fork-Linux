@@ -48,6 +48,7 @@ EXPECTED = {
     "Dockerfile.e2e.de.xfce": "fork-linux-e2e-de-xfce:26.04",
     "Dockerfile.e2e.de.lxqt": "fork-linux-e2e-de-lxqt:26.04",
     "Dockerfile.e2e.de.kde": "fork-linux-e2e-de-kde:26.04",
+    "Dockerfile.e2e.de.gnome": "fork-linux-e2e-de-gnome:26.04",
 }
 SCRIPTS = [
     "scripts/ci-docker.sh",

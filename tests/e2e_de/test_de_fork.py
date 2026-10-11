@@ -45,6 +45,8 @@ DARK_MEAN = 0.35
 REPOSITORY_MENU = (108, 16)
 OPEN_IN_FILE_EXPLORER = (140, 422)
 OPEN_IN_SHELL = (119, 445)
+# File managers that read our action only when they start (integration kind -> program, `-q` quits it).
+RESTARTED_FILE_MANAGERS = {desktops.THUNAR_UCA: "thunar", desktops.NAUTILUS_EXTENSION: "nautilus"}
 # The repository of the tab step 04 opened, the active one from then on.
 ACTIVE = "second"
 
@@ -168,9 +170,10 @@ def test_07_file_managers_open_in_fork_reaches_the_running_fork(
 ) -> None:
     third = forkui.make_repo(session, _repos(session) / "third")
     # install.sh asked to restart a file manager that was running while it added the action.
-    if desktop.integration == desktops.THUNAR_UCA:
-        session.run(["thunar", "-q"], check=False)
-        dekit.wait_for(lambda: not dekit.pids_of("thunar"), 30, "Thunar to quit")
+    program = RESTARTED_FILE_MANAGERS.get(desktop.integration)
+    if program:
+        session.run([program, "-q"], check=False)
+        dekit.wait_for(lambda: not dekit.pids_of(program), 30, f"{program} to quit")
     session.spawn("fm-third", [desktop.file_manager, str(third)])
     window = session.wait_window(
         lambda w: w.has_class(desktop.file_manager_class) and third.name in w.name, f"{desktop.file_manager} on {third}"

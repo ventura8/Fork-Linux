@@ -253,10 +253,41 @@ def _lxqt_panel_entries(session: dekit.Session) -> list[dict[str, object]]:
     return json.loads(session.run(["python3", "-I", "-c", LXQT_PANEL_READER]).stdout)
 
 
+# gnome-shell's app grid (Shell.AppSystem): every desktop entry Gio lists that should be shown; an
+# app sits in a folder of org.gnome.desktop.app-folders when the folder names it or one of its
+# categories (and does not exclude it), else on the top level.
+GNOME_SHELL_READER = """
+import json, gi
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio
+SCHEMA = "org.gnome.desktop.app-folders"
+folders = []
+for folder in Gio.Settings.new(SCHEMA).get_strv("folder-children"):
+    settings = Gio.Settings.new_with_path(SCHEMA + ".folder", f"/org/gnome/desktop/app-folders/folders/{folder}/")
+    folders.append((folder, settings.get_strv("apps"), settings.get_strv("categories"),
+                    settings.get_strv("excluded-apps")))
+found = []
+for app in Gio.AppInfo.get_all():
+    if not app.should_show():
+        continue
+    app_id, categories = app.get_id(), (app.get_categories() or "").split(";")
+    path = [name for name, apps, wanted, excluded in folders
+            if app_id in apps or (set(wanted) & set(categories) and app_id not in excluded)][:1]
+    found.append({"path": path, "id": app_id, "command": app.get_commandline()})
+print(json.dumps(found))
+"""
+
+
+def _gnome_shell_entries(session: dekit.Session) -> list[dict[str, object]]:
+    """Every app of GNOME's app grid as gnome-shell finds it (Gio's desktop entries, app folders)."""
+    return json.loads(session.run(["python3", "-I", "-c", GNOME_SHELL_READER]).stdout)
+
+
 MENU_READERS: dict[str, Callable[[dekit.Session], list[dict[str, object]]]] = {
     desktops.MENU_GARCON: _garcon_entries,
     desktops.MENU_KSYCOCA: _ksycoca_entries,
     desktops.MENU_LXQT_PANEL: _lxqt_panel_entries,
+    desktops.MENU_GNOME_SHELL: _gnome_shell_entries,
 }
 
 
@@ -325,10 +356,32 @@ def _check_fma_action(session: dekit.Session, _installed: dekit.Installed) -> No
     assert any(OPEN_ACTION in action[f"X-Action-Profile {name}"]["exec"] for name in profiles), profiles
 
 
+NAUTILUS_EXTENSIONS = Path("/usr/lib/x86_64-linux-gnu/nautilus/extensions-4/libnautilus-python.so")
+
+
+def _check_nautilus_extension(session: dekit.Session, installed: dekit.Installed) -> None:
+    """Our nautilus-python extension is installed where python3-nautilus loads it from, and a user
+    who has Files open while fork-linux installs it is told to restart Nautilus, as is done here."""
+    assert NAUTILUS_EXTENSIONS.is_file(), "python3-nautilus is not installed"
+    extension = session.home / ".local" / "share" / "nautilus-python" / "extensions" / "fork_linux_nautilus.py"
+    assert "--from-file-manager" in extension.read_text(encoding="utf-8")
+    # Nautilus loads extensions when it starts: with a window open, a new extension stays
+    # invisible until `nautilus -q`. Whether Nautilus ran during install.sh is up to D-Bus
+    # activation, so the install is done again with a Files window open.
+    session.spawn("nautilus-home", ["nautilus", "--new-window", str(session.home)])
+    session.wait_window(lambda w: w.has_class(session.desktop.file_manager_class), "a Files window")
+    session.run(["fork-linux", "desktop", "remove"])
+    again = session.run(["fork-linux", "desktop", "install"])
+    assert "nautilus -q" in again.stdout + again.stderr, "no notice to restart the running Nautilus"
+    session.run(["nautilus", "-q"], check=False)
+    dekit.wait_for(lambda: not dekit.pids_of("nautilus"), 30, "Nautilus to quit")
+
+
 INTEGRATION_CHECKS: dict[str, Callable[[dekit.Session, dekit.Installed], None]] = {
     desktops.THUNAR_UCA: _check_thunar_uca,
     desktops.DOLPHIN_SERVICEMENU: _check_dolphin_servicemenu,
     desktops.PCMANFM_QT_FMA: _check_fma_action,
+    desktops.NAUTILUS_EXTENSION: _check_nautilus_extension,
 }
 
 

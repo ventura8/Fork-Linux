@@ -9,6 +9,13 @@ session's ``DISPLAY`` in its environment (the bridge daemon starts its helpers w
 environment, Wine keeps ``DISPLAY``); :meth:`Session.stop` ends exactly those processes (found
 through ``/proc``).
 
+A desktop whose window manager is a Wayland compositor (``Desktop.wayland_compositor``: GNOME's
+mutter 50 has no X11 mode) gets no Xvfb: the compositor starts right after the bus and runs its
+own rootless Xwayland, whose ``DISPLAY``, ``XAUTHORITY`` and ``WAYLAND_DISPLAY`` it hands to the
+session through ``$XDG_RUNTIME_DIR/session.env`` (as gnome-shell hands them to gnome-session). The
+root window of a rootless Xwayland cannot be captured, so a screenshot there is put together
+from the visible windows.
+
 The session's home, logs and screenshots live in the E2E root, which ``real_tier.prepare_root``
 checked (absolute, symlink-free, never a home directory). Screenshots stay there: they may show
 Fork's logo, so they never go into the repository or a CI upload.
@@ -34,6 +41,10 @@ FILE_MANAGER1 = "org.freedesktop.FileManager1"
 START_TIMEOUT = 30.0
 POLL = 0.3
 T = TypeVar("T")
+# The file a Wayland compositor writes its Xwayland's variables to (KEY=VALUE lines), in
+# $XDG_RUNTIME_DIR, and the variables the session takes from it.
+SESSION_ENV = "session.env"
+COMPOSITOR_VARS = ("DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY")
 # Variables of the container's own environment that the session keeps.
 KEPT = ("PATH", "LANG", "USER", "LOGNAME", "TZ", "FL_E2E_SEED", "FL_E2E_WINETRICKS_CACHE", "FL_E2E_FORK_VERSION")
 
@@ -226,19 +237,19 @@ class Session:
     # --- start / stop -------------------------------------------------------------------------------
 
     def start(self) -> None:
-        """Xvfb, the session bus, then the desktop's settings daemon, window manager and file manager."""
-        self.spawn("xvfb", ["Xvfb", self.display, "-screen", "0", SCREEN, "-dpi", "96", "-nolisten", "tcp"])
-        wait_for(lambda: self.run(["xdpyinfo"], check=False, timeout=10).returncode == 0, START_TIMEOUT, "Xvfb")
-        bus = self.runtime / "bus"
-        if bus.exists():
-            bus.unlink()
-        self.spawn("dbus", ["dbus-daemon", "--session", "--nofork", "--nopidfile", f"--address=unix:path={bus}"])
-        wait_for(lambda: self._dbus("org.freedesktop.DBus.GetId") is not None, START_TIMEOUT, "the session bus")
+        """The display and the session bus, then the desktop's settings daemon, window manager and file manager."""
+        compositor = self.desktop.wayland_compositor
+        if compositor:
+            self._start_bus()
+            self._start_compositor()
+        else:
+            self._start_xvfb()
+            self._start_bus()
         self.spawn("settings-daemon", self.desktop.settings_daemon)
         wait_for(lambda: self.run(self.desktop.settings_ready, check=False).returncode == 0, START_TIMEOUT,
                  f"{self.desktop.settings_daemon[0]} to publish its settings")
         # An empty window manager or file-manager service: the session manager starts it.
-        if self.desktop.window_manager:
+        if not compositor and self.desktop.window_manager:
             self.spawn("window-manager", self.desktop.window_manager)
         wait_for(lambda: self.window_manager_name() == self.desktop.wm_name, START_TIMEOUT,
                  f"the window manager {self.desktop.wm_name}")
@@ -265,6 +276,33 @@ class Session:
                 self.env[name] = values[name]
             else:
                 self.env.pop(name, None)
+
+    def _start_xvfb(self) -> None:
+        self.spawn("xvfb", ["Xvfb", self.display, "-screen", "0", SCREEN, "-dpi", "96", "-nolisten", "tcp"])
+        self._wait_display("Xvfb")
+
+    def _wait_display(self, what: str) -> None:
+        wait_for(lambda: self.run(["xdpyinfo"], check=False, timeout=10).returncode == 0, START_TIMEOUT, what)
+
+    def _start_bus(self) -> None:
+        bus = self.runtime / "bus"
+        if bus.exists():
+            bus.unlink()
+        self.spawn("dbus", ["dbus-daemon", "--session", "--nofork", "--nopidfile", f"--address=unix:path={bus}"])
+        wait_for(lambda: self._dbus("org.freedesktop.DBus.GetId") is not None, START_TIMEOUT, "the session bus")
+
+    def _start_compositor(self) -> None:
+        """The Wayland compositor (the recipe's window manager); the session moves to its Xwayland."""
+        handed = self.runtime / SESSION_ENV
+        if handed.exists():
+            handed.unlink()
+        self.spawn("window-manager", self.desktop.window_manager)
+        compositor = self.desktop.window_manager[0]
+        values = wait_for(lambda: _read_session_env(handed), START_TIMEOUT, f"{compositor}'s Xwayland")
+        self.env.update({name: values[name] for name in COMPOSITOR_VARS if name in values})
+        self.display = self.env["DISPLAY"]
+        self._owned = (self._owned[0], f"DISPLAY={self.display}".encode())
+        self._wait_display(f"{compositor}'s Xwayland on {self.display}")
 
     def stop(self) -> None:
         """End every process of the session: TERM, then KILL what is left after 5 s."""
@@ -388,10 +426,36 @@ class Session:
     def screenshot(self, name: str, window: Window | None = None) -> Path:
         """The screen (or ``window``) as ``shots/<name>.png`` in the scratch root, never the repository."""
         target = self.shots / f"{name}.png"
+        if self.desktop.wayland_compositor:
+            return self._rootless_screenshot(target, window)
         argv = ["magick", "import", "-display", self.display, "-window", "root"]
         if window is not None:
             argv += ["-crop", f"{window.width}x{window.height}+{window.x}+{window.y}"]
         self.run([*argv, str(target)], timeout=60)
+        return target
+
+    def _rootless_screenshot(self, target: Path, window: Window | None) -> Path:
+        """A rootless Xwayland's screen: ``window`` alone, else every visible window pasted where it is."""
+        capture = ["magick", "import", "-display", self.display, "-window"]
+        if window is not None:
+            self.run([*capture, window.id, str(target)], timeout=60)
+            return target
+        width, height = SCREEN.split("x")[:2]
+        argv = ["magick", "-size", f"{width}x{height}", "xc:black"]
+        parts = []
+        for index, wid in enumerate(self.xdotool("search", "--onlyvisible", "--name", "", check=False).split()):
+            geometry = _geometry(self.xdotool("getwindowgeometry", "--shell", wid, check=False))
+            part = self.shots / f".{target.stem}-{index}.png"
+            if not {"x", "y"} <= geometry.keys():
+                continue
+            if self.run([*capture, wid, str(part)], check=False, timeout=60).returncode == 0:
+                parts.append(part)
+                argv += [str(part), "-geometry", f"+{geometry['x']}+{geometry['y']}", "-composite"]
+        try:
+            self.run([*argv, str(target)], timeout=60)
+        finally:
+            for part in parts:
+                part.unlink()
         return target
 
     def image_stat(self, image: Path, expr: str) -> float:
@@ -418,10 +482,31 @@ def cwd_of(pid: int) -> str:
         return ""
 
 
-def children_cwds(pid: int) -> list[str]:
-    """Working directories of ``pid``'s direct children (a terminal's shells)."""
+def _children(pid: int) -> list[int]:
     try:
-        children = Path("/proc", str(pid), "task", str(pid), "children").read_text(encoding="utf-8").split()
+        text = Path("/proc", str(pid), "task", str(pid), "children").read_text(encoding="utf-8")
     except OSError:
         return []
-    return [cwd_of(int(child)) for child in children]
+    return [int(child) for child in text.split()]
+
+
+def children_cwds(pid: int) -> list[str]:
+    """Working directories of ``pid``'s descendants: a terminal's shells, also when a helper of the
+    terminal starts them (Ptyxis's ptyxis-agent)."""
+    found = []
+    pending = _children(pid)
+    while pending:
+        child = pending.pop(0)
+        found.append(cwd_of(child))
+        pending.extend(_children(child))
+    return found
+
+
+def _read_session_env(path: Path) -> dict[str, str] | None:
+    """``KEY=VALUE`` lines a compositor wrote, once they name a ``DISPLAY`` (None before)."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    values = dict(line.split("=", 1) for line in lines if "=" in line)
+    return values if values.get("DISPLAY") else None

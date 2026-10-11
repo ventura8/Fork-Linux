@@ -17,8 +17,9 @@ root under `/var/tmp/fork-linux-e2e/`, the read-only seed for the real-Fork tier
 | Xubuntu 26.04, XFCE 4.20 (xfwm4, xfsettingsd, Thunar 4.20 + its FileManager1, xfce4-terminal, garcon menu, Greybird / Greybird-dark) | `fork-linux-e2e-de-xfce:26.04` | ✅ 13/13 | ✅ 9/9 (setup 235 s from the seed, tier 292 s) | local `scripts/ci-e2e-de.sh xfce [--fork]`, 2026-10-11 |
 | Lubuntu 26.04, LXQt 2.3 (lxqt-session + openbox, pcmanfm-qt 2.3 + its FileManager1, qterminal, panel menu via GMenu, Kvantum Lubuntu / KvArcDark, Fusion palettes, Global Screen Scaling) | `fork-linux-e2e-de-lxqt:26.04` | ❌ 13/17 until [de-fixes/lxqt.md](de-fixes/lxqt.md) is applied (theme `light` and `light:dark-panel-theme`, PCManFM "Open in Fork", qterminal); ✅ 17/17 with it | ❌ stops at 03 (Fork starts dark on the light Lubuntu desktop); ✅ 9/9 with the patch (setup 294 s from the seed, tier 351 s) | local `scripts/ci-e2e-de.sh lxqt [--fork]`, 2026-10-11 |
 | Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, kcminit + kded6, Dolphin 25.12 + its FileManager1 and our service menu, Konsole, Kickoff's menu through kbuildsycoca6, Kubuntu / Kubuntu Dark / Breeze Dark global themes and colour schemes) | `fork-linux-e2e-de-kde:26.04` | ❌ 17/18: the `dark:custom-colors` theme case fails until the `theme.py` fix in [de-fixes/kde.md](de-fixes/kde.md) lands (18/18 with it) | ✅ 9/9 (setup 308 s from the seed, tier 369 s) | local `scripts/ci-e2e-de.sh kde [--fork]`, 2026-10-11 |
+| Ubuntu 26.04, GNOME 50 (mutter 50 headless Wayland + rootless Xwayland, gsd-xsettings, Nautilus 50 + python3-nautilus and its FileManager1, Ptyxis via xdg-terminal-exec, gnome-shell's app grid, Yaru / Yaru-dark + color-scheme) | `fork-linux-e2e-de-gnome:26.04` | ❌ 12/14 (3 src bugs, fixes proposed); ✅ 14/14 with the fixes | ❌ stops at 07 (Nautilus shows no "Open in Fork"); ✅ 9/9 with the fixes (setup 266-357 s from the seed, tier 325-431 s) | local `scripts/ci-e2e-de.sh gnome [--fork]`, 2026-10-11; [de-fixes/gnome.md](de-fixes/gnome.md) |
 
-GNOME, Cinnamon, MATE, Budgie and LXQt follow the same pattern: one
+Cinnamon, MATE and Budgie follow the same pattern: one
 `docker/Dockerfile.e2e.de.<desktop>` plus one entry in `tests/e2e_de/desktops.py` (see "Adding a
 desktop").
 
@@ -217,6 +218,45 @@ with `Theme=1` and a dark window;
   for one font, twice in a row (after 7 and after 3 fonts had registered). fork-linux retries
   `winetricks corefonts` once, and both tries hit it. The next run passed. Nothing in that step
   depends on the desktop. It is recorded here in case it comes back.
+
+## GNOME facts the recipe relies on
+
+- mutter 50 has no X11 mode (no `--x11`, `--replace`, `--nested`): the recipe runs `mutter
+  --wayland --headless --virtual-monitor 1920x1080` with its own rootless Xwayland (`:0`, with an
+  `XAUTHORITY` file), and no Xvfb (`Desktop.wayland_compositor`). The command mutter runs after
+  `--` hands `DISPLAY`, `XAUTHORITY` and `WAYLAND_DISPLAY` to the session (`session.env`) and to
+  D-Bus activation, as gnome-shell does through gnome-session.
+- `GDK_BACKEND=x11` is the tier's own: Nautilus, Ptyxis and zenity then open on Xwayland, where
+  xdotool sees them. Wine (Fork) is an X client anyway.
+- The root window of a rootless Xwayland cannot be captured: a screenshot is a window capture, or
+  for the whole screen every visible window pasted at its position on black.
+- mutter frames only decorated X windows: Fork draws its own title bar and stays unframed
+  (`frames_undecorated=False`); it is still managed (mutter's `_NET_SUPPORTING_WM_CHECK`).
+- `XDG_CURRENT_DESKTOP=ubuntu:GNOME`: ubuntu-settings' gschema overrides (Yaru) are keyed on
+  `ubuntu`. xdg-utils recognises GNOME only by `GNOME*`, `GNOME_DESKTOP_SESSION_ID` (gnome-session
+  sets it to `this-is-deprecated`) or gnome-session's `org.gnome.SessionManager`; the recipe
+  sets the variable like gnome-session. Without it xdg-open falls back to its generic mode, where
+  `file --mime-type` ignores shared-mime-info globs and a file does not reach its default app.
+- Scale: Settings > Displays > Scale is mutter's monitor configuration
+  (`org.gnome.Mutter.DisplayConfig.ApplyMonitorsConfig`, `~/.config/monitors.xml`), not
+  `scaling-factor` (0); gsd-xsettings publishes `Xft.dpi` = 96 x display scale x text scaling
+  (100 % 96, 200 % 192, Large Text 120, both 240). fork-linux asks GNOME's gsettings first and
+  reads 200 % + Large Text as 125 % ([de-fixes/gnome.md](de-fixes/gnome.md), fix 3).
+- Nautilus 50 loads nautilus-python extensions against API 4.1 only (`Nautilus-4.1.typelib`);
+  fork-linux's extension asks for 4.0 / 3.0 and is never loaded (fix 1). Nautilus loads
+  extensions only when it starts, and fork-linux does not say so (fix 2); the tier reinstalls
+  with a Files window open and expects the notice, then runs `nautilus -q`.
+- Nautilus's D-Bus service (`nautilus --gapplication-service`) owns FileManager1 and quits when
+  idle, so FileManager1 is often only activatable. Its folder context menu opens with the Menu
+  key (Shift+F10 does nothing); "Open in Fork" is the second item from the bottom.
+- Ptyxis is 26.04's terminal, picked by `xdg-terminal-exec` (`ptyxis --new-window`); its windows
+  have `WM_CLASS` `ptyxis` under X11 and its shells are children of `ptyxis-agent`
+  (`dekit.children_cwds` walks all descendants). Without a systemd user manager its agent
+  starts every shell through `systemd-run --user --scope` and fails, so the image diverts
+  `systemd-run` (on a real desktop the user manager is there).
+- The menu entry is checked as gnome-shell's app grid lists it: Gio's desktop entries that should
+  be shown, in an `org.gnome.desktop.app-folders` folder only when one claims it; ours is on the
+  top level (`Desktop.menu_folder=()`).
 
 ## Adding a desktop
 
