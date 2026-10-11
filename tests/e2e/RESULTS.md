@@ -193,6 +193,9 @@ its Unix libraries need the same host libraries as 11.0 and nothing newer than g
 | `test_fork_update.py` (`FL_E2E_FORK_UPDATES=1`): Fork 2.23.1 updating itself (Velopack) and through `update --fork`, bridge on, commits through Fork | 13 passed (1219 s) |
 | `test_wine_app_upgrade.py` (`FL_E2E_APP_UPGRADE=1`), A4 with B = 11.0: switch to the old pin and back | 6 passed, A6 skipped (no `FL_E2E_BRIDGE_BUILDS`) (853 s) |
 | Existing prefix: setup on 11.0 with Fork 2.23.2, first run, a commit through Fork; then the pin moves to 11.18 (new `revision` and `wine.default`); `setup` re-ran `wine_runtime`, `prefix_init` (15 s); Fork starts, two commits through Fork in two repositories | 3 passed (405 s) |
+| After the fix below, with this commit merged with the update tiers' branch: the existing-prefix scenario as an app upgrade (setup under the previous release's manifest - revision 2026.10.2, default 11.0 - then this release's packaged manifest); `setup` re-ran `wine_runtime`, `prefix_init`, `host_integration` (19 s), `doctor --deep` has no failures and no `prefix.integration` warning; Fork starts and commits twice | 3 passed (426 s) |
+| Same tree: `test_real_fork.py` | 7 passed (358 s) |
+| Same tree: `test_wine_app_upgrade.py`, A4 with B = the listed 11.0 build (no override), Fork also opened on B | 6 passed, A6 skipped (947 s) |
 
 **Found by the existing-prefix run (fixed):** Wine's `wine.inf` registers `.js` for its own
 `JSFile` again when it updates the prefix, replacing our `ForkLinux.File` association, and setup
