@@ -487,9 +487,17 @@ def test_safe_extract_rejects_existing_symlink_in_destination(tmp_path: Path) ->
     assert not (outside / "x").exists()
 
 
-@pytest.mark.parametrize("target", ["../../etc/passwd", "/etc/passwd", "missing", "later"])
-def test_safe_extract_rejects_escaping_or_dangling_hardlink(tmp_path: Path, target: str) -> None:
-    _assert_rejected(tmp_path, [_link("h", target, tarfile.LNKTYPE), _file("later")], "")
+@pytest.mark.parametrize(
+    ("target", "reason"),
+    [
+        ("../../etc/passwd", "'..' in link target"),
+        ("/etc/passwd", "absolute link target"),
+        ("missing", "hard link must point to a regular file extracted before it"),
+        ("later", "hard link must point to a regular file extracted before it"),
+    ],
+)
+def test_safe_extract_rejects_escaping_or_dangling_hardlink(tmp_path: Path, target: str, reason: str) -> None:
+    _assert_rejected(tmp_path, [_link("h", target, tarfile.LNKTYPE), _file("later")], reason)
 
 
 def test_safe_extract_rejects_hardlink_through_archive_symlink(tmp_path: Path) -> None:
