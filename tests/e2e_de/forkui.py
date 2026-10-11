@@ -28,6 +28,9 @@ WELCOME_EMAIL = (460, 194)
 WELCOME_FINISH = (523, 337)
 # Fork draws its own title bar: the close button sits 25 px from the right edge, 14 px down.
 CLOSE_FROM_RIGHT = 25
+CLOSE_FROM_TOP = 14
+# Seconds to wait for Fork to exit before clicking its close button again.
+CLOSE_PATIENCE = 20.0
 # What a blank-screen report records (text only).
 DIAGNOSTICS = (
     ("xwininfo", "-root", "-tree"),
@@ -35,7 +38,6 @@ DIAGNOSTICS = (
     ("xprop", "-root"),
     ("ps", "-eo", "pid,ppid,stat,etime,args"),
 )
-CLOSE_FROM_TOP = 14
 # The git-instance dialog's one button stays centred 41 px above its bottom edge.
 GIT_INSTANCE_BUTTON_FROM_BOTTOM = 41
 SEED_PATTERNS = ("wine-*.tar.xz", "Fork-*.exe", "winetricks-*", "selawik-*.zip")
@@ -186,13 +188,33 @@ def launch(session: dekit.Session, *targets: Path, extra: dict[str, str] | None 
     return session.spawn(f"launch-{time.time_ns()}", ["fork-linux", "run", *map(str, targets)], extra=extra)
 
 
-def close_fork(session: dekit.Session, timeout: float = 60) -> None:
-    """Close Fork like a user (its title bar's close button) and wait for its process to end."""
-    window = main_window(session)
-    if window is not None:
-        session.activate(window)
-        click(session, window, (window.width - CLOSE_FROM_RIGHT, CLOSE_FROM_TOP))
-    dekit.wait_for(lambda: not fork_pids(prefix(session)), timeout, "Fork to exit after its close button")
+def close_fork(session: dekit.Session, timeout: float = 60, patience: float = CLOSE_PATIENCE) -> None:
+    """Close Fork like a user (its title bar's close button) and wait for its process to end.
+
+    A user whose click did nothing clicks again: once on GNOME (mutter), right after step 07 had
+    handed a repository over, Fork was still running 60 s after one click on its close button.
+    Every ``patience`` seconds the button is clicked again while the main window is still shown
+    (each retry is noted in ``logs/close-fork.txt``); on a timeout the screen and the X server's
+    windows are kept (``close-timeout``) for the report.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        window = main_window(session)
+        if window is not None:
+            session.activate(window)
+            click(session, window, (window.width - CLOSE_FROM_RIGHT, CLOSE_FROM_TOP))
+        wait = max(1.0, min(patience, deadline - time.monotonic()))
+        try:
+            dekit.wait_for(lambda: not fork_pids(prefix(session)), wait, "Fork to exit after its close button")
+            return
+        except dekit.SessionError:
+            if time.monotonic() < deadline:
+                with (session.logs / "close-fork.txt").open("a", encoding="utf-8") as log:
+                    log.write(f"Fork still running {patience:.0f} s after its close button: clicking it again\n")
+                continue
+            session.screenshot("close-timeout")
+            _diagnose(session, "close-timeout")
+            raise
 
 
 def settings(session: dekit.Session) -> dict[str, Any]:
