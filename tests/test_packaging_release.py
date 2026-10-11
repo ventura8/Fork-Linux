@@ -7,6 +7,7 @@ finish-arg allowlist, and the release scripts' own behaviour on fake artifacts.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import re
 import shutil
@@ -14,6 +15,7 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -163,6 +165,55 @@ def test_flatpak_finish_args_are_explained_and_allowlisted() -> None:
 
 def test_no_recipe_depends_on_distribution_wine() -> None:
     subprocess.run([sys.executable, str(ROOT / "scripts" / "check-dep-names.py")], check=True)
+
+
+def _check_dep_names() -> Any:
+    spec = importlib.util.spec_from_file_location("check_dep_names", ROOT / "scripts" / "check-dep-names.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_every_recipe_with_weak_dependencies_recommends_the_noto_fonts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Debian / RPM Recommends and Arch optdepends name the Noto fonts (maintainer decision 2026-10-11)."""
+    control = _text(ROOT / "debian" / "control")
+    assert ["fonts-noto-core", "fonts-noto-cjk"] == [
+        entry for entry in _check_dep_names().debian_field(control, "Recommends") if "noto" in entry
+    ]
+    for spec, family in zip(SPECS, ("fedora", "suse"), strict=True):
+        assert [f"Recommends:     {name}" for name in hostdeps.NOTO_FONTS[family]] == [
+            line for line in _text(spec).splitlines() if "noto" in line
+        ]
+    assert [line.split(":")[0].strip().strip("'") for line in _text(PKGBUILD).splitlines() if "noto" in line] == list(
+        hostdeps.NOTO_FONTS["arch"]
+    )
+    # The portable channels have no weak dependencies: doctor's hint covers them.
+    for portable in (SNAPCRAFT, FLATPAK):
+        assert "noto" not in _text(portable).lower()
+    # The checker reports a recipe that drops them.
+    module = _check_dep_names()
+    real_read = module._read
+    monkeypatch.setattr(
+        module, "_read", lambda rel: real_read(rel).replace(" fonts-noto-cjk,\n", "").replace("noto-fonts-cjk", "x")
+    )
+    assert module.problems() == [
+        "debian/control Recommends: lacks fonts-noto-cjk (for fonts-noto-cjk)",
+        "packaging/arch/PKGBUILD.in optdepends: lacks noto-fonts-cjk (for noto-fonts-cjk)",
+    ]
+
+
+def test_check_dep_names_asks_the_package_manager_for_the_noto_fonts(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _check_dep_names()
+    asked: list[tuple[str, str]] = []
+
+    def has(family: str, name: str) -> bool:
+        asked.append((family, name))
+        return name != "noto-fonts-cjk"
+
+    monkeypatch.setattr(module, "_manager_has", has)
+    assert module.unavailable("arch") == ["arch: noto-fonts-cjk does not exist (recommended Noto fonts)"]
+    assert ("arch", "noto-fonts") in asked
 
 
 def test_app_id_is_used_consistently() -> None:

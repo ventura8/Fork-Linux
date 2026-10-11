@@ -51,7 +51,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .. import fsutil
+from .. import fsutil, hostdeps
 from ..bootstrap import Ctx, Step
 from ..errors import ForkLinuxError
 from . import dotnet as dotnet_step
@@ -157,10 +157,11 @@ SCRIPTS: tuple[Script, ...] = (
 )
 # Scripts whose missing font the doctor reports (the others are rarer in repository names).
 KEY_SCRIPTS = ("Greek", "Cyrillic", HANGUL, HAN)
+# The packages recommend them (Fedora and openSUSE use the same names).
+_NOTO = {family: " ".join(names) for family, names in hostdeps.NOTO_FONTS.items()}
 FONTS_HINT = (
-    "install the Noto fonts (Debian / Ubuntu: fonts-noto-core fonts-noto-cjk; Fedora / openSUSE: "
-    "google-noto-sans-fonts google-noto-sans-cjk-fonts; Arch: noto-fonts noto-fonts-cjk), "
-    "then run 'fork-linux doctor --fix'"
+    f"install the Noto fonts (Debian / Ubuntu: {_NOTO['debian']}; Fedora / openSUSE: {_NOTO['fedora']}; "
+    f"Arch: {_NOTO['arch']}), then run 'fork-linux doctor --fix'"
 )
 
 

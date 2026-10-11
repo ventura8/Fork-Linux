@@ -49,6 +49,8 @@ optdepends=(
 	'kdialog: graphical setup and progress dialogs on KDE'
 	'git: the experimental native-git bridge and repository checks'
 	'xdg-utils: open links and files from Fork'
+	'noto-fonts: Greek, Cyrillic and other non-Latin text in the interface'
+	'noto-fonts-cjk: Chinese, Japanese and Korean text in the interface'
 	'7zip: extra archive formats for winetricks'
 	'vulkan-icd-loader: Vulkan rendering in Wine'
 	'dbus: desktop notifications and portals'

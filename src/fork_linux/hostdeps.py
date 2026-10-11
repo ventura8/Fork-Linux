@@ -101,6 +101,17 @@ PACKAGES: dict[str, dict[str, str]] = {
     family: {row[0]: row[column] for row in _PACKAGE_TABLE} for column, family in enumerate(_TABLE_FAMILIES, 1)
 }
 
+# The Noto fonts (core + CJK) font_fallback maps non-Latin scripts to, per family: every package
+# format with weak dependencies recommends them (scripts/check-dep-names.py checks the recipes),
+# and doctor's prefix.font_fallback hint names them. Checked in the pinned images: Ubuntu 22.04 /
+# 24.04 / 26.04, Debian 13, Fedora 44, openSUSE Leap 16.0, Arch.
+NOTO_FONTS: dict[str, tuple[str, ...]] = {
+    "debian": ("fonts-noto-core", "fonts-noto-cjk"),
+    "fedora": ("google-noto-sans-fonts", "google-noto-sans-cjk-fonts"),
+    "suse": ("google-noto-sans-fonts", "google-noto-sans-cjk-fonts"),
+    "arch": ("noto-fonts", "noto-fonts-cjk"),
+}
+
 INSTALL_COMMANDS = {
     "debian": "sudo apt install",
     "fedora": "sudo dnf install",
