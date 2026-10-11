@@ -72,6 +72,8 @@ def _attempt(ctx: Ctx, verb: str) -> str | None:
     """Install ``verb``; None on success, else why it failed."""
     try:
         prefix_steps.run_verbs(ctx, "dotnet", [verb])
+    except prefix_steps.DiskFull:
+        raise
     except SetupFailed as exc:
         return exc.message
     if verify(ctx):

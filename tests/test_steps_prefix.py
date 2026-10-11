@@ -282,6 +282,51 @@ def test_winver_failure(xdg: Path) -> None:
     assert caught.value.step == "winver"
 
 
+def test_verbs_blame_a_full_quota_in_their_output(xdg: Path) -> None:
+    # E2E: a quota-limited tmpfs failed dotnet, and the hint said to check the network.
+    log_file = xdg / "setup.log"
+    log_file.write_text("an older run: No space left on device\n", encoding="utf-8")
+    ctx = make_ctx(log_file=log_file)
+    fake = _fake(ctx)
+    fake.disk_full.add("corefonts")
+    with pytest.raises(prefix.DiskFull, match="the disk is full") as caught:
+        prefix.run_verbs(ctx, "fonts", ["corefonts"])
+    assert caught.value.step == "fonts"
+    assert "disk quota" in caught.value.hint
+    assert str(ctx.paths.prefix) in caught.value.hint
+
+
+def test_verbs_ignore_a_full_disk_reported_by_an_older_run(xdg: Path) -> None:
+    log_file = xdg / "setup.log"
+    log_file.write_text("an older run: No space left on device\n", encoding="utf-8")
+    ctx = make_ctx(log_file=log_file)
+    _fake(ctx, fail=("corefonts",))
+    with pytest.raises(SetupFailed, match="exited with code 1") as caught:
+        prefix.run_verbs(ctx, "fonts", ["corefonts"])
+    assert not isinstance(caught.value, prefix.DiskFull)
+    assert "network" in caught.value.hint
+
+
+def test_verbs_without_a_log_and_almost_no_space_left(xdg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The messages may be translated; next to no free space says the same.
+    ctx = make_ctx()
+    assert ctx.log_file is None
+    _fake(ctx, fail=("corefonts",))
+    monkeypatch.setattr(prefix.fsutil, "disk_free", lambda _path: prefix.DISK_LOW_BYTES - 1)
+    with pytest.raises(prefix.DiskFull):
+        prefix.run_verbs(ctx, "fonts", ["corefonts"])
+
+
+def test_verbs_with_an_unreadable_log(xdg: Path) -> None:
+    log_file = xdg / "setup.log"
+    log_file.touch(mode=0o200)  # winetricks can append, nobody can read it back
+    ctx = make_ctx(log_file=log_file)
+    _fake(ctx, fail=("corefonts",))
+    with pytest.raises(SetupFailed) as caught:
+        prefix.run_verbs(ctx, "fonts", ["corefonts"])
+    assert not isinstance(caught.value, prefix.DiskFull)
+
+
 # -- dotnet --------------------------------------------------------------------------------------
 
 
@@ -374,6 +419,16 @@ def test_dotnet_gives_up_after_every_verb(xdg: Path) -> None:
     assert "dotnet48: " in caught.value.message
     assert "dotnet472: " in caught.value.message
     assert fake.verbs == ["dotnet48", "dotnet472"]
+
+
+def test_dotnet_stops_on_a_full_disk(xdg: Path) -> None:
+    # Another verb (after a prefix rebuild) cannot help when the disk or the quota is full.
+    ctx = make_ctx(log_file=xdg / "setup.log")
+    fake = _fake(ctx)
+    fake.disk_full.add("dotnet48")
+    with pytest.raises(prefix.DiskFull):
+        dotnet.run(ctx)
+    assert fake.verbs == ["dotnet48"]
 
 
 def test_dotnet_rebuild_refuses_a_prefix_without_marker(xdg: Path) -> None:
