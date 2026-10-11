@@ -205,7 +205,7 @@ static void test_req_encode_validation(void)
     r.anchors = nulls;
     tap_ok(encode_fails(&r), "req encode: NULL anchor");
     r.nanchors = 0;
-    r.flags = 0x4u;
+    r.flags = 0x8u;
     tap_ok(encode_fails(&r), "req encode: unknown flag bit");
     r.flags = 0;
     big = malloc(FL_MAX_REQ);
@@ -349,6 +349,117 @@ static void test_req_decode_validation(void)
     n = tlv(b, 0, FL_T_CWD, "/w", 2);
     b[1] = 0xff; /* CWD claims ~4 GiB */
     tap_ok(decode_fails(b, n), "req decode: 4 GiB record length");
+}
+
+/* A hand-off request: one of the four verbs and one argument, nothing else (fl_handoff_ok). */
+static void test_req_handoff(void)
+{
+    char *argv[] = { "terminal", "Z:\\home\\ada\\repo", NULL };
+    char *dash[] = { "open", "--help", NULL };
+    char *empty[] = { "reveal", "", NULL };
+    char *verb[] = { "diff", "/a", NULL };
+    char *three[] = { "open", "/a", "/b", NULL };
+    char *url[] = { "open-url", "https://git-fork.com/", NULL };
+    char *nullarg[] = { "open", NULL };
+    char *set[] = { "A=1" };
+    char *anchors[] = { "/a" };
+    static const uint8_t handoff[4] = { 0, 0, 0, 4 };
+    static const uint8_t handoff_detach[4] = { 0, 0, 0, 5 };
+    struct fl_req r;
+    struct fl_req d;
+    uint8_t *buf = NULL;
+    size_t len = 0;
+    uint8_t b[256];
+    size_t n;
+    char *big;
+
+    tap_ok(fl_handoff_verb_ok("terminal") && fl_handoff_verb_ok("reveal") && fl_handoff_verb_ok("open") &&
+               fl_handoff_verb_ok("open-url"),
+           "handoff verbs: terminal, reveal, open, open-url");
+    tap_ok(!fl_handoff_verb_ok("diff") && !fl_handoff_verb_ok("") && !fl_handoff_verb_ok(NULL) &&
+               !fl_handoff_verb_ok("Open"),
+           "handoff verbs: nothing else");
+    tap_ok(!fl_handoff_ok(NULL), "handoff check: NULL request");
+
+    memset(&r, 0, sizeof(r));
+    r.cwd = "/w";
+    r.argc = 2;
+    r.argv = argv;
+    r.flags = FL_REQ_HANDOFF;
+    tap_ok(fl_handoff_ok(&r), "handoff check: terminal + a Windows path");
+    tap_ok(fl_req_encode(&r, &buf, &len) == 0 && fl_req_decode(buf, len, &d) == 0 && d.flags == FL_REQ_HANDOFF &&
+               d.argc == 2 && strcmp(d.argv[1], argv[1]) == 0,
+           "handoff round trip");
+    fl_req_free(&d);
+    free(buf);
+    r.argv = url;
+    tap_ok(fl_handoff_ok(&r), "handoff check: open-url + a URL");
+    r.argv = NULL;
+    tap_ok(!fl_handoff_ok(&r), "handoff check: NULL argv");
+    r.argv = nullarg;
+    tap_ok(!fl_handoff_ok(&r), "handoff check: NULL argument");
+    r.argv = argv;
+    r.flags = FL_REQ_HANDOFF | FL_REQ_DETACH;
+    tap_ok(!fl_handoff_ok(&r) && encode_fails(&r), "handoff: no other flag with it");
+    r.flags = FL_REQ_HANDOFF;
+    r.argv = dash;
+    tap_ok(!fl_handoff_ok(&r) && encode_fails(&r), "handoff: an argument starting with '-' is refused");
+    r.argv = empty;
+    tap_ok(!fl_handoff_ok(&r) && encode_fails(&r), "handoff: an empty argument is refused");
+    r.argv = verb;
+    tap_ok(!fl_handoff_ok(&r) && encode_fails(&r), "handoff: another verb (diff) is refused");
+    r.argv = three;
+    r.argc = 3;
+    tap_ok(!fl_handoff_ok(&r) && encode_fails(&r), "handoff: a third argument is refused");
+    r.argc = 1;
+    tap_ok(!fl_handoff_ok(&r) && encode_fails(&r), "handoff: a verb alone is refused");
+    r.argc = 2;
+    r.argv = argv;
+    r.nset = 1;
+    r.set = set;
+    tap_ok(!fl_handoff_ok(&r) && encode_fails(&r), "handoff: no ENV_SET");
+    r.nset = 0;
+    r.nunset = 1;
+    r.unset = set;
+    tap_ok(!fl_handoff_ok(&r), "handoff: no ENV_UNSET");
+    r.nunset = 0;
+    r.nanchors = 1;
+    r.anchors = anchors;
+    tap_ok(!fl_handoff_ok(&r) && encode_fails(&r), "handoff: no ANCHOR");
+    r.nanchors = 0;
+    big = malloc(FL_HANDOFF_ARG_MAX + 2u);
+    if (tap_ok(big != NULL, "allocate a long hand-off argument")) {
+        char *longv[] = { "open", big, NULL };
+        memset(big, 'x', FL_HANDOFF_ARG_MAX + 1u);
+        big[0] = '/';
+        big[FL_HANDOFF_ARG_MAX] = '\0';
+        r.argv = longv;
+        tap_ok(fl_handoff_ok(&r), "handoff: an argument of FL_HANDOFF_ARG_MAX bytes");
+        big[FL_HANDOFF_ARG_MAX] = 'x';
+        big[FL_HANDOFF_ARG_MAX + 1u] = '\0';
+        tap_ok(!fl_handoff_ok(&r) && encode_fails(&r), "handoff: a longer argument is refused");
+        free(big);
+    }
+
+    /* decode applies the same rules */
+    n = tlv(b, 0, FL_T_CWD, "/w", 2);
+    n = tlv(b, n, FL_T_FLAGS, handoff, 4);
+    n = tlv(b, n, FL_T_ARG, "reveal", 6);
+    n = tlv(b, n, FL_T_ARG, "/home/ada/x", 11);
+    tap_ok(fl_req_decode(b, n, &d) == 0 && d.flags == FL_REQ_HANDOFF, "handoff decode: reveal PATH");
+    fl_req_free(&d);
+    n = tlv(b, n, FL_T_ENV_SET, "A=1", 3);
+    tap_ok(decode_fails(b, n), "handoff decode: with ENV_SET");
+    n = tlv(b, 0, FL_T_CWD, "/w", 2);
+    n = tlv(b, n, FL_T_FLAGS, handoff, 4);
+    n = tlv(b, n, FL_T_ARG, "/bin/sh", 7);
+    n = tlv(b, n, FL_T_ARG, "-c", 2);
+    tap_ok(decode_fails(b, n), "handoff decode: an arbitrary program");
+    n = tlv(b, 0, FL_T_CWD, "/w", 2);
+    n = tlv(b, n, FL_T_FLAGS, handoff_detach, 4);
+    n = tlv(b, n, FL_T_ARG, "open", 4);
+    n = tlv(b, n, FL_T_ARG, "/x", 2);
+    tap_ok(decode_fails(b, n), "handoff decode: with FL_REQ_DETACH");
 }
 
 /* Every truncation that does not end on a record boundary must fail; boundaries after the
@@ -508,6 +619,7 @@ void test_proto(void)
     test_req_roundtrip();
     test_req_encode_validation();
     test_req_decode_validation();
+    test_req_handoff();
     test_req_truncation();
     test_req_mutations();
     test_exit();

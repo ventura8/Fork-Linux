@@ -43,7 +43,7 @@ STDIN, STDIN_EOF, SIGNAL, SPAWN_OK, SPAWN_ERR = 6, 7, 8, 9, 10
 STDOUT, STDERR, EXIT = 11, 12, 13
 # REQ TLV tags and flags.
 T_CWD, T_ARG, T_ENV_SET, T_ENV_UNSET, T_FLAGS, T_ANCHOR = 1, 2, 3, 4, 5, 6
-REQ_DETACH, REQ_HOST_HELPER = 0x1, 0x2
+REQ_DETACH, REQ_HOST_HELPER, REQ_HANDOFF = 0x1, 0x2, 0x4
 MAGIC = b"FLB1"
 VERSION = 1
 CHUNK = 64 * 1024
@@ -887,8 +887,16 @@ def test_unknown_frame_after_req_kills_child(daemon: Daemon) -> None:
         encode_req("relative/cwd", ["true"]),
         encode_req("/", []),
         tlv(99, b"x") + encode_req("/", ["true"]),
+        encode_req("/", ["/bin/sh", "-c"], flags=REQ_HANDOFF),
+        encode_req("/", ["open", "/x", "/y"], flags=REQ_HANDOFF),
+        encode_req("/", ["open", "--help"], flags=REQ_HANDOFF),
+        encode_req("/", ["open", "/x"], env_set=["A=1"], flags=REQ_HANDOFF),
+        encode_req("/", ["open", "/x"], flags=REQ_HANDOFF | REQ_DETACH),
     ],
-    ids=["unknown-flag", "relative-cwd", "no-argv", "unknown-tag"],
+    ids=[
+        "unknown-flag", "relative-cwd", "no-argv", "unknown-tag", "handoff-program", "handoff-3-args",
+        "handoff-option", "handoff-env", "handoff-other-flag",
+    ],
 )
 def test_malformed_request_is_refused(daemon: Daemon, payload: bytes) -> None:
     """A REQ the decoder rejects ends the session before anything is spawned."""
@@ -1023,6 +1031,77 @@ def test_host_helper_flag_without_helper(daemon: Daemon) -> None:
     """Without --host-helper a HOST_HELPER request is SPAWN_ERR(ENOENT)."""
     res = daemon.run(["open", "/tmp"], flags=REQ_HOST_HELPER)
     assert res.spawn_errno == errno.ENOENT
+
+
+# A host helper that records how it ran: argv, its session and its NoNewPrivs / Seccomp lines.
+RECORDING_HOST = """#!/bin/sh
+read -r _ _ _ _ _ sid _ < /proc/$$/stat
+{ printf '%s|' "$0" "$@"; echo; echo "$sid"; grep -E '^(NoNewPrivs|Seccomp):' /proc/self/status; } > "$FL_TEST_OUT.tmp"
+mv "$FL_TEST_OUT.tmp" "$FL_TEST_OUT"
+"""
+
+
+def _recording_daemon(helper_bin: Path, root: Path, *extra: str) -> tuple[Daemon, Path, Path]:
+    """A daemon whose host helper is :data:`RECORDING_HOST`; (daemon, helper, its output file)."""
+    host = root / "fork-linux-host"
+    host.write_text(RECORDING_HOST)
+    host.chmod(0o755)
+    out = root / "host-ran"
+    env = {**base_env(root), "FL_TEST_OUT": str(out)}
+    return start_daemon(helper_bin, root, extra_args=["--host-helper", str(host), *extra], env=env), host, out
+
+
+def _wait_file(path: Path, limit: float = 10.0) -> str:
+    deadline = time.monotonic() + limit
+    while not path.exists():
+        assert time.monotonic() < deadline, f"{path} did not appear"
+        time.sleep(0.05)
+    return path.read_text()
+
+
+@pytest.mark.parametrize("verb", ["terminal", "reveal", "open", "open-url"])
+def test_handoff_runs_the_host_helper_detached(helper_bin: Path, tmp_path: Path, verb: str) -> None:
+    """FL_REQ_HANDOFF runs [host-helper, VERB, ARG] detached (own session), EXIT 0 at once."""
+    d, host, out = _recording_daemon(helper_bin, tmp_path)
+    try:
+        res = d.run([verb, "Z:\\home\\ada\\some dir"], flags=REQ_HANDOFF)
+        assert res.spawn_errno is None, res.spawn_msg
+        assert (res.exit_kind, res.exit_code) == (0, 0)
+        lines = _wait_file(out).splitlines()
+        assert lines[0] == f"{host}|{verb}|Z:\\home\\ada\\some dir|"
+        assert int(lines[1]) != os.getsid(0)
+        # The daemon passes on nothing it did not have itself (here: no seccomp filter).
+        status = dict(line.split(":\t") for line in lines[2:])
+        assert status.get("NoNewPrivs") == Path("/proc/self/status").read_text().split("NoNewPrivs:\t")[1][0]
+    finally:
+        err = d.stop()
+    assert_clean_stderr(err)
+    assert "argv0=" + verb in d.log.read_text()
+
+
+def test_handoff_without_host_helper_is_spawn_error(daemon: Daemon) -> None:
+    """Without --host-helper there is nothing to hand off to: SPAWN_ERR(ENOENT)."""
+    res = daemon.run(["open", "/tmp"], flags=REQ_HANDOFF)
+    assert res.spawn_errno == errno.ENOENT
+
+
+def test_handoff_only_refuses_everything_else(helper_bin: Path, tmp_path: Path) -> None:
+    """--handoff-only: hand-offs run, programs and FL_REQ_HOST_HELPER requests get SPAWN_ERR(EPERM)."""
+    d, host, out = _recording_daemon(helper_bin, tmp_path, "--handoff-only")
+    try:
+        assert d.run(["true"]).spawn_errno == errno.EPERM
+        assert d.run(["true"], flags=REQ_DETACH).spawn_errno == errno.EPERM
+        assert d.run(["open", "/tmp"], flags=REQ_HOST_HELPER | REQ_DETACH).spawn_errno == errno.EPERM
+        assert not out.exists()
+        res = d.run(["open", "/tmp"], flags=REQ_HANDOFF)
+        assert (res.exit_kind, res.exit_code) == (0, 0)
+        assert _wait_file(out).splitlines()[0] == f"{host}|open|/tmp|"
+    finally:
+        err = d.stop()
+    assert_clean_stderr(err)
+    log = d.log.read_text()
+    assert "handoff-only=yes" in log
+    assert log.count("result=spawn-error:1 ") == 3
 
 
 def test_relative_path_entries_are_not_searched(
@@ -1160,8 +1239,9 @@ def test_bad_token_file_is_refused(
         ["--bogus"],
         ["--daemon", "--host-helper", "relative/path"],
         ["--daemon", "--watch-prefix", "relative"],
+        ["--daemon", "--handoff-only"],
     ],
-    ids=["no-daemon", "bad-port", "bad-pid", "unknown", "relative-helper", "relative-prefix"],
+    ids=["no-daemon", "bad-port", "bad-pid", "unknown", "relative-helper", "relative-prefix", "handoff-no-helper"],
 )
 def test_usage_errors(helper_bin: Path, tmp_path: Path, args: list[str]) -> None:
     """Bad command lines exit 2 without listening."""

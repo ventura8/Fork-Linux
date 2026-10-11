@@ -738,6 +738,112 @@ static void test_serve(void)
     free_sess(&s);
 }
 
+/* The errno of a SPAWN_ERR reply at the start of buf (n bytes), or -1. */
+static int spawn_errno(const uint8_t *buf, size_t n)
+{
+    if (n < HDR_LEN + 4u || buf[0] != FL_F_SPAWN_ERR) {
+        return -1;
+    }
+    return (int)(((uint32_t)buf[5] << 24) | ((uint32_t)buf[6] << 16) | ((uint32_t)buf[7] << 8) | (uint32_t)buf[8]);
+}
+
+/* serve() of one request on a fresh socket pair; the reply bytes in sink (their count returned). */
+static size_t serve_once(const struct fl_req *req, uint8_t *sink, size_t cap)
+{
+    int sv[2];
+    struct sess s;
+    size_t n = 0;
+    CHECK(socket_pair(sv) == 0);
+    shutdown(sv[1], SHUT_WR); /* the lingering close ends at once */
+    s = new_sess(sv[0]);
+    serve(&s, req);
+    n = drain_peer(sv[1], sink, cap);
+    close(sv[1]);
+    free_sess(&s);
+    return n;
+}
+
+/* FL_REQ_HANDOFF: the host helper runs detached with VERB ARG; --handoff-only refuses the rest. */
+static void test_serve_handoff(void)
+{
+    struct fl_req req;
+    char *handoff[] = { "open", "/tmp", NULL };
+    char *program[] = { "/bin/true", NULL };
+    char *bad[] = { "diff", "/tmp", NULL };
+    char *none[] = { NULL };
+    char marker[400];
+    char helper[400];
+    uint8_t sink[4096];
+    size_t n;
+
+    snprintf(marker, sizeof(marker), "%s/handoff-ran", g_tmp);
+    snprintf(helper, sizeof(helper), "%s/fake-host-helper", g_tmp);
+    {
+        char script[1024];
+        snprintf(script, sizeof(script), "#!/bin/sh\nprintf '%%s %%s' \"$1\" \"$2\" > '%s'\n", marker);
+        write_file(helper, script, 0700);
+    }
+    memset(&req, 0, sizeof(req));
+    req.cwd = "/";
+    req.argc = 2;
+    req.argv = handoff;
+    req.set = none;
+    req.unset = none;
+    req.anchors = none;
+    req.flags = FL_REQ_HANDOFF;
+    g_log_fd = open("/dev/null", O_WRONLY | O_CLOEXEC);
+
+    /* no host helper configured */
+    g_have_host_helper = 0;
+    n = serve_once(&req, sink, sizeof(sink));
+    CHECK(spawn_errno(sink, n) == ENOENT);
+
+    /* the host helper runs with VERB ARG, detached: SPAWN_OK, then EXIT 0 */
+    snprintf(g_host_helper, sizeof(g_host_helper), "%s", helper);
+    g_have_host_helper = 1;
+    n = serve_once(&req, sink, sizeof(sink));
+    CHECK(n > HDR_LEN && sink[0] == FL_F_SPAWN_OK);
+    for (int i = 0; i < 100 && access(marker, F_OK) != 0; i++) {
+        struct timespec pause = { 0, 20L * 1000L * 1000L };
+        nanosleep(&pause, NULL);
+    }
+    {
+        char got[64] = "";
+        int fd = open(marker, O_RDONLY | O_CLOEXEC);
+        if (fd >= 0) {
+            ssize_t r = __real_read(fd, got, sizeof(got) - 1);
+            got[r > 0 ? (size_t)r : 0u] = '\0';
+            close(fd);
+        }
+        CHECK(strcmp(got, "open /tmp") == 0);
+    }
+
+    /* not a well-formed hand-off (built by hand: fl_req_decode() never lets one through) */
+    req.argv = bad;
+    n = serve_once(&req, sink, sizeof(sink));
+    CHECK(spawn_errno(sink, n) == EINVAL);
+
+    /* --handoff-only: hand-offs still run, everything else is refused */
+    g_handoff_only = 1;
+    req.argv = handoff;
+    n = serve_once(&req, sink, sizeof(sink));
+    CHECK(n > HDR_LEN && sink[0] == FL_F_SPAWN_OK);
+    req.flags = FL_REQ_HOST_HELPER | FL_REQ_DETACH;
+    n = serve_once(&req, sink, sizeof(sink));
+    CHECK(spawn_errno(sink, n) == EPERM);
+    req.flags = 0;
+    req.argc = 1;
+    req.argv = program;
+    n = serve_once(&req, sink, sizeof(sink));
+    CHECK(spawn_errno(sink, n) == EPERM);
+
+    g_handoff_only = 0;
+    g_have_host_helper = 0;
+    g_host_helper[0] = '\0';
+    close(g_log_fd);
+    g_log_fd = -1;
+}
+
 /* session_main() without a self-pipe, in a child. */
 static void test_session_main(void)
 {
@@ -816,6 +922,8 @@ static void test_options(void)
     char *bad_watch[] = { "x", "--watch-prefix=rel", NULL };
     char *exe_dir[] = { "x", "--daemon", "--watch-exe-dir", "C:\\F\\", NULL };
     char *bad_exe_dir[] = { "x", "--watch-exe-dir=", NULL };
+    char *handoff[] = { "x", "--daemon", "--handoff-only", "--host-helper", "/bin/sh", NULL };
+    char *handoff_alone[] = { "x", "--daemon", "--handoff-only", NULL };
     char *unknown[] = { "x", "--portx", NULL };
     char *help[] = { "x", "-h", NULL };
     char *help2[] = { "x", "--help", NULL };
@@ -832,6 +940,9 @@ static void test_options(void)
     CHECK(parse(2, bad_watch, &o) == 2);
     CHECK(parse(4, exe_dir, &o) == 0 && strcmp(o.watch_exe_dir, "C:\\F\\") == 0);
     CHECK(parse(2, bad_exe_dir, &o) == 2);
+    CHECK(parse(5, handoff, &o) == 0 && o.handoff_only && strcmp(o.host_helper, "/bin/sh") == 0);
+    CHECK(parse(3, handoff_alone, &o) == 2); /* nothing to hand off to */
+    CHECK(parse(9, ok, &o) == 0 && !o.handoff_only);
     CHECK(parse(2, unknown, &o) == 2);
     CHECK(parse(2, help, &o) == 1);
     CHECK(parse(2, help2, &o) == 1);
@@ -880,10 +991,12 @@ static void test_prepare(void)
     fl_sys_fail(FL_SYS_CHDIR, 1, EACCES);
     CHECK(daemon_prepare(&o) == -1);
     setenv("FL_BRIDGE_TOKEN", hex, 1);
-    CHECK(daemon_prepare(&o) == 0);
+    o.handoff_only = 1;
+    CHECK(daemon_prepare(&o) == 0 && g_handoff_only == 1);
     CHECK(chdir(cwd) == 0);
     g_log_fd = -1;
     g_have_host_helper = 0;
+    g_handoff_only = 0;
     unquiet(2, saved);
 }
 
@@ -1305,6 +1418,7 @@ int main(void)
     test_read_req();
     test_replies();
     test_serve();
+    test_serve_handoff();
     test_session_main();
     test_tokens();
     test_options();

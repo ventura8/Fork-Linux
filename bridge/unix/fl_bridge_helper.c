@@ -4,8 +4,8 @@
  * One multi-call binary, persona chosen by basename(argv[0]):
  *
  *   fl-bridge-helper --daemon [--token-file FILE] [--port N] [--host-helper PATH]
- *                    [--parent-pid PID] [--watch-prefix DIR [--watch-exe-dir WINDIR]]
- *                    [--log FILE]
+ *                    [--handoff-only] [--parent-pid PID]
+ *                    [--watch-prefix DIR [--watch-exe-dir WINDIR]] [--log FILE]
  *       The launcher-started daemon (outside Wine: wine-staging's seccomp filter
  *       makes Wine-spawned Linux helpers unusable, docs/spikes/B2-rendezvous.md).
  *       Binds 127.0.0.1:N (0 = ephemeral), prints "FL_BRIDGE_PORT=<n>\n" on stdout
@@ -22,6 +22,9 @@
  *       --watch-exe-dir, runs a program from WINDIR (Fork's install directory, so Wine's
  *       own services do not count); it exits WATCH_GRACE_MS after the last one is gone.
  *       Until it has seen one, --parent-pid still applies.
+ *       FL_REQ_HANDOFF requests (fork-linux-host --handoff, from a desktop hand-off that Wine
+ *       started) run [host-helper, VERB, ARG] detached; with --handoff-only (the launcher's
+ *       hand-off starter when the git bridge is off) every other request is refused.
  *
  *   fl-winexec <WinExe> [args...]       re-enter Wine: wine <WinExe> <args as Windows paths>
  *   fl-askpass <prompt>                 wine $FL_ASKPASS_TARGET <prompt>
@@ -87,6 +90,7 @@ static int g_sigpipe[2] = { -1, -1 };   /* self-pipe: 'C' = SIGCHLD, 'T' = termi
 static uint8_t g_key[FL_KEY_LEN];
 static char g_host_helper[PATH_MAX];
 static int g_have_host_helper;
+static int g_handoff_only;
 
 /* ------------------------------------------------------------------------ */
 /* small utilities                                                           */
@@ -1321,14 +1325,20 @@ static void serve(struct sess *s, const struct fl_req *req)
     char **envp = NULL;
     char **real = NULL;
     size_t ignored = 0;
-    size_t extra = (req->flags & FL_REQ_HOST_HELPER) ? 1 : 0;
+    /* A hand-off is only ever { VERB, ARG } alone (fl_req_decode() checks it too). */
+    int handoff = (req->flags & FL_REQ_HANDOFF) != 0u;
+    size_t extra = (handoff || (req->flags & FL_REQ_HOST_HELPER)) ? 1 : 0;
 
     s->info.argc = req->argc;
     s->info.flags = req->flags;
     snprintf(s->info.argv0, sizeof(s->info.argv0), "%s", req->argc ? fl_basename_any(req->argv[0]) : "");
     fl_log_sanitize(s->info.argv0);
-    if (req->cwd == NULL || req->argc == 0) {
+    if (req->cwd == NULL || req->argc == 0 || (handoff && !fl_handoff_ok(req))) {
         send_spawn_err(s, REC_SETUP, EINVAL, "");
+        return;
+    }
+    if (g_handoff_only && !handoff) {
+        send_spawn_err(s, REC_SETUP, EPERM, req->cwd); /* this daemon only hands off */
         return;
     }
     if (extra && !g_have_host_helper) {
@@ -1352,7 +1362,7 @@ static void serve(struct sess *s, const struct fl_req *req)
         argv[i + extra] = req->argv[i];
     }
     s->info.env_ignored = ignored;
-    if (req->flags & FL_REQ_DETACH) {
+    if (handoff || (req->flags & FL_REQ_DETACH)) {
         serve_detached(s, req, argv, envp, real);
     } else {
         serve_attached(s, req, argv, envp, real);
@@ -1439,6 +1449,7 @@ struct opts {
     int32_t parent_pid;
     const char *watch_prefix;
     const char *watch_exe_dir;
+    int handoff_only;
 };
 
 /* Read the token file (regular, ours, mode 0600 or stricter), then unlink it. */
@@ -1503,8 +1514,8 @@ static void usage(int fd)
 {
     static const char text[] =
         "usage: fl-bridge-helper --daemon [--token-file FILE] [--port N] [--host-helper PATH]\n"
-        "                        [--parent-pid PID] [--watch-prefix DIR [--watch-exe-dir WINDIR]]\n"
-        "                        [--log FILE]\n"
+        "                        [--handoff-only] [--parent-pid PID]\n"
+        "                        [--watch-prefix DIR [--watch-exe-dir WINDIR]] [--log FILE]\n"
         "       fl-bridge-helper --version | --help\n"
         "personas (by argv[0]): fl-winexec <WinExe> [args...], fl-askpass <prompt>,\n"
         "                       fl-ssh-askpass <prompt>\n"
@@ -1619,6 +1630,10 @@ static int parse_one_opt(int argc, char **argv, int *i, struct opts *o)
         o->daemon = 1;
         return -1;
     }
+    if (strcmp(a, "--handoff-only") == 0) {
+        o->handoff_only = 1;
+        return -1;
+    }
     if (strcmp(a, "--help") == 0 || strcmp(a, "-h") == 0) {
         usage(1);
         return 1;
@@ -1659,6 +1674,10 @@ static int parse_opts(int argc, char **argv, struct opts *o)
         usage(2);
         return 2;
     }
+    if (o->handoff_only && o->host_helper == NULL) {
+        msg("--handoff-only needs --host-helper");
+        return 2;
+    }
     return 0;
 }
 
@@ -1683,6 +1702,7 @@ static int daemon_prepare(const struct opts *o)
         }
         g_have_host_helper = 1;
     }
+    g_handoff_only = o->handoff_only;
     if (o->log != NULL) {
         g_log_fd = open(o->log, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW | O_NOCTTY, 0600);
         if (g_log_fd < 0) {
@@ -2023,7 +2043,7 @@ static int run_daemon(const struct opts *o)
     struct sockaddr_in a;
     struct daemon_state d;
     pid_t orig_ppid = getppid();
-    char line[160];
+    char line[192];
     int running;
 
     ensure_std_fds();
@@ -2043,9 +2063,10 @@ static int run_daemon(const struct opts *o)
         close(d.lst);
         return 1;
     }
-    snprintf(line, sizeof(line), "daemon start port=%u pid=%ld parent=%ld host-helper=%s watch-prefix=%s",
+    snprintf(line, sizeof(line),
+             "daemon start port=%u pid=%ld parent=%ld host-helper=%s handoff-only=%s watch-prefix=%s",
              (unsigned)ntohs(a.sin_port), (long)getpid(), (long)(o->parent_pid ? o->parent_pid : orig_ppid),
-             g_have_host_helper ? "yes" : "no", o->watch_prefix != NULL ? "yes" : "no");
+             g_have_host_helper ? "yes" : "no", g_handoff_only ? "yes" : "no", o->watch_prefix != NULL ? "yes" : "no");
     log_text(line);
 
     d.next_parent_check = now_ms() + PARENT_POLL_MS;

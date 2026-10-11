@@ -79,6 +79,16 @@ enum fl_req_tag {
 
 #define FL_REQ_DETACH 0x1u      /* report EXIT 0 right after a successful exec; child keeps running detached (setsid) */
 #define FL_REQ_HOST_HELPER 0x2u /* argv[0] is a fork-linux-host verb: daemon prepends its configured host-helper path */
+/*
+ * FL_REQ_HANDOFF: a desktop hand-off (libexec/fork-linux-handoff, through fork-linux-host --handoff):
+ * "run the host helper with VERB ARG outside Wine's process tree". It must be the only flag, argv
+ * must be exactly { VERB, ARG } (fl_handoff_ok()) and the request carries no ENV_SET, ENV_UNSET or
+ * ANCHOR. The daemon runs [host-helper, VERB, ARG] detached, in its own environment, as for
+ * FL_REQ_HOST_HELPER | FL_REQ_DETACH. A daemon started with --handoff-only accepts nothing else.
+ */
+#define FL_REQ_HANDOFF 0x4u
+#define FL_REQ_KNOWN (FL_REQ_DETACH | FL_REQ_HOST_HELPER | FL_REQ_HANDOFF)
+#define FL_HANDOFF_ARG_MAX 8192u /* longest ARG of a hand-off (a path or a URL), in bytes */
 
 struct fl_req {
     char *cwd;
@@ -109,6 +119,17 @@ int fl_req_encode(const struct fl_req *r, uint8_t **out, size_t *outlen);
  */
 int fl_req_decode(const uint8_t *buf, size_t len, struct fl_req *r);
 void fl_req_free(struct fl_req *r);
+
+/*
+ * The hand-off verbs (fork-linux-host terminal | reveal | open | open-url). fl_handoff_verb_ok()
+ * is 1 for one of them. fl_handoff_ok() is 1 when r is a well-formed FL_REQ_HANDOFF request:
+ * flags exactly FL_REQ_HANDOFF, argv { VERB, ARG } with ARG non-empty, at most
+ * FL_HANDOFF_ARG_MAX bytes and not starting with '-' (never an option of the helper), and no
+ * environment operations or anchors. fl_req_encode() and fl_req_decode() refuse a request with
+ * FL_REQ_HANDOFF that is not.
+ */
+int fl_handoff_verb_ok(const char *verb);
+int fl_handoff_ok(const struct fl_req *r);
 
 /*
  * EXIT payload: u8 kind (0 exited, 1 signaled), i32 BE code. kind 0 needs code 0..255
