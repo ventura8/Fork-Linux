@@ -26,7 +26,7 @@ Thin tool adapters (do not duplicate this file): [CLAUDE.md](CLAUDE.md), [GEMINI
 * **Architecture**: **x86_64 / amd64 only** (Fork for Windows is x64 only). Never add other architectures to packages or CI.
 * **Language**: **Python 3.10, standard library only** for the CLI, the host helper and every test (pytest is the only test dependency). The bridge layer is **C11** (MinGW-w64 PE shims + a static Linux ELF helper).
 * **Fork version**: **2.23.2** is the first known-good version (spike S3: installer sha256 `fee9b2bf…f079e`, 76,278,256 bytes). Known-good / known-bad versions live in `src/fork_linux/data/runtime-manifest.json`.
-* **Wine**: the default provider is **managed** — the pinned Kron4ek `wine-11.0-staging-amd64-wow64` build (WoW64, no i386 multiarch). Also `system` (Wine ≥ 9.0), `flatpak` (`org.winehq.Wine` BaseApp) and `custom PATH`. Spike results: [docs/spikes/01-runtime-and-fork.md](docs/spikes/01-runtime-and-fork.md).
+* **Wine**: the default provider is **managed** — the pinned Kron4ek `wine-11.18-staging-amd64-wow64` build (WoW64, no i386 multiarch; the previous pin `kron4ek-11.0-staging-wow64` stays in the manifest for `config set wine.build`; Kron4ek 11.19 is rejected: Fork 2.23.x does not start on it, see the manifest's `wine._comment`). Also `system` (Wine ≥ 9.0), `flatpak` (`org.winehq.Wine` BaseApp) and `custom PATH`. Spike results: [docs/spikes/01-runtime-and-fork.md](docs/spikes/01-runtime-and-fork.md).
 * **Core goal**: install, launch and update the official Fork safely and reversibly, credit its developers prominently, and leave nothing behind that we did not create.
 
 > [!CAUTION]

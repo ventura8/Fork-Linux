@@ -71,7 +71,7 @@ Start **Fork for Linux (unofficial)** from your app menu, or run `fork`. Setup s
 
 | What | From | Size |
 |---|---|---|
-| Wine 11.0 staging (WoW64) — Kron4ek build, pinned + sha256-verified | GitHub ([Kron4ek/Wine-Builds](https://github.com/Kron4ek/Wine-Builds)) | ~75 MB |
+| Wine 11.18 staging (WoW64) — Kron4ek build, pinned + sha256-verified | GitHub ([Kron4ek/Wine-Builds](https://github.com/Kron4ek/Wine-Builds)) | ~101 MB |
 | Winetricks (pinned release) | GitHub ([Winetricks/winetricks](https://github.com/Winetricks/winetricks)) | < 1 MB |
 | Microsoft .NET Framework 4.8 and core fonts — installed by winetricks under **Microsoft's license terms** | Microsoft | ~125 MB |
 | Selawik 1.01 interface font (Microsoft's open-source Segoe UI stand-in, SIL OFL 1.1), pinned + sha256-verified | GitHub ([microsoft/Selawik](https://github.com/microsoft/Selawik)) | < 1 MB |
@@ -123,7 +123,7 @@ Exit codes are stable and documented in [AGENTS.md §5](AGENTS.md#5-standard-exi
 
 | Provider | What it uses |
 |---|---|
-| `managed` (default) | A pinned Kron4ek Wine 11.0 staging WoW64 build, downloaded and sha256-verified per user. No i386 multiarch needed. |
+| `managed` (default) | A pinned Kron4ek Wine 11.18 staging WoW64 build, downloaded and sha256-verified per user. No i386 multiarch needed. The previous pin, 11.0, stays selectable (`fork-linux config set wine.build kron4ek-11.0-staging-wow64`). |
 | `system` | Your distribution's Wine ≥ 9.0. Non-staging builds trigger a warning: git hooks and bash-based features need staging ([Wine bug 55138](https://bugs.winehq.org/show_bug.cgi?id=55138)). |
 | `flatpak` | The Wine from the `org.winehq.Wine` BaseApp (Flatpak builds only). |
 | custom path | `fork-linux setup --wine /path/to/bin/wine` |

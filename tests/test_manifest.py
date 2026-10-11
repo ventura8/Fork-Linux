@@ -12,7 +12,10 @@ import pytest
 from fork_linux import manifest
 from fork_linux.errors import ExitCode, IntegrityFailed, NotFound, UsageError
 
-WINE_ID = "kron4ek-11.0-staging-wow64"
+WINE_ID = "kron4ek-11.18-staging-wow64"
+# The previous default, still listed so `config set wine.build` can go back to it.
+OLD_WINE_ID = "kron4ek-11.0-staging-wow64"
+REVISION = "2026.10.3"
 DELETE = object()
 GOOD_SHA = "a" * 64
 
@@ -56,7 +59,7 @@ def extra_version(sha: str = GOOD_SHA, status: str = "known-good") -> dict[str, 
 
 def test_packaged_manifest_loads() -> None:
     m = manifest.load()
-    assert m.revision == "2026.10.2"
+    assert m.revision == REVISION
     assert m.bootstrap_revision == 1
     assert m.overridden is False
     assert m.min_system_wine == "9.0"
@@ -74,17 +77,28 @@ def test_wine_default_build() -> None:
     build = m.wine_default
     assert build == m.wine_build(WINE_ID)
     assert build.id == WINE_ID
-    assert build.version == "11.0"
+    assert build.version == "11.18"
     assert build.flavor == "staging"
     assert build.arch == "x86_64"
     assert build.wow64 is True
-    assert build.url.startswith("https://github.com/Kron4ek/Wine-Builds/releases/download/11.0/")
-    assert build.sha256 == "e6538a417dd2e7f738ad77addf74bfd9e45c9d970653674f93bde2df29055f2f"
-    assert build.size == 74975524
+    assert build.url == (
+        "https://github.com/Kron4ek/Wine-Builds/releases/download/11.18/wine-11.18-staging-amd64-wow64.tar.xz"
+    )
+    assert build.sha256 == "15f312effe798838d4877a37126509618b3f98759744b37aeda0c6f55875d99a"
+    assert build.size == 101346404
     assert build.strip_components == 1
     assert build.min_glibc == "2.27"
     assert build.status == "known-good"
-    assert m.wine_builds == (build,)
+    assert m.wine_builds == (build, m.wine_build(OLD_WINE_ID))
+
+
+def test_previous_wine_default_stays_listed() -> None:
+    old = manifest.load().wine_build(OLD_WINE_ID)
+    assert old.version == "11.0"
+    assert old.url == "https://github.com/Kron4ek/Wine-Builds/releases/download/11.0/wine-11.0-staging-amd64-wow64.tar.xz"
+    assert old.sha256 == "e6538a417dd2e7f738ad77addf74bfd9e45c9d970653674f93bde2df29055f2f"
+    assert old.size == 74975524
+    assert old.status == "known-good"
 
 
 def test_wine_build_unknown_raises_not_found() -> None:
@@ -154,7 +168,7 @@ def test_fork_version_entry_with_pending_sha(tmp_path: Path) -> None:
     assert entry.size == 76278256
     assert entry.full_nupkg_sha256 == "b70e7be92b73baeab9fee700ad352ae9e261dafcded0d10e5c94133f639b1c1f"
     assert entry.status == "known-good"
-    assert entry.tested_with == (WINE_ID,)
+    assert entry.tested_with == (WINE_ID, OLD_WINE_ID)
     assert m.fork_version("2.23.2.0") == entry
     assert m.fork_version("1.0") is None
     assert m.fork_version("garbage") is None
@@ -210,7 +224,7 @@ def test_as_dict_is_a_copy() -> None:
     m = manifest.load()
     snapshot = m.as_dict()
     snapshot["revision"] = "changed"
-    assert m.as_dict()["revision"] == "2026.10.2"
+    assert m.as_dict()["revision"] == REVISION
     assert snapshot["schema"] == 1
 
 
@@ -346,7 +360,7 @@ def test_comment_keys_are_ignored_inside_maps() -> None:
     data = mutate(data, ("fork", "versions", "_comment"), "installer sha256 comes from spike 3")
     data = mutate(data, ("fork", "known_bad", "_comment"), "version -> reason")
     m = manifest.Manifest(data)
-    assert [build.id for build in m.wine_builds] == [WINE_ID]
+    assert [build.id for build in m.wine_builds] == [WINE_ID, OLD_WINE_ID]
     assert m.known_good_versions() == ["2.23.2"]
     assert m.is_known_bad("2.23.2") is False
 
