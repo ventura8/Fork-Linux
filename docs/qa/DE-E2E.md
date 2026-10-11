@@ -21,7 +21,7 @@ root under `/var/tmp/fork-linux-e2e/`, the read-only seed for the real-Fork tier
 | Ubuntu Budgie 26.04, Budgie 10.10 (labwc 0.9 headless Wayland + rootless Xwayland, budgie-daemon, Nemo 6.4 + its FileManager1 service, xfce4-terminal, the panel menus' libbudgie-appindexer, Pocillo / Pocillo-dark + the Dark theme switch, display scale and text scaling) | `fork-linux-e2e-de-budgie:26.04` | ❌ 13/14: Nemo shows no "Open in Fork" inside a folder until fix 1 in [de-fixes/budgie.md](de-fixes/budgie.md) lands; ✅ 14/14 with it | ❌ stops at 06 (the Nemo that Open In File Explorer starts inside Wine's sandbox aborts; 01-05 pass); ✅ 9/9 with both fixes (setup 256-267 s from the seed, tier 332 s) | local `scripts/ci-e2e-de.sh budgie [--fork]`, 2026-10-11 |
 | Ubuntu MATE 26.04, MATE 1.26 (marco, mate-settings-daemon, Caja 1.26 + its FileManager1 and caja-actions, mate-terminal, mate-panel's menu, Yaru-MATE light / dark and the stock Menta, BlackMATE, HighContrastInverse) | `fork-linux-e2e-de-mate:26.04` | ❌ 15/17: the `dark:blackmate` and `dark:highcontrastinverse` theme cases fail until the `theme.py` fix in [de-fixes/mate.md](de-fixes/mate.md) lands (17/17 with it) | ✅ 9/9 in both runs (setup 257 / 287 s from the seed, tier 313 / 340 s) | local `scripts/ci-e2e-de.sh mate [--fork]`, 2026-10-11 |
 
-Cinnamon and MATE follow the same pattern: one
+Cinnamon follows the same pattern: one
 `docker/Dockerfile.e2e.de.<desktop>` plus one entry in `tests/e2e_de/desktops.py` (see "Adding a
 desktop").
 
