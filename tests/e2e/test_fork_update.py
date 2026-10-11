@@ -30,6 +30,7 @@ import tempfile
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -81,6 +82,12 @@ COMMIT_SUBJECT = (1020, 854)
 FORK_ENV = ("WINEPREFIX", "WINESERVER", "WINELOADER", "WINEDEBUG", "WINEDLLOVERRIDES", "WINEHOME", "FL_WINE")
 WINE_ADDS = {"WINESERVERSOCKET", "WINEPRELOADRESERVE", "GNUTLS_SYSTEM_PRIORITY_FILE"}
 NOTIFY_SLEEP = 90
+# Fork checks for updates by itself about a minute after it starts (observed: 65 s), at most once per
+# interval it keeps in settings.json (LastUpdateCheck): a value long ago makes the next start check (F24).
+UPDATE_CHECK_DUE = "2020-01-01T00:00:00+00:00"
+AUTO_CHECK_TIMEOUT = 180.0
+AUTO_CHECK_QUIET = 120.0
+FEED_READ = "Retrieving latest release feed"
 # What the scenarios observed while Velopack restarted Fork (test_f1 records, test_f10 checks).
 RESTART: dict[str, Any] = {}
 
@@ -280,6 +287,15 @@ def _environ(pid: int) -> dict[str, str]:
     return {key.decode(errors="replace"): value.decode(errors="replace") for key, value in pairs}
 
 
+def _ppid(pid: int) -> int:
+    """The parent of process ``pid`` (0 once it is gone)."""
+    try:
+        stat = Path("/proc", str(pid), "stat").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return 0
+    return int(stat.rsplit(")", 1)[1].split()[1])
+
+
 def _in_prefix(context: Upd, pid: int) -> bool:
     return _environ(pid).get("WINEPREFIX") == str(context.prefix)
 
@@ -409,9 +425,15 @@ class ForkSession:
         self.context = context
         self.screen = Screen(context)
 
-    def place(self) -> None:
-        """Seed the main window's geometry and a collapsed tab list (Fork closed): fixed offsets."""
-        for key, value in (("MainWindowLocationState", MAIN_GEOMETRY), ("TabListSidebarCollapsed", "true")):
+    def place(self, *, check_due: bool = False) -> None:
+        """Seed the main window's geometry and a collapsed tab list (Fork closed): fixed offsets.
+
+        Fork's own automatic update check is made due (``check_due``, F24) or is not, so it never
+        shows up uninvited in a scenario that does not look for it.
+        """
+        last_check = UPDATE_CHECK_DUE if check_due else datetime.now(timezone.utc).isoformat()
+        for key, value in (("MainWindowLocationState", MAIN_GEOMETRY), ("TabListSidebarCollapsed", "true"),
+                           ("LastUpdateCheck", last_check)):
             self.context.cli("settings", "set", key, value)
 
     def launch(self, *targets: Path, prog: str = "run", name: str = "") -> Launched:
@@ -429,9 +451,9 @@ class ForkSession:
                                        stderr=subprocess.STDOUT, start_new_session=True)
         return Launched(process, log)
 
-    def start(self, *targets: Path, first_run: bool = False) -> Window:
+    def start(self, *targets: Path, first_run: bool = False, check_due: bool = False) -> Window:
         """Start Fork (closed before) and wait for its main window."""
-        self.place()
+        self.place(check_due=check_due)
         self.launch(*targets)
         return self.wait_main(first_run=first_run)
 
@@ -637,6 +659,7 @@ def no_update_offered(fork: ForkSession, *, feed: str) -> str:
 def restart_and_update(fork: ForkSession, during: Callable[[], None] | None = None) -> None:
     """Click Restart and Update; ``during`` runs once Velopack's Update.exe is seen; until the new Fork is up."""
     old = set(fork_pids(fork.context))
+    mark = len(fork.context.velopack_log())
     ready = wait_until(lambda: fork.screen.find(READY_TITLE), 30, "the ready dialog")
     fork.screen.click(ready, READY_RESTART, settle=0.0)
     wait_until(lambda: updater_pids(fork.context) or not old & set(fork_pids(fork.context)), 60,
@@ -645,7 +668,15 @@ def restart_and_update(fork: ForkSession, during: Callable[[], None] | None = No
         during()
     wait_until(lambda: not old & set(fork_pids(fork.context)), UPDATE_TIMEOUT, "the old Fork to exit")
     wait_until(lambda: set(fork_pids(fork.context)) - old, UPDATE_TIMEOUT, "the restarted Fork")
-    fork.wait_main()
+    try:
+        fork.wait_main()
+    except Fail:
+        # Velopack applied the update but Wine did not start the new Fork.exe (seen once under heavy
+        # load: "Failed to start application (OS Error 731)", ERROR_WAIT_1: it died while starting).
+        failed = [line for line in fork.context.velopack_log()[mark:].splitlines() if "Apply error" in line]
+        if failed:
+            raise Fail(f"Velopack could not start the updated Fork: {failed[-1]}") from None
+        raise
 
 
 def the_one_fork(context: Upd) -> int:
@@ -658,6 +689,7 @@ def the_one_fork(context: Upd) -> int:
 
 def stable_feed() -> str:
     return "/win/stable/releases.win.json"
+
 
 
 # -- the scenario ------------------------------------------------------------------------------------------
@@ -681,7 +713,14 @@ def test_f9_stable_channel_reads_the_stable_feed(upd: Upd, fork: ForkSession) ->
     assert "Channel:   stable (Fork's own updater)" in text
     assert "'fork-linux update --fork --latest' installs it" in text
     assert "File > Check for Updates" not in text
-    fork.start(make_repo(upd, "demo"), first_run=True)
+    mark = len(upd.velopack_log())
+    fork.start(make_repo(upd, "demo"), first_run=True, check_due=True)
+    # F24: Fork's own automatic check, nothing clicked, reads the Stable feed and finds nothing.
+    said = fork.velopack_says(mark, FEED_READ, stable_feed(), "No updates", timeout=AUTO_CHECK_TIMEOUT)
+    assert f"localVersion={OLD}" in said
+    time.sleep(5)
+    assert fork.screen.find(READY_TITLE) is None
+    assert upd.packages() == [f"Fork-{OLD}-full.nupkg"]
     said = no_update_offered(fork, feed=stable_feed())
     assert f"localVersion={OLD}" in said
     fork.close()
@@ -773,6 +812,9 @@ def test_f1_in_app_update_keeps_env_and_notifies(upd: Upd, fork: ForkSession) ->
     wait_until(lambda: launched.poll() is not None, 120, "the 'fork <path>' launched during the restart")
     new_pid = the_one_fork(upd)
     assert new_pid != old_pid
+    # Our launcher became the first Fork (exec); Velopack started the new one, so we are not its parent.
+    assert _ppid(old_pid) in (0, os.getpid())
+    assert _ppid(new_pid) != os.getpid()
     new_env = _environ(new_pid)
     assert upd.installed() == NEW
     for key in (*FORK_ENV, *(name for name in old_env if name.startswith("GIT_CONFIG_"))):
@@ -833,7 +875,14 @@ def test_f4_rollback_pins_and_blocks_the_in_app_update(upd: Upd, fork: ForkSessi
     fork_state = upd.state()["fork"]
     assert (fork_state["pinned_version"], fork_state["update_type_before_pin"]) == (OLD, 0)
     assert upd.settings()["ApplicationUpdateType"] == 2
-    fork.start(make_repo(upd, "demo"))
+    mark = len(upd.velopack_log())
+    fork.start(make_repo(upd, "demo"), check_due=True)
+    # F24: Off never checks by itself, although a check is due: nothing is downloaded behind the pin.
+    time.sleep(AUTO_CHECK_QUIET)
+    assert FEED_READ not in upd.velopack_log()[mark:]
+    assert fork.screen.find(READY_TITLE) is None
+    assert upd.packages() == [f"Fork-{OLD}-full.nupkg"]
+    fork.screen.shot("f24-pinned-quiet")
     no_update_offered(fork, feed=stable_feed())  # Off: a manual check reads the lagging Stable feed
     fork.close()
     fork.start(make_repo(upd, "demo"))
@@ -890,10 +939,17 @@ def test_f7_bridge_survives_the_self_restart(upd: Upd, fork: ForkSession) -> Non
     restart_and_update(fork)
     assert upd.installed() == NEW
     assert _daemon(upd) == before
+    (restarted,) = fork_pids(upd)
+    assert _ppid(restarted) != os.getpid(), "Velopack, not our launcher, started this Fork"
     sessions = git_sessions(log)
     _stage_and_commit(fork, repo, "after velopack restart")
     assert git_sessions(log) > sessions, "the restarted Fork's git ran through the daemon"
     assert _daemon(upd) == before
+    # 'fork <path>' finds the session's daemon although our launcher did not start this Fork.
+    forwarded = fork.launch(make_repo(upd, "bridged-other"), prog="fork", name="f7-fast")
+    assert forwarded.process.wait(timeout=60) == 0, forwarded.output()
+    assert the_one_fork(upd) == restarted
+    assert _daemon(upd) == before, "the fast path reuses the daemon, it starts no second one"
     fork.close()
     _daemon_ends_with_fork(upd, log)
 
@@ -938,6 +994,11 @@ def test_f19_update_fork_keeps_the_bridge_working(upd: Upd, fork: ForkSession) -
     _daemon_ends_with_fork(upd, log)
 
 
+def _integrity_for(version: str) -> str:
+    """doctor's fork.integrity for a package the official installer put in: ok when the manifest pins it."""
+    return "ok" if manifest.load().fork_version(version) is not None else "info"
+
+
 def test_f3_update_fork_latest_verifies_against_the_feed(upd: Upd) -> None:
     """update --fork --latest: the newest feed version from cdn.fork.dev, its package equal to the feed's sha256."""
     upd.cli("rollback", "--to-version", OLD)
@@ -951,16 +1012,22 @@ def test_f3_update_fork_latest_verifies_against_the_feed(upd: Upd) -> None:
     assert upd.state()["fork"]["request"] == {"source": "latest"}
     assert digests(upd) == before
     integrity = check(upd.cli_json("doctor"), "fork.integrity")
-    assert integrity["status"] in ("ok", "info"), integrity
+    assert integrity["status"] == _integrity_for(newest.version), integrity
 
 
 def test_f23_staged_update_applied_at_the_next_start(upd: Upd, fork: ForkSession) -> None:
-    """Velopack applies a staged update by itself when Fork starts: the path and the bridge reach the new Fork."""
+    """Fork staged an update by itself (F24) and Velopack applies it when Fork starts: the path and the bridge
+    reach the new Fork."""
     need_bridge()
     upd.cli("rollback", "--to-version", OLD)
     upd.cli("config", "set", "fork.update_policy", "auto")
-    fork.start(make_repo(upd, "demo"))
-    stage_update(fork)
+    mark = len(upd.velopack_log())
+    fork.start(make_repo(upd, "demo"), check_due=True)
+    # F24: on Develop, Fork's own automatic check (nothing clicked) downloads N and says it is ready.
+    wait_until(lambda: fork.screen.find(READY_TITLE), AUTO_CHECK_TIMEOUT, "Fork's automatic update check")
+    fork.velopack_says(mark, FEED_READ, f"Found newer remote release available ({OLD} -> {NEW})",
+                       f"Fork-{NEW}-full.nupkg")
+    fork.screen.shot("f24-automatic-ready")
     fork.close_dialog(READY_TITLE, READY_CLOSE)
     fork.close()
     assert upd.cli_json("update", "--check")["staged"] == [NEW]
@@ -986,3 +1053,36 @@ def test_f23_staged_update_applied_at_the_next_start(upd: Upd, fork: ForkSession
     fork.start(make_repo(upd, "demo"))
     assert f"Fork updated {OLD} -> {NEW}; 'fork-linux rollback' restores {OLD}" in upd.ui_messages()[shown:]
     fork.close()
+
+
+def test_f20_interrupted_apply_is_reinstalled_keeping_the_users_files(upd: Upd, fork: ForkSession) -> None:
+    """Power loss while Velopack swapped ``current\\``: the next fork reinstalls Fork with the user's files."""
+    assert not any_fork_pids(upd)
+    assert upd.state()["fork"]["request"] == {"source": "latest"}  # test_f3's request
+    newest = feeds.latest_full(feed_assets(upd))
+    assert newest is not None
+    gone = upd.installed()
+    kept = {name: (upd.fork_dir / name).read_bytes() for name in ("accounts.json", "custom-commands.json")}
+    installed_at = upd.state()["fork"]["installed_at"]
+    # What an apply cut short leaves behind: current\ moved into Velopack's temp folder, nothing in its place.
+    temp = upd.fork_dir / "packages" / "VelopackTemp"
+    temp.mkdir(parents=True, exist_ok=True)
+    (upd.fork_dir / "current").rename(temp / "current-interrupted")
+    assert upd.installed() is None
+    shown = len(upd.ui_messages())
+    fork.place()
+    launched = fork.launch(make_repo(upd, "demo"), name="f20-fork")
+    fork.wait_main(timeout=SETUP_TIMEOUT)  # no welcome dialog: Fork's settings survived the installer
+    said = upd.ui_messages()[shown:] + launched.output()
+    assert f"Fork {gone} was missing or incomplete; Fork {newest.version} was installed again" in said, said
+    assert "Fork updated" not in upd.ui_messages()[shown:], "a reinstall is not Fork updating itself"
+    assert upd.installed() == newest.version
+    assert nupkg_sha(upd, newest.version) == feed_sha(feed_assets(upd), newest.version)
+    assert upd.state()["fork"]["installed_at"] != installed_at
+    assert upd.state()["fork"]["last_seen_version"] == newest.version
+    assert {name: (upd.fork_dir / name).read_bytes() for name in kept} == kept
+    fork.close()
+    report = upd.cli_json("doctor")
+    assert check(report, "fork.installed")["status"] == "ok"
+    assert check(report, "fork.integrity")["status"] == _integrity_for(newest.version)
+

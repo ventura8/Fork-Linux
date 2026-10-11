@@ -40,6 +40,7 @@ import shutil
 import subprocess
 import time
 from collections.abc import Iterator
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -217,8 +218,19 @@ def _fork_env(pid: int) -> dict[str, str]:
     return dict(item.decode(errors="replace").split("=", 1) for item in raw if b"=" in item)
 
 
+def _not_due(releases: Releases) -> None:
+    """Fork closed: its own automatic update check is not due (``LastUpdateCheck`` now).
+
+    Fork checks by itself about a minute after it starts when the last check is old enough, and on
+    its Develop channel downloads 2.23.2 and applies it at the next start (scenarios F23, F24): that
+    must not change Fork's version in the middle of these scenarios, only where A12 asks for it.
+    """
+    releases.cli("settings", "set", "LastUpdateCheck", datetime.now(timezone.utc).isoformat())
+
+
 def _open_fork(releases: Releases, *targets: Path, name: str) -> dict[str, Any]:
-    """Launch the installed release on ``targets`` and wait for Fork's main window."""
+    """Launch the installed release on ``targets`` (Fork closed) and wait for Fork's main window."""
+    _not_due(releases)
     releases.launch(*targets, log_name=name)
     window = ui.wait_main_window(releases.e2e)
     time.sleep(3)
@@ -264,6 +276,7 @@ def test_01_setup_with_the_previous_fork(e2e: Any, releases: Releases) -> None:
     assert _state(e2e)["fork"]["version"] == FORK_OLD
     demo = ui.make_repo(e2e.repos / "demo")
     ui.make_repo(e2e.repos / "second")
+    _not_due(releases)
     releases.launch(demo, log_name="01-first-launch")
     ui.wait_main_window(e2e, first_run=True)
     ui.close_fork(e2e, e2e.prefix)

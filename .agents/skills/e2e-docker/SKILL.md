@@ -41,7 +41,13 @@ scripts/e2e-docker.sh --name shim --image fork-linux-ci-bridge:26.04 shell -- ba
 - The two update modules each build their own prefix in a sub-root of the session root
   (`root/fork-update`, `root/app-upgrade`), seeded from the session's caches, so they never share
   another module's prefix. Their steps build on each other; a failed step fails the rest of that
-  module only. CI (`scripts/ci-e2e-wine.sh`) still gives every module a fresh scratch root.
+  module only. CI (`scripts/ci-e2e-wine.sh`) still gives every module a fresh scratch root, and
+  fails a module that skipped a test (`pytest -rs`; every tier it runs was asked for).
+- Fork checks for updates by itself about a minute after it starts, when `LastUpdateCheck` in its
+  `settings.json` is old enough; on Develop it then downloads the update and shows "ready to be
+  installed", and Velopack applies it at the next start. The update modules seed `LastUpdateCheck`
+  before every start (now, or long ago where scenario F24 wants the check), so it never fires
+  uninvited; do the same in exploration scripts that keep Fork open longer.
 - `tests/e2e/test_fork_update.py` (gated by `FL_E2E_FORK_UPDATES=1` as well) installs Fork 2.23.1
   from `cdn.fork.dev` in a prefix of its own (`root/fork-update`) and lets it update to the tested
   version through Fork's own updater (Velopack: File > Check for Updates..., Restart and Update; a
