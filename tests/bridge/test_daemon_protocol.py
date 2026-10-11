@@ -1104,6 +1104,55 @@ def test_handoff_only_refuses_everything_else(helper_bin: Path, tmp_path: Path) 
     assert log.count("result=spawn-error:1 ") == 3
 
 
+def test_python_handoff_client_and_the_daemon_agree(helper_bin: Path, tmp_path: Path) -> None:
+    """fork_linux.handoff (what fork-linux-host --handoff sends) against the real daemon."""
+    from fork_linux import handoff
+
+    d, host, out = _recording_daemon(helper_bin, tmp_path, "--handoff-only")
+    try:
+        handoff.request(d.port, d.token, "open-url", "file:///home/ada/a%20b.txt", str(tmp_path))
+        assert _wait_file(out).splitlines()[0] == f"{host}|open-url|file:///home/ada/a%20b.txt|"
+        with pytest.raises(handoff.HandoffError, match="could not prove the token"):
+            handoff.request(d.port, "cd" * 32, "open", "/x", "/")
+        with pytest.raises(handoff.HandoffError, match="could not start fork-linux-host: cannot change"):
+            handoff.request(d.port, d.token, "open", "/x", str(tmp_path / "missing"))
+    finally:
+        err = d.stop()
+    assert_clean_stderr(err)
+
+
+def test_fork_linux_handoff_reaches_the_daemon(helper_bin: Path, tmp_path: Path) -> None:
+    """libexec/fork-linux-handoff without systemd-run: fork-linux-host --handoff -> the daemon -> the host helper."""
+    d, host, out = _recording_daemon(helper_bin, tmp_path, "--handoff-only")
+    libexec = tmp_path / "libexec"
+    libexec.mkdir()
+    shutil.copy2(ROOT / "libexec" / "fork-linux-handoff", libexec)
+    shutil.copy2(ROOT / "libexec" / "fork-linux-host.in", libexec)
+    tools = tmp_path / "tools"  # no systemd-run here
+    tools.mkdir()
+    for name in ("dirname",):
+        (tools / name).symlink_to(shutil.which(name) or f"/usr/bin/{name}")
+    env = {
+        **base_env(tmp_path),
+        "PATH": str(tools),
+        "FORK_LINUX_PYTHON": sys.executable,
+        "FORK_LINUX_LIBDIR": str(ROOT / "src"),
+        "FL_BRIDGE_PORT": str(d.port),
+        "FL_BRIDGE_TOKEN": d.token,
+    }
+    try:
+        proc = subprocess.run(
+            [str(libexec / "fork-linux-handoff"), "terminal", "Z:\\home\\ada"],
+            env=env, capture_output=True, text=True, timeout=30, check=False,
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stderr == ""
+        assert _wait_file(out).splitlines()[0] == f"{host}|terminal|Z:\\home\\ada|"
+    finally:
+        err = d.stop()
+    assert_clean_stderr(err)
+
+
 def test_relative_path_entries_are_not_searched(
     helper_bin: Path, tmp_path: Path
 ) -> None:

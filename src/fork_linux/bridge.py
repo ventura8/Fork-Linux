@@ -24,6 +24,14 @@ module follows.
   ``FL_BRIDGE_*``, ``FL_WINE``, ``WINEPREFIX``); :func:`session_record` /
   :func:`session_env` let a second ``fork`` while Fork runs reuse the running
   daemon instead of starting another.
+* :func:`start_handoff` starts the same daemon as a hand-off starter only
+  (``--handoff-only``) when the git bridge daemon did not start and there is
+  no systemd user manager: ``libexec/fork-linux-handoff`` (run by Wine, inside
+  its process tree) then asks it to start terminals and default applications
+  outside that tree (``fork-linux-host --handoff``, :mod:`fork_linux.handoff`),
+  so they never inherit Wine's ``NoNewPrivs`` and seccomp filter. Fork's
+  environment gets only ``FL_BRIDGE_PORT`` / ``FL_BRIDGE_TOKEN`` (no
+  ``FORKGITINSTANCE``: git stays Fork's bundled git).
 
 Enabling it records ``[git] bridge = on`` only (never touching Fork's
 ``settings.json``); ``[git] bridge_mode = record`` makes the shims forward to
@@ -38,6 +46,7 @@ import re
 import secrets
 import selectors
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -48,7 +57,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import IO, Any
 
-from . import fsutil, gitconfig, resources, winecmd
+from . import fsutil, gitconfig, resources, sandbox, winecmd
 from .errors import ForkLinuxError, UsageError
 from .fork_layout import ForkLayout
 from .paths import Paths
@@ -269,6 +278,8 @@ class Daemon:
     env: dict[str, str]
     log_file: Path | None = None
     proc: subprocess.Popen[bytes] | None = field(default=None, repr=False)
+    # A --handoff-only daemon (start_handoff): desktop hand-offs, never git.
+    handoff: bool = False
 
     def stop(self) -> None:
         """SIGTERM the daemon (SIGKILL after :data:`STOP_TIMEOUT`); used when the launch is abandoned."""
@@ -459,22 +470,19 @@ def _spawn(argv: list[str], env: Mapping[str, str], stderr: int) -> subprocess.P
     )
 
 
-def _start(ctx: Any, *, debug: bool) -> Daemon:
-    """Start the daemon as bridge/README.md describes; :class:`_StartError` / ``OSError`` on failure."""
+def _launch(ctx: Any, helper: Path, wine_env: Mapping[str, str], options: list[str]) -> Daemon:
+    """Start ``helper --daemon`` with the token, lifetime and log options plus ``options``.
+
+    Returns the :class:`Daemon` with no Fork variables yet; :class:`_StartError` /
+    ``OSError`` on failure (the daemon is stopped again).
+    """
     paths: Paths = ctx.paths
-    helper = helper_path()
-    info = ctx.wine()
-    personas = ensure_personas(paths, helper)
-    wine_env = winecmd.build_env(paths, info, user=ctx.user, base_env=ctx.env)
     log_file = _new_log(paths, LOG_PREFIX, ".log")
     token_file, token = write_token(paths)
     try:
         argv = [str(helper), "--daemon", "--token-file", str(token_file), "--parent-pid", str(os.getpid())]
         fork_dir = ForkLayout(paths, ctx.user).win_local_dir
-        argv += ["--watch-prefix", str(paths.prefix), "--watch-exe-dir", fork_dir]
-        host = host_helper(paths)
-        if host is not None:
-            argv += ["--host-helper", str(host)]
+        argv += ["--watch-prefix", str(paths.prefix), "--watch-exe-dir", fork_dir, *options]
         argv += ["--log", str(log_file)]
         fd = os.open(log_file, _LOG_FLAGS, 0o600)
         try:
@@ -494,10 +502,22 @@ def _start(ctx: Any, *, debug: bool) -> Daemon:
         # The daemon unlinks the file once it read the token; never leave it behind.
         if os.path.lexists(token_file):
             token_file.unlink()
-    env = _fork_env(ctx, port, token, personas, info.wine)
+    return Daemon(proc.pid, port, {PORT_ENV: str(port), TOKEN_ENV: token}, log_file=log_file, proc=proc)
+
+
+def _start(ctx: Any, *, debug: bool) -> Daemon:
+    """Start the daemon as bridge/README.md describes; :class:`_StartError` / ``OSError`` on failure."""
+    paths: Paths = ctx.paths
+    helper = helper_path()
+    info = ctx.wine()
+    personas = ensure_personas(paths, helper)
+    wine_env = winecmd.build_env(paths, info, user=ctx.user, base_env=ctx.env)
+    host = host_helper(paths)
+    daemon = _launch(ctx, helper, wine_env, [] if host is None else ["--host-helper", str(host)])
+    daemon.env = _fork_env(ctx, daemon.port, daemon.env[TOKEN_ENV], personas, info.wine)
     if debug:
-        env[LOG_ENV] = str(_new_log(paths, LOG_PREFIX + "calls-", ".jsonl"))
-    return Daemon(proc.pid, port, env, log_file=log_file, proc=proc)
+        daemon.env[LOG_ENV] = str(_new_log(paths, LOG_PREFIX + "calls-", ".jsonl"))
+    return daemon
 
 
 def start_daemon(ctx: Any, *, debug: bool = False) -> Daemon | None:
@@ -528,10 +548,71 @@ def start_daemon(ctx: Any, *, debug: bool = False) -> Daemon | None:
     return daemon
 
 
+def systemd_user_manager(env: Mapping[str, str]) -> bool:
+    """True when ``systemd-run --user`` can reach a systemd user manager.
+
+    ``systemd-run`` must be on ``PATH`` and the manager's private socket
+    (``$XDG_RUNTIME_DIR/systemd/private``) must exist: without it (containers,
+    distrobox, Void, Alpine, Devuan, ...) ``fork-linux-handoff`` cannot leave
+    Wine's process tree through a transient unit.
+    """
+    runtime = env.get("XDG_RUNTIME_DIR", "")
+    if not runtime or shutil.which("systemd-run", path=env.get("PATH") or os.defpath) is None:
+        return False
+    try:
+        return stat.S_ISSOCK(os.stat(Path(runtime, "systemd", "private")).st_mode)
+    except OSError:
+        return False
+
+
+def handoff_route(env: Mapping[str, str]) -> str:
+    """How ``fork-linux-handoff`` leaves Wine's process tree here when no daemon runs:
+    ``"systemd"`` (a transient user unit), ``"flatpak"`` (``flatpak-spawn --host``, the
+    host helper's own way out) or ``""`` (it needs the launcher's hand-off daemon)."""
+    if sandbox.detect(env) == sandbox.FLATPAK:
+        return "flatpak"
+    return "systemd" if systemd_user_manager(env) else ""
+
+
+def start_handoff(ctx: Any) -> Daemon | None:
+    """Start ``fl-bridge-helper --daemon --handoff-only`` when the desktop hand-off needs it.
+
+    Called by the launcher when :func:`start_daemon` started no git bridge
+    daemon (which takes hand-offs too). Nothing is started when
+    :func:`handoff_route` finds another way out of Wine's process tree, or when
+    this installation lacks the helper or ``fork-linux-host``. A failure is
+    logged, never fatal: the hand-off then runs inside Wine's tree, as its log
+    line (``<logs>/handoff.log``) says.
+    """
+    route = handoff_route(ctx.env)
+    if route:
+        log.debug("desktop hand-off through %s; no hand-off daemon", route)
+        return None
+    helper = helper_path()
+    if not helper.is_file():
+        log.info("no %s in this installation; desktop hand-offs run inside Wine's process tree", HELPER)
+        return None
+    try:
+        host = host_helper(ctx.paths)
+        if host is None:
+            raise _StartError(f"no {HOST_WRAPPER} in this installation")
+        wine_env = winecmd.build_env(ctx.paths, ctx.wine(), user=ctx.user, base_env=ctx.env)
+        daemon = _launch(ctx, helper, wine_env, ["--handoff-only", "--host-helper", str(host)])
+    except (ForkLinuxError, OSError, subprocess.SubprocessError) as exc:
+        log.warning("hand-off daemon not started (%s); desktop hand-offs run inside Wine's process tree", exc)
+        return None
+    daemon.handoff = True
+    log.info("hand-off daemon pid %d on 127.0.0.1:%d", daemon.pid, daemon.port)
+    return daemon
+
+
 def launch_env(ctx: Any, daemon: Daemon | None) -> dict[str, str]:
-    """The variables Fork's environment gets for the bridge: none unless it is on and ``daemon`` runs."""
+    """The variables Fork's environment gets for ``daemon``: a hand-off daemon's port and token;
+    the git bridge's variables only while ``[git] bridge`` is on; none without a daemon."""
+    if daemon is None:
+        return {}
     enabled, _problem = _enabled(ctx)
-    if not enabled or daemon is None:
+    if not enabled and not daemon.handoff:
         return {}
     return dict(daemon.env)
 
@@ -548,7 +629,7 @@ def session_record(daemon: Daemon | None) -> dict[str, Any] | None:
     """What ``session.json`` (0600) keeps so a second launch can reuse the daemon."""
     if daemon is None:
         return None
-    return {"pid": daemon.pid, "port": daemon.port, "env": dict(daemon.env)}
+    return {"pid": daemon.pid, "port": daemon.port, "env": dict(daemon.env), "handoff": daemon.handoff}
 
 
 def daemon_alive(pid: Any, proc_root: Path = _PROC) -> bool:
@@ -562,11 +643,19 @@ def daemon_alive(pid: Any, proc_root: Path = _PROC) -> bool:
     return HELPER.encode() in cmdline and b"--daemon" in cmdline
 
 
+def _bridge_record(session: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """The git bridge daemon's record in ``session`` (a hand-off daemon's does not count)."""
+    record = session.get("bridge") if session is not None else None
+    if not isinstance(record, dict) or record.get("handoff") is True:
+        return None
+    return record
+
+
 def session_env(ctx: Any, session: Mapping[str, Any] | None, proc_root: Path = _PROC) -> dict[str, str]:
     """The running daemon's variables from ``session``, when the bridge is on and that daemon still runs."""
     enabled, _problem = _enabled(ctx)
-    record = session.get("bridge") if session is not None else None
-    if not enabled or not isinstance(record, dict) or not daemon_alive(record.get("pid"), proc_root):
+    record = _bridge_record(session)
+    if not enabled or record is None or not daemon_alive(record.get("pid"), proc_root):
         return {}
     env = record.get("env")
     if not isinstance(env, dict) or not all(isinstance(v, str) for v in env.values()):
@@ -578,8 +667,8 @@ def session_env(ctx: Any, session: Mapping[str, Any] | None, proc_root: Path = _
 
 def running_daemon(paths: Paths, session: Mapping[str, Any] | None, proc_root: Path = _PROC) -> dict[str, Any]:
     """``{pid, port}`` of the daemon recorded in ``session`` while it runs (empty otherwise)."""
-    record = session.get("bridge") if session is not None else None
-    if not isinstance(record, dict) or session.get("prefix") != str(paths.prefix):
+    record = _bridge_record(session)
+    if record is None or session is None or session.get("prefix") != str(paths.prefix):
         return {}
     if not daemon_alive(record.get("pid"), proc_root):
         return {}

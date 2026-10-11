@@ -84,15 +84,37 @@ def test_handoff_runs_the_helper_in_a_systemd_unit(box: dict[str, Path]) -> None
     assert argv[argv.index("--") + 1 :] == [str(box["libexec"] / "fork-linux-host"), "terminal", "Z:\\home\\ada\\src"]
 
 
-def test_handoff_falls_back_to_running_the_helper(box: dict[str, Path]) -> None:
+def test_handoff_without_a_systemd_user_manager_asks_the_daemon(box: dict[str, Path]) -> None:
+    """systemd-run fails (no user manager): ``fork-linux-host --handoff`` (the launcher's daemon)."""
     _stub(box["libexec"], "fork-linux-host")
     _stub(box["stubs"], "systemd-run", code=1)
     code, calls = _run(box, "fork-linux-handoff", "reveal", "/home/ada/x")
     assert code == 0
     assert calls[0][0] == "systemd-run"
-    assert calls[1] == ["fork-linux-host", "reveal", "/home/ada/x"]
-    box["log"].unlink()
+    assert calls[1] == ["fork-linux-host", "--handoff", "reveal", "/home/ada/x"]
+    assert len(calls) == 2
+
+
+def test_handoff_without_systemd_run_asks_the_daemon(box: dict[str, Path], tmp_path: Path) -> None:
+    _stub(box["libexec"], "fork-linux-host", code=3)
+    tools = tmp_path / "tools"  # what the script and the stubs need, and no systemd-run
+    tools.mkdir()
+    for name in ("dirname", "basename"):
+        found = shutil.which(name)
+        assert found is not None
+        (tools / name).symlink_to(found)
+    code, calls = _run(
+        box, "fork-linux-handoff", "open-url", "file:///home/ada/a%20b.txt", PATH=f"{box['stubs']}:{tools}"
+    )
+    assert code == 3, "the helper's status"
+    assert calls == [["fork-linux-host", "--handoff", "open-url", "file:///home/ada/a%20b.txt"]]
+
+
+def test_handoff_direct_runs_the_helper_here(box: dict[str, Path]) -> None:
+    _stub(box["libexec"], "fork-linux-host")
+    _stub(box["stubs"], "systemd-run")
     code, calls = _run(box, "fork-linux-handoff", "open", "/home/ada/x", FORK_LINUX_HANDOFF="direct")
+    assert code == 0
     assert calls == [["fork-linux-host", "open", "/home/ada/x"]]
 
 
@@ -104,9 +126,22 @@ def test_handoff_uses_the_source_template_with_python(box: dict[str, Path]) -> N
     )
     assert code == 0
     assert calls == [["fake-python", "-I", str(box["libexec"] / "fork-linux-host.in"), "open", "/x"]]
+    box["log"].unlink()
+    _stub(box["stubs"], "systemd-run", code=1)
+    _run(box, "fork-linux-handoff", "terminal", "/x", FORK_LINUX_PYTHON=str(python))
+    template = str(box["libexec"] / "fork-linux-host.in")
+    assert calls_after_systemd(box) == [["fake-python", "-I", template, "--handoff", "terminal", "/x"]]
 
 
-@pytest.mark.parametrize("args", [(), ("terminal",), ("terminal", ""), ("rm", "/x"), ("open", "/x", "extra")])
+def calls_after_systemd(box: dict[str, Path]) -> list[list[str]]:
+    """The recorded calls after systemd-run's."""
+    lines = box["log"].read_text(encoding="utf-8").split("@@\n")
+    return [line.splitlines() for line in lines if line and not line.startswith("systemd-run")]
+
+
+@pytest.mark.parametrize(
+    "args", [(), ("terminal",), ("terminal", ""), ("rm", "/x"), ("open", "/x", "extra"), ("diff", "/x")]
+)
 def test_handoff_rejects_bad_arguments(box: dict[str, Path], args: tuple[str, ...]) -> None:
     code, calls = _run(box, "fork-linux-handoff", *args)
     assert code == 2
@@ -172,25 +207,32 @@ def test_open_url_web_links_go_to_the_portal(box: dict[str, Path]) -> None:
     assert "https://git-fork.com" in calls[0]
 
 
-def test_open_url_files_skip_the_portal(box: dict[str, Path]) -> None:
+@pytest.mark.parametrize("url", ["/home/ada/a.py", "file:///home/ada/a%20b.py", "FILE:///x"])
+def test_open_url_files_skip_the_portal(box: dict[str, Path], url: str) -> None:
     _stub(box["stubs"], "gdbus")
-    _stub(box["stubs"], "systemd-run")
-    code, calls = _run(box, "fork-linux-open-url", "/home/ada/a.py")
+    _stub(box["libexec"], "fork-linux-handoff")
+    code, calls = _run(box, "fork-linux-open-url", url)
     assert code == 0
-    assert len(calls) == 1
-    assert calls[0][0] == "systemd-run"
-    assert "--setenv=DISPLAY=:5" in calls[0]
-    assert calls[0][-2:] == ["xdg-open", "file:///home/ada/a.py"]
+    assert calls == [["fork-linux-handoff", "open-url", url]]
 
 
-def test_open_url_last_resort_is_xdg_open(box: dict[str, Path]) -> None:
+def test_open_url_without_the_portal_hands_off(box: dict[str, Path]) -> None:
     _stub(box["stubs"], "gdbus", code=1)
-    _stub(box["stubs"], "systemd-run", code=1)
-    _stub(box["stubs"], "xdg-open")
+    _stub(box["libexec"], "fork-linux-handoff")
     code, calls = _run(box, "fork-linux-open-url", "mailto:a@b.invalid")
     assert code == 0
-    assert [call[0] for call in calls] == ["gdbus", "systemd-run", "xdg-open"]
-    assert calls[-1] == ["xdg-open", "mailto:a@b.invalid"]
+    assert calls == [["gdbus", *calls[0][1:]], ["fork-linux-handoff", "open-url", "mailto:a@b.invalid"]]
+
+
+def test_open_url_through_the_real_handoff(box: dict[str, Path]) -> None:
+    """open-url, then fork-linux-handoff itself: systemd first, the helper's --handoff otherwise."""
+    _stub(box["stubs"], "gdbus", code=1)
+    _stub(box["stubs"], "systemd-run", code=1)
+    _stub(box["libexec"], "fork-linux-host")
+    code, calls = _run(box, "fork-linux-open-url", "https://git-fork.com/buy")
+    assert code == 0
+    assert [call[0] for call in calls] == ["gdbus", "systemd-run", "fork-linux-host"]
+    assert calls[-1] == ["fork-linux-host", "--handoff", "open-url", "https://git-fork.com/buy"]
 
 
 def test_open_url_windows_paths_go_to_the_helper(box: dict[str, Path]) -> None:

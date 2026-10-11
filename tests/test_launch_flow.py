@@ -14,7 +14,7 @@ from fixtures import bridge_kit
 from fixtures.fork_tree import install_fork, write_settings
 from fixtures.setup_ctx import USER, FakeUI, make_ctx
 
-from fork_linux import bootstrap, bridge, launcher, procs, snapshots, updates
+from fork_linux import bootstrap, bridge, launcher, procs, resources, snapshots, updates
 from fork_linux.cli import AppContext
 from fork_linux.errors import (
     ForkLinuxError,
@@ -650,6 +650,8 @@ def flow(
 
     monkeypatch.setattr(bootstrap, "ensure_ready", ensure_ready)
     monkeypatch.setattr(launcher, "pre_launch", pre_launch)
+    # No helper unless a test installs the fake build (bridged): never a real daemon from a build dir.
+    monkeypatch.setenv(resources.LIBEXEC_ENV, str(tmp_path / "no-libexec"))
     cwd = tmp_path / "cwd"
     (cwd / "repo").mkdir(parents=True)
     monkeypatch.chdir(cwd)
@@ -921,7 +923,7 @@ def test_run_without_a_working_daemon_uses_bundled_git(
 
 
 def test_run_stops_the_daemon_when_the_exec_fails(
-    ctx: bootstrap.Ctx, flow: dict[str, Any], bridged: bridge_kit.Kit
+    ctx: bootstrap.Ctx, flow: dict[str, Any], bridged: bridge_kit.Kit, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def fail(file: str, argv: list[str], env: dict[str, str]) -> None:
         raise FileNotFoundError(2, "No such file or directory")
@@ -932,12 +934,50 @@ def test_run_stops_the_daemon_when_the_exec_fails(
     assert isinstance(daemon, bridge.Daemon)
     assert daemon.proc is None
     assert not bridge.daemon_alive(bridged.starts()[0]["pid"])
-    # With the bridge off there is no daemon to stop.
+    # With the bridge off the hand-off daemon is stopped the same way.
     ctx.config.set("git", "bridge", "off")
     with pytest.raises(WineUnavailable):
         launcher.run(flow["app"], [], execvpe=fail)
     assert ctx.cache[bridge.CACHE_KEY] is None
-    assert len(bridged.starts()) == 1
+    first, second = bridged.starts()
+    assert "--handoff-only" in second["argv"]
+    assert not bridge.daemon_alive(second["pid"])
+    # With a systemd user manager there is no daemon at all.
+    monkeypatch.setattr(bridge, "systemd_user_manager", lambda env: True)
+    with pytest.raises(WineUnavailable):
+        launcher.run(flow["app"], [], execvpe=fail)
+    assert len(bridged.starts()) == 2
+
+
+def test_run_without_the_bridge_starts_the_handoff_daemon(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], bridged: bridge_kit.Kit, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No systemd user manager (the test's runtime directory has none): Fork gets a hand-off daemon."""
+    ctx.config.set("git", "bridge", "off")
+    seen: list[bool] = []
+    monkeypatch.setattr(launcher, "pre_launch", lambda c: seen.append(bridge.host_actions_active(c)) or [])
+    launcher.run(flow["app"], ["repo"], execvpe=flow["exec"])
+    assert seen == [False], "Fork's tools do not move to fl-launch.exe"
+    (start,) = bridged.starts()
+    assert "--handoff-only" in start["argv"]
+    env = flow["exec"].calls[0][2]
+    assert env["FL_BRIDGE_PORT"] == "4242"
+    assert env["FL_BRIDGE_TOKEN"] == start["token"]
+    assert "FORKGITINSTANCE" not in env
+    assert "core.filemode" in env.values(), "bundled git keeps its overrides"
+    session = launcher.read_session(ctx.paths)
+    assert session is not None
+    assert session["bridge"]["handoff"] is True
+
+
+def test_run_with_systemd_starts_no_handoff_daemon(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], bridged: bridge_kit.Kit, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx.config.set("git", "bridge", "off")
+    monkeypatch.setattr(bridge, "systemd_user_manager", lambda env: True)
+    launcher.run(flow["app"], [], execvpe=flow["exec"])
+    assert bridged.starts() == []
+    assert "FL_BRIDGE_PORT" not in flow["exec"].calls[0][2]
 
 
 def test_fast_path_reuses_the_running_daemon(

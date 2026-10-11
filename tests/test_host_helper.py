@@ -93,10 +93,13 @@ def test_file_uri_encodes_everything_unsafe() -> None:
 
 def test_tool_env_drops_wine_and_bundle_variables() -> None:
     host, _runner, _popen = _host(
-        {"WINEPREFIX": "/p", "WINEDEBUG": "-all", "WINE_X": "1", "LD_LIBRARY_PATH": "/bundle", "KEEP": "1"}
+        {
+            "WINEPREFIX": "/p", "WINEDEBUG": "-all", "WINE_X": "1", "LD_LIBRARY_PATH": "/bundle", "KEEP": "1",
+            "FL_BRIDGE_TOKEN": "a" * 64, "FL_BRIDGE_PORT": "4242", "FL_WINE": "/w", "FORKGITINSTANCE": "C:\\x",
+        }
     )
     assert "KEEP" in host.tool_env
-    assert not any(key.startswith("WINE") for key in host.tool_env)
+    assert not any(key.startswith(("WINE", "FL_")) or key == "FORKGITINSTANCE" for key in host.tool_env)
     assert "LD_LIBRARY_PATH" not in host.tool_env
     assert host.env["WINEPREFIX"] == "/p"
 
@@ -425,6 +428,30 @@ def test_open_refuses_other_schemes(url: str) -> None:
     assert popen.calls == []
 
 
+@pytest.mark.parametrize("url", ["https://git-fork.com/", "mailto:dev@example.com"])
+def test_open_url_links(url: str) -> None:
+    host, _runner, popen = _host()
+    assert host.open_url(url) == 0
+    assert popen.argvs == [["xdg-open", url]]
+
+
+def test_open_url_file_urls_open_their_path(tmp_path: Path) -> None:
+    """winebrowser turns Fork's "Open" on a file into a file:// URL (ForkLinux.File association)."""
+    target = tmp_path / "a b%.txt"
+    target.write_text("x", encoding="utf-8")
+    host, _runner, popen = _host(installed=("gdbus",))
+    assert host.open_url(hh.file_uri(target)) == 0
+    assert host.open_url("FILE://localhost" + hh.file_uri(target)[len("file://") :]) == 0
+    assert host.open_url(str(target)) == 0
+    assert popen.argvs == [["xdg-open", str(target)]] * 3
+    assert host.open_url(hh.file_uri(tmp_path)) == 0  # a folder: FileManager1
+    assert len(popen.argvs) == 3
+    with pytest.raises(UsageError, match="another host"):
+        host.open_url("file://server/share/x")
+    with pytest.raises(UsageError, match="refusing to open"):
+        host.open_url("smb://server/share")
+
+
 def test_open_files_and_windows_paths(tmp_path: Path) -> None:
     prefix = _prefix(tmp_path)
     target = prefix / "drive_c" / "notes.txt"
@@ -580,6 +607,27 @@ def test_main_maps_errors(tmp_path: Path, capsys: pytest.CaptureFixture[str]) ->
             raise KeyboardInterrupt
 
     assert hh.main(["open", "x"], host=Interrupted({}, runner=RecordingRunner(), popen=_Popen())) == 130
+
+
+def test_main_open_url(tmp_path: Path) -> None:
+    host, _runner, popen = _host()
+    assert hh.main(["open-url", "https://git-fork.com/buy"], host=host) == 0
+    assert popen.argvs == [["xdg-open", "https://git-fork.com/buy"]]
+    assert hh.main(["open-url"], host=host) == hh.EXIT_USAGE
+
+
+def test_main_handoff_goes_to_the_daemon_else_runs_here(
+    xdg: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--handoff VERB ARG`` asks the launcher's daemon; without one the verb runs in this process."""
+    monkeypatch.delenv("FL_BRIDGE_PORT", raising=False)
+    host, _runner, popen = _host(installed=("gdbus",), responses={"gdbus": 1})
+    target = tmp_path / "f.txt"
+    target.write_text("x", encoding="utf-8")
+    assert hh.main(["--handoff", "open", str(target)], host=host) == 0
+    assert popen.argvs == [["xdg-open", str(target)]]
+    assert "open: running inside Wine's process tree" in capsys.readouterr().err
+    assert hh.main(["--handoff", "diff", "a"], host=host) == hh.EXIT_USAGE
 
 
 def test_main_defaults_to_sys_argv(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

@@ -9,8 +9,12 @@ variables and sandbox injections, through ``flatpak-spawn --host`` inside
 Flatpak.
 
 Exit status: the tool's own status (``diff``, ``merge``, ``edit`` wait for
-it), 0 once a detached tool started (``terminal``, ``open``, ``reveal``), 127
-when no suitable tool is installed, 2 for bad arguments.
+it), 0 once a detached tool started (``terminal``, ``open``, ``open-url``,
+``reveal``), 127 when no suitable tool is installed, 2 for bad arguments.
+
+``fork-linux-host --handoff VERB ARG`` is the desktop hand-off from inside
+Wine's process tree (``libexec/fork-linux-handoff``, :mod:`fork_linux.handoff`):
+the launcher's daemon runs ``fork-linux-host VERB ARG`` outside it.
 """
 
 from __future__ import annotations
@@ -23,7 +27,7 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, unquote_to_bytes, urlsplit
 
 from . import sandbox
 from .config import Config
@@ -38,6 +42,9 @@ EXIT_NOT_FOUND = 127
 EXIT_CANNOT_EXEC = 126
 EXIT_INTERRUPTED = 130
 TERMINAL_ENV = "FORK_LINUX_TERMINAL"
+HANDOFF_OPTION = "--handoff"
+# Variables of Wine and of the bridge that never reach a tool (prefixes).
+_NOT_FOR_TOOLS = ("WINE", "FL_BRIDGE_", "FL_WINE", "FORKGITINSTANCE")
 DBUS_TIMEOUT = 10.0
 URL_SCHEMES = ("http", "https", "mailto")
 
@@ -50,6 +57,7 @@ verbs:
   terminal [DIR]                   open a terminal in DIR (default: the working directory)
   reveal PATH                      show PATH in the file manager
   open PATH|URL                    open a file, a folder (in the file manager) or an http(s)/mailto link
+  open-url URL                     open a link clicked in Fork: http(s)/mailto, or a file:// URL as open
   diff LEFT RIGHT                  compare two files (waits)
   merge BASE LOCAL REMOTE MERGED   three-way merge into MERGED (waits)
   edit PATH [LINE]                 open PATH in its default editor (waits)
@@ -157,7 +165,10 @@ class Host:
         popen: Callable[..., Any] | None = None,
     ) -> None:
         self.env: dict[str, str] = dict(os.environ if env is None else env)
-        self.tool_env = {k: v for k, v in sandbox.clean_env(self.env).items() if not k.startswith("WINE")}
+        # Neither Wine's variables nor the bridge's (its token) reach the tools.
+        self.tool_env = {
+            k: v for k, v in sandbox.clean_env(self.env).items() if not k.startswith(_NOT_FOR_TOOLS)
+        }
         self.runner = Runner() if runner is None else runner
         self.popen = subprocess.Popen if popen is None else popen
         self.kind = sandbox.detect(self.env)
@@ -360,6 +371,16 @@ class Host:
             return 0
         return self.spawn(["xdg-open", path])
 
+    def open_url(self, url: str) -> int:
+        """Open a link Wine's winebrowser passed on: a ``file://`` URL (``localhost`` or no host)
+        as :meth:`open` of its path, anything else as :meth:`open` (http, https and mailto)."""
+        if url[:5].lower() != "file:":
+            return self.open(url)
+        parts = urlsplit(url)
+        if parts.netloc not in ("", "localhost"):
+            raise UsageError(f"refusing a file URL of another host: {parts.netloc!r}")
+        return self.open(os.fsdecode(unquote_to_bytes(parts.path)))
+
     def edit(self, target: str, line: str | None = None) -> int:
         """Open ``target`` in its default editor (the line number is accepted and ignored)."""
         if line is not None and not line.isdigit():
@@ -411,6 +432,7 @@ VERBS: dict[str, tuple[str, tuple[int, ...]]] = {
     "terminal": ("terminal", (0, 1)),
     "reveal": ("reveal", (1,)),
     "open": ("open", (1,)),
+    "open-url": ("open_url", (1,)),
     "diff": ("diff", (2,)),
     "merge": ("merge", (4,)),
     "edit": ("edit", (1, 2)),
@@ -426,6 +448,10 @@ def _error(message: str, hint: str = "") -> None:
 def main(argv: Sequence[str] | None = None, *, host: Host | None = None) -> int:
     """Entry point of ``fork-linux-host``; returns the exit status."""
     args = list(sys.argv[1:] if argv is None else argv)
+    if args[:1] == [HANDOFF_OPTION]:
+        from . import handoff
+
+        return handoff.main(args[1:], run_here=lambda here: main(here, host=host))
     if args and args[0] in ("-h", "--help", "help"):
         print(USAGE, end="")
         return 0
