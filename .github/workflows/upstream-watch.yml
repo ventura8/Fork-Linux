@@ -63,7 +63,7 @@ jobs:
 
       - name: Keep the E2E logs (text only)
         if: steps.check.outputs.new == 'true'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: upstream-e2e-logs
           path: logs/e2e-wine/
@@ -71,7 +71,7 @@ jobs:
 
       - name: Open the bot PR (E2E passed)
         if: steps.check.outputs.new == 'true' && steps.e2e.outcome == 'success'
-        uses: peter-evans/create-pull-request@v8.1.0
+        uses: peter-evans/create-pull-request@v8.1.1
         with:
           branch: bot/fork-${{ steps.check.outputs.version }}
           commit-message: "feat(deps): mark Fork ${{ steps.check.outputs.version }} known-good"

@@ -57,7 +57,7 @@ case "${FORMAT}" in
 		BUILD=(./scripts/release-rpm.sh opensuse)
 		;;
 	arch)
-		DOCKERFILE=docker/Dockerfile.arch IMAGE=fork-linux-ci-arch-pkg:base-devel-20260906.0.587075
+		DOCKERFILE=docker/Dockerfile.arch IMAGE=fork-linux-ci-arch-pkg:base-devel-20261004.0.606936
 		BUILD=(./scripts/release-arch.sh)
 		;;
 	tarball)
@@ -107,7 +107,7 @@ else
 	fi
 fi
 # The packaging containers run as root: hand the outputs back to the invoking user.
-docker run --rm -v "${FL_ARTIFACTS_DIR}:/a" busybox:1.37 chown -R "$(id -u):$(id -g)" /a >/dev/null 2>&1 || true
+docker run --rm -v "${FL_ARTIFACTS_DIR}:/a" busybox:1.38.0 chown -R "$(id -u):$(id -g)" /a >/dev/null 2>&1 || true
 if ((status != 0)); then
 	echo "==> packaging cell FAILED: ${FORMAT} (exit ${status})" >&2
 	exit "${status}"

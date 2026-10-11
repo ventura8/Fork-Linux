@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.28.0
 # Desktop E2E image for Fork for Linux (unofficial) — Ubuntu 26.04 with Ubuntu's GNOME 50
 # Image tag: fork-linux-e2e-de-gnome:26.04
 # scripts/ci-e2e-de.sh gnome [--fork] runs tests/e2e_de in here (FL_E2E_DE=gnome) as the invoking

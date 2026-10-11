@@ -1060,14 +1060,15 @@ struct cfgkey {
 static int parse_key(const char *key, size_t keylen, struct cfgkey *k)
 {
     const char *first = memchr(key, '.', keylen);
-    const char *last = NULL;
     if (first == NULL) {
         return -1;
     }
-    for (size_t i = keylen; i > 0; i--) {
-        if (key[i - 1u] == '.') {
-            last = key + i - 1u;
-            break;
+    /* The last dot: the first one unless another follows it. */
+    const char *last = first;
+    const char *end = key + keylen;
+    for (const char *p = first + 1; p < end; p++) {
+        if (*p == '.') {
+            last = p;
         }
     }
     k->sec = key;

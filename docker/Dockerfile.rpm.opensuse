@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.28.0
 # openSUSE RPM packaging image for Fork for Linux (unofficial) — Leap 16.0
 # Image tag: fork-linux-ci-rpm-opensuse:16.0
 # Runs scripts/release-rpm.sh opensuse (rpmbuild + rpmlint, no filters) and the packaging

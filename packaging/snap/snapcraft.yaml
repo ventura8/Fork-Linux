@@ -1,4 +1,4 @@
-# snapcraft.yaml - Fork for Linux (unofficial) as a classic snap (core24, amd64).
+# snapcraft.yaml - Fork for Linux (unofficial) as a classic snap (core26, amd64).
 #
 # Classic confinement: Fork needs the host's git, ssh, terminals, editors, diff tools and
 # repositories anywhere on disk; the store's classic approval is a separate request (strict
@@ -9,7 +9,7 @@
 # sees it) next to this file before `snapcraft pack`.
 ---
 name: fork-linux
-base: core24
+base: core26
 adopt-info: fork-linux
 grade: stable
 confinement: classic

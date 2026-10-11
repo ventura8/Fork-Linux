@@ -77,10 +77,10 @@ resolve_stage() {
 				jammy) DOCKERFILE="docker/Dockerfile.ci.jammy" IMAGE="fork-linux-ci-jammy:22.04" ;;
 				noble) DOCKERFILE="docker/Dockerfile.ci.noble" IMAGE="fork-linux-ci-noble:24.04" ;;
 				resolute) DOCKERFILE="docker/Dockerfile.ci" IMAGE="fork-linux-ci-resolute:26.04" ;;
-				debian13) DOCKERFILE="docker/Dockerfile.ci.debian13" IMAGE="fork-linux-ci-debian13:13" ;;
+				debian13) DOCKERFILE="docker/Dockerfile.ci.debian13" IMAGE="fork-linux-ci-debian13:13.7" ;;
 				fedora44) DOCKERFILE="docker/Dockerfile.ci.fedora44" IMAGE="fork-linux-ci-fedora44:44" ;;
 				leap16) DOCKERFILE="docker/Dockerfile.ci.leap16" IMAGE="fork-linux-ci-leap16:16.0" ;;
-				arch) DOCKERFILE="docker/Dockerfile.ci.arch" IMAGE="fork-linux-ci-arch:base-20260906.0.587075" ;;
+				arch) DOCKERFILE="docker/Dockerfile.ci.arch" IMAGE="fork-linux-ci-arch:base-20261004.0.606936" ;;
 				*) die "unknown FL_CI_CELL='${FL_CI_CELL}' (expected: ${COMPAT_CELLS[*]})" ;;
 			esac
 			BUILD_DIR="build-ci-${FL_CI_CELL}"
@@ -277,16 +277,19 @@ run_completion_syntax() {
 	fish --no-execute data/completions/fork-linux.fish
 }
 
+# The newest LLVM in the pinned ubuntu:26.04 base (docker/Dockerfile.ci.lint).
+CLANG_TIDY="clang-tidy-22"
+
 run_clang_tidy() {
-	echo "==> clang-tidy (bridge/common, bridge/unix against ${BUILD_DIR}/compile_commands.json)"
+	echo "==> ${CLANG_TIDY} (bridge/common, bridge/unix against ${BUILD_DIR}/compile_commands.json)"
 	local -a sources
 	mapfile -t sources < <(find bridge/common bridge/unix -name '*.c' | sort)
-	clang-tidy --quiet -p "${BUILD_DIR}" "${sources[@]}"
-	echo "==> clang-tidy (bridge/win, MinGW-w64 target)"
+	"${CLANG_TIDY}" --quiet -p "${BUILD_DIR}" "${sources[@]}"
+	echo "==> ${CLANG_TIDY} (bridge/win, MinGW-w64 target)"
 	local sysroot
 	sysroot="$(x86_64-w64-mingw32-gcc -print-sysroot)"
 	mapfile -t sources < <(find bridge/win -maxdepth 1 -name '*.c' | sort)
-	clang-tidy --quiet "${sources[@]}" -- \
+	"${CLANG_TIDY}" --quiet "${sources[@]}" -- \
 		--target=x86_64-w64-mingw32 -std=c11 -municode -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 \
 		-Ibridge/common -Ibridge/win -I"${BUILD_DIR}/bridge" \
 		-isystem "${sysroot:-/usr}/x86_64-w64-mingw32/include"

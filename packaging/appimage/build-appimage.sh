@@ -15,6 +15,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION="$(fl_read_version)"
 APP_ID="$(fl_app_id)"
 APPIMAGETOOL="${APPIMAGETOOL:-appimagetool}"
+# The pinned type2 runtime from docker/Dockerfile.release; never the floating "continuous" one.
+APPIMAGE_RUNTIME="${APPIMAGE_RUNTIME:-/opt/appimagetool/runtime-x86_64}"
 WORK="$(mktemp -d /tmp/fl-appimage.XXXXXX)"
 trap 'rm -rf "${WORK}"' EXIT
 APPDIR="${WORK}/AppDir"
@@ -23,6 +25,10 @@ UPDATE_INFO="gh-releases-zsync|ventura8|Fork-Linux|latest|fork-linux-*-x86_64.Ap
 
 command -v "${APPIMAGETOOL}" >/dev/null 2>&1 || {
 	echo "error: appimagetool not found (set APPIMAGETOOL=...)" >&2
+	exit 1
+}
+[[ -f "${APPIMAGE_RUNTIME}" ]] || {
+	echo "error: AppImage runtime ${APPIMAGE_RUNTIME} not found (set APPIMAGE_RUNTIME=...)" >&2
 	exit 1
 }
 fl_prepare_artifacts_dir
@@ -37,6 +43,6 @@ cp "${APPDIR}/usr/share/applications/${APP_ID}.desktop" "${APPDIR}/${APP_ID}.des
 cp "${APPDIR}/usr/share/icons/hicolor/scalable/apps/${APP_ID}.svg" "${APPDIR}/${APP_ID}.svg"
 ln -s "${APP_ID}.svg" "${APPDIR}/.DirIcon"
 
-(cd "${FL_ARTIFACTS_DIR}" && ARCH=x86_64 "${APPIMAGETOOL}" --no-appstream -u "${UPDATE_INFO}" "${APPDIR}" "${OUTPUT}")
+(cd "${FL_ARTIFACTS_DIR}" && ARCH=x86_64 "${APPIMAGETOOL}" --no-appstream --runtime-file "${APPIMAGE_RUNTIME}" -u "${UPDATE_INFO}" "${APPDIR}" "${OUTPUT}")
 ls -la "${OUTPUT}" "${OUTPUT}.zsync"
 echo "Built AppImage: ${OUTPUT}"

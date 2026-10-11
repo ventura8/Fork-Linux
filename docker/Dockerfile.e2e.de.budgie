@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.28.0
 # Desktop E2E image for Fork for Linux (unofficial) — Ubuntu Budgie 26.04 (Budgie 10.10 on labwc)
 # Image tag: fork-linux-e2e-de-budgie:26.04
 # scripts/ci-e2e-de.sh budgie [--fork] runs tests/e2e_de in here (FL_E2E_DE=budgie) as the

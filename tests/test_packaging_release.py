@@ -137,7 +137,7 @@ def test_arch_pkgbuild_rules() -> None:
 
 def test_snap_rules() -> None:
     text = _text(SNAPCRAFT)
-    assert "base: core24" in text
+    assert "base: core26" in text
     assert "confinement: classic" in text
     assert re.search(r"build-for: \[amd64\]", text)
     assert "hooks" not in text
@@ -152,8 +152,8 @@ def test_flatpak_rules() -> None:
     text = _text(FLATPAK)
     assert f"id: {APP_ID}" in text
     assert "base: org.winehq.Wine" in text
-    assert "base-version: wow64-25.08" in text
-    assert "runtime-version: '25.08'" in text
+    assert "base-version: stable-26.08" in text
+    assert "runtime-version: '26.08'" in text
     assert "command: fork-linux" in text
     assert "-Dflavor=flatpak" in text
 

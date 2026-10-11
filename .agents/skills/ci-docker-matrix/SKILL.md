@@ -10,10 +10,10 @@ Docker CI stages and per-distro compat cells (docker/Dockerfile.ci*), image tags
 Canonical rules: [AGENTS.md](../../../AGENTS.md).
 
 - Stages: `FL_CI_STAGE=lint|coverage|bridge|compat ./scripts/ci-docker.sh`; cells `FL_CI_CELL=jammy|noble|resolute|debian13|fedora44|leap16|arch`.
-- One Dockerfile per stage / cell under `docker/`; `# syntax=docker/dockerfile:1.27.0`; pinned bases only
-  (`ubuntu:26.04|24.04|22.04`, `debian:13`, `fedora:44`, `opensuse/leap:16.0`, dated `archlinux:base(-devel)-YYYYMMDD.0.N`).
+- One Dockerfile per stage / cell under `docker/`; `# syntax=docker/dockerfile:1.28.0`; pinned bases only
+  (`ubuntu:26.04|24.04|22.04`, `debian:13.7` (latest point release), `fedora:44`, `opensuse/leap:16.0`, dated `archlinux:base(-devel)-YYYYMMDD.0.N`).
 - Each Dockerfile declares `# Image tag: fork-linux-ci-<name>:<FROM tag>`; scripts must use exactly that tag (`tests/test_docker.py`).
-- Pip pins are exact `==`; tools come from pinned images (`rhysd/actionlint:1.7.12`, `hadolint/hadolint:v2.14.0`).
+- Pip pins are exact `==`; tools come from pinned images (`rhysd/actionlint:1.7.12`, `hadolint/hadolint:v2.15.1`).
 - The coverage stage runs `scripts/ci-c-coverage.sh` and then `scripts/check-coverage.py` (every file >= 90%) on the
   host side; `FL_CI_C_COVERAGE=0` skips both (check.yml runs them as steps of the coverage job).
 - Caching: `FL_CI_DOCKER_CACHE=gha|local|none`, `FL_CI_FORCE_BUILD=1`, `FL_CI_PARALLEL_BUILD=1` in the matrix.

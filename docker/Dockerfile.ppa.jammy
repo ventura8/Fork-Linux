@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.28.0
 # Debian packaging image for Fork for Linux (unofficial) — Ubuntu 22.04 (jammy), the oldest supported release
 # Image tag: fork-linux-ci-ppa-jammy:22.04
 # Runs scripts/release-deb.sh (dpkg-buildpackage + lintian --fail-on error),

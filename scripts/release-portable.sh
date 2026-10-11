@@ -7,8 +7,8 @@
 #             installs it; shebangs "/usr/bin/env -S python3", static fl-bridge-helper)
 #   appimage  fork-linux-VERSION-x86_64.AppImage (+ .zsync)   packaging/appimage/build-appimage.sh
 #   flatpak   io.github.ventura8.ForkLinux-VERSION-x86_64.flatpak (flatpak-builder, BaseApp
-#             org.winehq.Wine wow64-25.08; runtimes from Flathub)
-#   snap      fork-linux_VERSION_amd64.snap (core24, classic; inside docker/Dockerfile.snap)
+#             org.winehq.Wine stable-26.08 (WoW64); runtimes from Flathub)
+#   snap      fork-linux_VERSION_amd64.snap (core26, classic; inside docker/Dockerfile.snap)
 # tarball / appimage / flatpak run inside docker/Dockerfile.release.
 set -euo pipefail
 
@@ -64,20 +64,22 @@ build_flatpak() {
 }
 
 build_snap() {
-	local tarball="packaging/snap/fork-linux-src.tar.gz"
+	local tarball="packaging/snap/fork-linux-src.tar.gz" snap="fork-linux_${VERSION}_amd64.snap"
 	echo "==> snap"
-	rm -f "${tarball}"
+	rm -f "${tarball}" "packaging/snap/${snap}"
 	# A clean tarball, not the live tree: craft-parts would otherwise copy packaging/ (its own
 	# output directory) into the part.
 	fl_create_source_tarball "${VERSION}" "${tarball}"
 	(
 		cd packaging/snap
 		rm -rf parts stage prime overlay
-		snapcraft pack --destructive-mode --output "${FL_ARTIFACTS_DIR}/fork-linux_${VERSION}_amd64.snap"
+		# snapcraft 9 refuses an --output outside the project directory: pack here, move after.
+		snapcraft pack --destructive-mode --output "${snap}"
 		rm -rf parts stage prime overlay
 	)
+	mv -f "packaging/snap/${snap}" "${FL_ARTIFACTS_DIR}/${snap}"
 	rm -f "${tarball}"
-	ls -la "${FL_ARTIFACTS_DIR}/fork-linux_${VERSION}_amd64.snap"
+	ls -la "${FL_ARTIFACTS_DIR}/${snap}"
 }
 
 case "${MODE}" in

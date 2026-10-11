@@ -16,11 +16,11 @@ BASES = {
     "ubuntu:26.04",
     "ubuntu:24.04",
     "ubuntu:22.04",
-    "debian:13",
+    "debian:13.7",
     "fedora:44",
     "opensuse/leap:16.0",
 }
-TOOL_IMAGES = {"rhysd/actionlint:1.7.12", "hadolint/hadolint:v2.14.0"}
+TOOL_IMAGES = {"rhysd/actionlint:1.7.12", "hadolint/hadolint:v2.15.1"}
 ARCH_BASE = re.compile(r"archlinux:base(?:-devel)?-\d{8}\.0\.\d+")
 EXPECTED = {
     # stages
@@ -31,18 +31,18 @@ EXPECTED = {
     "Dockerfile.ci": "fork-linux-ci-resolute:26.04",
     "Dockerfile.ci.jammy": "fork-linux-ci-jammy:22.04",
     "Dockerfile.ci.noble": "fork-linux-ci-noble:24.04",
-    "Dockerfile.ci.debian13": "fork-linux-ci-debian13:13",
+    "Dockerfile.ci.debian13": "fork-linux-ci-debian13:13.7",
     "Dockerfile.ci.fedora44": "fork-linux-ci-fedora44:44",
     "Dockerfile.ci.leap16": "fork-linux-ci-leap16:16.0",
-    "Dockerfile.ci.arch": "fork-linux-ci-arch:base-20260906.0.587075",
+    "Dockerfile.ci.arch": "fork-linux-ci-arch:base-20261004.0.606936",
     # packaging + E2E
     "Dockerfile.ppa": "fork-linux-ci-ppa:26.04",
     "Dockerfile.ppa.jammy": "fork-linux-ci-ppa-jammy:22.04",
     "Dockerfile.rpm.fedora": "fork-linux-ci-rpm-fedora:44",
     "Dockerfile.rpm.opensuse": "fork-linux-ci-rpm-opensuse:16.0",
-    "Dockerfile.arch": "fork-linux-ci-arch-pkg:base-devel-20260906.0.587075",
+    "Dockerfile.arch": "fork-linux-ci-arch-pkg:base-devel-20261004.0.606936",
     "Dockerfile.release": "fork-linux-ci-release:26.04",
-    "Dockerfile.snap": "fork-linux-ci-snap:24.04",
+    "Dockerfile.snap": "fork-linux-ci-snap:26.04",
     "Dockerfile.e2e.wine": "fork-linux-ci-e2e-wine:26.04",
     # desktop E2E tier (scripts/ci-e2e-de.sh), one image per desktop
     "Dockerfile.e2e.de.xfce": "fork-linux-e2e-de-xfce:26.04",
@@ -87,7 +87,7 @@ def test_every_expected_dockerfile_exists_and_nothing_else() -> None:
 
 @pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.name)
 def test_buildkit_frontend_is_pinned(path: Path) -> None:
-    assert _text(path).splitlines()[0] == "# syntax=docker/dockerfile:1.27.0"
+    assert _text(path).splitlines()[0] == "# syntax=docker/dockerfile:1.28.0"
 
 
 @pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.name)

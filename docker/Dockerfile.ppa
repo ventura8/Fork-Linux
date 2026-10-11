@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.28.0
 # Debian packaging image for Fork for Linux (unofficial) — Ubuntu 26.04 (resolute)
 # Image tag: fork-linux-ci-ppa:26.04
 # Runs scripts/release-deb.sh (dpkg-buildpackage + lintian --fail-on error),

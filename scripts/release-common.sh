@@ -69,7 +69,8 @@ fl_install_static_helper() {
 
 # The source tree as git sees it: tracked files plus untracked-but-not-ignored ones (so
 # uncommitted packaging fixes are exercised, and ignored build output, caches and secrets
-# never are). Without git metadata (an extracted tarball) every file is taken.
+# never are). Without git metadata (an extracted tarball, or a git worktree whose common dir is
+# not mounted in the container) every file and symlink is taken (meson_options.txt is one).
 fl_source_files() {
 	local top
 	top="$(git -c safe.directory='*' -C "${FL_REPO_ROOT}" rev-parse --show-toplevel 2>/dev/null || true)"
