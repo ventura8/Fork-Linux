@@ -131,6 +131,28 @@ def test_cinnamon_own_schema(home: Path) -> None:
     assert theme.detect({"XDG_CURRENT_DESKTOP": "X-Cinnamon"}, runner, home) == "dark"
 
 
+XAPP_PORTAL = "org.x.apps.portal"
+DARK_MODE = _gsettings(XAPP_PORTAL, "color-scheme")
+CINNAMON_THEME = _gsettings(CINNAMON, "gtk-theme")
+
+
+@pytest.mark.parametrize(
+    ("outputs", "expected"),
+    [
+        # Themes > Settings > Dark mode "Prefer dark mode" with the light Yaru-cinnamon kept.
+        ({_dconf(XAPP_PORTAL, "color-scheme"): "'prefer-dark'\n", CINNAMON_THEME: "'Yaru-cinnamon'\n"}, "dark"),
+        # The same through gsettings, and "Prefer light mode" over a dark theme name.
+        ({DARK_MODE: "'prefer-dark'\n", CINNAMON_THEME: "'Yaru-cinnamon'\n"}, "dark"),
+        ({DARK_MODE: "'prefer-light'\n", CINNAMON_THEME: "'Mint-Y-Dark'\n"}, "light"),
+        # "Let applications decide": the theme name decides.
+        ({DARK_MODE: "'default'\n", CINNAMON_THEME: "'Yaru-cinnamon-dark'\n"}, "dark"),
+    ],
+    ids=["dconf-prefer-dark", "gsettings-prefer-dark", "prefer-light", "default-uses-theme"],
+)
+def test_cinnamon_dark_mode_preference(home: Path, outputs: dict[tuple[str, ...], str], expected: str) -> None:
+    assert theme.detect({"XDG_CURRENT_DESKTOP": "X-Cinnamon"}, _runner(outputs), home) == expected
+
+
 def test_cinnamon_falls_back_to_gnome(home: Path) -> None:
     runner = _runner({_gsettings(GNOME, "color-scheme"): "'prefer-light'\n"})
     assert theme.detect({"XDG_CURRENT_DESKTOP": "X-Cinnamon"}, runner, home) == "light"
@@ -147,6 +169,47 @@ def test_kde_kreadconfig5_look_and_feel(home: Path) -> None:
         installed=("kreadconfig5",),
     )
     assert theme.detect({"XDG_CURRENT_DESKTOP": "KDE"}, runner, home) == "light"
+
+
+WINDOW_BACKGROUND = ("Colors:Window", "BackgroundNormal")
+
+
+@pytest.mark.parametrize(
+    ("colour", "expected"),
+    [
+        ("35,38,41", "dark"),  # a dark scheme whose name does not say so (Nordic, Dracula, ...)
+        ("32,35,38,255", "dark"),  # with alpha
+        ("191,191,191", "dark"),  # grey 191: below Plasma's line
+        ("192,192,192", "light"),  # grey 192: on it
+        ("239,240,241", "light"),
+    ],
+)
+def test_kde_window_background_wins_over_the_names(home: Path, colour: str, expected: str) -> None:
+    runner = _runner(
+        {
+            _kread("kreadconfig6", *WINDOW_BACKGROUND): colour + "\n",
+            _kread("kreadconfig6", "General", "ColorScheme"): "Nordic\n",
+            _kread("kreadconfig6", "KDE", "LookAndFeelPackage"): "org.kde.breezedark.desktop\n",
+        }
+    )
+    assert theme.detect({"XDG_CURRENT_DESKTOP": "KDE"}, runner, home) == expected
+    assert runner.argvs == [list(_kread("kreadconfig6", *WINDOW_BACKGROUND))]
+
+
+def test_kde_window_background_from_kreadconfig5(home: Path) -> None:
+    runner = _runner({_kread("kreadconfig5", *WINDOW_BACKGROUND): "42,46,50\n"}, installed=("kreadconfig5",))
+    assert theme.detect({"XDG_CURRENT_DESKTOP": "KDE"}, runner, home) == "dark"
+
+
+@pytest.mark.parametrize("value", ["#232629", "35,38", "256x,1,1", "1,2,3,4,5"])
+def test_kde_a_window_background_that_is_no_colour_falls_back_to_the_names(home: Path, value: str) -> None:
+    runner = _runner(
+        {
+            _kread("kreadconfig6", *WINDOW_BACKGROUND): value + "\n",
+            _kread("kreadconfig6", "General", "ColorScheme"): "BreezeDark\n",
+        }
+    )
+    assert theme.detect({"XDG_CURRENT_DESKTOP": "KDE"}, runner, home) == "dark"
 
 
 def test_kde_kdeglobals_file(home: Path) -> None:
@@ -187,19 +250,116 @@ def test_mate(home: Path) -> None:
     assert theme.detect({"XDG_CURRENT_DESKTOP": "MATE"}, runner, home) == "dark"
 
 
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("'Menta'", "light"),
+        ("'BlackMATE'", "dark"),
+        ("'HighContrastInverse'", "dark"),
+        ("'HighContrast'", "light"),
+        ("'Yaru-MATE-dark'", "dark"),
+    ],
+)
+def test_mate_stock_themes(home: Path, name: str, expected: str) -> None:
+    """MATE's stock dark themes (mate-themes) do not say "dark" in their names."""
+    runner = _runner({_gsettings("org.mate.interface", "gtk-theme"): name + "\n"})
+    assert theme.detect({"XDG_CURRENT_DESKTOP": "MATE"}, runner, home) == expected
+
+
+def _lxqt_env(home: Path) -> dict[str, str]:
+    """An LXQt session whose system directories are under ``home`` (never the host's /etc/xdg)."""
+    return {
+        "XDG_CURRENT_DESKTOP": "LXQt",
+        "XDG_CONFIG_DIRS": f"relative/xdg:{home / 'xdg-Lubuntu'}:{home / 'xdg'}",
+        "XDG_DATA_DIRS": str(home / "share"),
+    }
+
+
+def _write_under(home: Path, relative: str, text: str) -> None:
+    path = home / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _lubuntu(home: Path) -> None:
+    """Lubuntu 26.04's defaults: the kvantum Qt style with its light "Lubuntu" Kvantum theme."""
+    _write_under(home, "xdg-Lubuntu/lxqt/lxqt.conf", "[General]\ntheme=Lubuntu Arc\n\n[Qt]\nstyle=kvantum\n")
+    _write_under(home, "xdg-Lubuntu/Kvantum/kvantum.kvconfig", "[General]\ntheme=Lubuntu\n")
+    lubuntu = "[%General]\nx=1\n[GeneralColors]\nwindow.color=#f5f6f7\n"
+    _write_under(home, "share/Kvantum/Lubuntu/Lubuntu.kvconfig", lubuntu)
+    _write_under(home, "share/Kvantum/KvArcDark/KvArcDark.kvconfig", "[GeneralColors]\nwindow.color=#383c4a\n")
+
+
 def test_lxqt_conf(home: Path) -> None:
     _write(home, "lxqt/lxqt.conf", "[General]\nicon_theme=x\ntheme=\ntheme=kvantum-dark\n")
-    assert theme.detect({"XDG_CURRENT_DESKTOP": "LXQt"}, _runner({}), home) == "dark"
+    assert theme.detect(_lxqt_env(home), _runner({}), home) == "dark"
 
 
 def test_lxqt_session_conf(home: Path) -> None:
     _write(home, "lxqt/lxqt.conf", "[General]\nicon_theme=x\n")
     _write(home, "lxqt/session.conf", "theme = frost\n")
-    assert theme.detect({"XDG_CURRENT_DESKTOP": "LXQt"}, _runner({}), home) == "light"
+    assert theme.detect(_lxqt_env(home), _runner({}), home) == "light"
 
 
 def test_lxqt_without_config(home: Path) -> None:
+    assert theme.detect(_lxqt_env(home), _runner({}), home) is None
+
+
+# GNOME's gtk-theme on Lubuntu 26.04 names a theme with dark header bars only.
+LUBUNTU_GSETTINGS = {_gsettings(GNOME, "gtk-theme"): "'Arc-Darker'\n"}
+
+
+@pytest.mark.parametrize(
+    ("files", "expected"),
+    [
+        # Lubuntu as installed: light, whatever GNOME's gtk-theme (Arc-Darker) says.
+        ({}, "light"),
+        # Kvantum Manager: a dark theme, the installed one or the user's own copy of it.
+        ({"Kvantum/kvantum.kvconfig": "[General]\ntheme=KvArcDark\n"}, "dark"),
+        (
+            {
+                "Kvantum/kvantum.kvconfig": "theme=KvArcDark#\n",
+                "Kvantum/KvArcDark#/KvArcDark#.kvconfig": "[GeneralColors]\nwindow.color=#fafafa\n",
+            },
+            "light",
+        ),
+        # A Kvantum theme without a readable window colour: its name decides.
+        ({"Kvantum/kvantum.kvconfig": "[General]\ntheme=KvGnomeDark\n"}, "dark"),
+        ({"Kvantum/kvantum.kvconfig": "[General]\ntheme=KvFlat\n"}, "light"),
+        # Only the panel's LXQt theme is dark: the applications stay light.
+        ({"lxqt/lxqt.conf": "[General]\ntheme=dark\n"}, "light"),
+        # LXQt Appearance > Widget Style: Fusion with the Dark (or Light) palette.
+        ({"lxqt/lxqt.conf": "[Qt]\nstyle=Fusion\n[Palette]\nwindow_color=#232323\n"}, "dark"),
+        ({"lxqt/lxqt.conf": "[Qt]\nstyle=Fusion\n[Palette]\nwindow_color=#efefef\n"}, "light"),
+        # Fusion with a palette that is not #rrggbb: LXQt's theme= decides, as before.
+        ({"lxqt/lxqt.conf": "[General]\ntheme=dark\n[Qt]\nstyle=Fusion\n[Palette]\nwindow_color=#123\n"}, "dark"),
+        ({"lxqt/lxqt.conf": "[Qt]\nstyle=Fusion\n[Palette]\nwindow_color=#gggggg\n"}, "light"),
+    ],
+)
+def test_lxqt_applications_colours(home: Path, files: dict[str, str], expected: str) -> None:
+    _lubuntu(home)
+    for relative, text in files.items():
+        _write(home, relative, text)
+    runner = _runner(LUBUNTU_GSETTINGS)
+    assert theme.detect(_lxqt_env(home), runner, home) == expected
+
+
+def test_lxqt_kvantum_without_any_config_is_kvantums_default(home: Path) -> None:
+    _write(home, "lxqt/lxqt.conf", "[Qt]\nstyle=kvantum\n")
+    assert theme.detect(_lxqt_env(home), _runner(LUBUNTU_GSETTINGS), home) == "light"
+
+
+def test_lxqt_system_dirs_default_to_etc_xdg(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[Path] = []
+    monkeypatch.setattr(theme, "_read", lambda path: seen.append(path) or "")
     assert theme.detect({"XDG_CURRENT_DESKTOP": "LXQt"}, _runner({}), home) is None
+    assert Path("/etc/xdg/lxqt/lxqt.conf") in seen
+
+
+def test_ini_section_keys_before_any_section_are_general() -> None:
+    content = "theme=a\n[Qt]\nstyle=x\n[General]\ntheme=b\nicon='i'\n"
+    assert theme._ini_section(content, "General") == {"theme": "a", "icon": "i"}
+    assert theme._ini_section(content, "Qt") == {"style": "x"}
 
 
 @pytest.mark.parametrize(

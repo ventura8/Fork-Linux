@@ -86,7 +86,7 @@ Downloads are cached in `~/.cache/fork-linux/` (winetricks' .NET and font downlo
 - `fork` — start Fork.
 - `fork .` or `fork ~/src/myrepo` — open a repository (a path inside a repository opens its root). If Fork is already running, the repository opens in a new tab.
 - **Desktop launcher** — "Fork for Linux (unofficial)" in your app menu, with Fork's own icon extracted from your copy (at every icon size; a neutral placeholder until Fork is installed).
-- **Open in Fork** — a right-click action in Nautilus, Nemo, Caja, Dolphin and Thunar. `install.sh` and `fork-linux desktop install` add it for the file managers installed on your computer (`--file-managers auto`, the default); `--file-managers all` or a list such as `thunar,nemo` picks them yourself. In Thunar the action is added next to your desktop's own custom actions ("Open Terminal Here", ...), and removing it brings back exactly what was there.
+- **Open in Fork** — a right-click action in Nautilus, Nemo, Caja, Dolphin, Thunar and PCManFM-Qt. `install.sh` and `fork-linux desktop install` add it for the file managers installed on your computer (`--file-managers auto`, the default); `--file-managers all` or a list such as `thunar,nemo` picks them yourself. In Thunar the action is added next to your desktop's own custom actions ("Open Terminal Here", ...), and removing it brings back exactly what was there.
 
 ## Updating
 
@@ -160,8 +160,9 @@ Baseline: **Ubuntu 26.04**; oldest supported: **Ubuntu 22.04**. CI also covers U
 
 What fork-linux connects for you:
 
-- **Open in Shell / the Console button** opens your desktop's terminal in the repository (`fork-linux-terminal`; `$FORK_LINUX_TERMINAL` or `[integration] terminal` picks the program).
-- **Show in File Explorer / Open In File Explorer** opens your Linux file manager with the file selected; **Open** on a file uses your Linux default application.
+- **Open in Shell / the Console button** opens your desktop's terminal in the repository (`fork-linux-terminal`; `$FORK_LINUX_TERMINAL` or `[integration] terminal` picks the program, else the terminal your desktop's settings name on Cinnamon and Budgie, else `xdg-terminal-exec` and the desktop's own terminal).
+- **Show in File Explorer / Open In File Explorer** opens your Linux file manager with the file selected (or on the folder); **Open** on a file uses your Linux default application.
+- **Theme and scale**: Fork starts in your desktop's light or dark theme and at its display scale (GNOME, KDE Plasma, Cinnamon, MATE, Budgie, XFCE and LXQt each asked in their own terms).
 - **File dialogs** (Open repository, Clone) do not accept Linux paths such as `/home/you/src`: type `H:\src` (the `H:` drive is your home) or `Z:\home\you\src`, or browse through `/`.
 - New clones go to your Linux home by default, never into the Wine prefix.
 

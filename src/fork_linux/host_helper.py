@@ -49,13 +49,14 @@ or Windows paths (mapped through $WINEPREFIX).
 verbs:
   terminal [DIR]                   open a terminal in DIR (default: the working directory)
   reveal PATH                      show PATH in the file manager
-  open PATH|URL                    open a file or an http(s)/mailto link
+  open PATH|URL                    open a file, a folder (in the file manager) or an http(s)/mailto link
   diff LEFT RIGHT                  compare two files (waits)
   merge BASE LOCAL REMOTE MERGED   three-way merge into MERGED (waits)
   edit PATH [LINE]                 open PATH in its default editor (waits)
 
 terminal: $FORK_LINUX_TERMINAL or [integration] terminal (a command, {{dir}} is
-replaced by the directory), else xdg-terminal-exec, $TERMINAL, then known terminals.
+replaced by the directory), else the desktop's preferred terminal (Cinnamon, Budgie),
+xdg-terminal-exec, $TERMINAL, then known terminals.
 """
 
 # Placeholders filled by :func:`fill`.
@@ -78,6 +79,7 @@ TERMINALS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("terminator", _WORKING_DIRECTORY),
     ("mate-terminal", _WORKING_DIRECTORY),
     ("lxterminal", _WORKING_DIRECTORY),
+    ("qterminal", ("--workdir", _DIR)),
     ("alacritty", ("--working-directory", _DIR)),
     ("kitty", ("--directory", _DIR)),
     ("foot", _WORKING_DIRECTORY),
@@ -93,7 +95,18 @@ DESKTOP_TERMINALS = {
     "XFCE": "xfce4-terminal",
     "MATE": "mate-terminal",
     "LXDE": "lxterminal",
+    "LXQT": "qterminal",
+    "X-CINNAMON": "gnome-terminal",
 }
+# $XDG_CURRENT_DESKTOP entry -> the GSettings schema whose ``exec`` key names the terminal the
+# user picked in the desktop's own settings (Cinnamon: System Settings > Preferred Applications;
+# Budgie: Ubuntu Budgie's default, which labwc's Ctrl+Alt+T runs too). It is asked before
+# xdg-terminal-exec, which these desktops do not configure.
+DESKTOP_TERMINAL_SCHEMAS = {
+    "X-CINNAMON": "org.cinnamon.desktop.default-applications.terminal",
+    "BUDGIE": "org.gnome.desktop.default-applications.terminal",
+}
+SETTINGS_TIMEOUT = 2.0
 # Diff/merge tool -> (diff arguments, merge arguments or None).
 DIFF_TOOLS: tuple[tuple[str, tuple[str, ...], tuple[str, ...] | None], ...] = (
     ("meld", (_LEFT, _RIGHT), ("--output={merged}", _LOCAL, _BASE, _REMOTE)),
@@ -113,6 +126,8 @@ _WINDOWS_PATH = re.compile(r"^(?:[A-Za-z]:(?:[\\/]|$)|\\\\[?.]\\)")
 # A URL scheme has at least two characters, so a drive path such as C:\x never looks like one.
 _URL = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]+):")
 _FIELD = re.compile(r"\{(\w+)\}")
+# Desktop Entry field codes (%f, %U, ...): Cinnamon's Preferred Applications stores a terminal's Exec.
+_FIELD_CODE = re.compile(r"%[fFuUdDnNickvm]")
 # A constant script: the name to look up is passed as "$1", never spliced into the code.
 _HOST_LOOKUP = ("sh", "-c", 'command -v -- "$1"', "sh")
 
@@ -223,17 +238,49 @@ class Host:
             return [words[0], *fill(_TERMINAL_ARGS[os.path.basename(words[0])], {"dir": directory})]
         return list(words)
 
+    def _desktops(self) -> list[str]:
+        """The ``$XDG_CURRENT_DESKTOP`` entries, upper-cased."""
+        return [item.strip().upper() for item in self.env.get("XDG_CURRENT_DESKTOP", "").split(":")]
+
     def _desktop_order(self) -> list[str]:
         """Known terminals, the desktop's own first."""
-        desktops = [item.strip().upper() for item in self.env.get("XDG_CURRENT_DESKTOP", "").split(":")]
-        preferred = [DESKTOP_TERMINALS[name] for name in desktops if name in DESKTOP_TERMINALS]
+        preferred = [DESKTOP_TERMINALS[name] for name in self._desktops() if name in DESKTOP_TERMINALS]
         return [*preferred, *(name for name, _args in TERMINALS if name not in preferred)]
+
+    def _desktop_terminal(self) -> list[str]:
+        """The installed terminal the desktop's own settings name ([] when they name none).
+
+        Cinnamon stores the chosen terminal's desktop-entry ``Exec`` (``ptyxis --new-window``):
+        field codes are dropped.
+        """
+        schemas = [DESKTOP_TERMINAL_SCHEMAS[name] for name in self._desktops() if name in DESKTOP_TERMINAL_SCHEMAS]
+        if not schemas or not self.which("gsettings"):
+            return []
+        argv = sandbox.host_argv(["gsettings", "get", schemas[0], "exec"], self.kind)
+        try:
+            result = self.runner.run(argv, env=self.tool_env, timeout=SETTINGS_TIMEOUT)
+        except ForkLinuxError:
+            return []
+        words = _split(result.stdout.strip().strip("'\"")) if result.ok else []
+        words = [word for word in words if not _FIELD_CODE.fullmatch(word)]
+        return words if words and self.which(words[0]) else []
+
+    def _preferred_command(self, words: list[str], directory: str) -> list[str]:
+        """The desktop's terminal opened in ``directory``: a known one gets its own directory
+        arguments (the desktop entry's options are dropped), another one runs as named, in it."""
+        name = os.path.basename(words[0])
+        if name in _TERMINAL_ARGS:
+            return [words[0], *fill(_TERMINAL_ARGS[name], {"dir": directory})]
+        return list(words)
 
     def terminal_argv(self, directory: str) -> list[str]:
         """The terminal command for ``directory``; :class:`ToolNotFound` when there is none."""
         configured = self._configured_terminal()
         if configured and configured != "auto":
             return self._command(_split(configured), directory)
+        preferred = self._desktop_terminal()
+        if preferred:
+            return self._preferred_command(preferred, directory)
         if self.which("xdg-terminal-exec"):
             return ["xdg-terminal-exec", f"--dir={directory}"]
         words = _split(self.env.get("TERMINAL", ""))
@@ -271,36 +318,47 @@ class Host:
             return False
         return result.ok
 
-    def reveal(self, target: str) -> int:
-        """Select ``target`` in the file manager (FileManager1), else open its folder."""
-        path = self.existing(target)
+    def _file_manager1(self, method: str, path: str) -> bool:
+        """``org.freedesktop.FileManager1.<method>`` on ``path`` (gdbus, else dbus-send); True when answered.
+
+        The file manager's D-Bus service is started by the session bus, outside the caller's
+        process tree: a helper Wine started (no systemd user manager to hand it to) never
+        passes Wine's seccomp filter on to the file manager.
+        """
         uri = file_uri(path)
         gdbus = [
             "gdbus", "call", "--session",
             "--dest", FILE_MANAGER1,
             "--object-path", FILE_MANAGER1_PATH,
-            "--method", f"{FILE_MANAGER1}.ShowItems",
+            "--method", f"{FILE_MANAGER1}.{method}",
             f"['{uri}']", "",
         ]
-        if self._try(gdbus):
-            return 0
         dbus_send = [
             "dbus-send", "--session", "--print-reply", f"--dest={FILE_MANAGER1}",
-            FILE_MANAGER1_PATH, f"{FILE_MANAGER1}.ShowItems",
+            FILE_MANAGER1_PATH, f"{FILE_MANAGER1}.{method}",
             f"array:string:{uri}", "string:",
         ]
-        if self._try(dbus_send):
+        return self._try(gdbus) or self._try(dbus_send)
+
+    def reveal(self, target: str) -> int:
+        """Select ``target`` in the file manager (FileManager1), else open its folder."""
+        path = self.existing(target)
+        if self._file_manager1("ShowItems", path):
             return 0
         return self.spawn(["xdg-open", os.path.dirname(path)])
 
     def open(self, target: str) -> int:
-        """Open a file with its default application, or an http(s) / mailto link."""
+        """Open a file with its default application, a folder in the file manager (FileManager1,
+        else xdg-open), or an http(s) / mailto link."""
         url = _URL.match(target)
         if url is not None:
             if url.group(1).lower() not in URL_SCHEMES:
                 raise UsageError(f"refusing to open a {url.group(1)!r} link", hint="only http, https and mailto links")
             return self.spawn(["xdg-open", target])
-        return self.spawn(["xdg-open", self.existing(target)])
+        path = self.existing(target)
+        if os.path.isdir(path) and self._file_manager1("ShowFolders", path):
+            return 0
+        return self.spawn(["xdg-open", path])
 
     def edit(self, target: str, line: str | None = None) -> int:
         """Open ``target`` in its default editor (the line number is accepted and ignored)."""

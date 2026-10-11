@@ -81,6 +81,7 @@ install_data(
   fl_templates / 'fma-action.desktop.in',
   fl_templates / 'fork_linux_nautilus.py.in',
   fl_templates / 'nemo_action.in',
+  fl_templates / 'nemo_action_folder.in',
   fl_templates / 'thunar-uca-action.xml.in',
   install_dir: fl_pkgdatadir / 'fork_linux' / 'data' / 'templates',
   install_mode: 'rw-r--r--',

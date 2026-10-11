@@ -22,3 +22,17 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
   (registry fields `seed`, `seed_sha256`); removal deletes it only when it is back to that seed.
   It is written only when its content changes; Thunar reads it only when it starts, so a change while a
   Thunar process runs logs `THUNAR_RESTART` ("run 'thunar -q'"); `procs.running` finds the process.
+- Nautilus: the extension requires the newest Nautilus API it can (4.1 in Nautilus 50, 4.0, 3.0), else the one
+  Nautilus already loaded; Nautilus loads extensions only when it starts, so writing a changed extension or removing it
+  while a `nautilus` process runs logs `NAUTILUS_RESTART` ("run 'nautilus -q'"). Nemo needs two actions: `nemo`
+  (`Selection=s`, the selected item) and `nemo-folder` (`Selection=none`, `%P`, the folder a window shows). Caja and
+  PCManFM(-Qt) share the FileManager-Actions entry (`fma`); Caja-actions, libfm and Nemo watch their folders (no restart).
+- Host helper: `open` of a folder asks `FileManager1.ShowFolders` before `xdg-open` (the session bus starts the file
+  manager outside Wine's process tree); `terminal` asks the desktop's own setting first (`DESKTOP_TERMINAL_SCHEMAS`:
+  Cinnamon's Preferred Applications, Budgie's `org.gnome.desktop.default-applications.terminal`), then
+  xdg-terminal-exec, `$TERMINAL` and the known terminals with the desktop's own first (`DESKTOP_TERMINALS`, LXQt:
+  qterminal).
+- Theme (`theme.py`): Cinnamon's `org.x.apps.portal color-scheme`, KDE's window background colour (grey < 192 is dark,
+  as Plasma's portal), known dark names without "dark" (`DARK_THEMES`: BlackMATE, HighContrastInverse), LXQt's
+  Kvantum theme / widget palette over `lxqt.conf` merged from `$XDG_CONFIG_DIRS`. Scale (`display.py`): GNOME and
+  Cinnamon read `Xft.dpi` before GNOME's keys. Every desktop is checked end to end in `docs/qa/DE-E2E.md`.

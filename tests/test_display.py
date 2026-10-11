@@ -148,6 +148,54 @@ def test_xfce_asks_its_own_settings_before_xrdb(outputs: dict[tuple[str, ...], s
     assert runner.argvs[0] == list(XFCE_FACTOR)
 
 
+CINNAMON_SESSION = {"XDG_CURRENT_DESKTOP": "X-Cinnamon"}
+
+
+@pytest.mark.parametrize(
+    ("outputs", "expected"),
+    [
+        # Display > User interface scale 2 with Fonts > Text scaling factor 1.25: csd-xsettings
+        # publishes 96 x 2 x 1.25; csd-settings-remap copies only the text factor to GNOME's keys.
+        ({GNOME_SCALE: "uint32 0\n", GNOME_TEXT: "1.25\n", XRDB: "Xft.dpi:\t240\n"}, 250),
+        ({GNOME_SCALE: "uint32 0\n", GNOME_TEXT: "1.0\n", XRDB: "Xft.dpi:\t192\n"}, 200),
+        # No Xft.dpi (no X resource database): GNOME's keys are still asked.
+        ({GNOME_SCALE: "uint32 0\n", GNOME_TEXT: "1.5\n", XRDB: "Xft.antialias:\t1\n"}, 150),
+    ],
+    ids=["ui-scale-2-text-1.25", "ui-scale-2", "no-xft-dpi"],
+)
+def test_cinnamon_asks_xft_dpi_before_gnome_keys(outputs: dict[tuple[str, ...], str], expected: int) -> None:
+    runner = _runner(outputs)
+    assert display.scale_percent(CINNAMON_SESSION, runner) == expected
+    assert runner.argvs[0] == list(XRDB)
+
+
+GNOME_SESSION = {"XDG_CURRENT_DESKTOP": "ubuntu:GNOME"}
+
+
+@pytest.mark.parametrize(
+    ("outputs", "expected"),
+    [
+        # Settings > Displays > Scale 200 % (mutter's monitor configuration) and Large Text:
+        # gsd-xsettings publishes Xft.dpi 96 x 2 x 1.25; scaling-factor stays 0 (automatic).
+        ({XRDB: "Xft.dpi:\t240\n", GNOME_SCALE: "uint32 0\n", GNOME_TEXT: "1.25\n"}, 250),
+        ({XRDB: "Xft.dpi:\t192\n", GNOME_SCALE: "uint32 0\n", GNOME_TEXT: "1.0\n"}, 200),
+        # A scaling-factor left in dconf that the published Xft.dpi does not show.
+        ({XRDB: "Xft.dpi:\t96\n", GNOME_SCALE: "uint32 2\n", GNOME_TEXT: "1.0\n"}, 100),
+    ],
+    ids=["display-200-large-text", "display-200", "stale-scaling-factor"],
+)
+def test_gnome_asks_xft_dpi_before_its_gsettings(outputs: dict[tuple[str, ...], str], expected: int) -> None:
+    runner = _runner(outputs)
+    assert display.scale_percent(GNOME_SESSION, runner) == expected
+    assert runner.argvs == [list(XRDB)]
+
+
+def test_gnome_without_xft_dpi_falls_back_to_its_gsettings() -> None:
+    runner = _runner({XRDB: "Xft.antialias:\t1\n", GNOME_SCALE: "uint32 2\n", GNOME_TEXT: "1.25\n"})
+    assert display.scale_percent(GNOME_SESSION, runner) == 250
+    assert [argv[0] for argv in runner.argvs] == ["xrdb", "gsettings", "gsettings"]
+
+
 def test_xfce_probe_is_last_on_other_desktops() -> None:
     runner = _runner({XFCE_FACTOR: "2\n", XFCE: "96\n", XRDB: "Xft.dpi:\t96\n"})
     assert display.scale_percent({**BUS, "XDG_CURRENT_DESKTOP": "GNOME"}, runner) == 100

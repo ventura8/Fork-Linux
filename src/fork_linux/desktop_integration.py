@@ -11,7 +11,9 @@ Thunar reads only the first ``Thunar/uca.xml`` of ``$XDG_CONFIG_HOME`` and
 ``$XDG_CONFIG_DIRS``, so a missing user file is first seeded from the
 desktop's own file (Xubuntu's "Open Terminal Here", ...), never created empty.
 ``uca.xml`` is written only when its content changes; a running Thunar reads it only
-when it starts, so a change then comes with a warning to restart Thunar.
+when it starts, so a change then comes with a warning to restart Thunar. Nautilus
+likewise loads its extensions only when it starts: installing a changed extension or
+removing it comes with a warning to restart a running Nautilus.
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ from .procrun import Runner
 
 log = logging.getLogger(__name__)
 
-FILE_MANAGERS = ("nautilus", "nemo", "caja", "dolphin", "thunar", "fma")
+FILE_MANAGERS = ("nautilus", "nemo", "caja", "dolphin", "thunar", "pcmanfm", "fma")
 LABEL = "Open in Fork"
 TOOLTIP = f"Open the repository in {APP_NAME}"
 UNIQUE_ID = "fork-linux-open"
@@ -55,6 +57,11 @@ THUNAR_RESTART = (
     "Thunar is running and reads its custom actions only when it starts: run 'thunar -q' "
     "(it starts again when needed) to see the change to 'Open in Fork'"
 )
+NAUTILUS_PROGRAMS = ("nautilus",)
+NAUTILUS_RESTART = (
+    "Nautilus is running and loads its extensions only when it starts: run 'nautilus -q' "
+    "(it starts again when needed) to see the change to 'Open in Fork'"
+)
 # Our neutral placeholder icon, relative to a data directory (share/).
 SCALABLE_ICON = ("icons", "hicolor", "scalable", "apps", f"{APP_ID}.svg")
 DEFAULT_DATA_DIRS = "/usr/local/share:/usr/share"
@@ -67,21 +74,25 @@ ICON = "icon"
 NAUTILUS = "nautilus"
 NAUTILUS_SCRIPT = "nautilus-script"
 NEMO = "nemo"
+NEMO_FOLDER = "nemo-folder"
 FMA = "fma"
 DOLPHIN = "dolphin"
 THUNAR = "thunar"
 CLI_ALIAS = "cli-alias"
-FILE_KINDS = (MENU, ICON, NAUTILUS, NAUTILUS_SCRIPT, NEMO, FMA, DOLPHIN)
+FILE_KINDS = (MENU, ICON, NAUTILUS, NAUTILUS_SCRIPT, NEMO, NEMO_FOLDER, FMA, DOLPHIN)
 
 AUTO = "auto"
 # File manager name -> integration kinds it needs.
 _MANAGER_KINDS = {
     "nautilus": (NAUTILUS, NAUTILUS_SCRIPT),
-    "nemo": (NEMO,),
+    # Nemo shows an action either on selected items or on the folder it shows (its background).
+    "nemo": (NEMO, NEMO_FOLDER),
     "caja": (FMA,),
     "fma": (FMA,),
     "dolphin": (DOLPHIN,),
     "thunar": (THUNAR,),
+    # PCManFM-Qt (LXQt, Lubuntu) and PCManFM (LXDE) read FileManager-Actions entries (libfm).
+    "pcmanfm": (FMA,),
 }
 _FILE_MANAGER_KINDS = frozenset(kind for kinds in _MANAGER_KINDS.values() for kind in kinds)
 # File manager -> (programs on PATH, menu entries in */applications) that show it is installed.
@@ -91,6 +102,7 @@ _MANAGER_PROBES = {
     "caja": (("caja",), ("caja.desktop", "caja-browser.desktop")),
     "dolphin": (("dolphin",), ("org.kde.dolphin.desktop", "dolphin.desktop")),
     "thunar": (("thunar", "Thunar"), ("thunar.desktop", "Thunar.desktop")),
+    "pcmanfm": (("pcmanfm-qt", "pcmanfm"), ("pcmanfm-qt.desktop", "pcmanfm.desktop")),
     "fma": (("fma-config-tool",), ("fma-config-tool.desktop",)),
 }
 _PLACEHOLDER = re.compile(r"@([A-Z][A-Z0-9_]*)@")
@@ -163,6 +175,7 @@ class _Dirs:
             NAUTILUS: self.data / "nautilus-python" / "extensions" / "fork_linux_nautilus.py",
             NAUTILUS_SCRIPT: self.data / "nautilus" / "scripts" / LABEL,
             NEMO: self.data / "nemo" / "actions" / "fork-linux-open.nemo_action",
+            NEMO_FOLDER: self.data / "nemo" / "actions" / "fork-linux-open-folder.nemo_action",
             FMA: self.data / "file-manager" / "actions" / "fork-linux-open.desktop",
             DOLPHIN: self.data / "kio" / "servicemenus" / "fork-linux-open.desktop",
         }[kind]
@@ -360,6 +373,8 @@ def _render_kind(kind: str, cmd: list[str]) -> tuple[str, int]:
         return render_template("nautilus-script", {**common, "EXEC_SH": shlex.join(cmd)}), 0o755
     if kind == NEMO:
         return render_template("nemo_action", common), 0o644
+    if kind == NEMO_FOLDER:
+        return render_template("nemo_action_folder", common), 0o644
     if kind == FMA:
         return render_template("fma-action.desktop", common), 0o644
     return render_template("dolphin-servicemenu.desktop", common), 0o755
@@ -404,10 +419,20 @@ def _uca_bytes(root: ET.Element) -> bytes:
     return ('<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="unicode") + "\n").encode("utf-8")
 
 
+def _tell_restart(programs: tuple[str, ...], message: str) -> None:
+    """Warn ``message`` when one of ``programs`` runs: it would keep showing the old actions."""
+    if procs.running(programs):
+        log.warning(message)
+
+
 def _thunar_changed() -> None:
-    """Tell the user to restart a running Thunar: it would keep showing the old actions."""
-    if procs.running(THUNAR_PROGRAMS):
-        log.warning(THUNAR_RESTART)
+    """Tell the user to restart a running Thunar: it reads ``uca.xml`` only when it starts."""
+    _tell_restart(THUNAR_PROGRAMS, THUNAR_RESTART)
+
+
+def _nautilus_changed() -> None:
+    """Tell the user to restart a running Nautilus: it loads extensions only when it starts."""
+    _tell_restart(NAUTILUS_PROGRAMS, NAUTILUS_RESTART)
 
 
 def _write_uca(path: Path, root: ET.Element) -> None:
@@ -722,7 +747,13 @@ def _install_kind(kind: str, dirs: _Dirs, cmd: list[str], registry: _Registry) -
         return [dirs.thunar_uca] if _install_thunar(dirs, cmd, registry) else []
     content, mode = _render_kind(kind, cmd)
     path = dirs.kind_path(kind)
-    return [path] if _write_owned(path, content.encode("utf-8"), mode, kind, registry) else []
+    data = content.encode("utf-8")
+    unchanged = path.is_file() and not path.is_symlink() and fsutil.sha256_file(path) == _sha256(data)
+    if not _write_owned(path, data, mode, kind, registry):
+        return []
+    if kind == NAUTILUS and not unchanged:
+        _nautilus_changed()
+    return [path]
 
 
 def install(
@@ -793,6 +824,25 @@ def _remove_owned(path: Path, registry: _Registry) -> bool:
     return False
 
 
+def _remove_entry(path: Path, entry: Mapping[str, Any], dirs: _Dirs, registry: _Registry) -> bool:
+    """Remove one recorded file (or take our action out of ``uca.xml``); True when something was removed."""
+    kind = entry["kind"]
+    if not _inside_user_dirs(path, dirs):
+        log.warning("not removing %s: it is outside the directories fork-linux installs into", path)
+        return False
+    if kind == THUNAR:
+        registry.forget(path)
+        return _remove_thunar(path, entry)
+    if kind == CLI_ALIAS:
+        registry.forget(path)
+        target = str(entry.get("target", ""))
+        if not (target and _link_is_ours(path, target, target)):
+            return False
+        path.unlink()
+        return True
+    return _remove_owned(path, registry)
+
+
 def remove(paths: Paths, env: Mapping[str, str] | None = None, *, runner: Runner | None = None) -> list[Path]:
     """Remove everything :func:`install` recorded that is still ours; return the paths removed or edited."""
     environ: Mapping[str, str] = os.environ if env is None else env
@@ -802,26 +852,13 @@ def remove(paths: Paths, env: Mapping[str, str] | None = None, *, runner: Runner
     kinds_removed: set[str] = set()
     for key, entry in sorted(registry.entries.items()):
         path = Path(key)
-        kind = entry["kind"]
-        if not _inside_user_dirs(path, dirs):
-            log.warning("not removing %s: it is outside the directories fork-linux installs into", path)
-            done = False
-        elif kind == THUNAR:
-            registry.forget(path)
-            done = _remove_thunar(path, entry)
-        elif kind == CLI_ALIAS:
-            registry.forget(path)
-            target = str(entry.get("target", ""))
-            done = bool(target) and _link_is_ours(path, target, target)
-            if done:
-                path.unlink()
-        else:
-            done = _remove_owned(path, registry)
-        if done:
+        if _remove_entry(path, entry, dirs, registry):
             removed.append(path)
-            kinds_removed.add(kind)
+            kinds_removed.add(entry["kind"])
     registry.entries.clear()
     registry.save()
+    if NAUTILUS in kinds_removed:
+        _nautilus_changed()
     _refresh(
         dirs,
         environ,

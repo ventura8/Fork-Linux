@@ -7,6 +7,7 @@
 fl_fm_actions = {
   'nautilus': [fl_datadir / 'nautilus-python' / 'extensions', 'fork_linux_nautilus.py', 'rw-r--r--'],
   'nemo': [fl_datadir / 'nemo' / 'actions', 'fork-linux-open.nemo_action', 'rw-r--r--'],
+  'nemo-folder': [fl_datadir / 'nemo' / 'actions', 'fork-linux-open-folder.nemo_action', 'rw-r--r--'],
   'dolphin': [fl_datadir / 'kio' / 'servicemenus', 'fork-linux-open.desktop', 'rwxr-xr-x'],
 }
 foreach fl_kind, fl_spec : fl_fm_actions

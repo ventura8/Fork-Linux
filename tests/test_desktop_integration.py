@@ -235,6 +235,25 @@ def test_render_template_substitutes_once() -> None:
     assert "Exec=e open --from-file-manager %F" in text
 
 
+def test_nemo_gets_an_action_on_items_and_one_on_the_folder_it_shows(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner
+) -> None:
+    """Nemo shows an action on selected items (Selection=s) or on its background (Selection=none),
+    never both: right-clicking inside a repository needs the folder action, which gets the folder
+    Nemo shows as %P."""
+    dirs = _dirs(env)
+    installed = _install(paths, env, runner, menu=False, file_managers="nemo")
+    assert installed == [dirs.kind_path(di.NEMO), dirs.kind_path(di.NEMO_FOLDER)]
+    items = dirs.kind_path(di.NEMO).read_text(encoding="utf-8")
+    folder = dirs.kind_path(di.NEMO_FOLDER).read_text(encoding="utf-8")
+    assert "Selection=s\n" in items and "open --from-file-manager %F\n" in items
+    assert "Selection=none\n" in folder and "open --from-file-manager %P\n" in folder
+    assert dirs.kind_path(di.NEMO_FOLDER).name == "fork-linux-open-folder.nemo_action"
+    assert {entry["kind"] for entry in _registry(paths).values()} == {di.NEMO, di.NEMO_FOLDER}
+    di.remove(paths, env)
+    assert not dirs.kind_path(di.NEMO).exists() and not dirs.kind_path(di.NEMO_FOLDER).exists()
+
+
 # --- registry --------------------------------------------------------------------------------------
 
 
@@ -298,6 +317,7 @@ def test_install_everything(paths: Paths, env: dict[str, str], runner: Recording
         dirs.kind_path(di.NAUTILUS),
         dirs.kind_path(di.NAUTILUS_SCRIPT),
         dirs.kind_path(di.NEMO),
+        dirs.kind_path(di.NEMO_FOLDER),
         dirs.kind_path(di.FMA),
         dirs.kind_path(di.DOLPHIN),
         dirs.thunar_uca,
@@ -305,7 +325,7 @@ def test_install_everything(paths: Paths, env: dict[str, str], runner: Recording
     assert installed == expected
     registry = _registry(paths)
     assert {e["kind"] for e in registry.values()} == {
-        di.MENU, di.ICON, di.NAUTILUS, di.NAUTILUS_SCRIPT, di.NEMO, di.FMA, di.DOLPHIN, di.THUNAR,
+        di.MENU, di.ICON, di.NAUTILUS, di.NAUTILUS_SCRIPT, di.NEMO, di.NEMO_FOLDER, di.FMA, di.DOLPHIN, di.THUNAR,
     }
     for path in expected[:-1]:
         assert registry[str(path)]["sha256"] == di.fsutil.sha256_file(path)
@@ -396,7 +416,7 @@ def test_install_leaves_foreign_files_alone(
     nemo.parent.mkdir(parents=True)
     nemo.symlink_to(tmp_path)
     installed = _install(paths, env, runner, file_managers="nemo,dolphin")
-    assert installed == [dirs.kind_path(di.DOLPHIN)]
+    assert installed == [dirs.kind_path(di.NEMO_FOLDER), dirs.kind_path(di.DOLPHIN)]
     assert dirs.menu_file.read_text(encoding="utf-8") == "[Desktop Entry]\nName=Mine\n"
     assert nemo.is_symlink()
 
@@ -412,7 +432,8 @@ def test_install_updates_unmodified_files_and_respects_edits(
     assert "Exec=/new/fork-linux open" in nemo.read_text(encoding="utf-8")
     # A file the user edited is kept.
     nemo.write_text("edited\n", encoding="utf-8")
-    assert _install(paths, env, runner, file_managers="nemo") == [dirs.menu_file]
+    reinstalled = _install(paths, env, runner, file_managers="nemo")
+    assert reinstalled == [dirs.menu_file, dirs.kind_path(di.NEMO_FOLDER)]
     assert nemo.read_text(encoding="utf-8") == "edited\n"
 
 
@@ -486,14 +507,14 @@ class _FakeMenuItem:
         self.handlers.append((signal, handler, *args))
 
 
-def _load_nautilus_extension(source: str, monkeypatch: pytest.MonkeyPatch, *, has_v4: bool) -> types.ModuleType:
-    """Execute the generated extension against fake ``gi`` modules."""
+def _load_nautilus_extension(source: str, monkeypatch: pytest.MonkeyPatch, *, loaded: str) -> types.ModuleType:
+    """Execute the generated extension against fake ``gi`` modules; Nautilus has API ``loaded``."""
     versions: list[str] = []
 
     def require_version(namespace: str, version: str) -> None:
         versions.append(version)
-        if version == "4.0" and not has_v4:
-            raise ValueError("Namespace Nautilus not available for version 4.0")
+        if version != loaded:
+            raise ValueError(f"Namespace {namespace} is already loaded with version {loaded}")
 
     gi = types.ModuleType("gi")
     gi.require_version = require_version
@@ -516,16 +537,31 @@ def _load_nautilus_extension(source: str, monkeypatch: pytest.MonkeyPatch, *, ha
     return module
 
 
-@pytest.mark.parametrize("has_v4", [True, False])
+@pytest.mark.parametrize(
+    ("loaded", "required"),
+    [
+        ("4.1", ["4.1"]),
+        ("4.0", ["4.1", "4.0"]),
+        ("3.0", ["4.1", "4.0", "3.0"]),
+        # A newer API than we know is already loaded: the extension uses it as it is.
+        ("4.2", ["4.1", "4.0", "3.0"]),
+    ],
+    ids=["nautilus-50", "nautilus-43", "nautilus-3", "newer-api"],
+)
 def test_nautilus_extension(
-    paths: Paths, env: dict[str, str], runner: RecordingRunner, monkeypatch: pytest.MonkeyPatch, has_v4: bool
+    paths: Paths,
+    env: dict[str, str],
+    runner: RecordingRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    loaded: str,
+    required: list[str],
 ) -> None:
     cmd = ["/opt/x/fork-linux", "--prefix", "/p q"]
     _install(paths, env, runner, menu=False, file_managers=["nautilus"], exec_cmd=cmd)
     source = _dirs(env).kind_path(di.NAUTILUS).read_text(encoding="utf-8")
     ast.parse(source)
-    module = _load_nautilus_extension(source, monkeypatch, has_v4=has_v4)
-    assert module.versions == (["4.0"] if has_v4 else ["4.0", "3.0"])
+    module = _load_nautilus_extension(source, monkeypatch, loaded=loaded)
+    assert module.versions == required
     assert cmd == module.COMMAND
     assert module.LABEL == "Open in Fork"
     assert module.ICON == APP_ID
@@ -890,8 +926,8 @@ def test_remove_keeps_links_that_changed(
         ("none", []),
         ("NONE", []),
         ("caja, fma", [di.FMA]),
-        (["Thunar", "nemo"], [di.THUNAR, di.NEMO]),
-        ("all", [di.NAUTILUS, di.NAUTILUS_SCRIPT, di.NEMO, di.FMA, di.DOLPHIN, di.THUNAR]),
+        (["Thunar", "nemo"], [di.THUNAR, di.NEMO, di.NEMO_FOLDER]),
+        ("all", [di.NAUTILUS, di.NAUTILUS_SCRIPT, di.NEMO, di.NEMO_FOLDER, di.FMA, di.DOLPHIN, di.THUNAR]),
     ],
 )
 def test_kinds(spec: Any, kinds: list[str]) -> None:
@@ -911,11 +947,11 @@ def test_kinds_rejects_unknown_names() -> None:
 @pytest.mark.parametrize(
     ("spec", "kinds"),
     [
-        ("auto", [di.NEMO, di.THUNAR]),
-        ("AUTO", [di.NEMO, di.THUNAR]),
-        ("auto,dolphin", [di.NEMO, di.THUNAR, di.DOLPHIN]),
-        ("thunar,auto", [di.NEMO, di.THUNAR]),
-        ("auto,all", [di.NAUTILUS, di.NAUTILUS_SCRIPT, di.NEMO, di.FMA, di.DOLPHIN, di.THUNAR]),
+        ("auto", [di.NEMO, di.NEMO_FOLDER, di.THUNAR]),
+        ("AUTO", [di.NEMO, di.NEMO_FOLDER, di.THUNAR]),
+        ("auto,dolphin", [di.NEMO, di.NEMO_FOLDER, di.THUNAR, di.DOLPHIN]),
+        ("thunar,auto", [di.NEMO, di.NEMO_FOLDER, di.THUNAR]),
+        ("auto,all", [di.NAUTILUS, di.NAUTILUS_SCRIPT, di.NEMO, di.NEMO_FOLDER, di.FMA, di.DOLPHIN, di.THUNAR]),
     ],
 )
 def test_kinds_auto_uses_detection(spec: str, kinds: list[str]) -> None:
@@ -952,9 +988,24 @@ def test_installed_file_managers(env: dict[str, str], tmp_path: Path) -> None:
     (user_apps / "caja-browser.desktop").write_text("[Desktop Entry]\n", encoding="utf-8")
     (user_apps / "nautilus.desktop").mkdir()
     assert di.installed_file_managers(env) == ["nemo", "caja", "dolphin", "thunar"]
+    (system_apps / "pcmanfm-qt.desktop").write_text("[Desktop Entry]\n", encoding="utf-8")
+    assert di.installed_file_managers(env) == ["nemo", "caja", "dolphin", "thunar", "pcmanfm"]
     _program(bindir, "fma-config-tool")
     _program(bindir, "nautilus")
     assert di.installed_file_managers(env) == list(di.FILE_MANAGERS)
+
+
+@pytest.mark.parametrize("program", ["pcmanfm-qt", "pcmanfm"])
+def test_pcmanfm_gets_the_filemanager_actions_entry(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path, program: str
+) -> None:
+    """Lubuntu's PCManFM-Qt (and LXDE's PCManFM) show 'Open in Fork' from libfm's FileManager-Actions."""
+    _program(tmp_path / "empty-path", program)
+    assert di.installed_file_managers(env) == ["pcmanfm"]
+    installed = di.install(paths, env, runner=runner, exec_cmd=[LAUNCHER], menu=False, icons=False)
+    action = _dirs(env).kind_path(di.FMA)
+    assert installed == [action]
+    assert f"Exec={LAUNCHER} open --from-file-manager %f" in action.read_text(encoding="utf-8")
 
 
 def test_installed_file_managers_defaults_to_os_environ(
@@ -972,7 +1023,7 @@ def test_install_auto_is_the_default(
     dirs = _dirs(env)
     _program(tmp_path / "empty-path", "nemo")
     installed = di.install(paths, env, runner=runner, exec_cmd=[LAUNCHER], menu=False, icons=False)
-    assert installed == [dirs.kind_path(di.NEMO)]
+    assert installed == [dirs.kind_path(di.NEMO), dirs.kind_path(di.NEMO_FOLDER)]
 
 
 def test_install_auto_removes_actions_of_file_managers_that_are_gone(
@@ -1183,7 +1234,7 @@ def test_remove_only_removes_unmodified_files(
     removed = di.remove(paths, env, runner=runner)
     icons = [dirs.hicolor / f"{n}x{n}" / "apps" / f"{APP_ID}.png" for n in ICON_SIZES]
     icons.append(dirs.scalable_icon)
-    assert sorted(removed) == sorted([dirs.menu_file, *icons])
+    assert sorted(removed) == sorted([dirs.menu_file, *icons, dirs.kind_path(di.NEMO_FOLDER)])
     assert dirs.kind_path(di.NEMO).read_text(encoding="utf-8") == "changed\n"
     assert not paths.integrations_file.exists()
     assert di.remove(paths, env, runner=runner) == []
@@ -1218,7 +1269,7 @@ def test_status(paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_
     assert result["ok"]
     assert result["launcher"] == di.launcher_command(env)
     assert {e["kind"]: e["state"] for e in result["entries"]} == {
-        di.MENU: "ok", di.NEMO: "ok", di.THUNAR: "ok", di.CLI_ALIAS: "ok",
+        di.MENU: "ok", di.NEMO: "ok", di.NEMO_FOLDER: "ok", di.THUNAR: "ok", di.CLI_ALIAS: "ok",
     }
     dirs.kind_path(di.NEMO).write_text("x", encoding="utf-8")
     (dirs.bin / "fork").unlink()
@@ -1249,6 +1300,59 @@ def test_cli_aliases_keep_the_mode_of_an_existing_bin_dir(
     _install(paths, env, runner, menu=False, file_managers="none", cli_alias=True, exec_cmd=[str(target)])
     assert os.readlink(dirs.bin / "fork") == str(target)
     assert stat.S_IMODE(dirs.bin.stat().st_mode) == 0o700
+
+
+@pytest.mark.parametrize("nautilus_running", [True, False], ids=["nautilus-running", "no-nautilus"])
+def test_running_nautilus_is_told_to_restart_when_its_extension_changes(
+    paths: Paths,
+    env: dict[str, str],
+    runner: RecordingRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    nautilus_running: bool,
+) -> None:
+    asked: list[tuple[str, ...]] = []
+
+    def running(names: Any) -> list[int]:
+        asked.append(tuple(names))
+        return [4242] if nautilus_running else []
+
+    monkeypatch.setattr(di.procs, "running", running)
+    caplog.set_level(logging.WARNING, logger=di.__name__)
+
+    def restarts() -> int:
+        return sum(record.getMessage() == di.NAUTILUS_RESTART for record in caplog.records)
+
+    extension = _dirs(env).kind_path(di.NAUTILUS)
+    _install(paths, env, runner, menu=False, file_managers="nautilus")
+    assert extension.is_file()
+    assert restarts() == int(nautilus_running)
+    # Unchanged: no notice.
+    _install(paths, env, runner, menu=False, file_managers="nautilus")
+    assert restarts() == int(nautilus_running)
+    # Another launcher changes the extension; removing it changes what Nautilus would show.
+    _install(paths, env, runner, menu=False, file_managers="nautilus", exec_cmd=["/opt/other/fork-linux"])
+    assert restarts() == 2 * int(nautilus_running)
+    assert extension in di.remove(paths, env, runner=runner)
+    assert restarts() == 3 * int(nautilus_running)
+    assert asked == [di.NAUTILUS_PROGRAMS] * 3
+
+
+def test_no_restart_notice_for_a_nautilus_extension_left_alone(
+    paths: Paths,
+    env: dict[str, str],
+    runner: RecordingRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(di.procs, "running", lambda names: [4242])
+    caplog.set_level(logging.WARNING, logger=di.__name__)
+    extension = _dirs(env).kind_path(di.NAUTILUS)
+    extension.parent.mkdir(parents=True)
+    extension.write_text("# the user's own extension\n", encoding="utf-8")
+    assert extension not in _install(paths, env, runner, menu=False, file_managers="nautilus")
+    assert di.remove(paths, env, runner=runner) == [_dirs(env).kind_path(di.NAUTILUS_SCRIPT)]
+    assert not any(record.getMessage() == di.NAUTILUS_RESTART for record in caplog.records)
 
 
 @pytest.mark.parametrize("thunar_running", [True, False], ids=["thunar-running", "no-thunar"])

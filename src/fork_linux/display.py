@@ -12,7 +12,13 @@ Scale sources, first match wins:
 
 The desktop's own probe (:data:`DESKTOP_PROBES`, by :func:`desktop`) runs right after
 the environment: XFCE's window scaling (Settings > Appearance > Window Scaling) leaves
-``Xft.dpi`` at 96, so asking ``xrdb`` first would miss it.
+``Xft.dpi`` at 96, so asking ``xrdb`` first would miss it. GNOME's and Cinnamon's own
+answer is ``Xft.dpi``: gsd-xsettings / csd-xsettings publish it as 96 x the display's
+scale (Settings > Displays > Scale, System Settings > Display > User interface scale:
+mutter's / muffin's monitor configuration, not ``scaling-factor``) x the text scaling
+factor, while GNOME's keys hold only the text scaling (csd-settings-remap copies just
+that one on Cinnamon). There ``xrdb`` is asked before GNOME's keys, which stay the
+fallback without ``Xft.dpi``.
 
 The result is rounded to the nearest 25 % and clamped to 100..300; with no
 source it is 100. Every probe is a short command run through the runner
@@ -202,7 +208,7 @@ PROBES: tuple[Probe, ...] = (
     _from_xfce,
 )
 # Desktop (:func:`desktop`) -> its own probe, asked right after the environment.
-DESKTOP_PROBES: dict[str, Probe] = {"xfce": _from_xfce}
+DESKTOP_PROBES: dict[str, Probe] = {"xfce": _from_xfce, "gnome": _from_xrdb, "cinnamon": _from_xrdb}
 
 
 def normalize(percent: float) -> int:

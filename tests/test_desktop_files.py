@@ -41,7 +41,7 @@ def test_desktop_file_validate(tmp_path: Path) -> None:
     subprocess.run(["desktop-file-validate", str(path)], check=True)
 
 
-@pytest.mark.parametrize("kind", ["nautilus", "nemo", "dolphin", "fma"])
+@pytest.mark.parametrize("kind", ["nautilus", "nemo", "nemo-folder", "dolphin", "fma"])
 def test_system_file_manager_actions(kind: str) -> None:
     text = gen.render_fm_action(kind)
     per_user, _mode = desktop_integration._render_kind(kind, ["fork-linux"])
