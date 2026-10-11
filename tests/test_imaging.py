@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import shutil
 import struct
 import subprocess
@@ -348,6 +349,21 @@ def test_png_to_rgba_undoes_every_filter(filters: tuple[int, ...]) -> None:
     rgba = _pattern(width, height)
     png = _make_png(width, height, rgba, filters=filters, split=17)
     assert imaging.png_to_rgba(png) == (width, height, rgba)
+
+
+@pytest.mark.parametrize(
+    ("left", "up", "upper_left", "expected"),
+    [(10, 20, 20, 10), (30, 10, 30, 10), (20, 30, 25, 25)],
+    ids=["left", "up", "upper-left"],
+)
+def test_paeth_predictor_picks_the_closest_neighbour(left: int, up: int, upper_left: int, expected: int) -> None:
+    assert imaging._paeth_predictor(left, up, upper_left) == expected
+
+
+def test_paeth_predictor_matches_the_reference_including_ties() -> None:
+    values = range(0, 256, 17)
+    for left, up, upper_left in itertools.product(values, repeat=3):
+        assert imaging._paeth_predictor(left, up, upper_left) == _paeth(left, up, upper_left)
 
 
 def test_png_to_rgba_reads_what_png_encode_writes() -> None:

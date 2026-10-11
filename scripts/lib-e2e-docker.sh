@@ -16,11 +16,13 @@ FL_E2E_LOG_MAX="20M"
 # fl_e2e_default_image: the real-Fork image (docker/Dockerfile.e2e.wine declares this tag).
 fl_e2e_default_image() {
 	printf '%s\n' "fork-linux-ci-e2e-wine:26.04"
+	return 0
 }
 
 # fl_e2e_base: the host-wide E2E directory (scratch roots, the seed, the slot locks), 0700.
 fl_e2e_base() {
 	printf '%s\n' "/var/tmp/fork-linux-e2e"
+	return 0
 }
 
 # fl_e2e_user: this user's login name (a uid without a passwd entry falls back to $USER / uid<N>).
@@ -31,6 +33,7 @@ fl_e2e_user() {
 	else
 		printf '%s\n' "${USER:-uid$(id -u)}"
 	fi
+	return 0
 }
 
 # fl_e2e_refuse MESSAGE: a safety refusal (exit status 2).
@@ -44,11 +47,6 @@ fl_e2e_die() {
 	exit 1
 }
 
-# fl_e2e_in_container: true inside Docker / Podman.
-fl_e2e_in_container() {
-	[[ -e /.dockerenv || -e /run/.containerenv ]]
-}
-
 # fl_e2e_homes: $HOME and this uid's passwd home, resolved, one per line (missing ones skipped).
 fl_e2e_homes() {
 	local pw_home=""
@@ -59,6 +57,7 @@ fl_e2e_homes() {
 	if [[ -n "${pw_home}" ]]; then
 		realpath -m -- "${pw_home}"
 	fi
+	return 0
 }
 
 # fl_e2e_check_dir PATH WHAT: print PATH normalised, or refuse (exit 2) when it is relative,
@@ -68,6 +67,7 @@ fl_e2e_check_dir() {
 	[[ "${path}" == /* ]] || fl_e2e_refuse "${what} '${path}' is not an absolute path"
 	case "/${path}/" in
 		*/../* | */./*) fl_e2e_refuse "${what} '${path}' has a '.' or '..' component" ;;
+		*) ;; # no '.' / '..' component: keep checking
 	esac
 	local -a parts
 	IFS=/ read -r -a parts <<<"${path#/}"
@@ -88,6 +88,7 @@ fl_e2e_check_dir() {
 		fi
 	done < <(fl_e2e_homes)
 	printf '%s\n' "${resolved}"
+	return 0
 }
 
 # fl_e2e_check_ro_dir PATH WHAT: print the resolved PATH of an existing directory that is
@@ -106,6 +107,7 @@ fl_e2e_check_ro_dir() {
 		fi
 	done < <(fl_e2e_homes)
 	printf '%s\n' "${resolved}"
+	return 0
 }
 
 # fl_e2e_own_dir DIR WHAT: create DIR (0700) when missing; refuse a symlink, a non-directory or
@@ -117,6 +119,7 @@ fl_e2e_own_dir() {
 	fi
 	[[ ! -L "${dir}" && -d "${dir}" ]] || fl_e2e_refuse "${what} '${dir}' is not a plain directory"
 	[[ "$(stat -c %u -- "${dir}")" == "$(id -u)" ]] || fl_e2e_refuse "${what} '${dir}' is not owned by $(fl_e2e_user)"
+	return 0
 }
 
 # fl_e2e_wipe DIR: delete a scratch root this library created (it must carry the marker). The
@@ -128,7 +131,8 @@ fl_e2e_wipe() {
 		fl_e2e_refuse "'${dir}' has no ${FL_E2E_SCRATCH_MARKER} marker; not deleting it"
 	# Wine leaves some read-only directories behind; make them deletable (find -P never follows links).
 	find -P "${dir:?}" -xdev -type d ! -perm -u+w -exec chmod u+w {} + 2>/dev/null || true
-	rm -rf --one-file-system -- "${dir:?}"
+	rm -rf --one-file-system -- "${dir:?}" || return
+	return 0
 }
 
 # fl_e2e_prepare_scratch DIR KEEP: make DIR a private scratch root carrying the marker. A
@@ -156,6 +160,7 @@ fl_e2e_prepare_scratch() {
 	if [[ ! -e "${dir}/${FL_E2E_SCRATCH_MARKER}" ]]; then
 		printf 'fork-linux e2e-docker scratch root\n' >"${dir}/${FL_E2E_SCRATCH_MARKER}"
 	fi
+	return 0
 }
 
 # fl_e2e_acquire_slot LOCKDIR SLOTS: hold one of SLOTS host-wide slots on fd 9 (flock): try
@@ -180,6 +185,7 @@ fl_e2e_acquire_slot() {
 	flock 9
 	FL_E2E_SLOT="${n}"
 	echo "==> holding E2E slot ${FL_E2E_SLOT}/${slots}"
+	return 0
 }
 
 # fl_e2e_build_image ROOT IMAGE: build the E2E image from docker/Dockerfile.e2e.wine unless the
@@ -194,7 +200,8 @@ fl_e2e_build_image() {
 	fi
 	echo "==> docker build ${image} from ${FL_E2E_DOCKERFILE}"
 	DOCKER_BUILDKIT=1 docker build -f "${root}/${FL_E2E_DOCKERFILE}" -t "${image}" \
-		--label "${FL_E2E_DIGEST_LABEL}=${digest}" "${root}/docker" 9>&- 8>&-
+		--label "${FL_E2E_DIGEST_LABEL}=${digest}" "${root}/docker" 9>&- 8>&- || return
+	return 0
 }
 
 # fl_e2e_copy_logs SCRATCH DEST: text logs only (*.log *.json *.txt under 20 MB), never from a
@@ -206,4 +213,5 @@ fl_e2e_copy_logs() {
 	(cd -- "${src}" && find -P . -xdev -type f \( -name '*.log' -o -name '*.json' -o -name '*.txt' \) \
 		-size "-${FL_E2E_LOG_MAX}" -not -path '*/drive_c/*' -not -path '*/.cache/*' \
 		-exec cp --parents -t "${dest}" {} +) 2>/dev/null || true
+	return 0
 }

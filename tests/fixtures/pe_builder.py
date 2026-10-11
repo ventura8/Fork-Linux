@@ -110,7 +110,8 @@ def decode_png(png: bytes) -> tuple[int, int, bytes]:
         assert crc == zlib.crc32(kind + payload) & 0xFFFFFFFF, f"bad CRC in {kind!r}"
         chunks.append((kind, payload))
         offset += 12 + length
-    assert chunks[0][0] == b"IHDR" and chunks[-1] == (b"IEND", b""), "bad chunk order"
+    assert chunks[0][0] == b"IHDR", "bad chunk order"
+    assert chunks[-1] == (b"IEND", b""), "bad chunk order"
     width, height, depth, color_type, method, filtering, interlace = struct.unpack(">IIBBBBB", chunks[0][1])
     assert (depth, color_type, method, filtering, interlace) == (8, 6, 0, 0, 0), "not 8-bit RGBA"
     raw = zlib.decompress(b"".join(payload for kind, payload in chunks if kind == b"IDAT"))

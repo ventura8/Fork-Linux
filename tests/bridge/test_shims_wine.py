@@ -204,6 +204,20 @@ class Env:
         env: dict[str, str] | None,
     ) -> subprocess.CompletedProcess[bytes]:
         argv = [self.tools.wine, *[str(a) for a in args]]
+        proc = self._run_once(argv, stdin, cwd, env)
+        if _wine_transport_glitch(proc):
+            # Wine's client lost its wineserver socket before the PE produced any output
+            # (seen on CI runners and loaded hosts): the PE never ran, so one retry is safe.
+            proc = self._run_once(argv, stdin, cwd, env)
+        return proc
+
+    def _run_once(
+        self,
+        argv: list[str],
+        stdin: bytes,
+        cwd: Path | None,
+        env: dict[str, str] | None,
+    ) -> subprocess.CompletedProcess[bytes]:
         with (
             tempfile.TemporaryFile() as fin,
             tempfile.TemporaryFile() as fout,
@@ -226,6 +240,11 @@ class Env:
             return subprocess.CompletedProcess(
                 argv, proc.returncode, fout.read(), ferr.read()
             )
+
+
+def _wine_transport_glitch(proc: subprocess.CompletedProcess[bytes]) -> bool:
+    """True when Wine itself failed to talk to wineserver and the PE printed nothing."""
+    return not proc.stdout and proc.stderr.startswith(b"wine client error:")
 
 
 def find_wineserver(wine: str) -> str | None:

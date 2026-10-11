@@ -342,7 +342,7 @@ v1.0.0 was built in phases; rows marked **(planned)** do not exist yet. When you
 
 ## 6. Commit, Branch & Release Conventions
 
-* **Conventional Commits**: `type(scope): imperative summary` — types `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `perf`, `chore`, `revert`; scopes **`cli`, `setup`, `wine`, `bridge`, `desktop`, `packaging`, `ci`, `docs`, `deps`, `release`**. Breaking changes use `!` and a `BREAKING CHANGE:` footer.
+* **Conventional Commits**: `type(scope): imperative summary` — types `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `perf`, `chore`, `revert`; scopes **`cli`, `setup`, `wine`, `bridge`, `desktop`, `packaging`, `ci`, `docs`, `deps`, `release`, `e2e` (the real-Fork tier), `e2e-de` (the desktop-environment E2E tier)**. Breaking changes use `!` and a `BREAKING CHANGE:` footer.
 * **Release commit**: `release: vX.Y.Z - <Title>` (e.g. `release: v1.0.0 - First public release`); its body summarises **all** changes on the branch (see the `release` skill). The tag `vX.Y.Z` must equal `VERSION`.
 * **Branches**: default branch **`main`**; release integration branches `feature/vX.Y.Z` (e.g. `feature/v1.0.0`); topic branches `feature/<topic>` and `fix/<topic>`. PRs target `main` and use [the PR template](.github/pull_request_template.md).
 * **Never push, tag, force-push or publish without being asked** by the maintainer (hard rule 17). Local commits only when asked; never rewrite published history.

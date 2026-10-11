@@ -28,6 +28,15 @@ def test_committed_completion_is_current(shell: str) -> None:
     )
 
 
+def _needle(shell: str, flag: str) -> str:
+    """How ``flag`` appears in the ``shell`` completion script (fish splits long and short flags)."""
+    if shell != "fish":
+        return flag
+    if flag.startswith("--"):
+        return f"-l {flag[2:]}"
+    return f"-s {flag[1:]}"
+
+
 @pytest.mark.parametrize("shell", sorted(FILES))
 def test_every_command_and_option_is_completed(shell: str) -> None:
     text = FILES[shell].read_text(encoding="utf-8")
@@ -36,8 +45,7 @@ def test_every_command_and_option_is_completed(shell: str) -> None:
             assert name in text, f"{shell}: command {name!r} missing"
         for option in node.options:
             for flag in option.flags:
-                needle = flag if shell != "fish" else (f"-l {flag[2:]}" if flag.startswith("--") else f"-s {flag[1:]}")
-                assert needle in text, f"{shell}: {node.key or 'fork-linux'} {flag} missing"
+                assert _needle(shell, flag) in text, f"{shell}: {node.key or 'fork-linux'} {flag} missing"
 
 
 def test_unknown_shell_is_refused() -> None:

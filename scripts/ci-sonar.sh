@@ -28,6 +28,9 @@
 #                          then gate them per file (every file >= 90%, enforced by
 #                          scripts/check-coverage.py) before anything is uploaded.
 #   FL_SONAR_IMAGE       — override the pinned scanner image.
+#   FL_SONAR_BRANCH      — the branch to file the analysis under (default: the checked-out
+#                          branch; a detached HEAD needs it). Any branch other than main is
+#                          sent as sonar.branch.name, so a local scan never replaces main's.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -98,15 +101,28 @@ ensure_coverage() {
 }
 
 run_scanner() {
-	local version opts
+	local version opts branch common_dir
 	version="$(python3 "${ROOT}/scripts/read-version.py")"
 	opts="-Dsonar.projectVersion=${version} -Dsonar.projectBaseDir=${ROOT}"
+	# Without sonar.branch.name the analysis replaces main's: name every other branch,
+	# and refuse a detached HEAD unless FL_SONAR_BRANCH says which branch it is.
+	branch="${FL_SONAR_BRANCH:-$(git -C "${ROOT}" symbolic-ref --short -q HEAD || true)}"
+	if [[ -z "${branch}" ]]; then
+		echo "error: detached HEAD; set FL_SONAR_BRANCH to the branch this analysis belongs to." >&2
+		exit 2
+	fi
+	if [[ "${branch}" != "main" ]]; then
+		opts="${opts} -Dsonar.branch.name=${branch}"
+	fi
+	# A linked worktree keeps its git data in the main checkout: mount it read-only so
+	# the scanner can read SCM data (new-code detection, blame).
+	common_dir="$(git -C "${ROOT}" rev-parse --path-format=absolute --git-common-dir)"
 	# The generic C coverage report is optional: without it Sonar would abort the scan.
 	if [[ ! -f "${C_COVERAGE_XML}" ]]; then
 		echo "==> note: ${C_COVERAGE_XML#"${ROOT}"/} is missing — analysing without C coverage."
 		opts="${opts} -Dsonar.coverageReportPaths="
 	fi
-	echo "==> sonar-scanner ${SCANNER_IMAGE} (project version ${version})"
+	echo "==> sonar-scanner ${SCANNER_IMAGE} (project version ${version}, branch ${branch})"
 	# Mounted at the SAME absolute path as on the host: the coverage reports and
 	# coverage.xml carry absolute paths, and Sonar matches them literally.
 	docker run --rm \
@@ -114,6 +130,7 @@ run_scanner() {
 		--env SONAR_TOKEN \
 		--env "SONAR_SCANNER_OPTS=${opts}" \
 		--volume "${ROOT}:${ROOT}" \
+		--volume "${common_dir}:${common_dir}:ro" \
 		--workdir "${ROOT}" \
 		"${SCANNER_IMAGE}"
 }

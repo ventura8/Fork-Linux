@@ -16,7 +16,8 @@ def load() -> ModuleType:
     if NAME in sys.modules:
         return sys.modules[NAME]
     spec = importlib.util.spec_from_file_location(NAME, ROOT / "scripts" / "gen-data.py")
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[NAME] = module
     spec.loader.exec_module(module)

@@ -43,6 +43,7 @@ _FORK_DEFAULT = "fork.default"
 _FORK_VERSIONS = "fork.versions"
 _INSTALLER_TEMPLATE = "fork.installer_url_template"
 _VERSION_FIELD = "{version}"
+_UI_FONT_FACES = "ui_font.faces"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _SHA256_ANY_CASE = re.compile(r"[0-9a-fA-F]{64}")
 _REVISION = re.compile(r"\d{4}\.\d{1,2}\.\d{1,4}", re.ASCII)
@@ -317,16 +318,16 @@ class Manifest:
     def _load_ui_font(self, value: Any) -> None:
         font = _obj(value, "ui_font", ("family", "version", "license", "url", "sha256", "size", "faces"))
         family = _str(font["family"], "ui_font.family", _FONT_FACE)
-        raw_faces = _entries(font["faces"], "ui_font.faces")
+        raw_faces = _entries(font["faces"], _UI_FONT_FACES)
         faces = tuple(
-            (_str(name, "ui_font.faces", _FONT_FILE), _str(face, f"ui_font.faces.{name}", _FONT_FACE))
+            (_str(name, _UI_FONT_FACES, _FONT_FILE), _str(face, f"{_UI_FONT_FACES}.{name}", _FONT_FACE))
             for name, face in raw_faces.items()
         )
         names = [face for _name, face in faces]
         if len(set(names)) != len(names):
-            raise _fail("ui_font.faces", "contains duplicate face names")
+            raise _fail(_UI_FONT_FACES, "contains duplicate face names")
         if family not in names:
-            raise _fail("ui_font.faces", f"must include the regular face {family!r}")
+            raise _fail(_UI_FONT_FACES, f"must include the regular face {family!r}")
         self.ui_font = UiFont(
             family=family,
             version=_version(font["version"], "ui_font.version"),

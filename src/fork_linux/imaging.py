@@ -207,6 +207,58 @@ def _png_chunks(png: bytes) -> dict[bytes, bytes]:
     return chunks
 
 
+def _paeth_predictor(left: int, up: int, upper_left: int) -> int:
+    """The PNG Paeth predictor: whichever neighbour is closest to ``left + up - upper_left``."""
+    guess = left + up - upper_left
+    pa, pb, pc = abs(guess - left), abs(guess - up), abs(guess - upper_left)
+    if pa <= pb and pa <= pc:
+        return left
+    if pb <= pc:
+        return up
+    return upper_left
+
+
+def _unfilter_sub(line: bytearray, bpp: int) -> bytearray:
+    """Filter type 1 (Sub): each byte adds the byte ``bpp`` to its left."""
+    for i in range(bpp, len(line)):
+        line[i] = (line[i] + line[i - bpp]) & 0xFF
+    return line
+
+
+def _unfilter_up(line: bytearray, prev: bytes) -> bytearray:
+    """Filter type 2 (Up): each byte adds the byte above it."""
+    return bytearray((a + b) & 0xFF for a, b in zip(line, prev, strict=True))
+
+
+def _unfilter_average(line: bytearray, prev: bytes, bpp: int) -> bytearray:
+    """Filter type 3 (Average): each byte adds the floored mean of its left and upper neighbours."""
+    for i in range(len(line)):
+        left = line[i - bpp] if i >= bpp else 0
+        line[i] = (line[i] + ((left + prev[i]) >> 1)) & 0xFF
+    return line
+
+
+def _unfilter_paeth(line: bytearray, prev: bytes, bpp: int) -> bytearray:
+    """Filter type 4 (Paeth): each byte adds the :func:`_paeth_predictor` of its neighbours."""
+    for i in range(len(line)):
+        left, upper_left = (line[i - bpp], prev[i - bpp]) if i >= bpp else (0, 0)
+        line[i] = (line[i] + _paeth_predictor(left, prev[i], upper_left)) & 0xFF
+    return line
+
+
+def _unfilter_row(kind: int, line: bytearray, prev: bytes, bpp: int) -> bytearray:
+    """Undo filter ``kind`` (0..4) on one row, given the already unfiltered row above it."""
+    if kind == 1:
+        return _unfilter_sub(line, bpp)
+    if kind == 2:
+        return _unfilter_up(line, prev)
+    if kind == 3:
+        return _unfilter_average(line, prev, bpp)
+    if kind == 4:
+        return _unfilter_paeth(line, prev, bpp)
+    return line  # 0: None
+
+
 def _unfilter(raw: bytes, height: int, stride: int, bpp: int) -> bytes:
     """Undo the per-row PNG filters (None, Sub, Up, Average, Paeth) of non-interlaced image data."""
     out = bytearray()
@@ -214,30 +266,52 @@ def _unfilter(raw: bytes, height: int, stride: int, bpp: int) -> bytes:
     for y in range(height):
         start = y * (stride + 1)
         kind = raw[start]
-        line = bytearray(raw[start + 1 : start + 1 + stride])
-        if kind == 1:
-            for i in range(bpp, stride):
-                line[i] = (line[i] + line[i - bpp]) & 0xFF
-        elif kind == 2:
-            line = bytearray((a + b) & 0xFF for a, b in zip(line, prev, strict=True))
-        elif kind == 3:
-            for i in range(stride):
-                left = line[i - bpp] if i >= bpp else 0
-                line[i] = (line[i] + ((left + prev[i]) >> 1)) & 0xFF
-        elif kind == 4:
-            for i in range(stride):
-                left = line[i - bpp] if i >= bpp else 0
-                up = prev[i]
-                upper_left = prev[i - bpp] if i >= bpp else 0
-                guess = left + up - upper_left
-                pa, pb, pc = abs(guess - left), abs(guess - up), abs(guess - upper_left)
-                pred = left if pa <= pb and pa <= pc else up if pb <= pc else upper_left
-                line[i] = (line[i] + pred) & 0xFF
-        elif kind != 0:
+        if kind > 4:
             raise _fail(f"PNG row {y} has the unknown filter type {kind}")
+        line = _unfilter_row(kind, bytearray(raw[start + 1 : start + 1 + stride]), prev, bpp)
         out += line
         prev = bytes(line)
     return bytes(out)
+
+
+def _expand_palette(samples: bytes, chunks: dict[bytes, bytes]) -> bytes:
+    """Palette indices as RGBA through ``PLTE``, with per-entry alpha from ``tRNS`` (opaque past its end)."""
+    palette = chunks.get(b"PLTE", b"")
+    alpha = chunks.get(b"tRNS", b"").ljust(len(palette) // 3, b"\xff")
+    table = [palette[i * 3 : i * 3 + 3] + alpha[i : i + 1] for i in range(len(palette) // 3)]
+    if max(samples, default=0) >= len(table):
+        raise _fail("PNG palette index out of range")
+    return b"".join(table[index] for index in samples)
+
+
+def _apply_color_key(rgba: bytearray, samples: bytes, channels: int, key: bytes) -> None:
+    """Make transparent every pixel whose samples equal the ``tRNS`` color key.
+
+    The key holds 16-bit samples per channel; only the low byte matters at 8 bits per sample.
+    """
+    wanted = bytes(key[1::2][:channels])
+    for index in range(len(samples) // channels):
+        if samples[index * channels : (index + 1) * channels] == wanted:
+            rgba[index * 4 + 3] = 0
+
+
+def _expand_direct(samples: bytes, color_type: int, chunks: dict[bytes, bytes]) -> bytes:
+    """Gray (0), RGB (2) or gray + alpha (4) samples as RGBA; ``tRNS`` is a color key for 0 and 2."""
+    channels = _PNG_CHANNELS[color_type]
+    count = len(samples) // channels
+    rgba = bytearray(count * 4)
+    if color_type == 2:
+        rgba[0::4], rgba[1::4], rgba[2::4] = samples[0::3], samples[1::3], samples[2::3]
+    else:
+        rgba[0::4] = rgba[1::4] = rgba[2::4] = samples[0::channels]
+    if color_type == 4:
+        rgba[3::4] = samples[1::2]
+        return bytes(rgba)
+    rgba[3::4] = b"\xff" * count
+    key = chunks.get(b"tRNS")
+    if key is not None:
+        _apply_color_key(rgba, samples, channels, key)
+    return bytes(rgba)
 
 
 def _expand(samples: bytes, color_type: int, chunks: dict[bytes, bytes]) -> bytes:
@@ -245,32 +319,8 @@ def _expand(samples: bytes, color_type: int, chunks: dict[bytes, bytes]) -> byte
     if color_type == 6:
         return samples
     if color_type == 3:
-        palette = chunks.get(b"PLTE", b"")
-        alpha = chunks.get(b"tRNS", b"")
-        table = [
-            palette[i * 3 : i * 3 + 3] + bytes((alpha[i] if i < len(alpha) else 255,)) for i in range(len(palette) // 3)
-        ]
-        if max(samples, default=0) >= len(table):
-            raise _fail("PNG palette index out of range")
-        return b"".join(table[index] for index in samples)
-    gray_alpha = color_type == 4
-    channels = 3 if color_type == 2 else 2 if gray_alpha else 1
-    count = len(samples) // channels
-    rgba = bytearray(count * 4)
-    if color_type == 2:
-        rgba[0::4], rgba[1::4], rgba[2::4] = samples[0::3], samples[1::3], samples[2::3]
-    else:
-        gray = samples[0::channels]
-        rgba[0::4] = rgba[1::4] = rgba[2::4] = gray
-    rgba[3::4] = samples[1::2] if gray_alpha else b"\xff" * count
-    key = chunks.get(b"tRNS")
-    if key is not None and not gray_alpha:
-        # A color key: 16-bit samples per channel (only the low byte matters at 8 bits per sample).
-        wanted = bytes(key[1::2][:channels])
-        for index in range(count):
-            if samples[index * channels : (index + 1) * channels] == wanted:
-                rgba[index * 4 + 3] = 0
-    return bytes(rgba)
+        return _expand_palette(samples, chunks)
+    return _expand_direct(samples, color_type, chunks)
 
 
 def png_to_rgba(png: bytes) -> tuple[int, int, bytes]:

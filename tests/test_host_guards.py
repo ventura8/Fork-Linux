@@ -29,7 +29,8 @@ GUARDED = {
 def test_the_container_check_comes_first(rel: str) -> None:
     text = (REPO / rel).read_text(encoding="utf-8")
     first_action = GUARDED[rel][2]
-    assert CHECK in text and "/run/.containerenv" in text
+    assert CHECK in text
+    assert "/run/.containerenv" in text
     assert text.index(CHECK) < text.index(first_action)
     assert "hard rule 18" in text
 
