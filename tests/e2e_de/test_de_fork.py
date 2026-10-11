@@ -213,7 +213,9 @@ def test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark(
         session.run(command)
     try:
         forkui.launch(session, _repos(session) / "demo")
-        forkui.wait_main_window(session)
+        # Started without a user action, the relaunched Fork may open behind the file manager of
+        # step 07 (muffin's focus-stealing prevention): bring it up as a click on it would.
+        session.activate(forkui.wait_main_window(session))
         settings = forkui.settings(session)
         assert settings["Theme"] == 1
         assert settings["FollowSystemTheme"] is False

@@ -329,6 +329,11 @@ class Session:
                 self.env.pop(name, None)
 
     def _start_xvfb(self) -> None:
+        """Xvfb, or the recipe's own X server (``Desktop.x_server``) on the session's display."""
+        if self.desktop.x_server:
+            self.spawn("x-server", [*self.desktop.x_server, self.display])
+            self._wait_display(f"the X server {self.display}")
+            return
         self.spawn("xvfb", ["Xvfb", self.display, "-screen", "0", SCREEN, "-dpi", "96", "-nolisten", "tcp"])
         self._wait_display("Xvfb")
 

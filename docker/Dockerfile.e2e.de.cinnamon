@@ -1,0 +1,74 @@
+# syntax=docker/dockerfile:1.27.0
+# Desktop E2E image for Fork for Linux (unofficial) — Ubuntu 26.04 with Ubuntu Cinnamon's Cinnamon 6.4
+# Image tag: fork-linux-e2e-de-cinnamon:26.04
+# scripts/ci-e2e-de.sh cinnamon [--fork] runs tests/e2e_de in here (FL_E2E_DE=cinnamon) as the
+# invoking unprivileged user, with the source bind-mounted read-only at /src (no COPY) and one
+# scratch root at /e2e. tests/e2e_de/desktops.py starts the session: Xorg (dummy driver),
+# dbus-daemon, csd-settings-remap and csd-xsettings, muffin and Nemo's FileManager1 service, with
+# Ubuntu Cinnamon's own defaults (ubuntucinnamon-environment: Yaru-cinnamon themes, gschema
+# overrides). gnome-terminal (Cinnamon's default terminal) comes with xdg-terminal-exec, as its
+# Recommends bring it on Ubuntu Cinnamon; xfce4-terminal is the terminal the tier's user picked in
+# Preferred Applications. Linux Mint's Mint-Y themes are not packaged for Ubuntu 26.04.
+# The real-Fork tier (FL_E2E_DE_FORK=1) downloads the managed Wine runtime, winetricks' verbs
+# and the official Fork installer at run time (or copies them from a read-only local seed);
+# nothing is baked into the image or cached, and only text logs leave the container (no
+# screenshots, no binaries).
+# Wine's host libraries come from the same table as `fork-linux doctor`
+# (fork_linux.hostdeps, Debian names), as in docker/Dockerfile.e2e.wine.
+FROM ubuntu:26.04
+
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+# Apt packages are distro-locked by ubuntu:26.04 (no floating apt versions).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git python3 python3-pytest python3-gi curl procps file \
+    xvfb xauth xdotool x11-utils x11-xserver-utils imagemagick \
+    dbus-daemon dbus-bin dbus-x11 libglib2.0-bin \
+    cabextract unzip 7zip fontconfig zenity \
+    desktop-file-utils xdg-utils shared-mime-info \
+    libfreetype6 libfontconfig1 libgnutls30t64 libx11-6 libxext6 libxrender1 libxi6 \
+    libxrandr2 libxcursor1 libxcomposite1 libxinerama1 libxfixes3 libgl1 \
+    libvulkan1 libdbus-1-3 libasound2t64 libpulse0 libxkbcommon0 libwayland-client0 libegl1 \
+    muffin cinnamon-settings-daemon cinnamon-desktop-data nemo ubuntucinnamon-environment \
+    yaru-cinnamon-theme-gtk gir1.2-cmenu-3.0 dconf-cli dconf-service libgl1-mesa-dri \
+    gnome-terminal xdg-terminal-exec xfce4-terminal xserver-xorg-core xserver-xorg-video-dummy \
+    xdg-desktop-portal xdg-desktop-portal-xapp xdg-desktop-portal-gtk
+
+# The session's X server (tests/e2e_de/desktops.py, CINNAMON.x_server): Xorg with the dummy
+# driver, rootless, one 1920x1080 monitor at 60 Hz. Xvfb's only RandR mode has no refresh rate,
+# which muffin rejects ("Invalid mode 1920x1080 (-nan)"), so it could never apply a user
+# interface scale.
+RUN printf '%s\n' \
+    'Section "ServerFlags"' \
+    '    Option "AutoAddDevices" "false"' \
+    '    Option "AutoAddGPU" "false"' \
+    '    Option "DontVTSwitch" "true"' \
+    'EndSection' \
+    'Section "Device"' \
+    '    Identifier "dummy"' \
+    '    Driver "dummy"' \
+    '    VideoRam 256000' \
+    'EndSection' \
+    'Section "Monitor"' \
+    '    Identifier "monitor"' \
+    '    HorizSync 5.0-1000.0' \
+    '    VertRefresh 5.0-200.0' \
+    '    Modeline "1920x1080" 173.00 1920 2048 2248 2576 1080 1083 1088 1120 -hsync +vsync' \
+    'EndSection' \
+    'Section "Screen"' \
+    '    Identifier "screen"' \
+    '    Device "dummy"' \
+    '    Monitor "monitor"' \
+    '    DefaultDepth 24' \
+    '    SubSection "Display"' \
+    '        Depth 24' \
+    '        Modes "1920x1080"' \
+    '        Virtual 1920 1080' \
+    '    EndSubSection' \
+    'EndSection' \
+    >/etc/X11/fl-e2e-dummy.conf
+
+WORKDIR /src
+CMD ["python3", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/e2e_de"]

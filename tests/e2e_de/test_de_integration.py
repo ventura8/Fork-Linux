@@ -352,6 +352,37 @@ def _mate_panel_entries(session: dekit.Session) -> list[dict[str, object]]:
     return json.loads(session.run(["python3", "-I", "-c", MATE_PANEL_READER]).stdout)
 
 
+# Cinnamon's menu applet: Cinnamon.AppSystem loads cinnamon-applications.menu (by that name) with
+# CMenu, Cinnamon's fork of GMenu; the applet lists each directory under its directory's name.
+CINNAMON_READER = """
+import json, gi
+gi.require_version("CMenu", "3.0")
+from gi.repository import CMenu
+tree = CMenu.Tree.new("cinnamon-applications.menu", CMenu.TreeFlags.NONE)
+tree.load_sync()
+found = []
+def collect(directory, names):
+    walker = directory.iter()
+    kind = walker.next()
+    while kind != CMenu.TreeItemType.INVALID:
+        if kind == CMenu.TreeItemType.DIRECTORY:
+            child = walker.get_directory()
+            collect(child, names + [child.get_name()])
+        elif kind == CMenu.TreeItemType.ENTRY:
+            entry = walker.get_entry()
+            found.append({"path": names, "id": entry.get_desktop_file_id(),
+                          "command": entry.get_app_info().get_commandline()})
+        kind = walker.next()
+collect(tree.get_root_directory(), [])
+print(json.dumps(found))
+"""
+
+
+def _cinnamon_entries(session: dekit.Session) -> list[dict[str, object]]:
+    """Every entry of Cinnamon's application menu, as its menu applet reads it."""
+    return json.loads(session.run(["python3", "-I", "-c", CINNAMON_READER]).stdout)
+
+
 MENU_READERS: dict[str, Callable[[dekit.Session], list[dict[str, object]]]] = {
     desktops.MENU_BUDGIE: _budgie_entries,
     desktops.MENU_GARCON: _garcon_entries,
@@ -359,6 +390,7 @@ MENU_READERS: dict[str, Callable[[dekit.Session], list[dict[str, object]]]] = {
     desktops.MENU_LXQT_PANEL: _lxqt_panel_entries,
     desktops.MENU_GNOME_SHELL: _gnome_shell_entries,
     desktops.MENU_MATE_PANEL: _mate_panel_entries,
+    desktops.MENU_CINNAMON: _cinnamon_entries,
 }
 
 
@@ -583,13 +615,21 @@ def test_terminal_opens_in_the_directory(
     session: dekit.Session, desktop: desktops.Desktop, installed: dekit.Installed
 ) -> None:
     target = _git_repo(session.root / "term" / "term-repo", session)
+    # A terminal window an earlier test left open (the file manager's own "Open in Terminal") is not the answer.
+    before = {window.id for window in session.windows()}
     session.run([str(installed.host_helper), "terminal", str(target)])
-    window = session.wait_window(lambda w: w.has_class(desktop.terminal_class), f"a {desktop.terminal} window")
+    window = session.wait_window(
+        lambda w: w.id not in before and w.has_class(desktop.terminal_class), f"a new {desktop.terminal} window"
+    )
     assert window.pid is not None
     dekit.wait_for(
         lambda: str(target) in dekit.children_cwds(window.pid or 0), 30, f"a shell of {desktop.terminal} in {target}"
     )
-    assert dekit.pids_of(desktop.terminal), f"{desktop.terminal} is not the terminal that opened"
+    # The window's process is the terminal (gnome-terminal's windows belong to gnome-terminal-server).
+    program = os.path.basename(os.readlink(f"/proc/{window.pid}/exe"))
+    assert dekit.pids_of(desktop.terminal) or program.startswith(desktop.terminal), (
+        f"{desktop.terminal} is not the terminal that opened ({program})"
+    )
     session.screenshot("terminal", window)
 
 

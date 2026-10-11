@@ -40,6 +40,7 @@ the official Fork 2.23.2 and drives it under the desktop's window manager.
 | Ubuntu 26.04, GNOME 50 (mutter + Xwayland, Nautilus, Ptyxis) | ❌ 12/14 (3 src bugs, fixes proposed); ✅ 14/14 with the fixes | ❌ stops at 07 (Nautilus shows no "Open in Fork"); ✅ 9/9 with the fixes | local `scripts/ci-e2e-de.sh gnome [--fork]`, 2026-10-11; [qa/de-fixes/gnome.md](qa/de-fixes/gnome.md) |
 | Ubuntu Budgie 26.04, Budgie 10.10 (labwc + Xwayland, Nemo, xfce4-terminal) | ❌ 13/14 (Nemo's folder menu, fix proposed); ✅ 14/14 with the fix | ❌ stops at 06 (folder opened from Fork without a systemd user manager); ✅ 9/9 with the fixes | local `scripts/ci-e2e-de.sh budgie [--fork]`, 2026-10-11; [qa/de-fixes/budgie.md](qa/de-fixes/budgie.md) |
 | Ubuntu MATE 26.04, MATE 1.26 (marco, Caja + caja-actions, mate-terminal) | ❌ 15/17 (2 theme cases wait for the fix in [qa/de-fixes/mate.md](qa/de-fixes/mate.md)) | ✅ 9/9 | local `scripts/ci-e2e-de.sh mate [--fork]`, 2026-10-11 |
+| Ubuntu Cinnamon 26.04, Cinnamon 6.4 (muffin on Xorg, Nemo, Preferred Applications' terminal) | ❌ 11/15 (4 src bugs, fixes proposed); ✅ 15/15 with the fixes | ❌ stops at 05 (the user's terminal does not open); ✅ 9/9 with the fixes | local `scripts/ci-e2e-de.sh cinnamon [--fork]`, 2026-10-11; [qa/de-fixes/cinnamon.md](qa/de-fixes/cinnamon.md) |
 
 Known desktop behaviour (not a fork-linux bug): on Xubuntu, XFCE's own Ctrl+Alt+T shortcut
 shadows Fork's "Open In Shell" key; Fork's Repository menu and Shell button work.

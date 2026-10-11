@@ -20,10 +20,10 @@ root under `/var/tmp/fork-linux-e2e/`, the read-only seed for the real-Fork tier
 | Ubuntu 26.04, GNOME 50 (mutter 50 headless Wayland + rootless Xwayland, gsd-xsettings, Nautilus 50 + python3-nautilus and its FileManager1, Ptyxis via xdg-terminal-exec, gnome-shell's app grid, Yaru / Yaru-dark + color-scheme) | `fork-linux-e2e-de-gnome:26.04` | ❌ 12/14 (3 src bugs, fixes proposed); ✅ 14/14 with the fixes | ❌ stops at 07 (Nautilus shows no "Open in Fork"); ✅ 9/9 with the fixes (setup 266-357 s from the seed, tier 325-431 s) | local `scripts/ci-e2e-de.sh gnome [--fork]`, 2026-10-11; [de-fixes/gnome.md](de-fixes/gnome.md) |
 | Ubuntu Budgie 26.04, Budgie 10.10 (labwc 0.9 headless Wayland + rootless Xwayland, budgie-daemon, Nemo 6.4 + its FileManager1 service, xfce4-terminal, the panel menus' libbudgie-appindexer, Pocillo / Pocillo-dark + the Dark theme switch, display scale and text scaling) | `fork-linux-e2e-de-budgie:26.04` | ❌ 13/14: Nemo shows no "Open in Fork" inside a folder until fix 1 in [de-fixes/budgie.md](de-fixes/budgie.md) lands; ✅ 14/14 with it | ❌ stops at 06 (the Nemo that Open In File Explorer starts inside Wine's sandbox aborts; 01-05 pass); ✅ 9/9 with both fixes (setup 256-267 s from the seed, tier 332 s) | local `scripts/ci-e2e-de.sh budgie [--fork]`, 2026-10-11 |
 | Ubuntu MATE 26.04, MATE 1.26 (marco, mate-settings-daemon, Caja 1.26 + its FileManager1 and caja-actions, mate-terminal, mate-panel's menu, Yaru-MATE light / dark and the stock Menta, BlackMATE, HighContrastInverse) | `fork-linux-e2e-de-mate:26.04` | ❌ 15/17: the `dark:blackmate` and `dark:highcontrastinverse` theme cases fail until the `theme.py` fix in [de-fixes/mate.md](de-fixes/mate.md) lands (17/17 with it) | ✅ 9/9 in both runs (setup 257 / 287 s from the seed, tier 313 / 340 s) | local `scripts/ci-e2e-de.sh mate [--fork]`, 2026-10-11 |
+| Ubuntu Cinnamon 26.04, Cinnamon 6.4 (rootless Xorg + dummy driver, muffin 6.4, csd-xsettings + csd-settings-remap, Nemo 6.4 + its FileManager1 and our Nemo actions, Xfce Terminal from Preferred Applications next to gnome-terminal + xdg-terminal-exec, the menu applet's CMenu, Yaru-cinnamon / Yaru-cinnamon-dark + Dark mode, User interface scale x text scaling) | `fork-linux-e2e-de-cinnamon:26.04` | ❌ 11/15 (4 src bugs, fixes proposed); ✅ 15/15 with the fixes | ❌ stops at 05 (gnome-terminal opens, not the user's terminal); ✅ 9/9 with the fixes (setup 264-789 s from the seed, tier 319-845 s) | local `scripts/ci-e2e-de.sh cinnamon [--fork]`, 2026-10-11; [de-fixes/cinnamon.md](de-fixes/cinnamon.md) |
 
-Cinnamon follows the same pattern: one
-`docker/Dockerfile.e2e.de.<desktop>` plus one entry in `tests/e2e_de/desktops.py` (see "Adding a
-desktop").
+Each desktop is one `docker/Dockerfile.e2e.de.<desktop>` plus one entry in
+`tests/e2e_de/desktops.py` (see "Adding a desktop").
 
 ## How to run
 
@@ -59,6 +59,9 @@ environment is what the desktop's display manager exports (for Xubuntu: `XDG_CUR
 `DESKTOP_SESSION=xubuntu`, `XDG_MENU_PREFIX=xfce-`, `XDG_CONFIG_DIRS=/etc/xdg/xdg-xubuntu:/etc/xdg`,
 ...; a value may name `{home}`, the session's home, as KDE's `XDG_CONFIG_DIRS` does). Every
 process of the session carries `FL_E2E_DE_SESSION` or its `DISPLAY`; `stop()` ends exactly those.
+A recipe may run its own X server instead of Xvfb (`Desktop.x_server`, the session's display is
+appended): Cinnamon's muffin rejects Xvfb's only RandR mode (no refresh rate) and could not apply
+a user interface scale, so the Cinnamon image runs Xorg with the dummy driver, rootless.
 
 ## Integration tier (`test_de_integration.py`, no Wine)
 
@@ -371,6 +374,58 @@ with `Theme=1` and a dark window;
   wins over `mate-mimeapps.list`, which names firefox). Nothing in the image binds Ctrl+Alt+T
   (marco's `run-command-terminal` is disabled, mate-settings-daemon's media keys have no
   terminal key), unlike Xubuntu; the tier still uses Fork's Repository menu, as on every desktop.
+
+## Cinnamon facts the recipe relies on
+
+- The image is Ubuntu 26.04 with Ubuntu Cinnamon's packages (`ubuntucinnamon-environment`: its
+  gschema overrides make `Yaru-cinnamon-dark` the default theme). Linux Mint's Mint-Y themes are
+  not packaged for Ubuntu 26.04; fork-linux reads the theme by its name, so Mint-Y / Mint-Y-Dark
+  behave like Yaru-cinnamon / Yaru-cinnamon-dark (unit tests in `tests/test_theme.py`).
+- The session is what lightdm and cinnamon-session export (`XDG_CURRENT_DESKTOP=X-Cinnamon`,
+  `DESKTOP_SESSION=cinnamon`; `cinnamon.session` has `DesktopName=X-Cinnamon`, and nothing sets
+  `XDG_MENU_PREFIX`): the menu applet loads `cinnamon-applications.menu` by name with CMenu
+  (Cinnamon's GMenu), where `Categories=Development` is the "Programming" folder.
+- The settings daemon is what cinnamon-session's autostart starts for settings: csd-xsettings
+  (XSETTINGS, `Xft.dpi`) and csd-settings-remap, which copies Cinnamon's interface keys (theme,
+  text scaling factor, ...) into `org.gnome.desktop.interface` for GNOME applications.
+- Xvfb cannot host a Cinnamon UI scale: its only RandR mode has no refresh rate, muffin refuses it
+  ("Invalid mode 1920x1080 (-nan)") and keeps its monitor configuration unscaled. The recipe runs
+  Xorg with the dummy driver instead (`Desktop.x_server`, rootless, one 1920x1080@60 monitor from
+  `/etc/X11/fl-e2e-dummy.conf`). System Settings > Display > User interface scale is a monitor
+  configuration of muffin's `org.cinnamon.Muffin.DisplayConfig` (`ApplyMonitorsConfig`, as
+  Cinnamon's display panel does); the legacy `scaling-factor` key is not applied live.
+  csd-xsettings then publishes `Xft.dpi` = 96 x scale x text scaling factor (96, 192, 144 for text
+  1.5, 240 for scale 2 with text 1.25); each scale case waits for that value.
+- Dark mode: Themes > Settings > Dark mode (and the Light / Dark buttons of the simplified Themes
+  page) is `org.x.apps.portal color-scheme`, what xdg-desktop-portal-xapp hands applications;
+  `org.cinnamon.desktop.interface` has no `color-scheme` (fix 2 of
+  [de-fixes/cinnamon.md](de-fixes/cinnamon.md)).
+- muffin names itself "Mutter (Muffin)" and, like mutter, frames only decorated windows: Fork's
+  undecorated main window stays a child of the root window (`frames_undecorated=False`).
+  Started without a user action, a relaunched Fork may open behind the window the user used last
+  (focus-stealing prevention): step 08 activates it before its screenshot, as a click would.
+- Nemo: `nemo --no-default-window` (its FileManager1 D-Bus service) owns
+  `org.freedesktop.FileManager1` at start and exits when it has no window; in a Cinnamon session
+  nemo-desktop draws the desktop and every Nemo window is a new or D-Bus activated process. Nemo
+  watches its action folders, so actions installed while it runs show at once (no restart). An
+  action with `Selection=s` is listed only for a selected item; the folder a window shows needs a
+  `Selection=none` action (fix 1). The Menu key opens the context menu at the pointer; the folder
+  menu is Create New Folder, Create New Document, the folder actions (ours), Open in Terminal, ...
+- The terminal is System Settings > Preferred Applications > Terminal
+  (`org.cinnamon.desktop.default-applications.terminal exec`, the chosen terminal's desktop-entry
+  `Exec`), which Nemo's "Open in Terminal" starts. The tier's user ran Ubuntu Cinnamon's
+  gnome-terminal once (gnome-terminal then writes itself into `~/.config/x-cinnamon-xdg-terminals.list`
+  and `xdg-terminals.list`, which xdg-terminal-exec reads) and picked Xfce Terminal there. Before
+  gnome-terminal has run, xdg-terminal-exec 0.14 picks `org.gnome.Terminal.Preferences.desktop`
+  (`gnome-terminal --preferences`, no terminal) or whichever terminal entry it finds first (fix 4).
+- The container has no systemd user manager, so `fork-linux-handoff` runs the host helper directly
+  inside Wine's process tree (`NoNewPrivs: 1`, `Seccomp: 2`). A GTK 3 program started from there
+  aborts when gdk-pixbuf's glycin loader is used for a raster icon (Tilix: status 134,
+  `ensure_surface_for_gicon: assertion failed ... Loader process exited early`); programs whose
+  window comes from a process the session bus starts (gnome-terminal-server, a FileManager1
+  service) and xfce4-terminal are not affected. This is why the recipe's user picked Xfce Terminal
+  rather than Tilix, and why fix 5 opens folders through FileManager1. On a desktop with a systemd
+  user session the hand-off runs the helper as a transient unit outside Wine's tree.
 
 ## Adding a desktop
 

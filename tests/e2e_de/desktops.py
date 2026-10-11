@@ -35,7 +35,10 @@ MENU_LXQT_PANEL = "lxqt-panel"
 MENU_GNOME_SHELL = "gnome-shell"
 MENU_BUDGIE = "budgie-appindexer"
 MENU_MATE_PANEL = "mate-panel"
-MENU_READERS = (MENU_GARCON, MENU_KSYCOCA, MENU_LXQT_PANEL, MENU_GNOME_SHELL, MENU_BUDGIE, MENU_MATE_PANEL)
+MENU_CINNAMON = "cinnamon-cmenu"
+MENU_READERS = (
+    MENU_GARCON, MENU_KSYCOCA, MENU_LXQT_PANEL, MENU_GNOME_SHELL, MENU_BUDGIE, MENU_MATE_PANEL, MENU_CINNAMON,
+)
 
 # How the desktop picks the web browser that xdg-open hands http(s) links to.
 BROWSER_XFCE_HELPERS = "xfce-helpers"
@@ -105,6 +108,10 @@ class Desktop:
     # A command whose success means the settings daemon has published its settings.
     settings_ready: Command = ("true",)
     packages: tuple[str, ...] = field(default=())
+    # The X server the session runs on, its display appended (empty: Xvfb at dekit.SCREEN, 96 DPI).
+    # Xvfb's one RandR mode has no refresh rate, so a window manager that applies a scale through
+    # its own monitor configuration (Cinnamon's muffin) needs a server with real modes.
+    x_server: Command = ()
 
 
 def _xsettings(prop: str, kind: str, value: str) -> Command:
@@ -806,4 +813,155 @@ MATE = Desktop(
 )
 
 
-DESKTOPS: dict[str, Desktop] = {desktop.key: desktop for desktop in (XFCE, KDE, LXQT, GNOME, BUDGIE, MATE)}
+_CINNAMON_INTERFACE = "org.cinnamon.desktop.interface"
+_CINNAMON_PORTAL = "org.x.apps.portal"
+
+
+def _cinnamon_set(schema: str, key: str, value: str) -> Command:
+    """``gsettings set`` of one Cinnamon key, as Cinnamon's System Settings writes it."""
+    return ("gsettings", "set", schema, key, value)
+
+
+def _cinnamon_reset(schema: str, key: str) -> Command:
+    """``gsettings reset``: the key back to its (Ubuntu Cinnamon) default."""
+    return ("gsettings", "reset", schema, key)
+
+
+# System Settings > Display > User interface scale (Cinnamon 6.4's display panel): a new monitor
+# configuration with that scale through muffin's DisplayConfig, kept ("Keep this configuration").
+# csd-xsettings then publishes Xft.dpi as 96 x the scale x the text scaling factor.
+_MUFFIN_UI_SCALE = """
+import sys, gi
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib
+BUS_NAME = "org.cinnamon.Muffin.DisplayConfig"
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+def display_config(method, parameters=None):
+    reply = bus.call_sync(BUS_NAME, "/org/cinnamon/Muffin/DisplayConfig", BUS_NAME, method, parameters,
+                          None, Gio.DBusCallFlags.NONE, -1, None)
+    return reply.unpack()
+serial, monitors, logical_monitors, _properties = display_config("GetCurrentState")
+scale = float(sys.argv[1])
+if logical_monitors[0][2] != scale:
+    (connector, _vendor, _product, _serial), modes = monitors[0][0], monitors[0][1]
+    current = next(mode[0] for mode in modes if mode[6].get("is-current"))
+    layout = [(0, 0, scale, 0, True, [(connector, current, {})])]
+    display_config("ApplyMonitorsConfig", GLib.Variant("(uua(iiduba(ssa{sv}))a{sv})", (serial, 2, layout, {})))
+"""
+
+
+def _ui_scale(scale: str) -> Command:
+    return ("python3", "-I", "-c", _MUFFIN_UI_SCALE, scale)
+
+
+def _xft_dpi(dpi: int) -> Command:
+    """Wait (10 s at most) until csd-xsettings has published ``Xft.dpi`` ``dpi``."""
+    script = (
+        'for _ in $(seq 100); do xrdb -query | grep -qE "^Xft\\.dpi:[[:space:]]+$1$" && exit 0; sleep 0.1; done;'
+        ' echo "Xft.dpi is not $1: $(xrdb -query | grep Xft.dpi)" >&2; exit 1'
+    )
+    return ("sh", "-c", script, "sh", str(dpi))
+
+
+def _text_scaling(factor: str) -> Command:
+    """System Settings > Fonts > Text scaling factor."""
+    return _cinnamon_set(_CINNAMON_INTERFACE, "text-scaling-factor", factor)
+
+
+def _gtk_theme(name: str) -> Command:
+    """System Settings > Themes > Applications."""
+    return _cinnamon_set(_CINNAMON_INTERFACE, "gtk-theme", name)
+
+
+# What cinnamon-session starts for the settings (its csd-* autostart entries: csd-settings-remap
+# mirrors Cinnamon's interface keys into org.gnome.desktop.interface for GNOME applications,
+# csd-xsettings publishes XSETTINGS and Xft.dpi), in the tier user's home as they left it: they
+# ran Ubuntu Cinnamon's gnome-terminal once (which then writes itself into xdg-terminal-exec's
+# lists), then picked Xfce Terminal in System Settings > Preferred Applications > Terminal
+# (cs_default stores its desktop entry's Exec), and the light Yaru-cinnamon theme (Ubuntu Cinnamon
+# ships Yaru-cinnamon-dark; the real-Fork scenario starts light).
+_CINNAMON_SESSION = (
+    'mkdir -p "$XDG_CONFIG_HOME"'
+    ' && for list in x-cinnamon-xdg-terminals.list xdg-terminals.list; do'
+    ' echo org.gnome.Terminal.desktop > "$XDG_CONFIG_HOME/$list"; done'
+    " && gsettings set org.cinnamon.desktop.default-applications.terminal exec xfce4-terminal"
+    " && gsettings set org.cinnamon.desktop.default-applications.terminal exec-arg -x"
+    " && gsettings set org.cinnamon.desktop.interface gtk-theme Yaru-cinnamon"
+    " && { /usr/bin/csd-settings-remap & exec /usr/bin/csd-xsettings; }"
+)
+# Xorg with the dummy driver (docker/Dockerfile.e2e.de.cinnamon writes its 1920x1080@60 config),
+# run rootless like Xvfb: muffin needs a RandR mode with a refresh rate to apply a UI scale.
+_XORG_DUMMY = (
+    'mkdir -p "$XDG_DATA_HOME/xorg" && exec /usr/lib/xorg/Xorg "$@" -config /etc/X11/fl-e2e-dummy.conf'
+    ' -noreset -nolisten tcp -dpi 96 -logfile "$XDG_DATA_HOME/xorg/Xorg.log"'
+)
+
+CINNAMON = Desktop(
+    key="cinnamon",
+    title="Ubuntu Cinnamon 26.04 (Cinnamon 6.4: muffin, csd-xsettings, Nemo 6.4, xfce4-terminal, Yaru-cinnamon)",
+    # What lightdm + /etc/X11/Xsession.d (60x11-common_xdg_path) and cinnamon-session export for
+    # the "Cinnamon" session (cinnamon.session: DesktopName=X-Cinnamon; no XDG_MENU_PREFIX: the
+    # menu applet reads cinnamon-applications.menu by name).
+    session_env={
+        "XDG_CURRENT_DESKTOP": "X-Cinnamon",
+        "DESKTOP_SESSION": "cinnamon",
+        "XDG_SESSION_DESKTOP": "cinnamon",
+        "XDG_SESSION_TYPE": "x11",
+        "XDG_DATA_DIRS": "/usr/share/cinnamon:/usr/local/share/:/usr/share/",
+    },
+    x_server=("sh", "-c", _XORG_DUMMY, "sh"),
+    settings_daemon=("sh", "-c", _CINNAMON_SESSION),
+    window_manager=("muffin", "--replace"),
+    wm_name="Mutter (Muffin)",
+    # Nemo's D-Bus services (nemo.FileManager1.service, nemo.service) run "nemo --no-default-window".
+    file_manager="nemo",
+    file_manager_service=("nemo", "--no-default-window"),
+    file_manager_class="Nemo",
+    provides_file_manager1=True,
+    integration=NEMO_ACTION,
+    # The menu applet (CMenu on cinnamon-applications.menu): Categories=Development is "Programming".
+    menu_reader=MENU_CINNAMON,
+    menu_folder=("Programming",),
+    # The terminal of System Settings > Preferred Applications (exec of
+    # org.cinnamon.desktop.default-applications.terminal), which Nemo's "Open in Terminal" starts.
+    terminal="xfce4-terminal",
+    terminal_class="Xfce4-terminal",
+    themes={
+        LIGHT: (_gtk_theme("Yaru-cinnamon"),),
+        # Ubuntu Cinnamon's default theme.
+        DARK: (_gtk_theme("Yaru-cinnamon-dark"),),
+        # Themes > Settings > Dark mode: "Prefer dark mode" (org.x.apps.portal color-scheme, what
+        # the XApp portal hands applications as their color scheme), with the light theme kept.
+        "dark:prefer-dark-mode": (_cinnamon_set(_CINNAMON_PORTAL, "color-scheme", "prefer-dark"),),
+    },
+    scales=(
+        ScaleCase("default", 100, (_xft_dpi(96),)),
+        ScaleCase("ui-scale-200", 200, (_ui_scale("2"), _xft_dpi(192))),
+        ScaleCase("text-scaling-150", 150, (_text_scaling("1.5"), _xft_dpi(144))),
+        ScaleCase("ui-scale-200-text-scaling-125", 250, (_ui_scale("2"), _text_scaling("1.25"), _xft_dpi(240))),
+    ),
+    reset=(
+        _gtk_theme("Yaru-cinnamon"),
+        _cinnamon_reset(_CINNAMON_PORTAL, "color-scheme"),
+        _cinnamon_reset(_CINNAMON_INTERFACE, "text-scaling-factor"),
+        _ui_scale("1"),
+        _xft_dpi(96),
+    ),
+    browser=BROWSER_XDG_MIME,
+    # Nemo's context menu of the folder it shows (no item selected): Create New Folder, Create New
+    # Document, then the actions for the folder (ours: Selection=none), then Open in Terminal.
+    open_in_fork_keys=("Menu", "Down", "Down", "Down", "Return"),
+    # muffin, like mutter, reparents only decorated windows: Fork draws its own title bar.
+    frames_undecorated=False,
+    settings_ready=("sh", "-c", "xrdb -query | grep -q '^Xft.dpi:'"),
+    packages=(
+        "muffin", "cinnamon-settings-daemon", "nemo", "ubuntucinnamon-environment", "yaru-cinnamon-theme-gtk",
+        "gir1.2-cmenu-3.0", "gnome-terminal", "xdg-terminal-exec", "xfce4-terminal", "xdg-desktop-portal-xapp",
+        "xserver-xorg-core", "xserver-xorg-video-dummy", "dconf-cli",
+    ),
+)
+
+
+DESKTOPS: dict[str, Desktop] = {
+    desktop.key: desktop for desktop in (XFCE, KDE, LXQT, GNOME, BUDGIE, MATE, CINNAMON)
+}
