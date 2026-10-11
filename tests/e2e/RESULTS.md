@@ -141,6 +141,44 @@ Result: `test_real_fork.py` **7 passed in 310 s**, `test_fork_update.py` **12 pa
 `test_wine_app_upgrade.py` **7 passed in 854 s** (now in its own prefix, `<root>/app-upgrade`). The same
 three had passed once before on the tree without that change (7 in 411 s, 12 in 1115 s, 7 in 955 s).
 
+## Review run of the update tiers (2026-10-11)
+
+An adversarial review of `fix/update-tests` added scenario F24 (Fork's own automatic update check),
+a real-tier F20 (an interrupted Velopack apply) and, in F1 / F7, Fork restarted by Velopack while our
+launcher is not its parent (with the bridge: `fork <path>` takes the fast path and reuses the
+session's daemon). Exploration first (Fork 2.23.1 left alone on each channel, nothing clicked): on
+Develop Fork reads the feed about a minute after it starts (65 s), downloads 2.23.2 (delta) and shows
+"Fork update is ready to be installed" by itself; it does so at most once per interval it keeps in
+`settings.json` (`LastUpdateCheck`). No earlier run had seen it: every scenario closed Fork within a
+minute. The update modules now seed `LastUpdateCheck` before every start (long ago only where F24
+wants the check), so it can no longer stage 2.23.2 uninvited (Velopack would apply it at the next
+start, under the app-upgrade tier's feet).
+
+```
+FL_E2E_FORK_UPDATES=1 scripts/e2e-docker.sh --name updrev-fork pytest --durations=0 tests/e2e/test_fork_update.py
+FL_E2E_APP_UPGRADE=1 FL_E2E_BRIDGE_BUILDS=/e2e/bridge \
+  scripts/e2e-docker.sh --name updrev-app --keep pytest --durations=0 tests/e2e/test_wine_app_upgrade.py
+```
+
+Result: `test_fork_update.py` **13 passed in 885 s**, `test_wine_app_upgrade.py` **7 passed in 884 s**
+(fresh prefixes; `--keep` kept only the two A6 bridge builds). New or changed steps:
+
+| Test | Time |
+|---|---|
+| `test_f9_stable_channel_reads_the_stable_feed`: + F24 on Stable: the automatic check, nothing clicked, reads `/win/stable/releases.win.json` and stages nothing | 105.1 s |
+| `test_f4_rollback_pins_and_blocks_the_in_app_update`: + F24 pinned: no automatic check in 120 s although one is due, no package downloaded | 162.3 s |
+| `test_f7_bridge_survives_the_self_restart`: + the restarted Fork's parent is not the test's launcher; after the commit, `fork <path>` hands over to it and reuses the same daemon (one daemon, same port) | 65.1 s |
+| `test_f23_staged_update_applied_at_the_next_start`: 2.23.2 now staged by Fork's automatic check (F24, the ready dialog came up by itself), then applied by Velopack as Fork starts | 108.1 s |
+| `test_f20_interrupted_apply_is_reinstalled_keeping_the_users_files`: `current\` moved into `packages\VelopackTemp`; the next `fork` reinstalls 2.23.2 from the official installer (feed SHA256 checked), says "Fork 2.23.2 was missing or incomplete; Fork 2.23.2 was installed again", no "Fork updated" notice, no first-run dialog, `accounts.json` / `custom-commands.json` unchanged, doctor `fork.installed` and `fork.integrity` ok | 25.5 s |
+
+Flaky spot, not ours: once (of 7 Restart and Update clicks in these runs, with four packaging cells
+building on the same host) Velopack applied 2.23.2 but could not start the new `Fork.exe`
+("Apply error: Failed to start application (OS Error 731)", `ERROR_WAIT_1`: the new process died while
+Wine started it); Fork stayed closed until started again, which works. `restart_and_update` now names
+that error instead of only "no main window". The packaging cells deb, appimage (now also moved and
+renamed, `appimage_moved`), flatpak and snap (now also `snap revert` back and forward,
+`snap_revert`) passed in the same session, every log read.
+
 ## Manual scenario (timings and outcomes)
 
 | # | Step | Outcome | Time |
