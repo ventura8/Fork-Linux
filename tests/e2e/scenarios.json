@@ -2257,6 +2257,19 @@
     ]
   },
   {
+    "id": "F20",
+    "area": "fork-update",
+    "title": "An interrupted Velopack apply (current\\ missing) is reinstalled on the next launch, keeping the user's files",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e/test_fork_update.py::test_f20_interrupted_apply_is_reinstalled_keeping_the_users_files"
+    ]
+  },
+  {
     "id": "F23",
     "area": "fork-update",
     "title": "A staged update applied by Velopack when Fork starts opens the launch's path in the new Fork",
@@ -2266,6 +2279,21 @@
     "provided_by": "fix/update-tests",
     "pending_merge": true,
     "tests": [
+      "tests/e2e/test_fork_update.py::test_f23_staged_update_applied_at_the_next_start"
+    ]
+  },
+  {
+    "id": "F24",
+    "area": "fork-update",
+    "title": "Fork's own automatic update check follows the channel and never runs behind a pin",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e/test_fork_update.py::test_f9_stable_channel_reads_the_stable_feed",
+      "tests/e2e/test_fork_update.py::test_f4_rollback_pins_and_blocks_the_in_app_update",
       "tests/e2e/test_fork_update.py::test_f23_staged_update_applied_at_the_next_start"
     ]
   },
@@ -2387,13 +2415,14 @@
     "provided_by": "fix/update-tests",
     "pending_merge": true,
     "tests": [
-      "packaging:appimage:check_appimage_update_info"
+      "packaging:appimage:check_appimage_update_info",
+      "packaging:appimage:appimage_moved"
     ]
   },
   {
     "id": "A10",
     "area": "app-upgrade",
-    "title": "Flatpak bundle update and snap refresh",
+    "title": "Flatpak bundle update, snap refresh and snap revert",
     "tiers": [
       "packaging"
     ],
@@ -2401,7 +2430,8 @@
     "pending_merge": true,
     "tests": [
       "packaging:flatpak:upgrade_from_previous",
-      "packaging:snap:upgrade_from_previous"
+      "packaging:snap:upgrade_from_previous",
+      "packaging:snap:snap_revert"
     ]
   },
   {
@@ -2428,6 +2458,41 @@
     "pending_merge": true,
     "tests": [
       "tests/e2e/test_wine_app_upgrade.py::test_07_a12_app_upgrade_and_fork_self_update_on_one_launch"
+    ]
+  },
+  {
+    "id": "A17",
+    "area": "app-upgrade",
+    "title": "No maintainer scripts: installing, upgrading and removing a package never touches a home directory",
+    "tiers": [
+      "packaging"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "packaging:deb:assert_markers",
+      "packaging:deb-jammy:assert_markers",
+      "packaging:rpm-fedora:assert_markers",
+      "packaging:rpm-opensuse:assert_markers",
+      "packaging:arch:assert_markers",
+      "packaging:snap:assert_markers",
+      "packaging:appimage:assert_markers",
+      "packaging:flatpak:assert_markers",
+      "packaging:tarball:assert_markers"
+    ]
+  },
+  {
+    "id": "DE-XFCE-SESSION",
+    "area": "desktop",
+    "title": "Xfce: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
     ]
   },
   {
@@ -2642,6 +2707,20 @@
     ]
   },
   {
+    "id": "DE-KDE-SESSION",
+    "area": "desktop",
+    "title": "KDE Plasma: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
+    ]
+  },
+  {
     "id": "DE-KDE-INSTALL",
     "area": "desktop",
     "title": "KDE Plasma: fork-linux installs from the release tarball",
@@ -2850,6 +2929,245 @@
     "pending_merge": true,
     "tests": [
       "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-SESSION",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-INSTALL",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: fork-linux installs from the release tarball",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-MENU",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the menu entry is valid, listed by the desktop's menu and starts fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FILE-MANAGER-ACTION",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the file manager's Open in Fork runs fork-linux",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-THEME",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the light and dark themes are detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-SCALE",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the desktop's scaling is detected",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-TERMINAL",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the desktop's terminal opens in a folder",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FILE-MANAGER-REVEAL",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the desktop's file manager shows a file",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-DEFAULT-APPS",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: files and URLs reach the desktop's default applications",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application",
+      "tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-DOCTOR",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: doctor fails only for what setup installs",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FORK-SETUP",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: setup completes and doctor --deep has no failures, before and after use",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_01_setup_completes",
+      "tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures",
+      "tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FORK-WINDOW",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the official Fork runs under the desktop's window manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FORK-SECOND-TAB",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the fork command opens a second tab in the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FORK-SHELL",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: Fork's Open In Shell opens the desktop's terminal",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FORK-EXPLORER",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: Fork's Open In File Explorer opens the desktop's file manager",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FORK-OPEN-IN-FORK",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the file manager's Open in Fork reaches the running Fork",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork"
+    ]
+  },
+  {
+    "id": "DE-KDEWAYLAND-FORK-DARK",
+    "area": "desktop",
+    "title": "KDE Plasma on Wayland: the tabs are kept and a dark desktop relaunches Fork dark",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
+    ]
+  },
+  {
+    "id": "DE-LXQT-SESSION",
+    "area": "desktop",
+    "title": "LXQt: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
     ]
   },
   {
@@ -3064,6 +3382,20 @@
     ]
   },
   {
+    "id": "DE-GNOME-SESSION",
+    "area": "desktop",
+    "title": "GNOME: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
+    ]
+  },
+  {
     "id": "DE-GNOME-INSTALL",
     "area": "desktop",
     "title": "GNOME: fork-linux installs from the release tarball",
@@ -3272,6 +3604,20 @@
     "pending_merge": true,
     "tests": [
       "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
+    ]
+  },
+  {
+    "id": "DE-BUDGIE-SESSION",
+    "area": "desktop",
+    "title": "Budgie: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
     ]
   },
   {
@@ -3486,6 +3832,20 @@
     ]
   },
   {
+    "id": "DE-MATE-SESSION",
+    "area": "desktop",
+    "title": "MATE: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
+    ]
+  },
+  {
     "id": "DE-MATE-INSTALL",
     "area": "desktop",
     "title": "MATE: fork-linux installs from the release tarball",
@@ -3694,6 +4054,20 @@
     "pending_merge": true,
     "tests": [
       "tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark"
+    ]
+  },
+  {
+    "id": "DE-CINNAMON-SESSION",
+    "area": "desktop",
+    "title": "Cinnamon: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier",
+    "tiers": [
+      "de"
+    ],
+    "provided_by": "fix/de-e2e",
+    "pending_merge": true,
+    "tests": [
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run",
+      "tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running"
     ]
   },
   {

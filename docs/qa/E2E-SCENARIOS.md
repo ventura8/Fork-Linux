@@ -22,11 +22,11 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | Doctor and repository fixes | 13 | 13 | 0 |
 | Uninstall | 8 | 8 | 0 |
 | Snapshots and rollback | 7 | 7 | 0 |
-| Fork updates | 11 | 0 | 11 |
-| Fork for Linux upgrades | 11 | 0 | 11 |
-| Desktop environments | 112 | 0 | 112 |
+| Fork updates | 13 | 0 | 13 |
+| Fork for Linux upgrades | 12 | 1 | 11 |
+| Desktop environments | 136 | 0 | 136 |
 | Non-Latin font fallback | 1 | 0 | 1 |
-| **Total** | 295 | 160 | 135 |
+| **Total** | 322 | 161 | 161 |
 
 ## Setup
 
@@ -242,7 +242,9 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | F9 | Fork's own channel (Develop, Stable, Off) in update --check | real-fork | `fix/update-tests` (pending merge) | `tests/e2e/test_fork_update.py::test_f9_stable_channel_reads_the_stable_feed` |
 | F10 | fork PATH while Fork restarts for an update | real-fork | `fix/update-tests` (pending merge) | `tests/e2e/test_fork_update.py::test_f10_fork_path_during_restart_and_update` |
 | F19 | Git bridge on, then update --fork: the new Fork's git goes through the bridge | real-fork | `fix/update-tests` (pending merge) | `tests/e2e/test_fork_update.py::test_f19_update_fork_keeps_the_bridge_working` |
+| F20 | An interrupted Velopack apply (current\ missing) is reinstalled on the next launch, keeping the user's files | real-fork | `fix/update-tests` (pending merge) | `tests/e2e/test_fork_update.py::test_f20_interrupted_apply_is_reinstalled_keeping_the_users_files` |
 | F23 | A staged update applied by Velopack when Fork starts opens the launch's path in the new Fork | real-fork | `fix/update-tests` (pending merge) | `tests/e2e/test_fork_update.py::test_f23_staged_update_applied_at_the_next_start` |
+| F24 | Fork's own automatic update check follows the channel and never runs behind a pin | real-fork | `fix/update-tests` (pending merge) | `tests/e2e/test_fork_update.py::test_f9_stable_channel_reads_the_stable_feed`<br>`tests/e2e/test_fork_update.py::test_f4_rollback_pins_and_blocks_the_in_app_update`<br>`tests/e2e/test_fork_update.py::test_f23_staged_update_applied_at_the_next_start` |
 
 ## Fork for Linux upgrades
 
@@ -255,15 +257,17 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | A5 | Upgrade while Fork runs | real-fork | `fix/update-tests` (pending merge) | `tests/e2e/test_wine_app_upgrade.py::test_03_a5_upgrade_while_fork_runs` |
 | A6 | Bridge binaries replaced while the daemon runs | real-fork | `fix/update-tests` (pending merge) | `tests/e2e/test_wine_app_upgrade.py::test_06_a6_bridge_binaries_replaced_while_the_daemon_runs` |
 | A8 | Downgrade N -> N-1 warns and keeps working | packaging | `fix/update-tests` (pending merge) | `packaging:deb:downgrade_to_previous`<br>`packaging:deb-jammy:downgrade_to_previous`<br>`packaging:rpm-fedora:downgrade_to_previous`<br>`packaging:rpm-opensuse:downgrade_to_previous`<br>`packaging:arch:downgrade_to_previous`<br>`packaging:snap:downgrade_to_previous`<br>`packaging:appimage:downgrade_to_previous`<br>`packaging:flatpak:downgrade_to_previous`<br>`packaging:tarball:downgrade_to_previous` |
-| A9 | AppImage update information and a moved AppImage | packaging | `fix/update-tests` (pending merge) | `packaging:appimage:check_appimage_update_info` |
-| A10 | Flatpak bundle update and snap refresh | packaging | `fix/update-tests` (pending merge) | `packaging:flatpak:upgrade_from_previous`<br>`packaging:snap:upgrade_from_previous` |
+| A9 | AppImage update information and a moved AppImage | packaging | `fix/update-tests` (pending merge) | `packaging:appimage:check_appimage_update_info`<br>`packaging:appimage:appimage_moved` |
+| A10 | Flatpak bundle update, snap refresh and snap revert | packaging | `fix/update-tests` (pending merge) | `packaging:flatpak:upgrade_from_previous`<br>`packaging:snap:upgrade_from_previous`<br>`packaging:snap:snap_revert` |
 | A11 | Uninstall then reinstall keeps the prefix (no new license activation) | real-fork | `fix/update-tests` (pending merge) | `tests/e2e/test_wine_app_upgrade.py::test_05_a11_uninstall_then_reinstall_keeps_the_prefix` |
 | A12 | An app upgrade and a Fork self-update in the same session | real-fork | `fix/update-tests` (pending merge) | `tests/e2e/test_wine_app_upgrade.py::test_07_a12_app_upgrade_and_fork_self_update_on_one_launch` |
+| A17 | No maintainer scripts: installing, upgrading and removing a package never touches a home directory | packaging | this repository | `packaging:deb:assert_markers`<br>`packaging:deb-jammy:assert_markers`<br>`packaging:rpm-fedora:assert_markers`<br>`packaging:rpm-opensuse:assert_markers`<br>`packaging:arch:assert_markers`<br>`packaging:snap:assert_markers`<br>`packaging:appimage:assert_markers`<br>`packaging:flatpak:assert_markers`<br>`packaging:tarball:assert_markers` |
 
 ## Desktop environments
 
 | Id | Scenario | Tiers | Provided by | Tests |
 |---|---|---|---|---|
+| DE-XFCE-SESSION | Xfce: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run`<br>`tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running` |
 | DE-XFCE-INSTALL | Xfce: fork-linux installs from the release tarball | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball` |
 | DE-XFCE-MENU | Xfce: the menu entry is valid, listed by the desktop's menu and starts fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux` |
 | DE-XFCE-FILE-MANAGER-ACTION | Xfce: the file manager's Open in Fork runs fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork` |
@@ -280,6 +284,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | DE-XFCE-FORK-EXPLORER | Xfce: Fork's Open In File Explorer opens the desktop's file manager | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager` |
 | DE-XFCE-FORK-OPEN-IN-FORK | Xfce: the file manager's Open in Fork reaches the running Fork | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork` |
 | DE-XFCE-FORK-DARK | Xfce: the tabs are kept and a dark desktop relaunches Fork dark | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark` |
+| DE-KDE-SESSION | KDE Plasma: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run`<br>`tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running` |
 | DE-KDE-INSTALL | KDE Plasma: fork-linux installs from the release tarball | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball` |
 | DE-KDE-MENU | KDE Plasma: the menu entry is valid, listed by the desktop's menu and starts fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux` |
 | DE-KDE-FILE-MANAGER-ACTION | KDE Plasma: the file manager's Open in Fork runs fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork` |
@@ -296,6 +301,24 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | DE-KDE-FORK-EXPLORER | KDE Plasma: Fork's Open In File Explorer opens the desktop's file manager | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager` |
 | DE-KDE-FORK-OPEN-IN-FORK | KDE Plasma: the file manager's Open in Fork reaches the running Fork | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork` |
 | DE-KDE-FORK-DARK | KDE Plasma: the tabs are kept and a dark desktop relaunches Fork dark | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark` |
+| DE-KDEWAYLAND-SESSION | KDE Plasma on Wayland: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run`<br>`tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running` |
+| DE-KDEWAYLAND-INSTALL | KDE Plasma on Wayland: fork-linux installs from the release tarball | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball` |
+| DE-KDEWAYLAND-MENU | KDE Plasma on Wayland: the menu entry is valid, listed by the desktop's menu and starts fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux` |
+| DE-KDEWAYLAND-FILE-MANAGER-ACTION | KDE Plasma on Wayland: the file manager's Open in Fork runs fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork` |
+| DE-KDEWAYLAND-THEME | KDE Plasma on Wayland: the light and dark themes are detected | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_theme_detection_follows_the_desktop` |
+| DE-KDEWAYLAND-SCALE | KDE Plasma on Wayland: the desktop's scaling is detected | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_scale_detection_follows_the_desktop` |
+| DE-KDEWAYLAND-TERMINAL | KDE Plasma on Wayland: the desktop's terminal opens in a folder | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_terminal_opens_in_the_directory` |
+| DE-KDEWAYLAND-FILE-MANAGER-REVEAL | KDE Plasma on Wayland: the desktop's file manager shows a file | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_reveal_shows_the_file_in_the_file_manager` |
+| DE-KDEWAYLAND-DEFAULT-APPS | KDE Plasma on Wayland: files and URLs reach the desktop's default applications | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_open_file_reaches_the_default_application`<br>`tests/e2e_de/test_de_integration.py::test_open_url_reaches_the_web_browser` |
+| DE-KDEWAYLAND-DOCTOR | KDE Plasma on Wayland: doctor fails only for what setup installs | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_doctor_fails_only_for_what_setup_installs` |
+| DE-KDEWAYLAND-FORK-SETUP | KDE Plasma on Wayland: setup completes and doctor --deep has no failures, before and after use | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_01_setup_completes`<br>`tests/e2e_de/test_de_fork.py::test_02_doctor_deep_has_no_failures`<br>`tests/e2e_de/test_de_fork.py::test_09_doctor_after_use_has_no_failures` |
+| DE-KDEWAYLAND-FORK-WINDOW | KDE Plasma on Wayland: the official Fork runs under the desktop's window manager | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_03_fork_runs_under_the_desktops_window_manager` |
+| DE-KDEWAYLAND-FORK-SECOND-TAB | KDE Plasma on Wayland: the fork command opens a second tab in the running Fork | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_04_fork_command_opens_a_second_tab` |
+| DE-KDEWAYLAND-FORK-SHELL | KDE Plasma on Wayland: Fork's Open In Shell opens the desktop's terminal | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal` |
+| DE-KDEWAYLAND-FORK-EXPLORER | KDE Plasma on Wayland: Fork's Open In File Explorer opens the desktop's file manager | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager` |
+| DE-KDEWAYLAND-FORK-OPEN-IN-FORK | KDE Plasma on Wayland: the file manager's Open in Fork reaches the running Fork | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork` |
+| DE-KDEWAYLAND-FORK-DARK | KDE Plasma on Wayland: the tabs are kept and a dark desktop relaunches Fork dark | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark` |
+| DE-LXQT-SESSION | LXQt: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run`<br>`tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running` |
 | DE-LXQT-INSTALL | LXQt: fork-linux installs from the release tarball | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball` |
 | DE-LXQT-MENU | LXQt: the menu entry is valid, listed by the desktop's menu and starts fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux` |
 | DE-LXQT-FILE-MANAGER-ACTION | LXQt: the file manager's Open in Fork runs fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork` |
@@ -312,6 +335,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | DE-LXQT-FORK-EXPLORER | LXQt: Fork's Open In File Explorer opens the desktop's file manager | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager` |
 | DE-LXQT-FORK-OPEN-IN-FORK | LXQt: the file manager's Open in Fork reaches the running Fork | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork` |
 | DE-LXQT-FORK-DARK | LXQt: the tabs are kept and a dark desktop relaunches Fork dark | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark` |
+| DE-GNOME-SESSION | GNOME: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run`<br>`tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running` |
 | DE-GNOME-INSTALL | GNOME: fork-linux installs from the release tarball | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball` |
 | DE-GNOME-MENU | GNOME: the menu entry is valid, listed by the desktop's menu and starts fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux` |
 | DE-GNOME-FILE-MANAGER-ACTION | GNOME: the file manager's Open in Fork runs fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork` |
@@ -328,6 +352,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | DE-GNOME-FORK-EXPLORER | GNOME: Fork's Open In File Explorer opens the desktop's file manager | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager` |
 | DE-GNOME-FORK-OPEN-IN-FORK | GNOME: the file manager's Open in Fork reaches the running Fork | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork` |
 | DE-GNOME-FORK-DARK | GNOME: the tabs are kept and a dark desktop relaunches Fork dark | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark` |
+| DE-BUDGIE-SESSION | Budgie: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run`<br>`tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running` |
 | DE-BUDGIE-INSTALL | Budgie: fork-linux installs from the release tarball | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball` |
 | DE-BUDGIE-MENU | Budgie: the menu entry is valid, listed by the desktop's menu and starts fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux` |
 | DE-BUDGIE-FILE-MANAGER-ACTION | Budgie: the file manager's Open in Fork runs fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork` |
@@ -344,6 +369,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | DE-BUDGIE-FORK-EXPLORER | Budgie: Fork's Open In File Explorer opens the desktop's file manager | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager` |
 | DE-BUDGIE-FORK-OPEN-IN-FORK | Budgie: the file manager's Open in Fork reaches the running Fork | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork` |
 | DE-BUDGIE-FORK-DARK | Budgie: the tabs are kept and a dark desktop relaunches Fork dark | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark` |
+| DE-MATE-SESSION | MATE: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run`<br>`tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running` |
 | DE-MATE-INSTALL | MATE: fork-linux installs from the release tarball | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball` |
 | DE-MATE-MENU | MATE: the menu entry is valid, listed by the desktop's menu and starts fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux` |
 | DE-MATE-FILE-MANAGER-ACTION | MATE: the file manager's Open in Fork runs fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork` |
@@ -360,6 +386,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | DE-MATE-FORK-EXPLORER | MATE: Fork's Open In File Explorer opens the desktop's file manager | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_06_open_in_file_explorer_opens_the_desktops_file_manager` |
 | DE-MATE-FORK-OPEN-IN-FORK | MATE: the file manager's Open in Fork reaches the running Fork | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_07_file_managers_open_in_fork_reaches_the_running_fork` |
 | DE-MATE-FORK-DARK | MATE: the tabs are kept and a dark desktop relaunches Fork dark | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_fork.py::test_08_tabs_were_kept_and_a_dark_desktop_relaunches_dark` |
+| DE-CINNAMON-SESSION | Cinnamon: the desktop's own window manager, shell, settings daemon, file-manager service and portal backend run, and none of them crashes or restarts during the tier | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_run`<br>`tests/e2e_de/test_de_integration.py::test_the_desktops_own_programs_kept_running` |
 | DE-CINNAMON-INSTALL | Cinnamon: fork-linux installs from the release tarball | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_install_from_the_release_tarball` |
 | DE-CINNAMON-MENU | Cinnamon: the menu entry is valid, listed by the desktop's menu and starts fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_menu_entry_is_valid_listed_and_starts_fork_linux` |
 | DE-CINNAMON-FILE-MANAGER-ACTION | Cinnamon: the file manager's Open in Fork runs fork-linux | de | `fix/de-e2e` (pending merge) | `tests/e2e_de/test_de_integration.py::test_file_manager_runs_open_in_fork` |
