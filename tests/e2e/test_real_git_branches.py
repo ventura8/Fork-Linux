@@ -138,7 +138,9 @@ def test_rebase_onto_a_branch(ui: ForkUI, installed: Any) -> None:
     ui.open(repo)
     ui.quick_launch("Rebase", "main")
     _accept(ui, "Rebase")
-    wait_until(lambda: git(repo, "rev-parse", "topic~1") == main, 60, "topic to sit on main")
+    rebasing = repo / ".git" / "rebase-merge"
+    wait_until(lambda: not rebasing.exists() and git(repo, "rev-parse", "topic~1") == main, 60,
+               "topic to sit on main")
     assert git(repo, "log", "-1", "--format=%s", "topic") == "topic work"
     assert _current(repo) == "topic"
 
@@ -165,7 +167,10 @@ def test_interactive_rebase_squash_and_drop(ui: ForkUI, installed: Any) -> None:
     ui.screen.key("d")
     ui.screen.screenshot("interactive-rebase", window)
     ui.screen.click_in(window, *REBASE_BUTTON, settle=2.0)
-    wait_until(lambda: git(repo, "rev-list", "--count", "HEAD") == "3", 90, "the rebased history")
+    # Halfway (entry 1 reworded, entry 2 not squashed yet) the history has 3 commits too: wait for the end.
+    rebasing = repo / ".git" / "rebase-merge"
+    wait_until(lambda: not rebasing.exists() and git(repo, "rev-list", "--count", "HEAD") == "3", 90,
+               "the rebased history")
     assert git(repo, "rev-parse", "HEAD~1") == base
     assert (repo / "log.txt").read_text(encoding="utf-8") == "entry 0\nentry 1\nentry 2\n"
 
