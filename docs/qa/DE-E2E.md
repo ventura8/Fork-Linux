@@ -16,7 +16,7 @@ root under `/var/tmp/fork-linux-e2e/`, the read-only seed for the real-Fork tier
 |---|---|---|---|---|
 | Xubuntu 26.04, XFCE 4.20 (xfwm4, xfsettingsd, Thunar 4.20 + its FileManager1, xfce4-terminal, garcon menu, Greybird / Greybird-dark) | `fork-linux-e2e-de-xfce:26.04` | ✅ 13/13 | ✅ 9/9 (setup 235 s from the seed, tier 292 s) | local `scripts/ci-e2e-de.sh xfce [--fork]`, 2026-10-11 |
 | Lubuntu 26.04, LXQt 2.3 (lxqt-session + openbox, pcmanfm-qt 2.3 + its FileManager1, qterminal, panel menu via GMenu, Kvantum Lubuntu / KvArcDark, Fusion palettes, Global Screen Scaling) | `fork-linux-e2e-de-lxqt:26.04` | ❌ 13/17 until [de-fixes/lxqt.md](de-fixes/lxqt.md) is applied (theme `light` and `light:dark-panel-theme`, PCManFM "Open in Fork", qterminal); ✅ 17/17 with it | ❌ stops at 03 (Fork starts dark on the light Lubuntu desktop); ✅ 9/9 with the patch (setup 294 s from the seed, tier 351 s) | local `scripts/ci-e2e-de.sh lxqt [--fork]`, 2026-10-11 |
-| Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, kcminit + kded6, Dolphin 25.12 + its FileManager1 and our service menu, Konsole, Kickoff's menu through kbuildsycoca6, Kubuntu / Kubuntu Dark global themes) | `fork-linux-e2e-de-kde:26.04` | ✅ 14/14 | ✅ 9/9 (setup 308 s from the seed, tier 369 s) | local `scripts/ci-e2e-de.sh kde [--fork]`, 2026-10-11 |
+| Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, kcminit + kded6, Dolphin 25.12 + its FileManager1 and our service menu, Konsole, Kickoff's menu through kbuildsycoca6, Kubuntu / Kubuntu Dark / Breeze Dark global themes and colour schemes) | `fork-linux-e2e-de-kde:26.04` | ❌ 17/18: the `dark:custom-colors` theme case fails until the `theme.py` fix in [de-fixes/kde.md](de-fixes/kde.md) lands (18/18 with it) | ✅ 9/9 (setup 308 s from the seed, tier 369 s) | local `scripts/ci-e2e-de.sh kde [--fork]`, 2026-10-11 |
 
 GNOME, Cinnamon, MATE, Budgie and LXQt follow the same pattern: one
 `docker/Dockerfile.e2e.de.<desktop>` plus one entry in `tests/e2e_de/desktops.py` (see "Adding a
@@ -64,7 +64,7 @@ process of the session carries `FL_E2E_DE_SESSION` or its `DISPLAY`; `stop()` en
 | install from the release tarball | `install.sh --from-tarball --no-deps`: `fork-linux --version` is `VERSION`, `desktop status` is ok |
 | menu entry | `desktop-file-validate`; the desktop's menu library lists it under Development (XFCE: garcon, the panel's library, through `python3-gi`; KDE: `kbuildsycoca6 --menutest`, the menu KService builds for Kickoff); the desktop's own launcher (`Desktop.menu_launcher`: `gio launch`; KDE: `kioclient exec`, KIO's application launcher) starts fork-linux, which asks its first-run license question (zenity), then declined |
 | file manager "Open in Fork" | the action is installed next to the desktop's own (XFCE: Xubuntu's "Open Terminal Here" kept in `uca.xml`; KDE: an executable service menu in `~/.local/share/kio/servicemenus` for `inode/directory`); the file manager's real context menu (keys from the recipe) runs `fork-linux open --from-file-manager <folder>` |
-| theme light / dark | the desktop's own setting (XFCE: `/Net/ThemeName` Greybird / Greybird-dark; KDE: the Global Theme Kubuntu / Kubuntu Dark) -> `theme.detect` of the installed package |
+| theme light / dark | the desktop's own setting (XFCE: `/Net/ThemeName` Greybird / Greybird-dark; KDE: the Global Themes Kubuntu, Kubuntu Dark and Breeze Dark, Colors on their own, a dark scheme named without "dark") -> `theme.detect` of the installed package |
 | scale per case | XFCE: default 100 %, Window Scaling 2x 200 %, custom DPI 192 200 %; KDE: default 100 %, global scale 200 % and 150 %, Force font DPI 192 200 % -> `display.scale_percent` |
 | terminal | `fork-linux-host terminal DIR` opens the desktop's terminal (window class) with a shell whose cwd is DIR (`/proc`) |
 | reveal | `fork-linux-host reveal FILE` -> FileManager1 -> a file-manager window on its folder |
@@ -131,6 +131,14 @@ with `Theme=1` and a dark window;
   scheme to `~/.config/kdedefaults/kdeglobals`, not to `~/.config/kdeglobals`: `kreadconfig6` sees
   `ColorScheme=BreezeDark` only through `XDG_CONFIG_DIRS`. fork-linux's KDE probe also reads
   `LookAndFeelPackage` (`org.kubuntudark.desktop`), so a session without kdedefaults is dark too.
+  Colors on their own (`plasma-apply-colorscheme`) write `ColorScheme` and the colour groups to
+  `~/.config/kdeglobals` and win over the global theme's (Kubuntu Dark + Breeze Light is light);
+  applying a global theme takes them back out.
+- Plasma calls a colour scheme dark by its colours, not its name (xdg-desktop-portal-kde: the grey
+  of `[Colors:Window] BackgroundNormal` below 192). fork-linux reads only the names, so a dark
+  scheme named without "dark" (Nordic, Dracula, a user's own; the tier's "Nightfall" is Breeze
+  Dark's colours under another name) gives a light Fork: the `dark:custom-colors` case fails
+  until the fix proposed in [de-fixes/kde.md](de-fixes/kde.md) lands.
 - Scale on X11: Display Configuration's global scale writes kdeglobals `[KScreen] ScaleFactor` /
   `ScreenScaleFactors` and kcmfonts `forceFontDPI` (96 x scale) and publishes `Xft.dpi`; Text &
   Fonts' "Force font DPI" writes `forceFontDPI` and publishes `Xft.dpi` the same way (libkrdb, as

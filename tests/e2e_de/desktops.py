@@ -169,6 +169,20 @@ def _plasma_global_theme(package: str) -> Command:
     return ("plasma-apply-lookandfeel", "--apply", package)
 
 
+def _plasma_colors(scheme: str) -> Command:
+    """System Settings > Colors & Themes > Colors."""
+    return ("plasma-apply-colorscheme", scheme)
+
+
+# A dark colour scheme whose name does not say so, as one from Get New Colors (Nordic, Dracula,
+# ...): Breeze Dark's colours saved as the user's own "Nightfall".
+_NIGHTFALL_COLORS = (
+    "sh", "-c",
+    "mkdir -p {home}/.local/share/color-schemes && sed 's/^Name=Breeze Dark$/Name=Nightfall/' "
+    "/usr/share/color-schemes/BreezeDark.colors > {home}/.local/share/color-schemes/Nightfall.colors",
+)
+
+
 # What System Settings' Text & Fonts and Display Configuration modules do on X11 after writing
 # kcmfonts' forceFontDPI (and what kcminit does at the next login): publish it as Xft.dpi.
 _KDE_FONTS_INIT = ("kcminit", "kcm_fonts_init")
@@ -216,10 +230,15 @@ KDE = Desktop(
     menu_reader=MENU_KSYCOCA,
     terminal="konsole",
     terminal_class="konsole",
-    # Global Theme: Kubuntu's default and Kubuntu Dark.
+    # Global Theme (Kubuntu's default, Kubuntu Dark, Breeze Dark) and Colors on their own: an
+    # explicit colour scheme wins over the global theme's, also one whose name says nothing.
     themes={
         LIGHT: (_plasma_global_theme("org.kubuntu.desktop"),),
         DARK: (_plasma_global_theme("org.kubuntudark.desktop"),),
+        "dark:breeze-dark": (_plasma_global_theme("org.kde.breezedark.desktop"),),
+        "dark:colors": (_plasma_colors("BreezeDark"),),
+        "light:colors": (_plasma_global_theme("org.kubuntudark.desktop"), _plasma_colors("BreezeLight")),
+        "dark:custom-colors": (_NIGHTFALL_COLORS, _plasma_colors("Nightfall")),
     },
     # Display Configuration > Global scale; Text & Fonts > Force font DPI.
     scales=(
