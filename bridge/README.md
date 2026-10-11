@@ -402,8 +402,10 @@ stripped, `--no-insert-timestamp --build-id=none`, `-ffile-prefix-map`.
   (deliberately not translated; Fork's helpers need it).
 - `git config --list --system` exits 128 natively when `/etc/gitconfig` is missing (Fork
   2.23.2 tolerates it).
-- Untested so far: HTTPS credential prompts through `fl-ssh-askpass` → Fork.AskPass.exe,
-  ssh remotes, signing, LFS, Fork custom commands, the merge tool through `fl-launch.exe merge`.
+- Untested so far: signing and Fork custom commands. The real-Fork tier covers HTTP credential
+  prompts through the askpass persona → Fork.AskPass.exe and a Linux credential helper
+  (`tests/e2e/test_git_ops_remote_bridge.py`), ssh through the agent or a passphrase prompt,
+  LFS pushes and the merge tool through `fl-launch.exe merge` (`tests/e2e/test_real_bridge.py`).
 - `session.json` keeps the daemon's token (0600, in the 0700 runtime directory) until the next
   launch overwrites it; the daemon behind it is gone once Fork exits.
 - Submodules with `file://` URLs need `protocol.file.allow=always` in the user's git config

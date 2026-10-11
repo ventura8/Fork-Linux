@@ -163,6 +163,40 @@ path was kept as a symlink to it, so a symlinked `HOME` was tested as well. Scre
 was re-verified by size and sha256. The winetricks cache was also seeded with the installers for
 dotnet48 and corefonts.
 
+### Remote operations in both git modes (`test_git_ops_remote_*.py`)
+
+`remote_ops.py` holds the remote steps (bare remotes, Fetch / Pull / Push, tags, credential
+prompts, Clone) that `test_real_git_remotes.py` (bundled git) and `test_git_ops_remote_bridge.py`
+(native-git bridge) share. `test_git_ops_remote_ssh.py` pins what bundled ssh cannot do. Runs went
+through `scripts/e2e-docker.sh` only, with the three modules each time: `gor-dev` (prefix kept)
+and `gor-run4` (fresh scratch root, setup included).
+
+| Run | bundled (8) | bundled ssh (2) | bridge (6) |
+|---|---|---|---|
+| 1 | 8/8 | (not written yet) | 5/6 |
+| 2 | 8/8 | 2/2 | 5/6 |
+| 3 | 8/8 | 2/2 | 6/6 |
+| 4 (fresh root) | 8/8 | 2/2 | 6/6 |
+
+- Fork remembers Push's "Push all tags" box from the last Push it ran, and a cancelled dialog
+  keeps nothing. The old test unticked the box and pressed Escape, so the box stayed ticked and the
+  next tag test unticked it instead (run 1). The box is now read from the screen (a ticked box is
+  filled blue), clicked until it shows the wanted state (a click that lands while the dialog
+  settles is lost, run 2), and set back by a second Push that has nothing new to send.
+- The old tag check compared `git rev-parse refs/tags/<tag>` on the remote with `""`. For a
+  missing ref rev-parse prints the name it was given, so the check passed before the tag arrived.
+  It now compares the tag's commit on both sides.
+- With the bridge, an HTTP password is asked in Fork's own prompt (the askpass persona runs
+  Fork.AskPass), and a Linux credential helper (`store`, in the test) keeps it. Each bridge test
+  also reads the shims' call log (`run --debug`) to check that its fetch / pull / push / tag /
+  clone ran as bridge calls.
+- **Bug fixed (product):** with bundled git, a key with a passphrase failed with "Permission
+  denied (publickey)" and no prompt. msys ssh logs `read_passphrase: requested to askpass`, then
+  `no passphrase given`, because under Wine it cannot start the askpass program. An agent in
+  `SSH_AUTH_SOCK` does not help either. `ssh sync`, `ssh status` and the new doctor check
+  `ssh.passphrase` now name such keys and point at the git bridge, and README lists the
+  limitation.
+
 ## Automated tier
 
 The run below used this command on the host:

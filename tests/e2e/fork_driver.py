@@ -502,6 +502,16 @@ def remotes_dir() -> Path:
     return Path(tempfile.mkdtemp(prefix="fl-e2e-remotes-", dir="/tmp"))
 
 
+def bridge_calls(home: Path) -> list[dict[str, Any]]:
+    """Every git call the bridge's shims recorded for the user ``home`` (``run --debug`` writes
+    ``bridge-calls-<time>.jsonl`` into the logs directory)."""
+    logs = home / ".local" / "state" / "fork-linux" / "logs"
+    calls = []
+    for path in sorted(logs.glob("bridge-calls-*.jsonl")):
+        calls += [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return calls
+
+
 def windows_path(path: Path) -> str:
     """The Windows path Fork and its programs see for a Linux path (Wine's ``Z:`` drive)."""
     return "Z:" + str(path).replace("/", "\\")

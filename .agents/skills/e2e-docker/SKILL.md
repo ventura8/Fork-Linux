@@ -37,7 +37,7 @@ scripts/e2e-docker.sh --name shim --image fork-linux-ci-bridge:26.04 shell -- ba
 
 ## The real tier (tests/e2e)
 
-- `test_real_*.py` modules share one prefix and run in `conftest.py`'s `MODULE_ORDER` (setup
+- `test_real_*.py` and `test_git_ops_*.py` modules share one prefix and run in `conftest.py`'s `MODULE_ORDER` (setup
   errors, the main setup, launch, Fork's git UI, OS integration, display, bridge, doctor,
   snapshots, setup variants, uninstall last). Iterate on one module without a new setup:
   `FL_E2E_REUSE=1 scripts/e2e-docker.sh --name my-run --keep pytest tests/e2e/test_real_launch.py`
@@ -46,7 +46,9 @@ scripts/e2e-docker.sh --name shim --image fork-linux-ci-bridge:26.04 shell -- ba
 - Helpers: `fork_driver.py` (windows, keys, clicks, screenshots, Fork sessions, git),
   `fork_ui.py` (Fork's layout in the seeded 1500x940 window and its keyboard paths: Quick Launch,
   shortcuts, context menus clicked from their bottom edge), `git_servers.py` (HTTP with basic
-  auth, sshd on a high port). A failed test leaves `failed-<test>.png` in the shots directory.
+  auth, sshd on a high port), `remote_ops.py` (bare remotes, Fetch / Pull / Push, tags, credential
+  prompts and Clone, shared by the bundled-git and bridge modules). A failed test leaves
+  `failed-<test>.png` in the shots directory.
 - Every test names its scenarios on a `Scenarios: ID, ...` docstring line; the registry is
   `tests/e2e/scenarios.json` (`python3 scripts/gen-scenarios-doc.py validate` / `write`).
 

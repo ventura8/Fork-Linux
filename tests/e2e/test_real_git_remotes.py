@@ -9,18 +9,27 @@ credentials. Gated by ``FL_E2E_FORK=1``; containers only.
 
 from __future__ import annotations
 
-import base64
 import os
-import re
 import subprocess
 import time
-from pathlib import Path
 from typing import Any
 
 import pytest
-from fork_driver import git, make_repo, remotes_dir, wait_until, windows_path
+from fork_driver import git, make_repo, wait_until, windows_path
 from fork_ui import ForkUI
-from git_servers import HttpGitServer, SshServer
+from git_servers import SshServer
+from remote_ops import (
+    CLONE_SECONDS,
+    HELLO_WORLD,
+    bare_remote,
+    clone,
+    clone_through_the_dialog,
+    fetch_pull_push,
+    http_fetch_pull_push,
+    remote_head,
+    tag_and_push_all_tags,
+    wait_cloned,
+)
 
 from fixtures import real_tier
 
@@ -28,77 +37,15 @@ if os.environ.get("FL_E2E_FORK") != "1":
     pytest.skip("requires FL_E2E_FORK=1 (the official Fork under Wine)", allow_module_level=True)
 real_tier.enforce()
 
-REMOTES = remotes_dir()
-GCM_TITLE = "Git Credential Manager"
-# Inside Git Credential Manager's prompt (420x312): the user name and password fields.
-GCM_USER_Y = 167
-GCM_PASSWORD_Y = 208
-# Inside Fork's Push dialog and Clone dialog.
-PUSH_ALL_TAGS = (155, 158)
-CLONE_BUTTON = (475, 218)
-CLONE_SECONDS = 120.0
-
-
-def _remote(e2e: Any, name: str) -> tuple[Path, Path]:
-    """A bare remote ``REMOTES/<name>.git`` and the repository its first commit came from."""
-    seed = make_repo(e2e.repos / f"{name}-seed", {".gitignore": "*.tmp\n", "a.txt": "a\n"})
-    bare = REMOTES / f"{name}.git"
-    subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)], check=True, timeout=120)
-    git(seed, "remote", "add", "origin", str(bare))
-    return bare, seed
-
-
-def _clone(url: str, target: Path, *extra: str) -> Path:
-    subprocess.run(["git", *extra, "clone", "-q", url, str(target)], check=True, timeout=120)
-    git(target, "config", "user.name", "E2E Test")
-    git(target, "config", "user.email", "e2e@example.invalid")
-    return target
-
-
-def _remote_head(bare: Path, ref: str = "main") -> str:
-    return subprocess.run(["git", "--git-dir", str(bare), "rev-parse", ref], capture_output=True, text=True,
-                          check=False).stdout.strip()
-
-
-def _new_commit(repo: Path, name: str, message: str) -> str:
-    (repo / name).write_text(f"{message}\n", encoding="utf-8")
-    git(repo, "add", "--", name)
-    git(repo, "commit", "-qm", message)
-    return git(repo, "rev-parse", "HEAD")
-
-
-def _accept(ui: ForkUI, title: str) -> Any:
-    window = ui.wait_dialog(title)
-    ui.screen.key("Return", settle=1.0)
-    return window
-
-
-def _fetch_pull_push(ui: ForkUI, work: Path, seed: Path, bare: Path) -> None:
-    """Fetch and pull a commit pushed by someone else, then push one of ours, all through Fork."""
-    theirs = _new_commit(seed, "theirs.txt", "their work")
-    git(seed, "push", "-q", "origin", "main")
-    ui.open(work)
-    ui.keys("ctrl+shift+f", settle=1.0)
-    _accept(ui, "Fetch")
-    wait_until(lambda: git(work, "rev-parse", "origin/main") == theirs, 90, "the fetch")
-    ui.keys("ctrl+shift+l", settle=1.0)
-    _accept(ui, "Pull")
-    wait_until(lambda: git(work, "rev-parse", "main") == theirs, 90, "the pull")
-    ours = _new_commit(work, "ours.txt", "our work")
-    ui.refresh()
-    ui.keys("ctrl+shift+p", settle=1.0)
-    _accept(ui, "Push")
-    wait_until(lambda: _remote_head(bare) == ours, 90, "the push")
-
 
 def test_fetch_pull_push_with_a_file_url(ui: ForkUI, installed: Any) -> None:
     """Fetch, Pull and Push (Ctrl+Shift+F / L / P) to a ``file:///`` remote on the Linux side.
 
     Scenarios: G-FETCH-FILE, G-PULL-FILE, G-PUSH-FILE
     """
-    bare, seed = _remote(installed, "fileurl")
-    work = _clone(f"file://{bare}", installed.repos / "fileurl-work")
-    _fetch_pull_push(ui, work, seed, bare)
+    bare, seed = bare_remote(installed, "fileurl")
+    work = clone(f"file://{bare}", installed.repos / "fileurl-work")
+    fetch_pull_push(ui, work, seed, bare, open_work=ui.open)
 
 
 def test_fetch_pull_push_with_a_linux_path(ui: ForkUI, installed: Any) -> None:
@@ -106,10 +53,10 @@ def test_fetch_pull_push_with_a_linux_path(ui: ForkUI, installed: Any) -> None:
 
     Scenarios: G-REMOTE-LINUX-PATH
     """
-    bare, seed = _remote(installed, "barepath")
-    work = _clone(str(bare), installed.repos / "barepath-work")
+    bare, seed = bare_remote(installed, "barepath")
+    work = clone(str(bare), installed.repos / "barepath-work")
     assert git(work, "remote", "get-url", "origin") == str(bare)
-    _fetch_pull_push(ui, work, seed, bare)
+    fetch_pull_push(ui, work, seed, bare, open_work=ui.open)
 
 
 def test_push_tags(ui: ForkUI, installed: Any) -> None:
@@ -117,95 +64,18 @@ def test_push_tags(ui: ForkUI, installed: Any) -> None:
 
     Scenarios: G-TAG-PUSH
     """
-    bare, _seed = _remote(installed, "tags")
-    work = _clone(f"file://{bare}", installed.repos / "tags-work")
+    bare, _seed = bare_remote(installed, "tags")
+    work = clone(f"file://{bare}", installed.repos / "tags-work")
     ui.open(work)
-    ui.keys("ctrl+shift+g", settle=1.0)
-    ui.wait_dialog("Create Tag")
-    ui.screen.type("v2.0.0")
-    ui.screen.key("Return", settle=1.0)
-    ui.wait_no_dialog()
-    wait_until(lambda: git(work, "tag", "--list", "v2.0.0"), 60, "the local tag")
-    ui.keys("ctrl+shift+p", settle=1.0)
-    dialog = ui.wait_dialog("Push")
-    ui.screen.click_in(dialog, *PUSH_ALL_TAGS)
-    ui.screen.screenshot("push-all-tags", dialog)
-    ui.screen.key("Return", settle=1.0)
-    wait_until(lambda: _remote_head(bare, "refs/tags/v2.0.0") != "", 90, "the tag on the remote")
-    # Fork remembers the box; leave it as Fork had it for the next tests.
-    ui.keys("ctrl+shift+p", settle=1.0)
-    dialog = ui.wait_dialog("Push")
-    ui.screen.click_in(dialog, *PUSH_ALL_TAGS)
-    ui.screen.key("Escape", settle=1.0)
+    tag_and_push_all_tags(ui, work, bare, "v2.0.0")
 
 
-def _answer_credentials(ui: ForkUI, repo: str, user: str, password: str) -> str:
-    """Answer the first credential prompt of an HTTP remote; return which one asked (``gcm`` or ``fork``).
-
-    Git Credential Manager (the overlay makes it the helper of Fork's git) asks in its own window. Under
-    Wine it sometimes ends without one on the first prompt after Fork starts (about 1 in 6 fresh starts,
-    never in a running session); git then asks through Fork's own prompt (one for the user name, one for
-    the password) and still hands the account to GCM to keep. Neither window takes the keyboard by itself
-    (no window manager), so their fields are clicked.
-    """
-    def prompt() -> tuple[str, Any] | None:
-        gcm = _any_window(ui, GCM_TITLE)
-        if gcm is not None:
-            return "gcm", gcm
-        fork = _any_window(ui, re.escape(repo))
-        return ("fork", fork) if fork is not None else None
-
-    kind, window = wait_until(prompt, 120, "a credential prompt")
-    ui.screen.screenshot(f"{kind}-credential-prompt", window)
-    if kind == "gcm":
-        ui.screen.click_in(window, window.width // 2, GCM_USER_Y)
-        ui.screen.type(user)
-        ui.screen.click_in(window, window.width // 2, GCM_PASSWORD_Y)
-        ui.screen.type(password)
-        ui.screen.key("Return", settle=2.0)
-        return kind
-    for answer in (user, password):
-        ui.answer_askpass(repo, answer, timeout=60)
-    return kind
-
-
-def _any_window(ui: ForkUI, title: str) -> Any:
-    """A visible window of any program titled exactly ``title``."""
-    return next((window for window in ui.screen.any_windows(f"^{title}$")), None)
-
-
-def _http_with_a_password(ui: ForkUI, installed: Any, name: str, extra: dict[str, str]) -> str:
-    """Fetch, pull and push through Fork to an HTTP remote with basic auth, Fork started with ``extra``.
-
-    Only the first fetch may ask for the account; return which prompt asked (``gcm`` or ``fork``).
-    """
-    bare, seed = _remote(installed, name)
-    with HttpGitServer(REMOTES) as server:
-        token = base64.b64encode(f"{server.user}:{server.password}".encode()).decode()
-        work = _clone(server.url(bare.name), installed.repos / f"{name}-work",
-                      "-c", f"http.extraHeader=Authorization: Basic {token}")
-        theirs = _new_commit(seed, "theirs.txt", "their work")
-        git(seed, "push", "-q", "origin", "main")
-        installed.fork.ensure_closed()
-        installed.fork.start(work, extra=extra)
+def _start_with(ui: ForkUI, extra: dict[str, str]) -> Any:
+    """Start Fork on a working copy with ``extra`` in its environment and show it."""
+    def start(work: Any) -> None:
+        ui.fork.start(work, extra=extra)
         ui.open(work)
-        ui.keys("ctrl+shift+f", settle=1.0)
-        _accept(ui, "Fetch")
-        asked_by = _answer_credentials(ui, work.name, server.user, server.password)
-        wait_until(lambda: git(work, "rev-parse", "origin/main") == theirs, 90, "the fetch over HTTP")
-        ui.keys("ctrl+shift+l", settle=1.0)
-        _accept(ui, "Pull")
-        wait_until(lambda: git(work, "rev-parse", "main") == theirs, 90, "the pull over HTTP")
-        ours = _new_commit(work, "ours.txt", "our work")
-        ui.refresh()
-        ui.keys("ctrl+shift+p", settle=1.0)
-        _accept(ui, "Push")
-        wait_until(lambda: _remote_head(bare) == ours, 90, "the push over HTTP")
-        asking = _any_window(ui, GCM_TITLE) or _any_window(ui, re.escape(work.name))
-        assert asking is None, "the kept credentials must be used without asking again"
-        assert any("git-receive-pack" in line and " 200 " in line for line in server.requests)
-    installed.fork.ensure_closed()
-    return asked_by
+    return start
 
 
 def test_fetch_and_push_over_http_with_basic_auth(ui: ForkUI, installed: Any) -> None:
@@ -215,8 +85,8 @@ def test_fetch_and_push_over_http_with_basic_auth(ui: ForkUI, installed: Any) ->
     Scenarios: G-HTTP-BASIC-AUTH, G-HTTP-CREDENTIALS-STORED
     """
     # Git Credential Manager's trace goes to the tier's logs: it shows what GCM did (and where it stopped).
-    asked_by = _http_with_a_password(ui, installed, "http",
-                                     {"GCM_TRACE": windows_path(installed.logs / "gcm-trace.log")})
+    trace = {"GCM_TRACE": windows_path(installed.logs / "gcm-trace.log")}
+    asked_by = http_fetch_pull_push(ui, installed, "http", start=_start_with(ui, trace))
     print(f"credential prompt: {asked_by}")
 
 
@@ -227,7 +97,8 @@ def test_forks_own_prompt_when_gcm_cannot_ask(ui: ForkUI, installed: Any) -> Non
     Scenarios: G-HTTP-FORK-PROMPT
     """
     # GCM_INTERACTIVE=never makes GCM refuse to prompt: what happens when its window cannot open under Wine.
-    assert _http_with_a_password(ui, installed, "http-fork-prompt", {"GCM_INTERACTIVE": "never"}) == "fork"
+    never = {"GCM_INTERACTIVE": "never"}
+    assert http_fetch_pull_push(ui, installed, "http-fork-prompt", start=_start_with(ui, never)) == "fork"
 
 
 def _ssh_user_setup(e2e: Any, server: SshServer) -> str:
@@ -253,7 +124,7 @@ def test_fetch_and_push_over_ssh_with_a_shared_key(ui: ForkUI, installed: Any) -
 
     Scenarios: G-SSH-KEY, I-SSH-SYNC
     """
-    bare, seed = _remote(installed, "ssh")
+    bare, seed = bare_remote(installed, "ssh")
     server = SshServer(installed.root / "sshd")
     authorized = installed.root / "sshd-authorized_keys"
     try:
@@ -267,9 +138,9 @@ def test_fetch_and_push_over_ssh_with_a_shared_key(ui: ForkUI, installed: Any) -
         # Already shared: a dry run has nothing to do.
         dry = installed.cli("ssh", "sync", "--dry-run").stdout
         assert "nothing would change" in dry and "would link" not in dry, dry
-        work = _clone(f"file://{bare}", installed.repos / "ssh-work")
+        work = clone(f"file://{bare}", installed.repos / "ssh-work")
         git(work, "remote", "set-url", "origin", f"{alias}:{bare}")
-        _fetch_pull_push(ui, work, seed, bare)
+        fetch_pull_push(ui, work, seed, bare, open_work=ui.open)
     finally:
         server.stop()
 
@@ -279,21 +150,10 @@ def test_clone_a_file_url(ui: ForkUI, installed: Any) -> None:
 
     Scenarios: G-CLONE-FILE
     """
-    bare, _seed = _remote(installed, "clonefile")
-    ui.open(_clone(f"file://{bare}", installed.repos / "clone-anchor"))
-    _clone_through_the_dialog(ui, f"file://{bare}")
-    target = installed.home / "clonefile"
-    wait_until(lambda: (target / ".git" / "HEAD").is_file(), CLONE_SECONDS, "the clone in the Linux home")
-    wait_until(lambda: git(target, "rev-parse", "HEAD", check=False) == _remote_head(bare), CLONE_SECONDS,
-               "the cloned commit")
-
-
-def _clone_through_the_dialog(ui: ForkUI, url: str) -> None:
-    ui.keys("ctrl+n", settle=1.5)
-    dialog = ui.wait_dialog("Clone")
-    ui.screen.type(url, settle=1.5)
-    ui.screen.screenshot("clone-dialog", dialog)
-    ui.screen.click_in(dialog, *CLONE_BUTTON, settle=2.0)
+    bare, _seed = bare_remote(installed, "clonefile")
+    ui.open(clone(f"file://{bare}", installed.repos / "clone-anchor"))
+    clone_through_the_dialog(ui, f"file://{bare}")
+    wait_cloned(installed.home / "clonefile", remote_head(bare))
 
 
 def test_clone_a_public_https_repository(ui: ForkUI, installed: Any) -> None:
@@ -303,8 +163,8 @@ def test_clone_a_public_https_repository(ui: ForkUI, installed: Any) -> None:
     """
     ui.open(make_repo(installed.repos / "https-anchor", {".gitignore": "*.tmp\n"}))
     started = time.monotonic()
-    _clone_through_the_dialog(ui, "https://github.com/octocat/Hello-World.git")
+    clone_through_the_dialog(ui, HELLO_WORLD)
     target = installed.home / "Hello-World"
     wait_until(lambda: (target / "README").is_file(), CLONE_SECONDS, "the HTTPS clone")
-    assert git(target, "remote", "get-url", "origin") == "https://github.com/octocat/Hello-World.git"
+    assert git(target, "remote", "get-url", "origin") == HELLO_WORLD
     assert time.monotonic() - started < CLONE_SECONDS

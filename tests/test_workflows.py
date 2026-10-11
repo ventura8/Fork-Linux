@@ -159,7 +159,7 @@ def test_e2e_wine_uploads_logs_only() -> None:
 
 
 def test_e2e_wine_shards_cover_every_real_tier_module_once() -> None:
-    named = re.findall(r"tests/e2e/test_real_\w+\.py", E2E)
+    named = re.findall(r"tests/e2e/test_\w+\.py", E2E)
     modules = sorted(f"tests/e2e/{path.name}" for path in (ROOT / "tests" / "e2e").glob("test_*.py"))
     assert sorted(named) == modules
     assert len(set(named)) == len(named)

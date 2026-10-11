@@ -44,9 +44,11 @@ jobs:
               tests/e2e/test_real_git_history.py tests/e2e/test_real_git_changes.py
               tests/e2e/test_real_git_branches.py tests/e2e/test_real_git_advanced.py
           - shard: remotes-integration
-            tests: tests/e2e/test_real_git_remotes.py tests/e2e/test_real_integration.py
+            tests: >-
+              tests/e2e/test_real_git_remotes.py tests/e2e/test_git_ops_remote_ssh.py
+              tests/e2e/test_real_integration.py
           - shard: bridge
-            tests: tests/e2e/test_real_bridge.py
+            tests: tests/e2e/test_real_bridge.py tests/e2e/test_git_ops_remote_bridge.py
           - shard: setup-uninstall
             tests: tests/e2e/test_real_setup_variants.py tests/e2e/test_real_uninstall.py
     steps:
