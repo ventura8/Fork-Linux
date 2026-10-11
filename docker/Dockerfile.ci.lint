@@ -8,7 +8,7 @@
 # bash -n / zsh -n / fish -n on the completions.
 # Source is bind-mounted at /src by scripts/ci-docker.sh (no COPY of the tree).
 FROM rhysd/actionlint:1.7.12 AS actionlint
-FROM hadolint/hadolint:v2.14.0 AS hadolint
+FROM hadolint/hadolint:v2.15.1 AS hadolint
 
 FROM ubuntu:26.04
 
@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     python3 \
     meson ninja-build gcc libc6-dev musl-tools \
     gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 \
-    clang-tidy cppcheck \
+    clang-tidy-22 cppcheck \
     shellcheck \
     desktop-file-utils appstream libxml2-utils \
     python3-pip \
@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # Pip pins are exact (AGENTS.md §4.8).
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install --break-system-packages \
-    ruff==0.16.9 \
+    ruff==0.17.0 \
     yamllint==1.38.0
 
 # actionlint from its pinned upstream image (no curl | bash installers).

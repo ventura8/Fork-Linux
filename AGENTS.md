@@ -219,7 +219,7 @@ v1.0.0 was built in phases; rows marked **(planned)** do not exist yet. When you
   - **C** (`bridge/**`): `meson setup` + `meson compile` with `-Werror`, `meson test` (native vectors under ASan/UBSan), clang-tidy (lint stage).
   - **Meson files**: `meson setup` + `meson compile` + `meson test` still succeed; `DESTDIR` install smoke when install rules change.
   - **Workflows** (`.github/workflows/*.yml`): `actionlint` (runner labels in `.github/actionlint.yaml`).
-  - **Python lint**: `ruff check .` (pinned `ruff==0.16.9` in the lint image; config `[tool.ruff]` in `pyproject.toml`).
+  - **Python lint**: `ruff check .` (pinned `ruff==0.17.0` in the lint image; config `[tool.ruff]` in `pyproject.toml`).
   - **YAML / Dockerfiles / XML**: `yamllint --strict -c .github/yamllint.yaml`, `hadolint docker/Dockerfile.*`, `xmllint --noout` (lint stage).
   - **Generated data**: after changing a command or option, `python3 scripts/gen-data.py write` (completions + man pages); `check` fails on drift.
   - **Desktop entry**: `desktop-file-validate` on the generated `.desktop`.
@@ -281,7 +281,7 @@ v1.0.0 was built in phases; rows marked **(planned)** do not exist yet. When you
 
 | Stage | Dockerfile | What it runs |
 |---|---|---|
-| `lint` | `docker/Dockerfile.ci.lint` | meson `--werror` build (native + MinGW) + `meson test --suite data` (gen-data check, desktop-file-validate, appstreamcli validate), clang-tidy (`.clang-tidy`) and cppcheck on `bridge/`, Python syntax of every tracked `.py`, ruff (`==0.16.9`, `[tool.ruff]` in `pyproject.toml`: py310, E F W B UP), `no-suppressions-lint.py`, `gen-data.py check`, `shellcheck -x` on every shell file discovered by extension + shebang (git's view) and the bash completion, actionlint, yamllint `--strict` (`.github/yamllint.yaml`), hadolint (errors fail; its "pin package versions" warnings contradict the pinned-base policy below), xmllint (metainfo, Thunar template, SVGs), `bash -n` / `zsh -n` / `fish -n` on completions |
+| `lint` | `docker/Dockerfile.ci.lint` | meson `--werror` build (native + MinGW) + `meson test --suite data` (gen-data check, desktop-file-validate, appstreamcli validate), clang-tidy (`clang-tidy-22`, the newest LLVM in the `ubuntu:26.04` base; `.clang-tidy`) and cppcheck on `bridge/`, Python syntax of every tracked `.py`, ruff (`==0.17.0`, `[tool.ruff]` in `pyproject.toml`: py310, E F W B UP), `no-suppressions-lint.py`, `gen-data.py check`, `shellcheck -x` on every shell file discovered by extension + shebang (git's view) and the bash completion, actionlint, yamllint `--strict` (`.github/yamllint.yaml`), hadolint (errors fail; its "pin package versions" warnings contradict the pinned-base policy below), xmllint (metainfo, Thunar template, SVGs), `bash -n` / `zsh -n` / `fish -n` on completions |
 | `coverage` | `docker/Dockerfile.ci.coverage` | pytest with the coverage gates of §4.5 → `artifacts/coverage/coverage.xml` (tree mounted at its host path); the native C unit tests under ASan + UBSan; then `scripts/ci-c-coverage.sh` → `c-coverage.xml` (in GHA a separate step before the Sonar scan) |
 | `bridge` | `docker/Dockerfile.ci.bridge` | MinGW + musl builds; `FL_REAL_WINE=1` Wine-tier suite with the testdriver |
 | `compat` | one per cell (below) | meson build + `py_compile` + pytest (no coverage floors) + meson test |

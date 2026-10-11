@@ -20,7 +20,7 @@ BASES = {
     "fedora:44",
     "opensuse/leap:16.0",
 }
-TOOL_IMAGES = {"rhysd/actionlint:1.7.12", "hadolint/hadolint:v2.14.0"}
+TOOL_IMAGES = {"rhysd/actionlint:1.7.12", "hadolint/hadolint:v2.15.1"}
 ARCH_BASE = re.compile(r"archlinux:base(?:-devel)?-\d{8}\.0\.\d+")
 EXPECTED = {
     # stages

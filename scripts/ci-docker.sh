@@ -274,16 +274,19 @@ run_completion_syntax() {
 	fish --no-execute data/completions/fork-linux.fish
 }
 
+# The newest LLVM in the pinned ubuntu:26.04 base (docker/Dockerfile.ci.lint).
+CLANG_TIDY="clang-tidy-22"
+
 run_clang_tidy() {
-	echo "==> clang-tidy (bridge/common, bridge/unix against ${BUILD_DIR}/compile_commands.json)"
+	echo "==> ${CLANG_TIDY} (bridge/common, bridge/unix against ${BUILD_DIR}/compile_commands.json)"
 	local -a sources
 	mapfile -t sources < <(find bridge/common bridge/unix -name '*.c' | sort)
-	clang-tidy --quiet -p "${BUILD_DIR}" "${sources[@]}"
-	echo "==> clang-tidy (bridge/win, MinGW-w64 target)"
+	"${CLANG_TIDY}" --quiet -p "${BUILD_DIR}" "${sources[@]}"
+	echo "==> ${CLANG_TIDY} (bridge/win, MinGW-w64 target)"
 	local sysroot
 	sysroot="$(x86_64-w64-mingw32-gcc -print-sysroot)"
 	mapfile -t sources < <(find bridge/win -maxdepth 1 -name '*.c' | sort)
-	clang-tidy --quiet "${sources[@]}" -- \
+	"${CLANG_TIDY}" --quiet "${sources[@]}" -- \
 		--target=x86_64-w64-mingw32 -std=c11 -municode -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 \
 		-Ibridge/common -Ibridge/win -I"${BUILD_DIR}/bridge" \
 		-isystem "${sysroot:-/usr}/x86_64-w64-mingw32/include"
