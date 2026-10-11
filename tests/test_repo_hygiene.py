@@ -415,7 +415,11 @@ def test_test_module_basenames_are_unique() -> None:
 
 
 def test_tests_and_scripts_import_only_stdlib_pytest_or_local() -> None:
-    """pytest is the only test dependency (AGENTS.md §1); local helpers live in tests/."""
+    """pytest is the only test dependency (AGENTS.md §1); local helpers live in tests/.
+
+    A test directory without ``__init__.py`` (``tests/e2e_de``) is put on ``sys.path`` by
+    pytest, so the modules next to a file count as local for it too.
+    """
     local = {
         entry.stem if entry.suffix == ".py" else entry.name
         for entry in (ROOT / "tests").iterdir()
@@ -426,7 +430,7 @@ def test_tests_and_scripts_import_only_stdlib_pytest_or_local() -> None:
         f"{path.relative_to(ROOT)}:{lineno}: import {name}"
         for path in _py_files(ROOT / "tests", ROOT / "scripts")
         for lineno, name in _top_level_imports(_parse(path))
-        if name not in allowed
+        if name not in allowed and not (path.parent / f"{name}.py").is_file()
     ]
     assert bad == [], "tests/ and scripts/ may import only stdlib, pytest and fork_linux:\n" + "\n".join(bad)
 

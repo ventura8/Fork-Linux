@@ -53,7 +53,7 @@ def _host(
     popen: _Popen | None = None,
 ) -> tuple[hh.Host, RecordingRunner, _Popen]:
     names = {name for name, _args in hh.TERMINALS} | {name for name, _d, _m in hh.DIFF_TOOLS}
-    names |= {"xdg-terminal-exec", "gdbus", "dbus-send", "xdg-open", "my-term", "weird-term"}
+    names |= {"xdg-terminal-exec", "gdbus", "dbus-send", "xdg-open", "my-term", "weird-term", "gsettings"}
     which = {name: (f"/usr/bin/{name}" if name in installed else None) for name in names}
     runner = RecordingRunner(responses=responses or {}, which_map=which)
     spawner = popen or _Popen()
@@ -93,10 +93,13 @@ def test_file_uri_encodes_everything_unsafe() -> None:
 
 def test_tool_env_drops_wine_and_bundle_variables() -> None:
     host, _runner, _popen = _host(
-        {"WINEPREFIX": "/p", "WINEDEBUG": "-all", "WINE_X": "1", "LD_LIBRARY_PATH": "/bundle", "KEEP": "1"}
+        {
+            "WINEPREFIX": "/p", "WINEDEBUG": "-all", "WINE_X": "1", "LD_LIBRARY_PATH": "/bundle", "KEEP": "1",
+            "FL_BRIDGE_TOKEN": "a" * 64, "FL_BRIDGE_PORT": "4242", "FL_WINE": "/w", "FORKGITINSTANCE": "C:\\x",
+        }
     )
     assert "KEEP" in host.tool_env
-    assert not any(key.startswith("WINE") for key in host.tool_env)
+    assert not any(key.startswith(("WINE", "FL_")) or key == "FORKGITINSTANCE" for key in host.tool_env)
     assert "LD_LIBRARY_PATH" not in host.tool_env
     assert host.env["WINEPREFIX"] == "/p"
 
@@ -245,9 +248,103 @@ def test_terminal_detection_order() -> None:
     assert host.terminal_argv("/r") == ["konsole", "--workdir", "/r"]
     host, _runner, _popen = _host(installed=("x-terminal-emulator",))
     assert host.terminal_argv("/r") == ["x-terminal-emulator"]
+    # Lubuntu: qterminal by name (x-terminal-emulator may point elsewhere), before GNOME's terminal.
+    host, _runner, _popen = _host(
+        {"XDG_CURRENT_DESKTOP": "LXQt"}, installed=("gnome-terminal", "x-terminal-emulator", "qterminal")
+    )
+    assert host.terminal_argv("/r") == ["qterminal", "--workdir", "/r"]
     host, _runner, _popen = _host()
     with pytest.raises(hh.ToolNotFound, match="no terminal emulator found"):
         host.terminal_argv("/r")
+
+
+CINNAMON = {"XDG_CURRENT_DESKTOP": "X-Cinnamon"}
+CINNAMON_TERMINAL = ["gsettings", "get", "org.cinnamon.desktop.default-applications.terminal", "exec"]
+# Ubuntu Cinnamon: gnome-terminal, whose Recommends bring xdg-terminal-exec (which picks
+# org.gnome.Terminal.Preferences.desktop there: gnome-terminal --preferences, no terminal).
+UBUNTU_CINNAMON = ("gsettings", "gnome-terminal", "xdg-terminal-exec")
+
+
+@pytest.mark.parametrize(
+    ("exec_key", "installed", "expected"),
+    [
+        ("'tilix'\n", (*UBUNTU_CINNAMON, "tilix"), ["tilix", "--working-directory=/r"]),
+        ("'gnome-terminal'\n", UBUNTU_CINNAMON, ["gnome-terminal", "--working-directory=/r"]),
+        ("'x-terminal-emulator'\n", (*UBUNTU_CINNAMON, "x-terminal-emulator"), ["x-terminal-emulator"]),
+        # Preferred Applications stores the desktop entry's Exec: its options and field codes.
+        ("'ptyxis --new-window'\n", (*UBUNTU_CINNAMON, "ptyxis"), ["ptyxis", "--new-window", "-d", "/r"]),
+        ("'my-term --class=x %F'\n", (*UBUNTU_CINNAMON, "my-term"), ["my-term", "--class=x"]),
+        # Not installed, or no answer: the generic order (xdg-terminal-exec first).
+        ("'terminator'\n", UBUNTU_CINNAMON, ["xdg-terminal-exec", "--dir=/r"]),
+        ("''\n", UBUNTU_CINNAMON, ["xdg-terminal-exec", "--dir=/r"]),
+        ("'%U'\n", UBUNTU_CINNAMON, ["xdg-terminal-exec", "--dir=/r"]),
+        (Completed([], 1, "", "No such schema\n"), UBUNTU_CINNAMON, ["xdg-terminal-exec", "--dir=/r"]),
+    ],
+    ids=["tilix", "gnome-terminal", "x-terminal-emulator", "ptyxis-exec", "unknown-with-field-code", "not-installed",
+         "empty", "only-a-field-code", "no-schema"],
+)
+def test_terminal_follows_cinnamons_preferred_application(
+    exec_key: Any, installed: tuple[str, ...], expected: list[str]
+) -> None:
+    host, runner, _popen = _host(CINNAMON, installed=installed, responses={"gsettings": exec_key})
+    assert host.terminal_argv("/r") == expected
+    assert runner.argvs == [CINNAMON_TERMINAL]
+
+
+@pytest.mark.parametrize(
+    ("desktop", "installed", "expected"),
+    [
+        # Ubuntu Budgie: its default terminal, also with GNOME's installed (earlier in the generic order).
+        (
+            "Budgie:GNOME",
+            ("gsettings", "xfce4-terminal", "gnome-terminal"),
+            ["xfce4-terminal", "--working-directory=/r"],
+        ),
+        # The setting names a terminal that is not installed: the generic order.
+        ("Budgie", ("gsettings", "gnome-terminal"), ["gnome-terminal", "--working-directory=/r"]),
+    ],
+    ids=["ubuntu-budgie", "not-installed"],
+)
+def test_terminal_follows_budgies_default_terminal(
+    desktop: str, installed: tuple[str, ...], expected: list[str]
+) -> None:
+    host, runner, _popen = _host(
+        {"XDG_CURRENT_DESKTOP": desktop}, installed=installed, responses={"gsettings": "'xfce4-terminal'\n"}
+    )
+    assert host.terminal_argv("/r") == expected
+    assert runner.argvs == [["gsettings", "get", "org.gnome.desktop.default-applications.terminal", "exec"]]
+
+
+def test_terminal_cinnamon_setting_after_the_configured_one_and_without_gsettings() -> None:
+    host, runner, _popen = _host({**CINNAMON, FORK_TERMINAL_CONFIG: "konsole"}, installed=("gsettings", "tilix"))
+    assert host.terminal_argv("/r") == ["konsole", "--workdir", "/r"]
+    assert runner.argvs == []
+    host, runner, _popen = _host(CINNAMON, installed=("tilix", "gnome-terminal"))
+    assert host.terminal_argv("/r") == ["gnome-terminal", "--working-directory=/r"]
+    assert runner.argvs == []
+    host, runner, _popen = _host({"XDG_CURRENT_DESKTOP": "GNOME"}, installed=("gsettings", "gnome-terminal"))
+    assert host.terminal_argv("/r") == ["gnome-terminal", "--working-directory=/r"]
+    assert runner.argvs == []
+
+
+def test_terminal_cinnamon_setting_that_cannot_be_read() -> None:
+    def fails(argv: list[str]) -> Completed:
+        raise ForkLinuxError(f"cannot run {argv[0]}")
+
+    host, _runner, _popen = _host(CINNAMON, installed=UBUNTU_CINNAMON, responses={"gsettings": fails})
+    assert host.terminal_argv("/r") == ["xdg-terminal-exec", "--dir=/r"]
+
+
+def test_terminal_cinnamon_setting_is_read_on_the_host_inside_flatpak(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    info = tmp_path / ".flatpak-info"
+    info.write_text("[Application]\nname=x\n", encoding="utf-8")
+    monkeypatch.setattr(sandbox, "FLATPAK_INFO", info)
+    answers = ["/usr/bin/gsettings\n", "'tilix'\n", "/usr/bin/tilix\n"]
+    host, runner, _popen = _host(CINNAMON, responses={"flatpak-spawn": answers})
+    assert host.terminal_argv("/r") == ["tilix", "--working-directory=/r"]
+    assert runner.argvs[1] == [*sandbox.HOST_SPAWN, *CINNAMON_TERMINAL]
 
 
 @pytest.mark.parametrize(
@@ -259,6 +356,7 @@ def test_terminal_detection_order() -> None:
         ("wezterm", ["start", "--cwd", "/r"]),
         ("ghostty", ["--working-directory=/r"]),
         ("foot", ["--working-directory=/r"]),
+        ("qterminal", ["--workdir", "/r"]),
         ("xterm", []),
     ],
 )
@@ -330,6 +428,30 @@ def test_open_refuses_other_schemes(url: str) -> None:
     assert popen.calls == []
 
 
+@pytest.mark.parametrize("url", ["https://git-fork.com/", "mailto:dev@example.com"])
+def test_open_url_links(url: str) -> None:
+    host, _runner, popen = _host()
+    assert host.open_url(url) == 0
+    assert popen.argvs == [["xdg-open", url]]
+
+
+def test_open_url_file_urls_open_their_path(tmp_path: Path) -> None:
+    """winebrowser turns Fork's "Open" on a file into a file:// URL (ForkLinux.File association)."""
+    target = tmp_path / "a b%.txt"
+    target.write_text("x", encoding="utf-8")
+    host, _runner, popen = _host(installed=("gdbus",))
+    assert host.open_url(hh.file_uri(target)) == 0
+    assert host.open_url("FILE://localhost" + hh.file_uri(target)[len("file://") :]) == 0
+    assert host.open_url(str(target)) == 0
+    assert popen.argvs == [["xdg-open", str(target)]] * 3
+    assert host.open_url(hh.file_uri(tmp_path)) == 0  # a folder: FileManager1
+    assert len(popen.argvs) == 3
+    with pytest.raises(UsageError, match="another host"):
+        host.open_url("file://server/share/x")
+    with pytest.raises(UsageError, match="refusing to open"):
+        host.open_url("smb://server/share")
+
+
 def test_open_files_and_windows_paths(tmp_path: Path) -> None:
     prefix = _prefix(tmp_path)
     target = prefix / "drive_c" / "notes.txt"
@@ -340,6 +462,33 @@ def test_open_files_and_windows_paths(tmp_path: Path) -> None:
     assert popen.argvs == [["xdg-open", str(target)], ["xdg-open", str(target)]]
     with pytest.raises(UsageError):
         host.open("C:\\missing.txt")
+
+
+def test_open_folders_go_to_filemanager1(tmp_path: Path) -> None:
+    """Fork's "Open In File Explorer" opens a folder: FileManager1.ShowFolders, whose service the
+    session bus starts outside Wine's process tree (Nemo started by xdg-open inside it, with no
+    systemd user manager, aborts when Wine's seccomp filter kills its image loaders)."""
+    host, runner, popen = _host(installed=("gdbus", "dbus-send", "xdg-open"))
+    assert host.open(str(tmp_path)) == 0
+    uri = hh.file_uri(tmp_path)
+    assert runner.argvs == [
+        [
+            "gdbus", "call", "--session", "--dest", hh.FILE_MANAGER1, "--object-path", hh.FILE_MANAGER1_PATH,
+            "--method", f"{hh.FILE_MANAGER1}.ShowFolders", f"['{uri}']", "",
+        ]
+    ]
+    assert popen.calls == []
+    host, runner, popen = _host(installed=("gdbus", "dbus-send", "xdg-open"), responses={"gdbus": 1})
+    assert host.open(str(tmp_path)) == 0
+    assert runner.argvs[1][5] == f"{hh.FILE_MANAGER1}.ShowFolders"
+    assert popen.calls == []
+
+
+def test_open_folder_without_filemanager1_uses_xdg_open(tmp_path: Path) -> None:
+    host, runner, popen = _host(installed=("gdbus", "dbus-send", "xdg-open"), responses={"gdbus": 1, "dbus-send": 1})
+    assert host.open(str(tmp_path)) == 0
+    assert [argv[0] for argv in runner.argvs] == ["gdbus", "dbus-send"]
+    assert popen.argvs == [["xdg-open", str(tmp_path)]]
 
 
 def test_edit(tmp_path: Path) -> None:
@@ -458,6 +607,27 @@ def test_main_maps_errors(tmp_path: Path, capsys: pytest.CaptureFixture[str]) ->
             raise KeyboardInterrupt
 
     assert hh.main(["open", "x"], host=Interrupted({}, runner=RecordingRunner(), popen=_Popen())) == 130
+
+
+def test_main_open_url(tmp_path: Path) -> None:
+    host, _runner, popen = _host()
+    assert hh.main(["open-url", "https://git-fork.com/buy"], host=host) == 0
+    assert popen.argvs == [["xdg-open", "https://git-fork.com/buy"]]
+    assert hh.main(["open-url"], host=host) == hh.EXIT_USAGE
+
+
+def test_main_handoff_goes_to_the_daemon_else_runs_here(
+    xdg: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--handoff VERB ARG`` asks the launcher's daemon; without one the verb runs in this process."""
+    monkeypatch.delenv("FL_BRIDGE_PORT", raising=False)
+    host, _runner, popen = _host(installed=("gdbus",), responses={"gdbus": 1})
+    target = tmp_path / "f.txt"
+    target.write_text("x", encoding="utf-8")
+    assert hh.main(["--handoff", "open", str(target)], host=host) == 0
+    assert popen.argvs == [["xdg-open", str(target)]]
+    assert "open: running inside Wine's process tree" in capsys.readouterr().err
+    assert hh.main(["--handoff", "diff", "a"], host=host) == hh.EXIT_USAGE
 
 
 def test_main_defaults_to_sys_argv(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

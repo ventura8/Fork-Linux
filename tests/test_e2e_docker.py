@@ -460,6 +460,14 @@ def test_bad_slot_poll(box: Box, poll: str) -> None:
     assert box.docker_runs() == []
 
 
+@pytest.mark.parametrize("poll", ["x", "-1", "1e3"])
+def test_bad_slot_poll(box: Box, poll: str) -> None:
+    result = box.run("--name", NAME, "pytest", FAKE_FLOCK_BUSY="slot-1 slot-2 slot-3", FL_E2E_SLOT_POLL=poll)
+    assert result.returncode == 1
+    assert "FL_E2E_SLOT_POLL" in result.stderr
+    assert box.docker_runs() == []
+
+
 @pytest.mark.parametrize("slots", ["0", "abc", "100", ""])
 def test_bad_slot_counts(box: Box, slots: str) -> None:
     result = box.run("--name", NAME, "pytest", FL_E2E_SLOTS=slots)
@@ -693,7 +701,7 @@ def test_e2e_image_carries_the_exploration_tools() -> None:
 
 
 def test_both_runners_share_the_library() -> None:
-    for rel in ("scripts/e2e-docker.sh", "scripts/ci-e2e-wine.sh"):
+    for rel in ("scripts/e2e-docker.sh", "scripts/ci-e2e-wine.sh", "scripts/ci-e2e-de.sh"):
         text = (REPO / rel).read_text(encoding="utf-8")
         assert '. "${ROOT}/scripts/lib-e2e-docker.sh"' in text, rel
         for function in ("fl_e2e_check_dir", "fl_e2e_acquire_slot", "fl_e2e_copy_logs"):

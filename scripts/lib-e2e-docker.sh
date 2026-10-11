@@ -1,7 +1,8 @@
 # shellcheck shell=bash
-# lib-e2e-docker.sh - shared by scripts/e2e-docker.sh (local real-Fork / Wine runs) and
-# scripts/ci-e2e-wine.sh (the CI tier): scratch-root safety checks, host-wide slots, the E2E
-# image build and the logs-only copy. Sourced, never executed.
+# lib-e2e-docker.sh - shared by scripts/e2e-docker.sh (local real-Fork / Wine runs),
+# scripts/ci-e2e-wine.sh (the CI tier) and scripts/ci-e2e-de.sh (the desktop tier): scratch-root
+# safety checks, host-wide slots, the E2E image builds and the logs-only copy. Sourced, never
+# executed.
 #
 # Why this exists: on 2026-10-10 a developer's whole home directory was recursively deleted
 # while agents ran real-Fork tests on the host (cause never found). Real-Fork / Wine work
@@ -172,7 +173,7 @@ fl_e2e_prepare_scratch() {
 fl_e2e_acquire_slot() {
 	local dir="$1" slots="$2" poll="${FL_E2E_SLOT_POLL:-5}"
 	[[ "${slots}" =~ ^[1-9][0-9]?$ ]] || fl_e2e_die "FL_E2E_SLOTS must be a number from 1 to 99 (got '${slots}')"
-	[[ "${poll}" =~ ^[0-9]{1,3}$ ]] || fl_e2e_die "FL_E2E_SLOT_POLL must be a number of seconds (got '${poll}')"
+	[[ "${poll}" =~ ^[0-9]{1,3}(\.[0-9]{1,3})?$ ]] || fl_e2e_die "FL_E2E_SLOT_POLL must be a number of seconds (got '${poll}')"
 	fl_e2e_try_slots "${dir}" "${slots}" && return 0
 	echo "==> all ${slots} E2E slots are busy (FL_E2E_SLOTS); waiting for the first one to free up"
 	until fl_e2e_try_slots "${dir}" "${slots}"; do
@@ -198,19 +199,41 @@ fl_e2e_try_slots() {
 	return 1
 }
 
-# fl_e2e_build_image ROOT IMAGE: build the E2E image from docker/Dockerfile.e2e.wine unless the
-# image already carries this Dockerfile's digest (FL_CI_FORCE_BUILD=1 always rebuilds).
+# fl_e2e_build_image ROOT IMAGE [DOCKERFILE]: build IMAGE from DOCKERFILE (relative to ROOT;
+# default docker/Dockerfile.e2e.wine) unless the image already carries that Dockerfile's digest
+# (FL_CI_FORCE_BUILD=1 always rebuilds). The build uses the docker driver's 'default' builder
+# unless BUILDX_BUILDER names another: a docker-container builder would leave the image in its
+# own cache instead of the local image store. In GitHub Actions (FL_CI_DOCKER_CACHE=gha, as in
+# scripts/ci-docker.sh) the job's buildx builder loads the image and keeps its layers in the
+# Actions cache, one scope per image: package layers only, never a Fork download.
 fl_e2e_build_image() {
-	local root="$1" image="$2" digest current
-	digest="$(sha256sum "${root}/${FL_E2E_DOCKERFILE}" | cut -d' ' -f1)"
+	local root="$1" image="$2" dockerfile="${3:-${FL_E2E_DOCKERFILE}}" digest current scope
+	local -a common
+	digest="$(sha256sum "${root}/${dockerfile}" | cut -d' ' -f1)"
 	current="$(docker image inspect "${image}" --format "{{index .Config.Labels \"${FL_E2E_DIGEST_LABEL}\"}}" 2>/dev/null 8>&- 9>&- || true)"
 	if [[ "${FL_CI_FORCE_BUILD:-0}" != "1" && "${current}" == "${digest}" ]]; then
 		echo "==> reusing ${image} (Dockerfile digest ${digest:0:12} unchanged)"
 		return 0
 	fi
-	echo "==> docker build ${image} from ${FL_E2E_DOCKERFILE}"
-	DOCKER_BUILDKIT=1 docker build -f "${root}/${FL_E2E_DOCKERFILE}" -t "${image}" \
-		--label "${FL_E2E_DIGEST_LABEL}=${digest}" "${root}/docker" 9>&- 8>&- || return
+	common=(-f "${root}/${dockerfile}" -t "${image}" --label "${FL_E2E_DIGEST_LABEL}=${digest}")
+	if [[ "${FL_CI_DOCKER_CACHE:-}" == "gha" ]]; then
+		scope="${image%%:*}"
+		echo "==> docker buildx build ${image} from ${dockerfile} (cache=gha, scope ${scope})"
+		docker buildx build "${common[@]}" --cache-from "type=gha,scope=${scope}" \
+			--cache-to "type=gha,mode=max,scope=${scope}" --load "${root}/docker" 9>&- 8>&- || return
+		return 0
+	fi
+	echo "==> docker build ${image} from ${dockerfile}"
+	BUILDX_BUILDER="${BUILDX_BUILDER:-default}" DOCKER_BUILDKIT=1 docker build "${common[@]}" "${root}/docker" 9>&- 8>&- || return
+	return 0
+}
+
+# fl_e2e_image_tag ROOT DOCKERFILE: the tag DOCKERFILE declares in its '# Image tag:' header.
+fl_e2e_image_tag() {
+	local tag
+	tag="$(sed -n 's/^# Image tag: \([^ ]*\)$/\1/p' "$1/$2" | head -n 1)"
+	[[ -n "${tag}" ]] || fl_e2e_die "$2 declares no '# Image tag:'"
+	printf '%s\n' "${tag}"
 	return 0
 }
 

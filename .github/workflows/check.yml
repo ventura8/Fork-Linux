@@ -19,7 +19,8 @@ permissions:
   contents: read
 
 # Every job starts at once (no needs: gates, AGENTS.md §4.8): lint + coverage + bridge +
-# 7 compat cells + 9 packaging cells. ./scripts/ci-pipeline.sh runs the same scripts locally.
+# 7 compat cells + 8 desktop integration cells + 9 packaging cells. ./scripts/ci-pipeline.sh
+# runs the same scripts locally.
 jobs:
   lint:
     runs-on: ubuntu-26.04
@@ -138,6 +139,44 @@ jobs:
           FL_CI_STAGE: compat
           FL_CI_CELL: ${{ matrix.cell }}
         run: ./scripts/ci-docker.sh
+
+  # The desktop E2E tier's integration cells (docs/qa/DE-E2E.md): fork-linux installed from the
+  # release tarball inside a real desktop session per image, checked through that desktop's own
+  # menu library, file manager, settings, terminal and default applications. No Wine and no
+  # Fork download (the real-Fork tier per desktop is in e2e-wine.yml); logs only, no screenshots.
+  e2e-de:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        desktop: [xfce, gnome, kde, kdewayland, cinnamon, mate, budgie, lxqt]
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4.4.1
+
+      - name: Expose GitHub Actions cache runtime vars
+        uses: crazy-max/ghaction-github-runtime@v4.0.0
+
+      - name: Desktop integration tier ${{ matrix.desktop }}
+        env:
+          FL_CI_DOCKER_CACHE: gha
+        run: ./scripts/ci-e2e-de.sh "${{ matrix.desktop }}"
+
+      - name: Keep the logs (text only)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: e2e-de-${{ matrix.desktop }}-logs
+          path: logs/e2e-de/
+          if-no-files-found: ignore
+          retention-days: 14
 
   # Build + smoke verify + live install E2E per format, the same scripts/ci-packaging-cell.sh
   # as ./scripts/ci-pipeline.sh. Never on fork PRs (privileged Docker, snapd, flatpak).

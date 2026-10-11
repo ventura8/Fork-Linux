@@ -6,28 +6,21 @@
 # file:// URL). Processes started by Wine inherit the staging runtime's seccomp
 # filter and NoNewPrivs=1, which breaks setuid launchers (Snap's snap-confine:
 # Ubuntu's Firefox, Chromium, ...). So the URL is handed to a process OUTSIDE
-# Wine's tree: the XDG desktop portal over D-Bus for web links, a transient
-# systemd user unit for files (the portal's OpenURI refuses file:// URIs), and
-# plain xdg-open as last resort. Windows paths (Z:\..., C:\...) go to the host
-# helper, which maps them through $WINEPREFIX.
+# Wine's tree: the XDG desktop portal over D-Bus for web links, else
+# fork-linux-handoff (a transient systemd user unit, or the launcher's daemon),
+# which runs "fork-linux-host open-url URL": http(s) and mailto links and files
+# (file:// URLs or paths; the portal's OpenURI refuses file:// URIs) with
+# their default application. Windows paths (Z:\..., C:\...) go to
+# "fork-linux-host open", which maps them through $WINEPREFIX.
 set -u
 
 [ $# -ge 1 ] && [ -n "$1" ] || { echo "usage: fork-linux-open-url URL" >&2; exit 2; }
 url=$1
+handoff="$(dirname -- "$0")/fork-linux-handoff"
 
 case $url in
-	[A-Za-z]:\\* | [A-Za-z]:/*) exec "$(dirname -- "$0")/fork-linux-handoff" open "$url" ;;
-esac
-
-# Wine sets these for its own children; they must not leak into the browser.
-unset WINEPREFIX WINELOADER WINESERVER WINEDEBUG WINEDLLOVERRIDES WINEDLLPATH WINEHOME LD_PRELOAD
-
-case $url in
-	/*) url="file://$url" ;;
-esac
-
-case $url in
-	file:*) ;;
+	[A-Za-z]:\\* | [A-Za-z]:/*) exec "$handoff" open "$url" ;;
+	/* | [Ff][Ii][Ll][Ee]:*) ;;
 	*)
 		if command -v gdbus >/dev/null 2>&1 &&
 			gdbus call --session --timeout 10 \
@@ -40,12 +33,4 @@ case $url in
 		;;
 esac
 
-if command -v systemd-run >/dev/null 2>&1 &&
-	systemd-run --user --quiet --collect --no-block --property=KillMode=process \
-		${DISPLAY:+"--setenv=DISPLAY=$DISPLAY"} \
-		${WAYLAND_DISPLAY:+"--setenv=WAYLAND_DISPLAY=$WAYLAND_DISPLAY"} \
-		-- xdg-open "$url" >/dev/null 2>&1; then
-	exit 0
-fi
-
-exec xdg-open "$url"
+exec "$handoff" open-url "$url"

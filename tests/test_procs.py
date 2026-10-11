@@ -180,3 +180,14 @@ def test_wineserver_exes(proc: Path, prefix: Path, tmp_path: Path) -> None:
     _process(proc, 604, env=env, cmdline=["wineserver"])  # exe unreadable
     (_process(proc, 605, env={"WINEPREFIX": "/x"}, cmdline=["wineserver"]) / "exe").symlink_to(server)
     assert procs.wineserver_exes(prefix, proc_root=proc) == [server]
+
+
+def test_running_matches_program_names(proc: Path) -> None:
+    (_process(proc, 301, env=None, cmdline=None) / "comm").write_bytes(b"Thunar\n")
+    (_process(proc, 302, env=None, cmdline=None) / "comm").write_bytes(b"thunar-volman\n")
+    (_process(proc, 303, env=None, cmdline=None) / "comm").write_bytes(b"gnome-terminal-\n")
+    _process(proc, 304, env=None, cmdline=None)  # no comm: vanished or unreadable
+    assert procs.running(["thunar"], proc_root=proc) == [301]
+    # Program names longer than the kernel keeps still match.
+    assert procs.running(["gnome-terminal-server"], proc_root=proc) == [303]
+    assert procs.running([], proc_root=proc) == []

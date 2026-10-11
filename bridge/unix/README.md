@@ -6,6 +6,12 @@ the Windows shims (`bridge/win/`). The shims connect over loopback TCP to this d
 which runs the real program (`/usr/bin/git`, `fork-linux-host`, ...) natively and relays
 stdin, stdout, stderr, signals and the exit status.
 
+The same daemon also carries the **desktop hand-off**: when Wine-started scripts
+(`libexec/fork-linux-handoff`) want a terminal, a file manager or a default application and
+there is no systemd user manager to start it, `fork-linux-host --handoff` asks this daemon to
+run `fork-linux-host VERB ARG` (`FL_REQ_HANDOFF`, below). With the git bridge off the
+launcher starts it as a hand-off starter only (`--handoff-only`).
+
 The launcher starts the daemon **outside Wine, before Wine starts**. Spike B2 explains why
 (`docs/spikes/B2-rendezvous.md`). On the pinned wine-staging runtime, every Linux process
 spawned by a Wine process inherits staging's seccomp filter and `NoNewPrivs`. Go tools and
@@ -33,8 +39,8 @@ The wire format is the frozen contract in `bridge/common/fl_proto.h`. Hashing co
 
 ```text
 fl-bridge-helper --daemon [--token-file FILE] [--port N] [--host-helper PATH]
-                 [--parent-pid PID] [--watch-prefix DIR [--watch-exe-dir WINDIR]]
-                 [--log FILE]
+                 [--handoff-only] [--parent-pid PID]
+                 [--watch-prefix DIR [--watch-exe-dir WINDIR]] [--log FILE]
 fl-bridge-helper --version | --help
 ```
 
@@ -45,7 +51,8 @@ Every option also accepts the `--opt=value` form.
 | `--daemon` | Required. Run the daemon. |
 | `--token-file FILE` | Read the token, then unlink the file. The file must be a regular file owned by the current user with no group or other access (`0600`). It must hold exactly 64 hex characters, optionally followed by `\n` or `\r\n`. Without this option the token comes from `FL_BRIDGE_TOKEN`. |
 | `--port N` | Listen on `127.0.0.1:N`. The default is `0`, an ephemeral port. Only loopback is ever bound. |
-| `--host-helper PATH` | Absolute path of `fork-linux-host`. Requests with `FL_REQ_HOST_HELPER` run `[PATH, verb, args...]`. Without this option such requests fail with `SPAWN_ERR(ENOENT)`. |
+| `--host-helper PATH` | Absolute path of `fork-linux-host`. Requests with `FL_REQ_HOST_HELPER` run `[PATH, verb, args...]`, `FL_REQ_HANDOFF` requests `[PATH, VERB, ARG]`. Without this option such requests fail with `SPAWN_ERR(ENOENT)`. |
+| `--handoff-only` | Accept only `FL_REQ_HANDOFF` requests; every other request (a program, `FL_REQ_HOST_HELPER`) gets `SPAWN_ERR(EPERM)` and runs nothing. Needs `--host-helper` (usage error otherwise). The launcher's hand-off starter when the git bridge is off. |
 | `--parent-pid PID` | Exit once `PID` no longer exists. It is checked with `kill(pid, 0)` every 2 s. With `--watch-prefix`, only until the first watched process was seen. |
 | `--watch-prefix DIR` | Outlive the parent (no PDEATHSIG) while a process of this user carries both `WINEPREFIX=DIR` and `FL_BRIDGE_PORT=<this daemon's port>` in its environment (`/proc/<pid>/environ`, every 2 s); exit 6 s after the last one is gone (`reason=prefix-idle`). Fork restarted by its own updater inherits both (spike S9). |
 | `--watch-exe-dir WINDIR` | With `--watch-prefix`: only processes whose `argv[0]` starts with `WINDIR` (ASCII case-insensitive; Wine shows the Windows path, e.g. `C:\users\<u>\AppData\Local\Fork\`) count, so Wine's own services that inherited the environment do not keep the daemon alive. |
@@ -136,6 +143,15 @@ The session calls `setsid()` and sets `TCP_NODELAY`, then runs these steps:
      exits. The grandchild gets `/dev/null` on stdin and stdout, keeps the daemon's stderr
      (the launcher's log), and has no PDEATHSIG. The session sends `SPAWN_OK` and then
      `EXIT(0, 0)` right after a successful exec. The program keeps running.
+   - **`FL_REQ_HANDOFF`** (a desktop hand-off): `fl_req_decode` accepts it only alone (no
+     other flag), with argv exactly `{ VERB, ARG }`, VERB one of `terminal`, `reveal`,
+     `open`, `open-url`, ARG non-empty, at most 8 KiB and not starting with `-`, and no
+     `ENV_SET`, `ENV_UNSET` or `ANCHOR` (`fl_handoff_ok`; the session checks it again).
+     The daemon runs `[--host-helper, VERB, ARG]` detached, as `FL_REQ_HOST_HELPER |
+     FL_REQ_DETACH`, in its own environment and the REQ's cwd. Nothing of the client's
+     process is passed on: the program inherits neither Wine's seccomp filter nor its
+     `NoNewPrivs`. A daemon with `--handoff-only` refuses everything else with
+     `SPAWN_ERR(EPERM)` before spawning.
 
 4. **Spawn reply.** On failure the daemon sends `SPAWN_ERR`: i32 BE errno plus a UTF-8
    message such as `cannot run 'git': No such file or directory`; the shim exits 127. On
@@ -173,7 +189,7 @@ The session calls `setsid()` and sets `TCP_NODELAY`, then runs these steps:
 ### Log lines
 
 ```text
-2026-10-09T11:00:00.123Z fl-bridge-helper[4242] daemon start port=40123 pid=4242 parent=4200 host-helper=yes watch-prefix=yes
+2026-10-09T11:00:00.123Z fl-bridge-helper[4242] daemon start port=40123 pid=4242 parent=4200 host-helper=yes handoff-only=no watch-prefix=yes
 2026-10-09T11:00:01.456Z fl-bridge-helper[4250] session peer=127.0.0.1:51234 argv0=git argc=4 flags=0x0 env-ignored=1 result=exit:0 ms=14
 ```
 

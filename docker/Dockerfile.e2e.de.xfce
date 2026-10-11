@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1.27.0
+# Desktop E2E image for Fork for Linux (unofficial) — Ubuntu 26.04 with Xubuntu's XFCE 4.20
+# Image tag: fork-linux-e2e-de-xfce:26.04
+# scripts/ci-e2e-de.sh xfce [--fork] runs tests/e2e_de in here (FL_E2E_DE=xfce) as the invoking
+# unprivileged user, with the source bind-mounted read-only at /src (no COPY) and one scratch
+# root at /e2e. tests/e2e_de/desktops.py starts the session: dbus-daemon, Xvfb, xfsettingsd,
+# xfwm4 and Thunar's FileManager1 service, with Xubuntu's own defaults
+# (xubuntu-default-settings: XDG_CONFIG_DIRS=/etc/xdg/xdg-xubuntu, Greybird, Thunar's
+# "Open Terminal Here" in uca.xml). The real-Fork tier (FL_E2E_DE_FORK=1) downloads the
+# managed Wine runtime, winetricks' verbs and the official Fork installer at run time (or
+# copies them from a read-only local seed); nothing is baked into the image or cached, and
+# only text logs leave the container (no screenshots, no binaries).
+# Wine's host libraries come from the same table as `fork-linux doctor`
+# (fork_linux.hostdeps, Debian names), as in docker/Dockerfile.e2e.wine.
+FROM ubuntu:26.04
+
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+# Apt packages are distro-locked by ubuntu:26.04 (no floating apt versions).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git python3 python3-pytest python3-gi curl procps file \
+    xvfb xauth xdotool x11-utils x11-xserver-utils imagemagick \
+    dbus-daemon dbus-bin dbus-x11 libglib2.0-bin \
+    cabextract unzip 7zip fontconfig zenity \
+    desktop-file-utils xdg-utils shared-mime-info \
+    libfreetype6 libfontconfig1 libgnutls30t64 libx11-6 libxext6 libxrender1 libxi6 \
+    libxrandr2 libxcursor1 libxcomposite1 libxinerama1 libxfixes3 libgl1 \
+    libvulkan1 libdbus-1-3 libasound2t64 libpulse0 libxkbcommon0 libwayland-client0 libegl1 \
+    xfwm4 xfce4-settings xfconf thunar xfce4-terminal exo-utils xfce4-helpers \
+    libgarcon-common gir1.2-garcon-1.0 xubuntu-default-settings greybird-gtk-theme \
+    xdg-desktop-portal xdg-desktop-portal-gtk
+
+WORKDIR /src
+CMD ["python3", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/e2e_de"]

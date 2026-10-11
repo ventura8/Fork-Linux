@@ -24,6 +24,7 @@ import sys
 import tempfile
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,7 @@ from . import (
     fork_tools,
     fsutil,
     gitconfig,
+    handoff,
     hostdeps,
     launcher,
     procs,
@@ -1684,6 +1686,114 @@ def check_cli(ctx: DoctorCtx) -> Result:
     )
 
 
+HANDOFF_ROUTES = {
+    "systemd": "systemd user session",
+    "flatpak": "flatpak-spawn --host",
+    "": "launcher daemon (no systemd user session)",
+}
+HANDOFF_HOW = {
+    "systemd": "a transient 'systemd-run --user' unit starts Fork's terminals and apps",
+    "flatpak": "the host helper starts Fork's terminals and apps on the host",
+}
+# Without a session start to compare with, a fallback this recent still counts.
+HANDOFF_RECENT = timedelta(days=1)
+HANDOFF_EFFECT = (
+    "a program started inside Wine's process tree inherits Wine's NoNewPrivs and seccomp filter: "
+    "GTK 3 apps (Tilix, Nemo) may crash and Snap or setuid launchers fail"
+)
+_RELAUNCH = "close Fork and start it again with 'fork-linux run' or the menu entry"
+HANDOFF_REMEDY = {
+    "systemd": (
+        f"'systemd-run --user' did not start it: check that 'systemctl --user status' works in your session, "
+        f"then {_RELAUNCH}; <logs>/handoff.log has the reason ('fork-linux logs --path')"
+    ),
+    "flatpak": f"{_RELAUNCH}; <logs>/handoff.log has the reason ('fork-linux logs --path')",
+    "": (
+        f"{_RELAUNCH} so the launcher starts its daemon; 'fork-linux logs' says why it did not start, "
+        "'fork-linux git-bridge status' shows a running git bridge daemon, and <logs>/handoff.log and the "
+        "daemon's <logs>/bridge-*.log have the details ('fork-linux logs --path')"
+    ),
+}
+
+
+def _our_session(ctx: DoctorCtx) -> dict[str, Any] | None:
+    """``session.json`` of the last launch in our prefix (None when there is none)."""
+    session = launcher.read_session(ctx.paths)
+    if session is None or session.get("prefix") != str(ctx.paths.prefix):
+        return None
+    return session
+
+
+def _session_started(session: Mapping[str, Any] | None) -> datetime | None:
+    """When the last launch started (None when unknown)."""
+    started = session.get("started") if session is not None else None
+    if not isinstance(started, str):
+        return None
+    try:
+        when = datetime.fromisoformat(started)
+    except ValueError:
+        return None
+    return when if when.tzinfo is not None else when.replace(tzinfo=timezone.utc)
+
+
+def _daemon_route(ctx: DoctorCtx, session: Mapping[str, Any] | None) -> tuple[str, str]:
+    """``(how, hint)`` of the launcher-daemon route: the running daemon, or the one the next launch
+    starts; ``hint`` is empty when the route works."""
+    if procs.fork_running(ctx.paths.prefix, proc_root=ctx.proc_root):
+        record = session.get("bridge") if session is not None else None
+        if isinstance(record, dict) and bridge.daemon_alive(record.get("pid"), ctx.proc_root):
+            kind = "hand-off daemon" if record.get("handoff") is True else "git bridge daemon"
+            return f"the {kind} runs (pid {record['pid']}, port {record.get('port')})", ""
+        return (
+            "Fork runs without the launcher's daemon: its terminals and apps run inside Wine's process tree",
+            f"{HANDOFF_EFFECT}; {HANDOFF_REMEDY['']}",
+        )
+    if bridge.check(ctx).ready:
+        return "the git bridge daemon starts with Fork and takes the hand-offs", ""
+    missing = bridge.handoff_missing()
+    if missing:
+        return (
+            f"this installation has no {' or '.join(missing)}: Fork's terminals and apps would run inside "
+            "Wine's process tree",
+            f"{HANDOFF_EFFECT}; install fork-linux from a package or the release tarball, which ship both "
+            "(in a source checkout: scripts/build-bridge.sh)",
+        )
+    return "a hand-off-only daemon starts with Fork", ""
+
+
+def _recent_fallback(ctx: DoctorCtx, session: Mapping[str, Any] | None) -> handoff.Fallback | None:
+    """The newest hand-off that ran inside Wine's tree, when it happened since the last launch started
+    (without a recorded launch: within :data:`HANDOFF_RECENT`)."""
+    fallback = handoff.last_fallback(ctx.paths.logs_dir)
+    if fallback is None:
+        return None
+    since = _session_started(session) or datetime.now(timezone.utc) - HANDOFF_RECENT
+    return fallback if fallback.when >= since else None
+
+
+def check_handoff(ctx: DoctorCtx) -> Result:
+    """How Fork's terminals and apps leave Wine's process tree here; whether the last one could not."""
+    route = bridge.handoff_route(ctx.env)
+    session = _our_session(ctx)
+    detail = HANDOFF_ROUTES[route]
+    if route:
+        detail += ": " + HANDOFF_HOW[route]
+    else:
+        how, hint = _daemon_route(ctx, session)
+        detail += ": " + how
+        if hint:
+            return Result("warn", detail, hint)
+    fallback = _recent_fallback(ctx, session)
+    if fallback is not None:
+        when = fallback.when.strftime("%Y-%m-%d %H:%M:%S UTC")
+        return Result(
+            "warn",
+            f"{detail}; the last hand-off ({fallback.verb}, {when}) ran inside Wine's process tree: {fallback.reason}",
+            f"{HANDOFF_EFFECT}; {HANDOFF_REMEDY[route]}",
+        )
+    return Result("ok", detail)
+
+
 def check_license(ctx: DoctorCtx) -> Result:
     """Reminder: Fork license activations belong to this prefix."""
     guid = _reg(ctx, MACHINE_GUID_KEY, "MachineGuid") if _has_prefix(ctx) else None
@@ -1779,6 +1889,7 @@ CHECKS: list[Check] = [
     Check("bridge.status", "Native-git bridge", "bridge", check_bridge),
     Check("desktop.entry", "Menu entry and icon", "desktop", check_desktop_entry, fixer=fix_desktop),
     Check("desktop.cli", "fork command", "desktop", check_cli),
+    Check("desktop.handoff", "Desktop hand-off", "desktop", check_handoff),
     Check("license.reminder", "Fork license", "license", check_license),
     Check("network.reach", "Download hosts", "network", check_network, network=True),
 ]

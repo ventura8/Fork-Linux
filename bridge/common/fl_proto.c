@@ -161,10 +161,47 @@ static void put_list(struct tlv_writer *w, uint8_t tag, char *const *v, size_t n
     }
 }
 
+/* ------------------------------------------------------------------------ */
+/* hand-off requests                                                         */
+/* ------------------------------------------------------------------------ */
+
+static const char *const k_handoff_verbs[] = { "terminal", "reveal", "open", "open-url" };
+
+int fl_handoff_verb_ok(const char *verb)
+{
+    if (verb == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < sizeof(k_handoff_verbs) / sizeof(k_handoff_verbs[0]); i++) {
+        if (strcmp(verb, k_handoff_verbs[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int fl_handoff_ok(const struct fl_req *r)
+{
+    const char *arg;
+    if (r == NULL || r->flags != FL_REQ_HANDOFF || r->argc != 2u || r->argv == NULL) {
+        return 0;
+    }
+    if (r->nset != 0u || r->nunset != 0u || r->nanchors != 0u || !fl_handoff_verb_ok(r->argv[0])) {
+        return 0;
+    }
+    arg = r->argv[1];
+    return arg != NULL && arg[0] != '\0' && arg[0] != '-' && strlen(arg) <= FL_HANDOFF_ARG_MAX;
+}
+
 static int req_shape_ok(const struct fl_req *r)
 {
-    return r->cwd != NULL && r->argc != 0 && r->argv != NULL && r->argv[0] != NULL && r->argv[0][0] != '\0' &&
-           (r->flags & ~(FL_REQ_DETACH | FL_REQ_HOST_HELPER)) == 0u;
+    if (r->cwd == NULL || r->argc == 0 || r->argv == NULL || r->argv[0] == NULL || r->argv[0][0] == '\0') {
+        return 0;
+    }
+    if ((r->flags & ~FL_REQ_KNOWN) != 0u) {
+        return 0;
+    }
+    return (r->flags & FL_REQ_HANDOFF) == 0u || fl_handoff_ok(r);
 }
 
 /* Validates r like fl_req_decode() does and computes the encoded size into *total. */
@@ -343,7 +380,7 @@ static int dec_flags(struct req_dec *d, const uint8_t *data, size_t n)
     }
     d->flags = get_u32(data);
     d->have_flags = 1;
-    return (d->flags & ~(FL_REQ_DETACH | FL_REQ_HOST_HELPER)) != 0u ? -1 : 0;
+    return (d->flags & ~FL_REQ_KNOWN) != 0u ? -1 : 0;
 }
 
 /* Apply one record; 0 ok, -1 invalid (or out of memory). */
@@ -418,6 +455,10 @@ int fl_req_decode(const uint8_t *buf, size_t len, struct fl_req *r)
     r->flags = d.flags;
     r->nanchors = d.anchors.n;
     r->anchors = d.anchors.v;
+    if ((r->flags & FL_REQ_HANDOFF) != 0u && !fl_handoff_ok(r)) {
+        fl_req_free(r);
+        return -1;
+    }
     return 0;
 }
 

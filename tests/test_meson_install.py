@@ -112,10 +112,11 @@ def test_completions(installed: Path) -> None:
 def test_system_file_manager_actions(installed: Path) -> None:
     share = installed / "share"
     nemo = share / "nemo" / "actions" / "fork-linux-open.nemo_action"
+    nemo_folder = share / "nemo" / "actions" / "fork-linux-open-folder.nemo_action"
     dolphin = share / "kio" / "servicemenus" / "fork-linux-open.desktop"
     fma = share / "file-manager" / "actions" / "fork-linux-open.desktop"
     nautilus = share / "nautilus-python" / "extensions" / "fork_linux_nautilus.py"
-    for path in (nemo, dolphin, fma, nautilus):
+    for path in (nemo, nemo_folder, dolphin, fma, nautilus):
         text = path.read_text(encoding="utf-8")
         assert "Installed system-wide by the fork-linux package" in text
         assert "fork-linux open --from-file-manager" in text or "'fork-linux'" in text

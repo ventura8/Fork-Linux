@@ -13,7 +13,10 @@ whether it really runs): its ``--parent-pid`` is this process, which the exec
 turns into the Wine process running Fork, and its ``--watch-prefix`` keeps it
 alive while a process carries our prefix and its port, so it outlives Fork's
 self-update restart (spike S9) and stops a few seconds after Fork closes. The
-fast path reuses the running daemon recorded in ``session.json``.
+fast path reuses the running daemon recorded in ``session.json``. Without the
+bridge daemon, and without a systemd user manager, the same helper starts as a
+hand-off-only daemon (:func:`bridge.start_handoff`) so that the terminals and
+applications Fork asks for start outside Wine's process tree.
 
 Wine's own output goes to ``<logs>/wine-last.log`` (or, with ``--debug``, a
 new ``wine-<UTC time>.log``; the newest :data:`DEBUG_LOGS_KEEP` are kept).
@@ -805,7 +808,8 @@ def run(
     with the session's Wine and bridge daemon (Fork forwards the paths to its
     window); 3. make sure setup is complete (``no_setup``:
     :class:`NotSetUpError` instead of running it); 4. start the git bridge
-    daemon when it is on (Fork not running yet); 5. pre-launch hooks unless
+    daemon when it is on (Fork not running yet), else the hand-off-only daemon
+    when the desktop hand-off needs one (:func:`bridge.start_handoff`); 5. pre-launch hooks unless
     ``no_hooks``; 6. record the session, send Wine's output to the log and
     exec. When anything fails before the exec the daemon is stopped again.
     """
@@ -818,6 +822,10 @@ def run(
         return _exec(_maybe_to_terminal(fast, terminal), truncate=False, execvpe=execvpe)
     ctx = _ready_ctx(app_ctx, no_setup=no_setup, running=running)
     daemon = None if running else bridge.start_daemon(ctx, debug=debug)
+    if daemon is None and not running:
+        # No git bridge daemon (which would take the hand-offs): a hand-off-only one when the
+        # desktop hand-off has no other way out of Wine's process tree.
+        daemon = bridge.start_handoff(ctx)
     try:
         if not no_hooks and not running:
             pre_launch(ctx)

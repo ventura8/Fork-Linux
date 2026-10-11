@@ -85,8 +85,8 @@ Downloads are cached in `~/.cache/fork-linux/` (winetricks' .NET and font downlo
 
 - `fork` — start Fork.
 - `fork .` or `fork ~/src/myrepo` — open a repository (a path inside a repository opens its root). If Fork is already running, the repository opens in a new tab.
-- **Desktop launcher** — "Fork for Linux (unofficial)" in your app menu, with Fork's own icon extracted from your copy (at every icon size; a neutral placeholder until Fork is installed).
-- **Open in Fork** — a right-click action in Nautilus, Nemo, Caja, Dolphin and Thunar. `install.sh` and `fork-linux desktop install` add it for the file managers installed on your computer (`--file-managers auto`, the default); `--file-managers all` or a list such as `thunar,nemo` picks them yourself. In Thunar the action is added next to your desktop's own custom actions ("Open Terminal Here", ...), and removing it brings back exactly what was there.
+- **Desktop launcher** — "Fork for Linux (unofficial)" in your app menu, with Fork's own icon extracted from your copy (at every icon size; a neutral placeholder until Fork is installed). On Cinnamon and MATE the menu picks up a brand-new `~/.local/share/applications` only at the next login; fork-linux says so when it had to create that folder.
+- **Open in Fork** — a right-click action in Nautilus, Nemo, Caja, Dolphin, Thunar and PCManFM-Qt. `install.sh` and `fork-linux desktop install` add it for the file managers installed on your computer (`--file-managers auto`, the default); `--file-managers all` or a list such as `thunar,nemo` picks them yourself. In Thunar the action is added next to your desktop's own custom actions ("Open Terminal Here", ...), and removing it brings back exactly what was there.
 
 ## Updating
 
@@ -108,7 +108,7 @@ Downloads are cached in `~/.cache/fork-linux/` (winetricks' .NET and font downlo
 | `update [--check \| --fork \| --wine] [--fork-version V \| --latest] [--allow-untested]` | Check for and apply Fork / Wine runtime updates |
 | `snapshot create [--reason R] \| list \| delete ID \| prune` | Manage snapshots of Fork's install |
 | `rollback [ID \| --to-version V] [--with-settings] [--no-pin]` | Restore a snapshot and pin that version |
-| `doctor [--fix] [--deep] [--network] [--check ID …]` | 46 health checks with fix hints |
+| `doctor [--fix] [--deep] [--network] [--check ID …]` | 47 health checks with fix hints |
 | `config get \| set \| unset \| list \| path \| edit` | Fork for Linux settings (`~/.config/fork-linux/config.ini`) |
 | `settings show \| get \| set \| unset \| apply-defaults \| backup \| restore [FILE] \| path` | Fork's own `settings.json` (edited only while Fork is closed) |
 | `desktop install [--file-managers LIST] [--no-menu] [--no-icons] [--cli-alias] \| remove \| status` | Menu entry, icon, file-manager actions |
@@ -157,12 +157,14 @@ Baseline: **Ubuntu 26.04**; oldest supported: **Ubuntu 22.04**. CI also covers U
 
 - **Start with `fork-linux doctor`.** It checks the host, Wine, the prefix, Fork and the integrations, and prints a fix for every failure; `fork-linux doctor --fix` applies the safe ones.
 - **Logs**: `fork-linux logs` (files in `~/.local/state/fork-linux/logs/`). `fork-linux logs --bundle` creates a redacted archive to attach to an issue. Earlier Fork sessions' `fork.log` files are kept there as `fork-<time>.log`.
+- **A terminal or app Fork opens crashes or does not start** (Tilix, Nemo, Snap apps): `fork-linux doctor --check desktop.handoff` says how Fork's terminals and apps leave Wine's process tree on your system (your systemd user session, fork-linux's own launcher daemon, or `flatpak-spawn --host`) and warns when the last one ran inside it; start Fork with `fork-linux run` or the menu entry so the launcher can start its daemon.
 - **Repository problems**: `fork-linux repo check` lists what breaks per repository (hooks, symlinks, submodules, remotes given as Linux paths, `core.filemode`); `fork-linux repo fix PATH` sets `core.filemode=false` and marks tracked symlinks `skip-worktree` after asking, and `fork-linux repo undo PATH` reverts exactly that.
 
 What fork-linux connects for you:
 
-- **Open in Shell / the Console button** opens your desktop's terminal in the repository (`fork-linux-terminal`; `$FORK_LINUX_TERMINAL` or `[integration] terminal` picks the program).
-- **Show in File Explorer / Open In File Explorer** opens your Linux file manager with the file selected; **Open** on a file uses your Linux default application.
+- **Open in Shell / the Console button** opens your desktop's terminal in the repository (`fork-linux-terminal`; `$FORK_LINUX_TERMINAL` or `[integration] terminal` picks the program, else the terminal your desktop's settings name on Cinnamon and Budgie, else `xdg-terminal-exec` and the desktop's own terminal).
+- **Show in File Explorer / Open In File Explorer** opens your Linux file manager with the file selected (or on the folder); **Open** on a file uses your Linux default application.
+- **Theme and scale**: Fork starts in your desktop's light or dark theme and at its display scale (GNOME, KDE Plasma, Cinnamon, MATE, Budgie, XFCE and LXQt each asked in their own terms).
 - **File dialogs** (Open repository, Clone) do not accept Linux paths such as `/home/you/src`: type `H:\src` (the `H:` drive is your home) or `Z:\home\you\src`, or browse through `/`.
 - New clones go to your Linux home by default, never into the Wine prefix.
 - **Non-Latin text** (Cyrillic, Greek, Chinese, Japanese, Korean, ...) in repository names, branches and commit messages uses your Linux fonts: setup points WPF's font fallback at the installed Noto fonts (or DejaVu / Liberation). The deb, rpm and Arch packages recommend the Noto fonts (core + CJK). If such text shows as boxes or not at all, install them (Debian / Ubuntu: `fonts-noto-core fonts-noto-cjk`; Fedora / openSUSE: `google-noto-sans-fonts google-noto-sans-cjk-fonts`; Arch: `noto-fonts noto-fonts-cjk`) and run `fork-linux doctor --fix`.

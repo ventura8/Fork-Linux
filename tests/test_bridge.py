@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import socket
 import stat
 import subprocess
 import sys
@@ -16,7 +17,7 @@ import pytest
 from fixtures import bridge_kit
 from fixtures.setup_ctx import USER, FakeUI, make_ctx
 
-from fork_linux import bootstrap, bridge, resources
+from fork_linux import bootstrap, bridge, resources, sandbox
 from fork_linux.cli import AppContext
 from fork_linux.errors import UsageError
 from fork_linux.steps import integration
@@ -248,6 +249,21 @@ def test_host_helper_installed_template_or_missing(kit: bridge_kit.Kit, monkeypa
     time.sleep(0.01)
     assert bridge.host_helper(ctx.paths) == wrapper
     assert wrapper.stat().st_mtime_ns == mtime, "an up-to-date wrapper is not rewritten"
+
+
+def test_handoff_missing_only_looks(kit: bridge_kit.Kit) -> None:
+    ctx = _ctx(kit)
+    assert bridge.handoff_missing() == []
+    host = kit.libexec / resources.HOST_HELPER
+    host.chmod(0o644)
+    assert bridge.handoff_missing() == [resources.HOST_HELPER], "not executable"
+    host.unlink()
+    (kit.libexec / (resources.HOST_HELPER + ".in")).write_text("#!@PYTHON@ -I\n", encoding="utf-8")
+    assert bridge.handoff_missing() == [], "a source checkout's template"
+    assert not bridge.personas_dir(ctx.paths).exists(), "no wrapper is written"
+    (kit.libexec / (resources.HOST_HELPER + ".in")).unlink()
+    kit.helper.unlink()
+    assert bridge.handoff_missing() == [bridge.HELPER, resources.HOST_HELPER]
 
 
 def test_write_token(kit: bridge_kit.Kit) -> None:
@@ -491,6 +507,109 @@ def test_daemon_ends_with_its_parent(kit: bridge_kit.Kit, tmp_path: Path) -> Non
     assert not bridge.daemon_alive(pid)
 
 
+# -- the hand-off daemon ----------------------------------------------------------------------------
+
+
+def _systemd_socket(runtime: Path) -> Path:
+    """A systemd user manager's private socket under ``runtime`` (a real AF_UNIX socket file)."""
+    path = runtime / "systemd" / "private"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    server = socket.socket(socket.AF_UNIX)
+    server.bind(str(path))
+    server.close()
+    return path
+
+
+def test_systemd_user_manager(tmp_path: Path) -> None:
+    runtime = tmp_path / "run"
+    runtime.mkdir()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    systemd_run = bin_dir / "systemd-run"
+    systemd_run.write_text("#!/bin/sh\n", encoding="utf-8")
+    systemd_run.chmod(0o755)
+    env = {"XDG_RUNTIME_DIR": str(runtime), "PATH": str(bin_dir)}
+    assert not bridge.systemd_user_manager(env), "no manager socket"
+    (runtime / "systemd").mkdir()
+    (runtime / "systemd" / "private").write_text("", encoding="utf-8")
+    assert not bridge.systemd_user_manager(env), "not a socket"
+    (runtime / "systemd" / "private").unlink()
+    _systemd_socket(runtime)
+    assert bridge.systemd_user_manager(env)
+    assert not bridge.systemd_user_manager({**env, "PATH": str(tmp_path)}), "no systemd-run"
+    assert not bridge.systemd_user_manager({"PATH": str(bin_dir)}), "no XDG_RUNTIME_DIR"
+
+
+def test_handoff_route(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sandbox, "FLATPAK_INFO", tmp_path / "no-flatpak-info")
+    assert bridge.handoff_route({"FLATPAK_ID": "io.github.ventura8.ForkLinux"}) == "flatpak"
+    monkeypatch.setattr(bridge, "systemd_user_manager", lambda env: True)
+    assert bridge.handoff_route({}) == "systemd"
+    monkeypatch.setattr(bridge, "systemd_user_manager", lambda env: False)
+    assert bridge.handoff_route({}) == ""
+
+
+def test_start_handoff(kit: bridge_kit.Kit, caplog: pytest.LogCaptureFixture) -> None:
+    """Bridge off, no systemd user manager: a --handoff-only daemon; Fork gets its port and token only."""
+    ctx = _ctx(kit)
+    caplog.set_level("INFO", logger="fork_linux.bridge")
+    daemon = bridge.start_handoff(ctx)
+    assert daemon is not None and daemon.handoff
+    (start,) = kit.starts()
+    argv = start["argv"]
+    assert isinstance(argv, list)
+    assert argv[argv.index("--handoff-only") + 1 : argv.index("--handoff-only") + 3] == [
+        "--host-helper", str(kit.libexec / resources.HOST_HELPER)
+    ]
+    assert "--watch-prefix" in argv and "--parent-pid" in argv
+    assert start["env"]["WINEPREFIX"] == str(ctx.paths.prefix)
+    assert daemon.env == {"FL_BRIDGE_PORT": "4242", "FL_BRIDGE_TOKEN": start["token"]}
+    assert bridge.launch_env(ctx, daemon) == daemon.env, "with the bridge off too"
+    assert bridge.host_actions_active(ctx) is False, "Fork's tools stay off fl-launch.exe"
+    assert "hand-off daemon pid" in caplog.text
+    record = bridge.session_record(daemon)
+    assert record is not None and record["handoff"] is True
+    session = {"prefix": str(ctx.paths.prefix), "bridge": record}
+    ctx.config.set("git", "bridge", "on")
+    assert bridge.session_env(ctx, session) == {}, "never mistaken for the git bridge"
+    assert bridge.running_daemon(ctx.paths, session) == {}
+    daemon.stop()
+
+
+def test_start_handoff_not_needed_or_not_possible(
+    kit: bridge_kit.Kit, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    ctx = _ctx(kit)
+    caplog.set_level("DEBUG", logger="fork_linux.bridge")
+    _systemd_socket(Path(ctx.env["XDG_RUNTIME_DIR"]))
+    monkeypatch.setattr(bridge.shutil, "which", lambda name, path=None: "/usr/bin/systemd-run")
+    assert bridge.start_handoff(ctx) is None
+    assert "desktop hand-off through systemd" in caplog.text
+    monkeypatch.setattr(bridge, "systemd_user_manager", lambda env: False)
+    (kit.libexec / resources.HOST_HELPER).unlink()
+    assert bridge.start_handoff(ctx) is None
+    assert "hand-off daemon not started (no fork-linux-host in this installation)" in caplog.text
+    kit.helper.unlink()
+    assert bridge.start_handoff(ctx) is None
+    assert "no fl-bridge-helper in this installation" in caplog.text
+    assert kit.starts() == []
+
+
+def test_start_handoff_failure_is_only_logged(kit: bridge_kit.Kit, caplog: pytest.LogCaptureFixture) -> None:
+    ctx = _ctx(kit)
+    ctx.env["FL_FAKE_DAEMON"] = "fail"
+    assert bridge.start_handoff(ctx) is None
+    assert "hand-off daemon not started" in caplog.text
+    assert isinstance(ctx.ui, FakeUI)
+    assert ctx.ui.kinds("warn") == []
+    assert list(ctx.paths.runtime_dir.glob("bridge-token-*")) == []
+
+
+def test_launch_env_without_a_daemon(kit: bridge_kit.Kit) -> None:
+    ctx = _ready(kit)
+    assert bridge.launch_env(ctx, None) == {}
+
+
 # -- the session ------------------------------------------------------------------------------------
 
 
@@ -508,7 +627,7 @@ def test_session_record_and_env(kit: bridge_kit.Kit, tmp_path: Path) -> None:
     assert bridge.session_record(None) is None
     env = {"FL_BRIDGE_PORT": "4242", "FL_BRIDGE_TOKEN": TOKEN, "FORKGITINSTANCE": "C:\\fork-linux\\gitInstance"}
     record = bridge.session_record(bridge.Daemon(77, 4242, env))
-    assert record == {"pid": 77, "port": 4242, "env": env}
+    assert record == {"pid": 77, "port": 4242, "env": env, "handoff": False}
     session: dict[str, Any] = {"prefix": str(ctx.paths.prefix), "bridge": record}
     assert bridge.session_env(ctx, session, proc) == env
     assert bridge.running_daemon(ctx.paths, session, proc) == {"pid": 77, "port": 4242}

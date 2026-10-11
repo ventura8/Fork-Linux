@@ -22,4 +22,9 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 - Packaging cells (`scripts/ci-packaging-cell.sh`) mount a linked worktree's git common dir read-only
   (`fl_git_mount_args`) and build the previous release (`FL_PACKAGING_PREVIOUS`, default 0.9.9) into
   `<artifacts>/previous` for the real upgrade / downgrade E2E; check.yml does not upload that directory.
+- Desktop E2E images `fork-linux-e2e-de-<desktop>:26.04` (`docker/Dockerfile.e2e.de.<desktop>`, present: `xfce`, `gnome`, `kde`,
+  `kdewayland`, `cinnamon`, `mate`, `budgie`, `lxqt`): `scripts/ci-e2e-de.sh <desktop> [--fork]` / `scripts/ci-e2e-de-matrix.sh [--fork]`,
+  same library and rules as `e2e-docker.sh`; one recipe per image in `tests/e2e_de/desktops.py`. CI: `check.yml` job
+  `e2e-de` (integration, every PR, `FL_CI_DOCKER_CACHE=gha`) and `e2e-wine.yml` job `e2e-de` (real Fork, fresh downloads);
+  `tests/test_e2e_de_recipes.py` keeps images, recipes, checkers and both matrices in step. Runbook: `docs/qa/DE-E2E.md`.
 - When you change an image, script or cell: update AGENTS.md §4.8, this skill and `tests/test_docker.py` in the same change.

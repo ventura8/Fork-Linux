@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -178,3 +179,46 @@ def test_f5_known_bad_override_fails_doctor_with_rollback_hint(capsys: pytest.Ca
     assert "Fork 2.24.0 is known-bad: the diff view freezes under Wine" in out
     assert "hint: go back to a working version: 'fork-linux rollback' or 'fork-linux update --fork'" in out
     assert "1 check(s) failed: fork.version" in err
+
+
+def test_desktop_handoff_in_the_json_report(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real desktop.handoff check through ``--json doctor --check``: the route, then a logged fallback."""
+    from datetime import datetime, timezone
+
+    from fork_linux import bridge, handoff
+    from fork_linux.paths import Paths
+
+    monkeypatch.setattr(bridge, "handoff_route", lambda env: "")
+    monkeypatch.setattr(bridge, "handoff_missing", lambda: [])
+    code, out, _err = run_cli(capsys, "--json", "doctor", "--check", "desktop.handoff")
+    assert code == 0
+    data = json.loads(out)
+    assert data["summary"] == {"ok": 1, "warn": 0, "fail": 0, "info": 0}
+    assert data["checks"] == [
+        {
+            "id": "desktop.handoff",
+            "title": "Desktop hand-off",
+            "group": "desktop",
+            "status": "ok",
+            "detail": "launcher daemon (no systemd user session): a hand-off-only daemon starts with Fork",
+            "hint": "",
+            "fixable": False,
+        }
+    ]
+    logs = Paths.from_env(dict(os.environ)).logs_dir
+    logs.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc).strftime(handoff.TIME_FORMAT)
+    (logs / handoff.LOG_NAME).write_text(
+        f"{now} {handoff.PROG}[7] terminal: {handoff.FALLBACK_NOTE}: no daemon in Fork's environment\n",
+        encoding="utf-8",
+    )
+    code, out, _err = run_cli(capsys, "--json", "doctor", "--check", "desktop.handoff")
+    assert code == 0, "a warning is not a failure"
+    data = json.loads(out)
+    assert data["summary"] == {"ok": 0, "warn": 1, "fail": 0, "info": 0}
+    (item,) = data["checks"]
+    assert item["status"] == "warn"
+    assert item["detail"].endswith("ran inside Wine's process tree: no daemon in Fork's environment")
+    assert "GTK 3 apps (Tilix, Nemo) may crash" in item["hint"]

@@ -44,6 +44,15 @@ EXPECTED = {
     "Dockerfile.release": "fork-linux-ci-release:26.04",
     "Dockerfile.snap": "fork-linux-ci-snap:24.04",
     "Dockerfile.e2e.wine": "fork-linux-ci-e2e-wine:26.04",
+    # desktop E2E tier (scripts/ci-e2e-de.sh), one image per desktop
+    "Dockerfile.e2e.de.xfce": "fork-linux-e2e-de-xfce:26.04",
+    "Dockerfile.e2e.de.mate": "fork-linux-e2e-de-mate:26.04",
+    "Dockerfile.e2e.de.budgie": "fork-linux-e2e-de-budgie:26.04",
+    "Dockerfile.e2e.de.lxqt": "fork-linux-e2e-de-lxqt:26.04",
+    "Dockerfile.e2e.de.kde": "fork-linux-e2e-de-kde:26.04",
+    "Dockerfile.e2e.de.kdewayland": "fork-linux-e2e-de-kdewayland:26.04",
+    "Dockerfile.e2e.de.gnome": "fork-linux-e2e-de-gnome:26.04",
+    "Dockerfile.e2e.de.cinnamon": "fork-linux-e2e-de-cinnamon:26.04",
 }
 SCRIPTS = [
     "scripts/ci-docker.sh",
@@ -54,6 +63,7 @@ SCRIPTS = [
     "scripts/lib-e2e-docker.sh",
     "scripts/e2e-docker.sh",
     "scripts/build-bridge.sh",
+    "scripts/ci-e2e-de.sh",
 ]
 
 
@@ -97,7 +107,10 @@ def test_image_tag_suffix_equals_the_base_tag(path: Path) -> None:
     tag = _image_tag(text)
     assert tag == EXPECTED[path.name]
     name, suffix = tag.rsplit(":", 1)
-    assert name.startswith("fork-linux-ci-")
+    if path.name.startswith("Dockerfile.e2e.de."):
+        assert name == "fork-linux-e2e-de-" + path.name.rsplit(".", 1)[1]
+    else:
+        assert name.startswith("fork-linux-ci-")
     assert suffix == _froms(text)[-1].rsplit(":", 1)[1]
 
 
@@ -123,13 +136,26 @@ def test_no_dockerfiles_outside_docker_dir() -> None:
 
 
 def test_scripts_use_the_declared_tags() -> None:
-    declared = set(EXPECTED.values())
+    # Desktop images are found by ci-e2e-de.sh from their Dockerfile's header (next test).
+    declared = {tag for tag in EXPECTED.values() if not tag.startswith("fork-linux-e2e-de-")}
     for rel in SCRIPTS:
         for tag in re.findall(r"fork-linux-ci-[\w.-]+:[\w.-]+", _text(ROOT / rel)):
             assert tag in declared, f"{rel} uses {tag}, which no Dockerfile declares"
     used = {tag for rel in SCRIPTS for tag in re.findall(r"fork-linux-ci-[\w.-]+:[\w.-]+", _text(ROOT / rel))}
     assert declared - {"fork-linux-ci-e2e-wine:26.04"} <= used | {"fork-linux-ci-e2e-wine:26.04"}
     assert "fork-linux-ci-e2e-wine:26.04" in used
+
+
+def test_desktop_images_are_built_by_the_desktop_runner() -> None:
+    """scripts/ci-e2e-de.sh builds each docker/Dockerfile.e2e.de.<desktop> under the tag it declares."""
+    text = _text(ROOT / "scripts" / "ci-e2e-de.sh")
+    assert 'DOCKERFILE="docker/Dockerfile.e2e.de.${DESKTOP}"' in text
+    assert 'IMAGE="$(fl_e2e_image_tag "${SRC_DIR}" "${DOCKERFILE}")"' in text
+    assert 'fl_e2e_build_image "${SRC_DIR}" "${IMAGE}" "${DOCKERFILE}"' in text
+    assert '"${SRC_DIR}:/src:ro"' in text
+    library = _text(ROOT / "scripts" / "lib-e2e-docker.sh")
+    assert "sed -n 's/^# Image tag:" in library
+    assert 'BUILDX_BUILDER="${BUILDX_BUILDER:-default}" DOCKER_BUILDKIT=1 docker build' in library
 
 
 def test_ci_docker_maps_every_stage_and_cell() -> None:

@@ -1,0 +1,41 @@
+# syntax=docker/dockerfile:1.27.0
+# Desktop E2E image for Fork for Linux (unofficial) — Ubuntu Budgie 26.04 (Budgie 10.10 on labwc)
+# Image tag: fork-linux-e2e-de-budgie:26.04
+# scripts/ci-e2e-de.sh budgie [--fork] runs tests/e2e_de in here (FL_E2E_DE=budgie) as the
+# invoking unprivileged user, with the source bind-mounted read-only at /src (no COPY) and one
+# scratch root at /e2e. Budgie 10.10 is a Wayland desktop: its window manager is labwc (budgie-wm
+# and its X11 session are gone from 26.04), and X11 programs such as Wine run on labwc's
+# Xwayland. tests/e2e_de/desktops.py starts the session: dbus-daemon, labwc on its headless
+# backend (pixman, one 1920x1080 output) with Budgie's labwc configuration, budgie-daemon (the
+# style switch: dark-theme -> color-scheme), Nemo's FileManager1 service and the portals, with
+# Ubuntu Budgie's own defaults (budgie-desktop-environment: Pocillo-dark, prefer-dark,
+# xfce4-terminal as the terminal, Nemo). at-spi2-core: the tier reads Nemo's context menu over
+# AT-SPI. The real-Fork tier (FL_E2E_DE_FORK=1) downloads the managed Wine runtime, winetricks'
+# verbs and the official Fork installer at run time (or copies them from a read-only local
+# seed); nothing is baked into the image or cached, and only text logs leave the container (no
+# screenshots, no binaries).
+# Wine's host libraries come from the same table as `fork-linux doctor`
+# (fork_linux.hostdeps, Debian names), as in docker/Dockerfile.e2e.wine.
+FROM ubuntu:26.04
+
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+# Apt packages are distro-locked by ubuntu:26.04 (no floating apt versions).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git python3 python3-pytest python3-gi curl procps file \
+    xvfb xauth xdotool x11-utils x11-xserver-utils imagemagick \
+    dbus-daemon dbus-bin dbus-x11 libglib2.0-bin \
+    cabextract unzip 7zip fontconfig zenity \
+    desktop-file-utils xdg-utils shared-mime-info \
+    libfreetype6 libfontconfig1 libgnutls30t64 libx11-6 libxext6 libxrender1 libxi6 \
+    libxrandr2 libxcursor1 libxcomposite1 libxinerama1 libxfixes3 libgl1 \
+    libvulkan1 libdbus-1-3 libasound2t64 libpulse0 libxkbcommon0 libwayland-client0 libegl1 \
+    labwc xwayland wlr-randr budgie-core budgie-desktop budgie-desktop-environment \
+    ubuntu-budgie-themes pocillo-icon-theme gsettings-desktop-schemas \
+    dconf-service dconf-cli dconf-gsettings-backend \
+    nemo xfce4-terminal xdg-desktop-portal xdg-desktop-portal-gtk at-spi2-core gir1.2-atspi-2.0
+
+WORKDIR /src
+CMD ["python3", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/e2e_de"]

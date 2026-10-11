@@ -74,6 +74,11 @@ Three pieces, all built from this directory:
    editor / askpass / credential helper; they `execv` `$FL_WINE` with that program in the
    same prefix and translate Unix path arguments to Windows paths.
 
+The daemon also carries the **desktop hand-off** (below): with the bridge off the launcher
+starts it as a hand-off starter only (`--handoff-only`), so terminals and default
+applications Fork asks for start outside Wine's process tree even without a systemd user
+manager.
+
 `bridge/common/` holds the pure, OS-independent C shared by both sides (protocol codec,
 SHA-256/HMAC, POSIX sh quoting, translation tables). It is unit-tested natively under
 ASan/UBSan with the vectors in `tests/vectors/*.tsv`.
@@ -106,9 +111,11 @@ STDIN*  STDIN_EOF  SIGNAL(signo)            ──►
   can therefore neither feed Fork fake git output nor learn anything usable. Distinct
   domain-separation strings make the two MACs non-reflectable.
 - `FLAGS`: `FL_REQ_DETACH` (0x1, report `EXIT 0` right after exec, the program keeps
-  running in its own session) and `FL_REQ_HOST_HELPER` (0x2, the daemon prepends its
-  configured `--host-helper`). Unknown bits and unknown TLV tags are rejected (the protocol
-  version changes instead).
+  running in its own session), `FL_REQ_HOST_HELPER` (0x2, the daemon prepends its
+  configured `--host-helper`) and `FL_REQ_HANDOFF` (0x4, the desktop hand-off: alone, argv
+  exactly `{ VERB, ARG }`, see below). Unknown bits and unknown TLV tags are rejected (the
+  protocol version changes instead). `FL_REQ_HANDOFF` was added in 1.0.0 without a version
+  change: a daemon without it rejects the bit, and the hand-off then falls back.
 - `SIGNAL(13)` means "Fork closed its reader": the daemon closes the child's stdout so it
   gets a genuine `EPIPE` / `SIGPIPE`. `SIGNAL` 1/2/9/15 are `killpg`'d; others ignored.
 - If the shim's socket goes away (Fork killed `git.exe`), the daemon `killpg`s the child's
@@ -118,6 +125,46 @@ STDIN*  STDIN_EOF  SIGNAL(signo)            ──►
   daemon does a lingering close (`shutdown(SHUT_WR)` + drain ≤ 2 s) so Wine never sees an
   RST before `EXIT`; (3) a SIGCHLD self-pipe wakes the daemon's `poll()`; (4) the shim never
   closes the socket while the pump may be inside `send()`.
+
+## Desktop hand-off (`FL_REQ_HANDOFF`)
+
+Fork's "Open in Shell", "Open In File Explorer", "Show in File Explorer" and links / "Open"
+on a file reach `libexec/fork-linux-{terminal,explorer,open-url}`, scripts Wine starts inside
+its own process tree. A program started from there inherits wine-staging's seccomp filter
+and `NoNewPrivs=1` (spike B1): setuid launchers (Snap's snap-confine) fail, and GTK 3
+programs that load images through glycin (Tilix, Nemo) abort. `libexec/fork-linux-handoff`
+therefore starts `fork-linux-host VERB ARG` from outside that tree, the first that works of:
+
+1. a transient `systemd-run --user` unit (desktops with a systemd user session);
+2. `fork-linux-host --handoff VERB ARG` (`src/fork_linux/handoff.py`): when Fork's
+   environment carries `FL_BRIDGE_PORT` / `FL_BRIDGE_TOKEN` it connects to that daemon,
+   authenticates exactly like the shims (the daemon proves the token first) and sends one
+   REQ with `FLAGS = FL_REQ_HANDOFF`, `ARG VERB`, `ARG ARG` and its cwd. The daemon runs
+   `[--host-helper, VERB, ARG]` detached (`SPAWN_OK`, then `EXIT(0, 0)`), in its own
+   environment: the program inherits nothing from Wine;
+3. only when no daemon answers (none in Fork's environment, a refusal, a protocol error),
+   `fork-linux-host` runs the verb itself, inside Wine's tree, and writes one line (verb and
+   reason, never the argument) to `<logs>/handoff.log` and stderr.
+
+`FORK_LINUX_HANDOFF=direct` skips 1 and 2 (diagnosis). Inside Flatpak step 2 is skipped:
+the helper starts every tool through `flatpak-spawn --host`.
+
+`fork-linux doctor --check desktop.handoff` names the route that applies (`systemd user
+session`, `launcher daemon (no systemd user session)` with the running daemon from
+`session.json` or the one the next launch starts, `flatpak-spawn --host`) without starting
+anything, and warns when the installation lacks the daemon's helper or `fork-linux-host`, when
+Fork runs without the daemon, or when the newest `handoff.log` line is newer than the last
+launch (`handoff.last_fallback`; without a recorded launch, the last 24 hours).
+
+The request is narrow on purpose: VERB is `terminal`, `reveal`, `open` or `open-url`; ARG is
+one non-empty argument of at most 8 KiB (`FL_HANDOFF_ARG_MAX`) that does not start with
+`-`; no other flag, no `ENV_SET` / `ENV_UNSET`, no `ANCHOR`. `fl_req_decode` refuses any
+other shape (`fl_handoff_ok`), and the session checks it again before it spawns. A
+`--handoff-only` daemon (the launcher's when the git bridge is off) accepts nothing else:
+programs and `FL_REQ_HOST_HELPER` requests get `SPAWN_ERR(EPERM)`. `fork-linux-host` then
+validates ARG as for every caller (Windows paths through `$WINEPREFIX`, existing files and
+folders, http / https / mailto links, local `file://` URLs) and never hands Wine's
+variables, `FL_BRIDGE_*`, `FL_WINE` or `FORKGITINSTANCE` to a tool.
 
 ## Exit codes
 
@@ -151,8 +198,8 @@ unchanged on Wine 10 and wine-11 staging (spike B1). Fork passes its environment
 
 | Variable | Required | Consumer | Value |
 |---|---|---|---|
-| `FL_BRIDGE_PORT` | yes | shim, launch | the port from the daemon's `FL_BRIDGE_PORT=<n>` line (1–65535). Missing/invalid → 125 |
-| `FL_BRIDGE_TOKEN` | yes | shim, launch | the same 64-hex-character token given to the daemon. Missing/invalid → 125. The shim never forwards it; the daemon never passes it to children |
+| `FL_BRIDGE_PORT` | yes | shim, launch, `fork-linux-host --handoff` | the port from the daemon's `FL_BRIDGE_PORT=<n>` line (1–65535). Missing/invalid → 125 (the hand-off falls back) |
+| `FL_BRIDGE_TOKEN` | yes | shim, launch, `fork-linux-host --handoff` | the same 64-hex-character token given to the daemon. Missing/invalid → 125. The shim never forwards it; the daemon never passes it to children; `fork-linux-host` never passes it to a tool |
 | `FL_BRIDGE_WINEXEC` | yes (shim) | shim → native git | absolute Unix path of the `fl-winexec` persona symlink. The shim refuses to run (125) without it, because Fork's editors (Fork.RI.exe) must be wrapped |
 | `FL_BRIDGE_ASKPASS` | recommended | shim | Unix path of the `fl-askpass` persona; a Windows `GIT_ASKPASS` becomes this persona + `FL_ASKPASS_TARGET` |
 | `FL_BRIDGE_SSH_ASKPASS` | recommended | shim | Unix path of the `fl-ssh-askpass` persona. Fork always sets `SSH_ASKPASS=…\Fork.AskPass.exe` + `SSH_ASKPASS_REQUIRE=force`; **without this variable the translator unsets `SSH_ASKPASS` and ssh/HTTPS prompts are lost** |
@@ -288,7 +335,17 @@ export `FORKGITINSTANCE`, log the reason, and show it in `doctor`.
    the launcher gives up before the exec, send `SIGTERM` and `wait()`. A stopped daemon
    closes its listening socket but **does not kill running sessions**; each lives until its
    shim disconnects, like a real `git.exe` would.
-7. **Second launch while Fork runs.** Fork's single-instance pipe forwards the paths to the
+7. **Hand-off daemon** (as built: `bridge.start_handoff`). When no git bridge daemon
+   started (bridge off, not ready, or its start failed) and the desktop hand-off has no
+   other way out of Wine's process tree (no systemd user manager: `systemd-run` on `PATH`
+   and `$XDG_RUNTIME_DIR/systemd/private` a socket; not inside Flatpak), the launcher
+   starts the same helper with `--handoff-only --host-helper <fork-linux-host>` and the
+   same token, lifetime (`--parent-pid`, `--watch-prefix`, `--watch-exe-dir`) and log
+   options, and exports only `FL_BRIDGE_PORT` / `FL_BRIDGE_TOKEN` (no `FORKGITINSTANCE`:
+   Fork keeps its bundled git, and its tools stay off `fl-launch.exe`). `session.json`
+   records it with `"handoff": true`; the fast path and `git-bridge status` ignore such a
+   record. A failed start is logged, never fatal: the hand-off then runs inside Wine's tree.
+8. **Second launch while Fork runs.** Fork's single-instance pipe forwards the paths to the
    running Fork, which keeps using the *first* launch's daemon. The second launcher may skip
    starting a daemon; if it starts one, it simply dies with that short-lived Wine process.
    (As built: it starts none and reuses the first daemon's variables from `session.json`.)
@@ -325,6 +382,9 @@ token, arguments, environment values or data). The launcher owns rotation.
   `WINELOADER`, `WINEDEBUG`, `WINEDLLOVERRIDES`, `FL_WINE`) minus `WINEHOME` / `WINEARCH`,
   every `FL_BRIDGE_*`, `GIT_CONFIG_*` and the repository-location `GIT_*` variables, with the
   host `PATH`.
+- **Hand-off daemon**: `bridge.start_handoff` (launch step 7 above), right after
+  `bridge.start_daemon` returned None; `bridge.launch_env` gives Fork its port and token,
+  `bridge.host_actions_active` stays false.
 - **Record mode**: `fork-linux git-bridge record on|off` sets `[git] bridge_mode = record|bridge`;
   `record` adds `FL_BRIDGE_MODE=record` and `FL_BRIDGE_BUNDLED_GIT` = Fork's newest
   `gitInstance\<ver>\cmd\git.exe` (warning and native git when none is found).

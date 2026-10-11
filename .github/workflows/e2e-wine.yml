@@ -5,11 +5,13 @@ name: E2E (real Fork under Wine)
 # minutes, ~2.5 GB of downloads made on the runner), then the Fork-update tier (Fork 2.23.1
 # updating itself and through fork-linux, another ~20 minutes) and the app-upgrade tier (a step
 # revision, an upgrade while Fork runs, a Wine pin change and back, uninstall / reinstall, the
-# bridge replaced under a running daemon, our upgrade plus Fork's own, ~30 minutes). Each test
+# bridge replaced under a running daemon, our upgrade plus Fork's own, ~30 minutes), and the
+# same setup under each desktop of the desktop E2E tier (docs/qa/DE-E2E.md: Fork under the
+# desktop's window manager, its terminal, file manager and "Open in Fork"). Each real-tier test
 # module runs in a container and a fresh scratch root of its own (scripts/ci-e2e-wine.sh).
-# Weekly, on demand, and on same-repo PRs from release branches (feature/vX.Y.Z). Uploads logs
-# only: no screenshots (they show Fork's logo), no binaries, and the Fork installer is never
-# cached (AGENTS.md hard rules 1, 4).
+# Weekly, on demand, and on same-repo PRs from release branches (feature/vX.Y.Z). Every job
+# downloads fresh (no seed). Uploads logs only: no screenshots (they show Fork's logo), no
+# binaries, and the Fork installer is never cached (AGENTS.md hard rules 1, 4).
 on:
   schedule:
     - cron: '17 4 * * 1'
@@ -50,5 +52,35 @@ jobs:
         with:
           name: e2e-wine-logs
           path: logs/e2e-wine/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  e2e-de:
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       startsWith(github.head_ref, 'feature/v'))
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        desktop: [xfce, gnome, kde, kdewayland, cinnamon, mate, budgie, lxqt]
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Real setup + Fork under ${{ matrix.desktop }} (fresh downloads)
+        run: ./scripts/ci-e2e-de.sh "${{ matrix.desktop }}" --fork
+
+      - name: Keep the logs (text only)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: e2e-de-${{ matrix.desktop }}-fork-logs
+          path: logs/e2e-de/
           if-no-files-found: ignore
           retention-days: 14
