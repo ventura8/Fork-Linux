@@ -13,6 +13,7 @@ import struct
 import subprocess
 import time
 import zlib
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,8 @@ LARGE_OPEN_SECONDS = 90.0
 # The graph column of the commit list and the lower (commit details) pane, inside the main window.
 GRAPH_AREA = (300, 100, 70, 160)
 DETAILS_AREA = (330, 560, 1150, 360)
+# A diff that does not show is looked at once more (Fork's git process may fail to start).
+DIFF_ATTEMPTS = 2
 
 
 def _repo(e2e: Any, name: str, files: dict[str, str] | None = None) -> Path:
@@ -208,6 +211,25 @@ def _show_changes_of_top_commit(ui: ForkUI) -> Any:
     return window
 
 
+def _diff_pixels(ui: ForkUI, e2e: Any, name: str, kinds: Callable[[dict[tuple[int, int, int], int]], tuple[int, int]],
+                 enough: int) -> tuple[int, int]:
+    """Show the top commit's changes and count two kinds of pixels in the diff (``kinds``).
+
+    Under Wine Fork now and then fails to start the git process behind the diff and shows
+    "Win32Exception ... StartWithCreateProcess" instead; a user would look again, so does the test (once).
+    """
+    found = (0, 0)
+    for attempt in range(DIFF_ATTEMPTS):
+        if attempt:
+            ui.refresh()
+        window = _show_changes_of_top_commit(ui)
+        time.sleep(2)
+        found = kinds(_colours(e2e, e2e.screen.screenshot(name), DETAILS_AREA, window))
+        if min(found) > enough:
+            break
+    return found
+
+
 def test_text_diff_of_a_commit(ui: ForkUI, installed: Any) -> None:
     """Selecting a commit shows its text diff with removed and added lines.
 
@@ -218,11 +240,13 @@ def test_text_diff_of_a_commit(ui: ForkUI, installed: Any) -> None:
                                    encoding="utf-8")
     git(repo, "commit", "-qam", "shout line five", env=dated_env(3))
     ui.open(repo)
-    window = _show_changes_of_top_commit(ui)
-    shot = installed.screen.screenshot("text-diff")
-    colours = _colours(installed, shot, DETAILS_AREA, window)
-    greens = sum(count for rgb, count in colours.items() if rgb[1] > rgb[0] + 15 and rgb[1] > rgb[2] + 15)
-    reds = sum(count for rgb, count in colours.items() if rgb[0] > rgb[1] + 15 and rgb[0] > rgb[2] + 15)
+
+    def added_removed(colours: dict[tuple[int, int, int], int]) -> tuple[int, int]:
+        greens = sum(count for rgb, count in colours.items() if rgb[1] > rgb[0] + 15 and rgb[1] > rgb[2] + 15)
+        reds = sum(count for rgb, count in colours.items() if rgb[0] > rgb[1] + 15 and rgb[0] > rgb[2] + 15)
+        return greens, reds
+
+    greens, reds = _diff_pixels(ui, installed, "text-diff", added_removed, 500)
     assert greens > 500 and reds > 500, f"diff colours: {greens} green, {reds} red pixels"
 
 
@@ -238,12 +262,13 @@ def test_image_diff_of_a_changed_png(ui: ForkUI, installed: Any) -> None:
     _png(repo / "picture.png", (0, 0, 255))
     git(repo, "commit", "-qam", "blue picture", env=dated_env(2))
     ui.open(repo)
-    window = _show_changes_of_top_commit(ui)
-    time.sleep(2)
-    shot = installed.screen.screenshot("image-diff")
-    colours = _colours(installed, shot, DETAILS_AREA, window)
-    red = sum(count for rgb, count in colours.items() if rgb[0] > 200 and rgb[1] < 60 and rgb[2] < 60)
-    blue = sum(count for rgb, count in colours.items() if rgb[2] > 200 and rgb[0] < 60 and rgb[1] < 60)
+
+    def old_new(colours: dict[tuple[int, int, int], int]) -> tuple[int, int]:
+        red = sum(count for rgb, count in colours.items() if rgb[0] > 200 and rgb[1] < 60 and rgb[2] < 60)
+        blue = sum(count for rgb, count in colours.items() if rgb[2] > 200 and rgb[0] < 60 and rgb[1] < 60)
+        return red, blue
+
+    red, blue = _diff_pixels(ui, installed, "image-diff", old_new, 1000)
     assert red > 1000 and blue > 1000, f"image diff: {red} red, {blue} blue pixels"
 
 

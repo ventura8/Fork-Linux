@@ -1,5 +1,150 @@
 # E2E results: official Fork 2.23.2 on the managed Wine runtime
 
+## 2026-10-11: every user-facing scenario, end to end (`fix/e2e-coverage`)
+
+**Catalog.** `tests/e2e/scenarios.json` lists 290 user-facing scenarios, and
+`docs/qa/E2E-SCENARIOS.md` is generated from it (`scripts/gen-scenarios-doc.py`).
+`tests/test_e2e_scenarios.py` enforces both. 155 scenarios are this branch's: git 57, setup 23,
+integration 22, launch 16, doctor 13, bridge 9, uninstall 8, rollback 7. The other 135 are
+pending the merge of the branches that provide them: `fix/de-e2e` (112, 16 aspects × 7 desktops),
+`fix/update-tests` (22: F1-F7, F9, F10, F19, F23, A1-A6, A8-A12) and `fix/font-fallback-472`
+(FF-DOCTOR). `gen-scenarios-doc.py pending` finds every pending test on its branch. After a merge,
+run `declare BRANCH`, then `clear-pending BRANCH`.
+
+**Setup.** Runs happen only in containers: `scripts/e2e-docker.sh --name cov-full pytest -p
+no:randomly -v tests/e2e`, image `docker/Dockerfile.e2e.wine` (Ubuntu 26.04). The display is Xvfb
+1600x1000 with no window manager, and Fork is driven by xdotool. The runtime is managed
+`kron4ek-11.0-staging-wow64` with the official Fork 2.23.2. Each run starts from a fresh scratch
+root; only the seeded download cache is reused. Fifteen modules run in the order of
+`tests/e2e/conftest.py` `MODULE_ORDER` (uninstall last).
+
+| Module | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 |
+|---|---|---|---|---|---|
+| setup_errors | 7/7 | 7/7 | 7/7 | 7/7 | 7/7 |
+| fork | 7/7 | 7/7 | 7/7 | 7/7 | 7/7 |
+| launch | 12/12 | 12/12 | 12/12 | 12/12 | 12/12 |
+| git_history | 11/11 | 11/11 | 11/11 | 11/11 | 10/11 |
+| git_changes | 6/7 | 7/7 | 7/7 | 7/7 | 7/7 |
+| git_branches | 10/10 | 10/10 | 10/10 | 9/10 | 10/10 |
+| git_remotes | 8/8 | 8/8 | 8/8 | 8/8 | 8/8 |
+| git_advanced | 3/4 | 3/4 | 4/4 | 4/4 | 4/4 |
+| integration | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 |
+| display | 6/6 | 6/6 | 6/6 | 6/6 | 6/6 |
+| bridge | 15/16 | 15/16 | 15/16 | 16/16 | 16/16 |
+| doctor | 11/12 | 12/12 | 12/12 | 12/12 | 12/12 |
+| snapshots | 3/3 | 3/3 | 3/3 | 3/3 | 3/3 |
+| setup_variants | 10/10 | 5/11 | 11/11 | 11/11 | 11/11 |
+| uninstall | 5/5 | 0/5 | 5/5 | 5/5 | 5/5 |
+| **total** | 125/129 (1:28) | 117/130 (1:43) | 129/130 (1:45) | 129/130 (1:30) | 129/130 (1:28) |
+
+Run 1 failures:
+
+- The UTF-8 commit subject lost its last CJK character to `xdotool type`.
+- Git Flow's *Initialize* took longer than a minute with about fifty tabs open.
+- The passphrase test answered the Fetch dialog, which was still closing, instead of Fork's prompt.
+- `logs --all` shows only the end of each log.
+
+Run 2 failures:
+
+- A staging double-click only selected the row.
+- The passphrase test failed again.
+- The **interrupted-setup bug** below broke the main prefix, and every later setup and uninstall
+  test failed after it. A flaky .NET 4.6.2 installer also stopped the new dotnet472 test.
+
+Run 3 failure: the agent and passphrase ssh tests shared one key file, so in a full run the prompt
+test found the other test's passphrase on it (it passed on its own). Each test now makes its own key,
+and the whole bridge module passed 16/16 in sequence.
+
+Run 4 failure: halfway through the interactive rebase the branch already had three commits, so the
+test read the file before the squash. Both rebase tests now also wait for `.git/rebase-merge` to go,
+and the branches module passed 10/10.
+
+Run 5 failure: Fork showed `System.ComponentModel.Win32Exception (0x80004005): Unknown error (0x2db)
+at Process.StartWithCreateProcess` in the diff pane instead of the diff. Under Wine, Fork's start
+of a git process failed. The same "Git request failed" appears now and then in Fork's own log, mostly
+for background refreshes nobody sees. A user would select the commit again, and so do both diff tests
+now (once, after F5); the history module then passed 11/11.
+
+Every failure was fixed (the commits are listed below), and the failed tests passed again before the
+next run.
+
+Other gates on the final code:
+
+- **Unit tier:** 3574 passed, with 100% line and branch coverage on every changed module.
+- **CI stages:** the coverage stage passed `check-coverage` with every file at 90% or more. The lint
+  stage (ruff, shellcheck, no-suppressions) passed, and so did the jammy (Python 3.10) compat cell.
+- **Bridge Wine tier** (FL_REAL_WINE=1): 124 passed. A "wine client error: recvmsg" transport glitch
+  failed one shim test once; that call is now retried, as `fl_winetier.py` already did.
+- **Packaging cells:** deb, appimage and tarball passed install, upgrade, remove and reinstall.
+
+### Bugs found and fixed (product, with unit tests at 100% line + branch)
+
+1. **`uninstall --purge` deleted prefixes while Fork ran in them.** It checked only the selected
+   prefix. Now it refuses (exit 15) while Fork runs in any prefix the purge deletes: the selected
+   one, the default one, and every prefix fork-linux created in the data directory. It also stops
+   each prefix's wineserver (bd51bce, 8911cfa).
+2. **A malformed or unpinned `--fork-version` was refused only after earlier steps had run.** It is
+   now refused before any step (e546cc3).
+3. **The consent step was skipped when `--only` selected a step that downloads.** Fork's license
+   question now always comes first (0da6e17).
+4. **HTTPS credentials were never kept.** Fork's bundled git used its `helper-selector`, which falls
+   back to Fork's AskPass under Wine and stores nothing. The git overlay now makes Git Credential
+   Manager the helper, with the DPAPI store (46fa4c9).
+5. **A refused `--wine flatpak` was saved to `config.ini` anyway,** which broke the next setup. The
+   choice is now checked before it is saved (11710bb).
+6. **A full disk or user quota was blamed on the network.** winetricks failures whose output says
+   "No space left on device" or "Disk quota exceeded", or that leave almost no space, now raise
+   `DiskFull` with a "free some space" hint. dotnet does not rebuild the prefix for it, and fonts do
+   not retry (8c25a82).
+7. **`ssh sync --dry-run` reported "would link" for keys that were already linked.** Current files
+   are now reported as `unchanged` and are not rewritten (562a31c).
+8. **`desktop remove` and `uninstall` left empty folders behind.** These were `applications/`,
+   `icons/hicolor/<N>/apps/`, `nemo/actions/` and others, plus `~/.local/bin`. Install now records
+   the folders it creates, and remove deletes them once they are empty, along with a leftover
+   `mimeinfo.cache` (1bdf4db).
+9. **A Fork that had lost its window kept the fast path busy.** `fork-linux run --restart` now ends
+   it with the session's `wineserver -k` and starts Fork again (814ffcb).
+10. **An interrupted setup broke the prefix for good.** The real tier stopped setup during .NET. The
+    winetricks script kept starting installers, the resumed setup's attempt failed, and deleting the
+    prefix for the next .NET verb failed with "Directory not empty". Every later setup then failed
+    (wineboot exit 53). Before winetricks runs, and before a prefix rebuild, anything still running
+    in the prefix is now ended: `wineserver -k`, then SIGTERM and SIGKILL (`procs.stop_prefix`).
+    A failed .NET winetricks run is also retried once in place; the 4.6.2 installer of the dotnet472
+    chain returned status 67 once (0267d62).
+11. The dead `ssh.agent_bridge` setting is gone (7c6b7dd). A resumed download now logs the byte it
+    continues from (236e647).
+
+### Third-party behaviour under Wine (documented; not ours to fix)
+
+- **Fork sometimes fails to start a git process** (`Win32Exception ... Unknown error (0x2db)` from
+  `Process.StartWithCreateProcess`). It is a transient of Wine's CreateProcess: it was seen once in
+  the diff pane in five full runs, and selecting the commit again shows the diff.
+- **Git Credential Manager sometimes ends without its window** on the first prompt after Fork
+  starts: 2 of 12 fresh starts, and never within a running session. Its trace stops at "Prompting
+  for basic credentials". git then asks through Fork's own prompt, and GCM still keeps the account.
+  The README says so, `test_forks_own_prompt_when_gcm_cannot_ask` covers that path, and the
+  basic-auth test accepts either prompt.
+- **An LFS push hung in 1 of 4 runs with Fork's bundled git.** LFS's pre-push hook runs under msys
+  `sh`, the same Wine limitation that affects other hooks. The README tells LFS users to enable the
+  git bridge. G-LFS (initialize, commit as a pointer) stays on bundled git, and G-LFS-PUSH runs
+  through the bridge.
+
+### The 2026-10-09 remaining problems
+
+| Problem | Now |
+|---|---|
+| Exec-bit changes shown on Linux-created repositories | `fork-linux repo check` / `repo fix` (`core.filemode=false`, recorded and reversible) |
+| `uninstall --purge` is not per-prefix | Fixed (1 above): it refuses while Fork runs in any prefix it deletes. Deleting every prefix in the data directory is what `--purge` means, and the README says so |
+| A windowless Fork keeps the fast path busy | Fixed (9 above): `run --restart`, covered by L-RESTART |
+| The disk preflight ignores quotas and the hint blamed the network | Fixed (6 above). The preflight still measures free space only: the stdlib cannot read quotas, so the failure is diagnosed instead |
+| `ssh sync --dry-run` "would link" for current links | Fixed (7 above) |
+| `desktop remove` leaves empty folders | Fixed (8 above) |
+| KIO / FMA files fail `desktop-file-validate` | Expected: they are not freedesktop Application entries |
+
+---
+
+The sections below are the 2026-10-09 run, kept as history.
+
 Date: 2026-10-09. Host: Ubuntu 26.04 x86_64, Python 3.14 (unit tiers also pass on 3.10 in
 `fork-linux-ci-jammy:22.04`). Wine: managed `kron4ek-11.0-staging-wow64`. Display: Xvfb `:98`,
 1600x1000x24. CLI run from the source tree (`PYTHONPATH=src python3 -m fork_linux`) and once through
