@@ -218,6 +218,12 @@ def handoff_log(session: dekit.Session) -> str:
     return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
+def doctor_check(report: dict[str, Any], check_id: str) -> dict[str, Any]:
+    """The entry for ``check_id`` in a ``doctor --json`` report (``{}`` when it is not there)."""
+    found = [check for check in report.get("checks", []) if check.get("id") == check_id]
+    return found[0] if found else {}
+
+
 def launch(session: dekit.Session, *targets: Path, extra: dict[str, str] | None = None) -> Any:
     """``fork-linux run TARGETS`` in the background (it execs Wine, which outlives the step)."""
     return session.spawn(f"launch-{time.time_ns()}", ["fork-linux", "run", *map(str, targets)], extra=extra)

@@ -51,6 +51,8 @@ RESTARTED_FILE_MANAGERS = {desktops.THUNAR_UCA: "thunar", desktops.NAUTILUS_EXTE
 ACTIVE = "second"
 # A terminal that aborts at start (Tilix inside Wine's tree: status 134) is gone well before this.
 TERMINAL_ALIVE_SECONDS = 5.0
+# doctor's desktop.handoff route in these containers (no systemd user manager).
+HANDOFF_ROUTE = "launcher daemon (no systemd user session)"
 
 
 @pytest.fixture(scope="module")
@@ -170,6 +172,14 @@ def test_05_open_in_shell_opens_the_desktops_terminal(session: dekit.Session, de
     assert forkui.confinement(terminal) == baseline, report
     assert window.id in {w.id for w in session.windows()}, f"{desktop.terminal} did not stay open"
     assert forkui.handoff_log(session) == "", "the hand-off ran inside Wine's process tree"
+    # doctor names the same route and the running daemon, and has no fallback to report.
+    report = json.loads(session.run(["fork-linux", "doctor", "--check", "desktop.handoff", "--json"]).stdout)
+    check = forkui.doctor_check(report, "desktop.handoff")
+    (session.logs / "05-doctor-handoff.json").write_text(json.dumps(check, indent=2) + "\n", encoding="utf-8")
+    assert check.get("status") == "ok", check
+    assert check.get("detail") == (
+        f"{HANDOFF_ROUTE}: the hand-off daemon runs (pid {daemon['pid']}, port {daemon['port']})"
+    ), check
 
 
 def test_06_open_in_file_explorer_opens_the_desktops_file_manager(
@@ -259,5 +269,9 @@ def test_09_doctor_after_use_has_no_failures(session: dekit.Session) -> None:
     report = json.loads(session.run(["fork-linux", "doctor", "--deep", "--json"], timeout=300).stdout)
     failed = [check for check in report["checks"] if check["status"] == "fail"]
     assert failed == [], failed
+    # Fork closed: the route the next launch takes, and no hand-off fell back during this one.
+    handoff = forkui.doctor_check(report, "desktop.handoff")
+    assert handoff.get("status") == "ok", handoff
+    assert handoff.get("detail") == f"{HANDOFF_ROUTE}: a hand-off-only daemon starts with Fork", handoff
     # The desktop held up through Fork's whole run: none of its own programs crashed.
     assert session.components_gone() == [], dekit.PROCESS_LOG

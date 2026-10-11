@@ -14,7 +14,7 @@ root under `/var/tmp/fork-linux-e2e/`, the read-only seed for the real-Fork tier
 
 | Desktop | Image | Integration tier | Real-Fork tier | Evidence |
 |---|---|---|---|---|
-| Xubuntu 26.04, XFCE 4.20 (xfwm4, xfsettingsd, Thunar 4.20 + its FileManager1, xfce4-terminal, garcon menu, Greybird / Greybird-dark) | `fork-linux-e2e-de-xfce:26.04` | ✅ 15/15 | ✅ 9/9 (setup 261 s from the seed, tier 322 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` with the hand-off daemon, 2026-10-11 |
+| Xubuntu 26.04, XFCE 4.20 (xfwm4, xfsettingsd, Thunar 4.20 + its FileManager1, xfce4-terminal, garcon menu, Greybird / Greybird-dark) | `fork-linux-e2e-de-xfce:26.04` | ✅ 15/15 | ✅ 9/9 (setup 260 s from the seed, tier 323 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` with the hand-off daemon and doctor's `desktop.handoff`, 2026-10-11 |
 | Ubuntu 26.04, GNOME 50 (GNOME Shell 50 in Ubuntu's mode on mutter's headless Wayland backend + rootless Xwayland, gsd-xsettings, Nautilus 50 + python3-nautilus and its FileManager1, Ptyxis via xdg-terminal-exec, the shell's own app grid, Yaru / Yaru-dark + color-scheme) | `fork-linux-e2e-de-gnome:26.04` | ✅ 16/16 | ✅ 9/9 (setup 311 s from the seed, tier 391 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
 | Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, kcminit + kded6, Dolphin 25.12 + its FileManager1 and our service menu, Konsole, Kickoff's menu through kbuildsycoca6, Kubuntu / Kubuntu Dark / Breeze Dark global themes and colour schemes) | `fork-linux-e2e-de-kde:26.04` | ✅ 20/20 | ✅ 9/9 (setup 371 s from the seed, tier 440 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
 | Kubuntu 26.04, KDE Plasma 6.6 on Wayland, its default session (kwin_wayland + rootless Xwayland, kcminit + kded6, Dolphin + its FileManager1 and our service menu, Konsole, kbuildsycoca6's menu, the same themes, Display Configuration's scale through kscreen-doctor) | `fork-linux-e2e-de-kdewayland:26.04` | ✅ 19/19 | ✅ 9/9 (setup 261 s from the seed, tier 320 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
@@ -41,7 +41,11 @@ the container's `NoNewPrivs: 0`, `Seccomp_filters: 1`; on Cinnamon no Tilix wind
 Tilix) have the container's own values and Tilix stays open. One Cinnamon run of the fixed
 tree hung in setup (winetricks' .NET 4.0 installer idle for 20 min under a load average of 23,
 before Fork ever started; nothing in it depends on the hand-off) and was stopped; the re-run
-passed.
+passed. The `desktop.handoff` doctor check (route and fallbacks) re-ran both XFCE tiers: while
+Fork ran, `launcher daemon (no systemd user session): the hand-off daemon runs (pid 15383, port
+47777)`, the pid `session.json` recorded and whose `/proc` status matched the container's
+baseline; after Fork closed, `a hand-off-only daemon starts with Fork`, ok, with `handoff.log`
+empty.
 
 Each desktop is one `docker/Dockerfile.e2e.de.<desktop>` plus one entry in
 `tests/e2e_de/desktops.py` (see "Adding a desktop").
@@ -143,12 +147,16 @@ hand-off goes through the launcher's hand-off daemon (`session.json` records it 
 `Seccomp_filters` of the test process itself (the container's baseline: `NoNewPrivs: 0` and
 Docker's default seccomp profile, one filter), while Fork's Wine process has `NoNewPrivs: 1` and
 one filter more (wine-staging's); the terminal still runs 5 s later, and `handoff.log` stays
-empty (no hand-off ran inside Wine's tree; `logs/05-confinement.txt` lists the four); 06 Repository > Open In File Explorer opens the desktop's file manager on it;
+empty (no hand-off ran inside Wine's tree; `logs/05-confinement.txt` lists the four); `doctor
+--check desktop.handoff` is ok with `launcher daemon (no systemd user session): the hand-off
+daemon runs (pid <session.json's>, port <session.json's>)` (`logs/05-doctor-handoff.json`); 06 Repository > Open In File Explorer opens the desktop's file manager on it;
 07 the file manager's "Open in Fork" reaches the running Fork (the processes seen opening the
 repository go to `logs/07-opening.txt`); 08 after closing, Fork kept all three
 tabs and the terminal it opened still runs, and with the desktop switched to dark it relaunches
 with `Theme=1` and a dark window;
-09 `doctor --deep` after use has no failure, and none of the desktop's own programs crashed during
+09 `doctor --deep` after use has no failure, `desktop.handoff` is ok with the route the next launch
+takes (`launcher daemon (no systemd user session): a hand-off-only daemon starts with Fork`, so no
+hand-off fell back during the run), and none of the desktop's own programs crashed during
 Fork's run.
 
 ## XFCE facts the recipe relies on
