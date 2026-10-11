@@ -1,5 +1,40 @@
 # E2E results: official Fork 2.23.2 on the managed Wine runtime
 
+## 2026-10-12: every real-tier module, one job each, as e2e-wine.yml runs them (`fix/e2e-coverage`)
+
+**Scope.** All 18 modules of `tests/e2e`, each in its own `scripts/e2e-docker.sh --name
+e2ecovint1-<module>` run from a fresh scratch root (setup included, seeded), three at a time, the
+way e2e-wine.yml's jobs run them (`<area>-<module>`, one runner and prefix each). Code: 75ba847.
+
+| Module | Result | Time |
+|---|---|---|
+| test_real_setup_errors | 7/7 | 0:03 |
+| test_real_fork | 7/7 | 6:45 |
+| test_real_setup_variants | 11/11 | 28:22 |
+| test_real_uninstall | 5/5 | 4:45 |
+| test_real_launch | 12/12 | 9:37 |
+| test_real_display | 5/6, then 6/6 | 10:28, rerun 6:49 |
+| test_real_doctor | 12/12 | 5:29 |
+| test_real_snapshots | 3/3 | 6:07 |
+| test_real_git_history | 11/11 | 12:00 |
+| test_real_git_changes | 7/7 | 8:28 |
+| test_real_git_branches | 10/10 | 14:08 |
+| test_real_git_advanced | 4/4 | 8:46 |
+| test_git_ops_local | 3/3 | 6:41 |
+| test_real_git_remotes | 8/8 | 17:00 |
+| test_git_ops_remote_ssh | 2/2 | 6:44 |
+| test_real_bridge | 17/17 | 19:06 |
+| test_git_ops_remote_bridge | 6/6 | 13:05 |
+| test_real_integration | 11/11 | 10:53 |
+
+The longest job, setup variants, takes under half of e2e-wine.yml's 90-minute limit with the seed.
+
+The one failure: in `test_real_display`, the first Fork start after setup (`theme_follows_the_desktop
+[light]`) drew no window within 180 s. Fork's own log stops after it started its IPC servers, before
+*Refresh Theme*, and Wine wrote nothing. The next start in the same prefix (the dark case) and a
+rerun of the whole module from a fresh root passed. It was seen once, on a host running three real
+tiers and a coverage stage at once, so it is recorded here as a Wine start-up stall under load.
+
 ## 2026-10-11 (evening): the OS-integration area again, on `fix/integration`'s latest code
 
 **Scope.** The setup, launch, integration, display, bridge, doctor, rollback and uninstall modules
