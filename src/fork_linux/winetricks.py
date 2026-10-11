@@ -127,6 +127,30 @@ def _copy_in(source: Path, target: Path) -> bool:
     return True
 
 
+def _is_seedable(entry: os.DirEntry[str], target: Path) -> bool:
+    """True for a visible, non-empty regular file that ``target`` does not shadow yet."""
+    if entry.name.startswith(".") or not entry.is_file(follow_symlinks=False) or os.path.lexists(target):
+        return False
+    return entry.stat(follow_symlinks=False).st_size > 0
+
+
+def _seed_package(source_dir: Path, target_dir: Path) -> list[Path]:
+    """Link the seedable files of one package directory into ``target_dir``; return the files added."""
+    try:
+        entries = sorted(os.scandir(source_dir), key=lambda entry: entry.name)
+    except OSError:
+        return []
+    added = []
+    for entry in entries:
+        target = target_dir / entry.name
+        if not _is_seedable(entry, target):
+            continue
+        fsutil.ensure_dir(target_dir, 0o755)
+        if _copy_in(Path(entry.path), target):
+            added.append(target)
+    return added
+
+
 def seed_cache(cache: Path, legacy: Path, packages: Iterable[str] = SEED_PACKAGES) -> list[Path]:
     """Reuse files from winetricks' default cache ``legacy`` in our ``cache``; return the files added.
 
@@ -139,21 +163,7 @@ def seed_cache(cache: Path, legacy: Path, packages: Iterable[str] = SEED_PACKAGE
     """
     added = []
     for package in packages:
-        source_dir = legacy / package
-        try:
-            entries = sorted(os.scandir(source_dir), key=lambda entry: entry.name)
-        except OSError:
-            continue
-        target_dir = cache / package
-        for entry in entries:
-            target = target_dir / entry.name
-            if entry.name.startswith(".") or not entry.is_file(follow_symlinks=False) or os.path.lexists(target):
-                continue
-            if not entry.stat(follow_symlinks=False).st_size:
-                continue
-            fsutil.ensure_dir(target_dir, 0o755)
-            if _copy_in(Path(entry.path), target):
-                added.append(target)
+        added += _seed_package(legacy / package, cache / package)
     if added:
         log.info("reusing %d file(s) from %s in %s", len(added), legacy, cache)
     return added
