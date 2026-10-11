@@ -212,10 +212,11 @@ def test_pending_references_wait_for_their_merge(tmp_path: Path) -> None:
         'import pytest\n\n@pytest.mark.parametrize("desktop", ["xfce"])\ndef test_menu(desktop):\n'
         '    """Scenarios: DE-XFCE-MENU"""\n', encoding="utf-8")
     assert gsd.validate(root) == [
-        "DE-XFCE-MENU: every test exists, so fix/de-e2e is merged: clear pending_merge "
-        "(scripts/gen-scenarios-doc.py clear-pending)"
+        "DE-XFCE-MENU: every test exists and names it, so fix/de-e2e is merged: clear pending_merge "
+        "(scripts/gen-scenarios-doc.py clear-pending fix/de-e2e)"
     ]
-    assert gsd.clear_pending(root) == 1
+    assert gsd.clear_pending(root, "fix/update-tests") == 0
+    assert gsd.clear_pending(root, "fix/de-e2e") == 1
     assert gsd.validate(root) == []
 
 
@@ -414,7 +415,12 @@ def test_the_command_line(tmp_path: Path, capsys: pytest.CaptureFixture[str]) ->
     assert gsd.main(["check"], root=root) == 1
     assert gsd.main(["pending"], root=root) == 1
     assert "F1: branch fix/update-tests does not exist yet" in capsys.readouterr().out
-    assert gsd.main(["clear-pending"], root=root) == 0
+    assert gsd.main(["declare"], root=root) == 2
+    assert gsd.main(["clear-pending", "this-branch"], root=root) == 2
+    assert gsd.main(["validate", "fix/update-tests"], root=root) == 2
+    assert gsd.main(["declare", "fix/update-tests"], root=root) == 0
+    assert "nothing to declare" in capsys.readouterr().out
+    assert gsd.main(["clear-pending", "fix/update-tests"], root=root) == 0
     assert "cleared 1 pending flag(s)" in capsys.readouterr().out
     assert gsd.main(["validate"], root=root) == 1
     assert "no such test function" in capsys.readouterr().out
@@ -487,3 +493,173 @@ def test_a_pending_scenario_may_list_an_undeclared_real_tier_test(tmp_path: Path
     pending = _scenario("F1", area="fork-update", provided_by="fix/update-tests", pending_merge=True,
                         tests=["tests/e2e/test_real_x.py::test_one", "tests/e2e/test_fork_update.py::test_f1"])
     assert gsd.validate(_tree(tmp_path, [_scenario(), pending])) == []
+
+
+# -- after a merge: declare the merged branch's scenarios on its tests --------------------------------
+
+
+def test_declarations_may_continue_after_a_comma() -> None:
+    doc = "Does things.\n\nScenarios: S-ONE,\n    S-TWO, S-THREE\nMore text, here.\n"
+    assert gsd.parse_declaration(doc) == (True, ["S-ONE", "S-TWO", "S-THREE"])
+    assert gsd.parse_declaration("Scenarios: S-ONE\nS-TWO") == (True, ["S-ONE"])
+    assert gsd.parse_declaration("Scenarios: S-ONE,") == (True, ["S-ONE"])
+    assert gsd.parse_declaration(None) == (False, [])
+    assert gsd.parse_declaration("No declaration.") == (False, [])
+
+
+def test_declaration_lines_wrap_after_a_comma() -> None:
+    assert gsd.declaration_lines(["S-ONE", "S-TWO"], "    ") == ["Scenarios: S-ONE, S-TWO"]
+    ids = [f"DE-DESKTOP{number}-FILE-MANAGER-ACTION" for number in range(5)]
+    lines = gsd.declaration_lines(ids, "    ")
+    assert len(lines) == 2
+    assert lines[0].endswith(",") and lines[1].startswith("    DE-")
+    assert all(len("    ") + len(line) <= gsd.DECLARATION_WIDTH for line in lines)
+    assert gsd.parse_declaration("\n".join(lines)) == (True, ids)
+
+
+SOURCE = '''import pytest
+
+
+def test_bare():
+    pass
+
+
+def test_one_line():
+    """Does one thing."""
+
+
+def test_closing_alone():
+    """Does a thing.
+
+    In detail.
+    """
+
+
+def test_closing_on_text():
+    """Does a thing.
+
+    In detail."""
+
+
+def test_declared():
+    """Does a thing.
+
+    Scenarios: S-ONE,
+        S-TWO
+    """
+
+
+def test_declared_alone():
+    """Scenarios: S-ONE"""
+
+
+class TestGroup:
+    def test_method(self):
+        """In a class."""
+
+
+def test_untouched():
+    """Not wanted."""
+'''
+
+DECLARED = '''import pytest
+
+
+def test_bare():
+    """Scenarios: F1"""
+    pass
+
+
+def test_one_line():
+    """Does one thing.
+
+    Scenarios: F1
+    """
+
+
+def test_closing_alone():
+    """Does a thing.
+
+    In detail.
+
+    Scenarios: F1, F2
+    """
+
+
+def test_closing_on_text():
+    """Does a thing.
+
+    In detail.
+
+    Scenarios: F1
+    """
+
+
+def test_declared():
+    """Does a thing.
+
+    Scenarios: S-ONE, S-TWO, F1
+    """
+
+
+def test_declared_alone():
+    """Scenarios: S-ONE, F1"""
+
+
+class TestGroup:
+    def test_method(self):
+        """In a class.
+
+        Scenarios: F1
+        """
+
+
+def test_untouched():
+    """Not wanted."""
+'''
+
+
+def test_declare_in_source_writes_every_kind_of_docstring() -> None:
+    wanted = {
+        "test_bare": ["F1"],
+        "test_one_line": ["F1"],
+        "test_closing_alone": ["F1", "F2"],
+        "test_closing_on_text": ["F1"],
+        "test_declared": ["S-ONE", "S-TWO", "F1"],
+        "test_declared_alone": ["S-ONE", "F1"],
+        "TestGroup::test_method": ["F1"],
+    }
+    assert gsd.declare_in_source(SOURCE, wanted) == DECLARED
+    assert gsd.declare_in_source(DECLARED, wanted) == DECLARED
+
+
+def test_declare_names_a_merged_branchs_scenarios_on_its_tests(tmp_path: Path) -> None:
+    merged = "def test_f1():\n    \"\"\"Updates Fork.\"\"\"\n\n\ndef test_f2():\n    pass\n"
+    entries = [
+        _scenario(),
+        _scenario("F1", area="fork-update", provided_by="fix/update-tests", pending_merge=True,
+                  tiers=["real-fork", "e2e-wine-docker", "packaging"],
+                  tests=["tests/e2e/test_fork_update.py::test_f1", "tests/e2e/test_real_x.py::test_one",
+                         "packaging:deb:assert_installed", "tests/bridge/test_daemon.py::test_watch"]),
+        _scenario("F2", area="fork-update", provided_by="fix/update-tests", pending_merge=True,
+                  tests=["tests/e2e/test_fork_update.py::test_f2"]),
+        _scenario("FF-DOCTOR", area="font-fallback", provided_by="fix/font-fallback-472", pending_merge=True,
+                  tests=["tests/e2e/test_real_x.py::test_one"]),
+    ]
+    files = {"tests/e2e/test_fork_update.py": merged, "tests/bridge/test_daemon.py": "def test_watch():\n    pass\n"}
+    root = _tree(tmp_path, entries, files)
+    # Merged but not declared yet: the new tests have no Scenarios: line, and the pending flags still hold.
+    assert gsd.validate(root) == [
+        "tests/e2e/test_fork_update.py::test_f1: real-tier test without a 'Scenarios: ID, ...' docstring line",
+        "tests/e2e/test_fork_update.py::test_f2: real-tier test without a 'Scenarios: ID, ...' docstring line",
+    ]
+    assert gsd.declare(root, "fix/update-tests") == ["tests/e2e/test_fork_update.py", "tests/e2e/test_real_x.py"]
+    assert gsd.declare(root, "fix/update-tests") == []
+    functions = gsd.read_tree(root).functions
+    assert functions["tests/e2e/test_real_x.py::test_one"].declared == ["S-ONE", "F1"]
+    assert functions["tests/e2e/test_fork_update.py::test_f2"].declared == ["F2"]
+    stale = "every test exists and names it, so fix/update-tests is merged"
+    assert [line.split(": ", 1)[0] for line in gsd.validate(root)] == ["F1", "F2"]
+    assert all(stale in line for line in gsd.validate(root))
+    assert gsd.clear_pending(root, "fix/update-tests") == 2
+    assert gsd.validate(root) == []

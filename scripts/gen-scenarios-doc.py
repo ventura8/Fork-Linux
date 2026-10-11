@@ -9,11 +9,12 @@ test, a test node that does not exist, or a real-tier test that does not say whi
 it covers fails CI.
 
 Usage:
-  python3 scripts/gen-scenarios-doc.py validate       # registry and test tree agree
-  python3 scripts/gen-scenarios-doc.py write          # regenerate docs/qa/E2E-SCENARIOS.md
-  python3 scripts/gen-scenarios-doc.py check          # fail when the catalog is out of date
-  python3 scripts/gen-scenarios-doc.py pending        # pending references vs their branches
-  python3 scripts/gen-scenarios-doc.py clear-pending  # after the merge: drop every pending flag
+  python3 scripts/gen-scenarios-doc.py validate                # registry and test tree agree
+  python3 scripts/gen-scenarios-doc.py write                   # regenerate docs/qa/E2E-SCENARIOS.md
+  python3 scripts/gen-scenarios-doc.py check                   # fail when the catalog is out of date
+  python3 scripts/gen-scenarios-doc.py pending                 # pending references vs their branches
+  python3 scripts/gen-scenarios-doc.py declare BRANCH          # after merging BRANCH: name its scenarios on its tests
+  python3 scripts/gen-scenarios-doc.py clear-pending BRANCH    # then drop the pending flags of BRANCH's scenarios
 
 Registry entry: ``{"id", "area", "title", "tiers", "provided_by", "pending_merge", "tests"}``
 plus an optional ``"notes"``. A test reference is a pytest node id
@@ -23,8 +24,10 @@ function of ``scripts/packaging-e2e-install.sh``). Every real-tier test function
 scenarios it covers on a docstring line ``Scenarios: S-FRESH-MANAGED, L-RELAUNCH``.
 
 A scenario provided by another branch carries ``"pending_merge": true`` until that branch is
-merged: its references are not resolved before then. Once every reference of a pending entry
-exists, the flag is stale and validation fails until it is cleared (``clear-pending``).
+merged: its references are not resolved before then. After merging it, ``declare BRANCH`` writes
+that branch's scenarios onto the ``Scenarios:`` lines of their tests (wrapped after a comma); once
+every reference of a pending entry exists and names it, the flag is stale and validation fails
+until it is cleared (``clear-pending BRANCH``).
 
 Exit status: 0 OK, 1 problems found (printed one per line), 2 usage error.
 """
@@ -87,6 +90,10 @@ NODE_RE = re.compile(
 PACKAGING_RE = re.compile(r"^packaging:(?P<cell>[a-z0-9-]+):(?P<check>[a-z_][a-z0-9_]*)$")
 SHELL_FUNCTION_RE = re.compile(r"^\s*(?P<name>[a-z_][a-z0-9_]*)\s*\(\)", re.MULTILINE)
 DECLARATION_RE = re.compile(r"^\s*Scenarios:\s*(?P<ids>.+?)\s*$", re.MULTILINE)
+# Closing quotes at the end of a source line (a declaration may end its docstring).
+DECLARATION_TAIL_RE = re.compile(r"\s*(\"{3}|'{3})\s*$")
+# Scenarios: lines that ``declare`` writes are wrapped at this width (indentation included).
+DECLARATION_WIDTH = 110
 FORMATS_RE = re.compile(r"^FORMATS=\((?P<cells>[^)]*)\)", re.MULTILINE)
 # Real-tier test files: real Fork (tests/e2e) and the desktop tier (tests/e2e_de).
 REAL_TIER_DIRS = ("tests/e2e", "tests/e2e_de")
@@ -221,13 +228,20 @@ def _params(function: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str] | None
 
 
 def parse_declaration(docstring: str | None) -> tuple[bool, list[str]]:
-    """``(has a Scenarios: line, the ids on it)`` of a test function's docstring."""
-    if not docstring:
-        return False, []
-    match = DECLARATION_RE.search(docstring)
-    if match is None:
-        return False, []
-    return True, [item.strip() for item in match.group("ids").split(",") if item.strip()]
+    """``(has a Scenarios: line, its ids)`` of a test function's docstring; a line ending in a comma
+    continues on the next one."""
+    lines = (docstring or "").splitlines()
+    for index, line in enumerate(lines):
+        match = DECLARATION_RE.match(line)
+        if match is None:
+            continue
+        text = match.group("ids")
+        for more in lines[index + 1 :]:
+            if not text.endswith(","):
+                break
+            text += " " + more.strip()
+        return True, [item.strip() for item in text.split(",") if item.strip()]
+    return False, []
 
 
 def _functions(tree: ast.Module) -> Iterator[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]]:
@@ -414,14 +428,27 @@ def reference_errors(entries: Iterable[Mapping[str, Any]], tree: TestTree) -> li
         missing = {test: resolve(test, tree) for test in entry["tests"]}
         missing = {test: why for test, why in missing.items() if why is not None}
         if entry["pending_merge"]:
-            if not missing:
+            if not missing and _named_by_its_tests(entry, tree):
                 errors.append(
-                    f"{entry['id']}: every test exists, so {entry['provided_by']} is merged: "
-                    "clear pending_merge (scripts/gen-scenarios-doc.py clear-pending)"
+                    f"{entry['id']}: every test exists and names it, so {entry['provided_by']} is merged: "
+                    f"clear pending_merge (scripts/gen-scenarios-doc.py clear-pending {entry['provided_by']})"
                 )
             continue
         errors.extend(f"{entry['id']}: {test}: {why}" for test, why in missing.items())
     return errors
+
+
+def _named_by_its_tests(entry: Mapping[str, Any], tree: TestTree) -> bool:
+    """True when every real-tier test of ``entry`` names it on its Scenarios: line.
+
+    A test that exists here already can gain the scenario's assertions with the merge: only its
+    declaration says that the merge happened.
+    """
+    for test in entry["tests"]:
+        function = tree.functions.get(function_key(test) or "")
+        if function is not None and is_real_tier(function.path) and entry["id"] not in function.declared:
+            return False
+    return True
 
 
 def declaration_errors(entries: Iterable[Mapping[str, Any]], tree: TestTree) -> list[str]:
@@ -615,22 +642,131 @@ def pending(root: Path) -> list[str]:
     return lines
 
 
-def clear_pending(root: Path) -> int:
-    """Drop every pending flag (after the final merge); return how many were cleared."""
+def _pending_declarations(
+    entries: Iterable[Mapping[str, Any]], tree: TestTree, branch: str
+) -> dict[str, dict[str, list[str]]]:
+    """File -> test -> its whole Scenarios: list, for the real-tier tests ``branch``'s pending scenarios add to."""
+    wanted: dict[str, list[str]] = {}
+    for entry in entries:
+        merged = entry["pending_merge"] and entry["provided_by"] == branch
+        for test in entry["tests"] if merged else ():
+            key = function_key(test) or ""
+            function = tree.functions.get(key)
+            if function is None or not is_real_tier(function.path):
+                continue
+            ids = wanted.setdefault(key, list(function.declared))
+            if entry["id"] not in ids:
+                ids.append(entry["id"])
+    by_file: dict[str, dict[str, list[str]]] = {}
+    for key, ids in sorted(wanted.items()):
+        function = tree.functions[key]
+        if ids != function.declared:
+            by_file.setdefault(function.path, {})[function.name] = ids
+    return by_file
+
+
+def declaration_lines(ids: list[str], indent: str) -> list[str]:
+    """``Scenarios: A, B, ...`` wrapped after a comma so no line grows past :data:`DECLARATION_WIDTH`."""
+    lines = [f"Scenarios: {ids[0]}"]
+    for scenario in ids[1:]:
+        if len(indent) + len(lines[-1]) + len(scenario) + 3 > DECLARATION_WIDTH:
+            lines[-1] += ","
+            lines.append(scenario)
+        else:
+            lines[-1] += f", {scenario}"
+    return [lines[0]] + [indent + line for line in lines[1:]]
+
+
+def _docstring(node: ast.FunctionDef | ast.AsyncFunctionDef) -> ast.Expr | None:
+    """The docstring statement of a function, if it has one."""
+    first = node.body[0]
+    if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+        return first
+    return None
+
+
+def _declaration_span(lines: list[str], first: int, last: int) -> tuple[int, int] | None:
+    """``(start, end)`` of the Scenarios: line and its continuation lines between ``first`` and ``last``."""
+    for start in range(first, last + 1):
+        if "Scenarios:" in lines[start]:
+            end = start + 1
+            while end <= last and DECLARATION_TAIL_RE.sub("", lines[end - 1].rstrip()).endswith(","):
+                end += 1
+            return start, end
+    return None
+
+
+def _declaration_edit(
+    lines: list[str], node: ast.FunctionDef | ast.AsyncFunctionDef, ids: list[str]
+) -> tuple[int, int, list[str]]:
+    """``(start, end, new lines)``: replacing ``lines[start:end]`` makes the test declare ``ids``."""
+    indent = " " * node.body[0].col_offset
+    declaration = declaration_lines(ids, indent)
+    doc = _docstring(node)
+    if doc is None:
+        start = node.body[0].lineno - 1
+        return start, start, [f'{indent}"""' + "\n".join(declaration) + '"""\n']
+    first, last = doc.lineno - 1, (doc.end_lineno or doc.lineno) - 1
+    span = _declaration_span(lines, first, last)
+    if span is not None:
+        start, end = span
+        head = lines[start][: lines[start].index("Scenarios:")]
+        tail = DECLARATION_TAIL_RE.search(lines[end - 1].rstrip("\n"))
+        return start, end, [head + "\n".join(declaration) + (tail.group(0).strip() if tail else "") + "\n"]
+    closing = lines[last].rstrip()
+    body, quotes = closing[:-3], closing[-3:]
+    block = [f"{indent}{line.strip()}\n" for line in declaration]
+    if body.strip():
+        return last, last + 1, [f"{body}\n", "\n", *block, f"{indent}{quotes}\n"]
+    return last, last, ["\n", *block]
+
+
+def declare_in_source(source: str, wanted: Mapping[str, list[str]]) -> str:
+    """``source`` with each test of ``wanted`` naming exactly those scenarios on its Scenarios: line."""
+    lines = source.splitlines(keepends=True)
+    edits = [
+        _declaration_edit(lines, node, wanted[name]) for name, node in _functions(ast.parse(source)) if name in wanted
+    ]
+    for start, end, new in sorted(edits, reverse=True):
+        lines[start:end] = new
+    return "".join(lines)
+
+
+def declare(root: Path, branch: str) -> list[str]:
+    """After merging ``branch``: write its pending scenarios onto their tests' Scenarios: lines.
+
+    Returns the files changed.
+    """
+    plan = _pending_declarations(load(root), read_tree(root), branch)
+    for path, wanted in plan.items():
+        file = root / path
+        file.write_text(declare_in_source(file.read_text(encoding="utf-8"), wanted), encoding="utf-8")
+    return sorted(plan)
+
+
+def clear_pending(root: Path, branch: str) -> int:
+    """Drop the pending flags of ``branch``'s scenarios (after its merge); return how many were cleared."""
     entries = load(root)
     cleared = 0
     for entry in entries:
-        if entry.get("pending_merge"):
+        if entry.get("pending_merge") and entry.get("provided_by") == branch:
             entry["pending_merge"] = False
             cleared += 1
     (root / REGISTRY).write_text(json.dumps(entries, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return cleared
 
 
+def _usage_ok(args: list[str]) -> bool:
+    """A command alone, or ``declare`` / ``clear-pending`` with the merged branch."""
+    if len(args) == 1:
+        return args[0] in ("validate", "write", "check", "pending")
+    return len(args) == 2 and args[0] in ("declare", "clear-pending") and args[1] in PROVIDERS[1:]
+
+
 def main(argv: list[str] | None = None, root: Path = ROOT) -> int:
     """Command line entry point."""
     args = sys.argv[1:] if argv is None else argv
-    if len(args) != 1 or args[0] not in ("validate", "write", "check", "pending", "clear-pending"):
+    if not _usage_ok(args):
         print(__doc__.split("\n\n")[2], file=sys.stderr)
         return 2
     command = args[0]
@@ -639,7 +775,11 @@ def main(argv: list[str] | None = None, root: Path = ROOT) -> int:
         print(f"wrote {CATALOG}")
         return 0
     if command == "clear-pending":
-        print(f"cleared {clear_pending(root)} pending flag(s); now run 'write' and 'validate'")
+        print(f"cleared {clear_pending(root, args[1])} pending flag(s); now run 'write' and 'validate'")
+        return 0
+    if command == "declare":
+        changed = declare(root, args[1])
+        print("\n".join(f"declared in {path}" for path in changed) or "nothing to declare")
         return 0
     problems = {"validate": validate, "check": check, "pending": pending}[command](root)
     for line in problems:
