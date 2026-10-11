@@ -318,14 +318,20 @@ def test_linux_merge_tool_resolves_a_conflict(bridged: Any, installed: Any) -> N
                "the merged result")
 
 
-def _ssh_setup(e2e: Any, server: SshServer, *, passphrase: str) -> tuple[Path, Path]:
-    """A key (with ``passphrase``) and an ssh config the test passes to git (core.sshCommand)."""
+def _ssh_setup(e2e: Any, server: SshServer, *, name: str, passphrase: str) -> tuple[Path, Path]:
+    """A new key ``name`` (with ``passphrase``) and an ssh config the test passes to git (core.sshCommand).
+
+    Each test has its own key: the agent test and the prompt test once shared one, and the second
+    found the first one's passphrase on it (ssh asked again, the fetch never ended).
+    """
     base = e2e.root / "bridge-ssh"
     base.mkdir(exist_ok=True)
-    key = base / f"id_{'pass' if passphrase else 'plain'}"
-    if not key.exists():
-        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", passphrase, "-f", str(key)], check=True,
-                       timeout=60)
+    key = base / f"id_{name}"
+    for old in (key, key.with_name(f"{key.name}.pub")):
+        if old.exists():
+            old.unlink()
+    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", passphrase, "-f", str(key)], check=True,
+                   timeout=60)
     host_key = (server.base / "host_ed25519.pub").read_text(encoding="utf-8").split()
     known = base / "known_hosts"
     known.write_text(f"[127.0.0.1]:{server.port} {host_key[0]} {host_key[1]}\n", encoding="utf-8")
@@ -372,7 +378,7 @@ def test_fetch_over_ssh_with_the_agent(bridged: Any, installed: Any) -> None:
     try:
         wait_until(lambda: agent.exists(), 15, "the ssh agent")
         server.start(authorized)
-        key, config = _ssh_setup(installed, server, passphrase="e2e agent passphrase")
+        key, config = _ssh_setup(installed, server, name="agent", passphrase="e2e agent passphrase")
         authorized.write_text(Path(f"{key}.pub").read_text(encoding="utf-8"), encoding="utf-8")
         askpass = installed.root / "askpass-agent.sh"
         askpass.write_text("#!/bin/sh\necho 'e2e agent passphrase'\n", encoding="utf-8")
@@ -405,7 +411,7 @@ def test_fetch_over_ssh_with_a_passphrase_prompt(bridged: Any, installed: Any) -
     authorized = installed.root / "bridge-pass-keys"
     try:
         server.start(authorized)
-        key, config = _ssh_setup(installed, server, passphrase="e2e prompt passphrase")
+        key, config = _ssh_setup(installed, server, name="prompt", passphrase="e2e prompt passphrase")
         authorized.write_text(Path(f"{key}.pub").read_text(encoding="utf-8"), encoding="utf-8")
         work, seed = _ssh_remote(installed, "bridge-pass", config)
         ui.fork.ensure_closed()
