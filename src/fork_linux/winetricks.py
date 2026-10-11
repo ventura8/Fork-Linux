@@ -127,6 +127,13 @@ def _copy_in(source: Path, target: Path) -> bool:
     return True
 
 
+def _seedable(entry: os.DirEntry[str], target: Path) -> bool:
+    """A visible, non-empty regular file of winetricks' cache that our cache lacks."""
+    if entry.name.startswith(".") or not entry.is_file(follow_symlinks=False) or os.path.lexists(target):
+        return False
+    return entry.stat(follow_symlinks=False).st_size > 0
+
+
 def seed_cache(cache: Path, legacy: Path, packages: Iterable[str] = SEED_PACKAGES) -> list[Path]:
     """Reuse files from winetricks' default cache ``legacy`` in our ``cache``; return the files added.
 
@@ -147,9 +154,7 @@ def seed_cache(cache: Path, legacy: Path, packages: Iterable[str] = SEED_PACKAGE
         target_dir = cache / package
         for entry in entries:
             target = target_dir / entry.name
-            if entry.name.startswith(".") or not entry.is_file(follow_symlinks=False) or os.path.lexists(target):
-                continue
-            if not entry.stat(follow_symlinks=False).st_size:
+            if not _seedable(entry, target):
                 continue
             fsutil.ensure_dir(target_dir, 0o755)
             if _copy_in(Path(entry.path), target):

@@ -506,34 +506,32 @@ def check_tools(ctx: DoctorCtx) -> Result:
     return Result("ok", "all required and optional tools are present")
 
 
+def _named(*groups: tuple[str, list[str]]) -> str:
+    """``"<label>: a, b; <label>: c"`` for the non-empty groups."""
+    return "; ".join(f"{label}: {', '.join(libs)}" for label, libs in groups if libs)
+
+
 def check_libs(ctx: DoctorCtx) -> Result:
     """Host libraries Wine loads, and an ``ldd`` scan of the managed runtime."""
     required = hostdeps.missing_libs(hostdeps.REQUIRED_LIBS, ctx.lib_loader)
     optional = hostdeps.missing_libs(hostdeps.OPTIONAL_LIBS, ctx.lib_loader)
     info = ctx.wine()
-    unresolved: list[str] = []
-    if info is not None and info.provider == "managed":
-        unresolved = hostdeps.ldd_missing(ctx.runner, info.root)
+    managed = info is not None and info.provider == "managed"
+    unresolved = hostdeps.ldd_missing(ctx.runner, info.root) if managed else []
     # ldd reports every optional Wine module (OpenCL, scanners, cameras, smart cards, USB,
     # GStreamer, Wayland, ...); a missing dependency there only disables that feature, so
     # only the libraries Wine itself needs (REQUIRED_LIBS) fail the check.
     blocking = [lib for lib in unresolved if lib in hostdeps.REQUIRED_LIBS and lib not in required]
     if required or blocking:
-        parts = []
-        if required:
-            parts.append(f"missing libraries: {', '.join(required)}")
-        if blocking:
-            parts.append(f"the Wine runtime needs: {', '.join(blocking)}")
-        return Result("fail", "; ".join(parts), _install_hint([], [*required, *blocking]))
+        detail = _named(("missing libraries", required), ("the Wine runtime needs", blocking))
+        return Result("fail", detail, _install_hint([], [*required, *blocking]))
     extra = [lib for lib in unresolved if lib not in hostdeps.REQUIRED_LIBS]
     if optional or extra:
-        parts = []
-        if optional:
-            parts.append(f"optional libraries missing: {', '.join(optional)}")
-        if extra:
-            parts.append(f"optional Wine features unavailable (not used by Fork): {', '.join(extra)}")
-        return Result("info", "; ".join(parts), _install_hint([], [*optional, *extra]))
-    scanned = " (Wine runtime scanned with ldd)" if info is not None and info.provider == "managed" else ""
+        detail = _named(
+            ("optional libraries missing", optional), ("optional Wine features unavailable (not used by Fork)", extra)
+        )
+        return Result("info", detail, _install_hint([], [*optional, *extra]))
+    scanned = " (Wine runtime scanned with ldd)" if managed else ""
     return Result("ok", f"all {len(hostdeps.REQUIRED_LIBS)} required libraries load{scanned}")
 
 
