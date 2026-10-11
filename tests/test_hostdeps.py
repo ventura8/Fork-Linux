@@ -241,7 +241,7 @@ def test_install_hint_debian() -> None:
     ("family", "command"),
     [
         ("fedora", "sudo dnf install cabextract unzip gnutls libglvnd-glx libglvnd-egl"),
-        ("suse", "sudo zypper install cabextract unzip libgnutls30 libGL1 libEGL1"),
+        ("suse", "sudo zypper install cabextract unzip libgnutls30 libglvnd libEGL1"),
         ("arch", "sudo pacman -S cabextract unzip gnutls libglvnd"),
     ],
 )

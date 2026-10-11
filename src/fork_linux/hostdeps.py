@@ -77,7 +77,7 @@ _PACKAGE_TABLE: tuple[tuple[str, str, str, str, str], ...] = (
     ("libXcomposite.so.1", "libxcomposite1", "libXcomposite", "libXcomposite1", "libxcomposite"),
     ("libXinerama.so.1", "libxinerama1", "libXinerama", "libXinerama1", "libxinerama"),
     ("libXfixes.so.3", "libxfixes3", "libXfixes", "libXfixes3", "libxfixes"),
-    ("libGL.so.1", "libgl1", "libglvnd-glx", "libGL1", "libglvnd"),
+    ("libGL.so.1", "libgl1", "libglvnd-glx", "libglvnd", "libglvnd"),
     ("libvulkan.so.1", "libvulkan1", "vulkan-loader", "libvulkan1", "vulkan-icd-loader"),
     ("libdbus-1.so.3", "libdbus-1-3", "dbus-libs", "libdbus-1-3", "dbus"),
     ("libasound.so.2", "libasound2t64|libasound2", "alsa-lib", "libasound2", "alsa-lib"),
