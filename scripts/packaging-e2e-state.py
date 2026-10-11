@@ -12,7 +12,9 @@ run again (scenario A2 of docs/qa/UPDATE-SCENARIOS.md)?
   managed Wine runtime's ``.complete`` marker with stand-in ``wine`` / ``wineserver`` scripts
   that answer ``--version`` and record any other call in ``E2E_WINE_RAN`` (a failure: no Wine
   may run). ``STATUS_JSON`` is ``fork-linux status --json`` of the installed release, so the
-  paths are the program's own (``~/.var/app/<id>`` in the Flatpak).
+  paths are the program's own (``~/.var/app/<id>`` in the Flatpak). The placeholder has no icon:
+  the per-user installs (``install.sh``, ``AppImage --install-desktop``) run ``fork-linux desktop
+  install``, which then warns "cannot extract Fork's icon" and keeps the neutral icon.
 * ``record STATUS_JSON STEPS_JSON``: ``state.json`` with a marker for every step, taken from
   the installed release's own ``--list-steps --json`` (revision and inputs hash), as a
   completed setup records them.

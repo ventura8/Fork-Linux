@@ -69,6 +69,7 @@ directory was deleted while real-Fork tests ran on the host). With `FL_E2E_FORK=
 scripts/e2e-docker.sh --name e2e pytest tests/e2e              # the real tier, seeded
 scripts/e2e-docker.sh --name e2e --keep pytest tests/e2e -k 03 # reuse the previous prefix
 FL_E2E_FORK_UPDATES=1 scripts/e2e-docker.sh --name upd-fork pytest tests/e2e/test_fork_update.py  # Fork updates (run scripts/build-bridge.sh first)
+FL_E2E_APP_UPGRADE=1 scripts/e2e-docker.sh --name upd-app pytest tests/e2e/test_wine_app_upgrade.py  # app upgrades
 scripts/e2e-docker.sh --name look --keep shell -- bash         # xdotool / import on DISPLAY=:99
 scripts/e2e-docker.sh --name trace --ptrace shell -- strace -f -o /e2e/t.txt python3 -m fork_linux doctor
 ```

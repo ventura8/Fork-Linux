@@ -17,6 +17,12 @@
 # updating itself and through fork-linux, in a prefix of its own); its bridge scenarios need the
 # bridge, which is built first (scripts/build-bridge.sh, in its own CI image) when it is missing.
 #
+# FL_E2E_APP_UPGRADE=1 adds the app-upgrade tier (tests/e2e/test_wine_app_upgrade.py). Its A6
+# step replaces the bridge binaries of one version by another's while the daemon runs, so two
+# bridge builds of different versions are made first (variant trees of this one, 0.9.1 and
+# 0.9.2, by scripts/build-version-variant.sh --tree-only) into the scratch root's bridge/1 and
+# bridge/2 (FL_E2E_BRIDGE_BUILDS=/e2e/bridge).
+#
 # Usage: ./scripts/ci-e2e-wine.sh [pytest args...]
 set -euo pipefail
 
@@ -43,6 +49,15 @@ fl_e2e_build_image "${ROOT}" "${IMAGE}"
 if [[ "${FL_E2E_FORK_UPDATES:-0}" == "1" && ! -x "${ROOT}/build-bridge/bridge/fl-bridge-helper" ]]; then
 	"${ROOT}/scripts/build-bridge.sh"
 fi
+BRIDGE_BUILDS=""
+if [[ "${FL_E2E_APP_UPGRADE:-0}" == "1" ]]; then
+	for n in 1 2; do
+		"${ROOT}/scripts/build-version-variant.sh" --tree-only "0.9.${n}" "${SCRATCH}/variants"
+		"${SCRATCH}/variants/fork-linux-0.9.${n}/scripts/build-bridge.sh" --out "${SCRATCH}/bridge/${n}"
+	done
+	rm -rf -- "${SCRATCH:?}/variants"
+	BRIDGE_BUILDS="/e2e/bridge"
+fi
 # Host-wide slots shared with scripts/e2e-docker.sh (FL_E2E_SLOTS, default 3).
 BASE="$(fl_e2e_base)"
 LOCK_DIR="$(fl_e2e_check_dir "${FL_E2E_LOCK_DIR:-${BASE}/locks}" "lock directory")" || exit $?
@@ -65,6 +80,8 @@ docker run --rm --init \
 	-e FL_E2E_ROOT=/e2e/root \
 	-e FL_E2E_FORK_VERSION \
 	-e FL_E2E_FORK_UPDATES \
+	-e FL_E2E_APP_UPGRADE \
+	-e FL_E2E_BRIDGE_BUILDS="${BRIDGE_BUILDS}" \
 	-e PYTHONDONTWRITEBYTECODE=1 \
 	-v "${ROOT}:/src:ro" \
 	-v "${SCRATCH}:/e2e:rw" \

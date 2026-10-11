@@ -168,6 +168,19 @@ def test_e2e_wine_runs_the_fork_update_tier() -> None:
     assert (ROOT / "tests" / "e2e" / "test_fork_update.py").is_file()
 
 
+def test_e2e_wine_runs_the_app_upgrade_tier() -> None:
+    """e2e-wine.yml switches the app-upgrade tier on; the script forwards it with two bridge builds for A6."""
+    assert "FL_E2E_APP_UPGRADE: '1'" in E2E
+    script = (ROOT / "scripts" / "ci-e2e-wine.sh").read_text(encoding="utf-8")
+    assert "-e FL_E2E_APP_UPGRADE " in script
+    assert '-e FL_E2E_BRIDGE_BUILDS="${BRIDGE_BUILDS}"' in script
+    gate = script.index('FL_E2E_APP_UPGRADE:-0}" == "1"')
+    variant = script.index('scripts/build-version-variant.sh" --tree-only')
+    build = script.index('scripts/build-bridge.sh" --out "${SCRATCH}/bridge/${n}"')
+    assert gate < variant < build < script.index("docker run --rm --init")
+    assert (ROOT / "tests" / "e2e" / "test_wine_app_upgrade.py").is_file()
+
+
 def test_upstream_watch_flow() -> None:
     assert "schedule:" in UPSTREAM
     order = [

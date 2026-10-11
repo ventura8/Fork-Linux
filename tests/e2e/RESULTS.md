@@ -84,6 +84,45 @@ unpacked git (UPD-23); after the pin dropped a staged update, the installed vers
 delta package failed to apply in Velopack ("invalid Zip archive"), which then downloaded the full
 package by itself.
 
+## App-upgrade tier (`tests/e2e/test_wine_app_upgrade.py`)
+
+Date: 2026-10-11, in `fork-linux-ci-e2e-wine:26.04` (Python 3.14, Wine `kron4ek-11.0-staging-wow64`,
+Xvfb 1600x1000), seeded like the tier above. Fork 2.23.1 came from `https://cdn.fork.dev/win/` (trust
+on first use against Fork's feed), Kron4ek 11.19 staging from GitHub (pinned by URL, size and sha256 in
+a test-only manifest override), and Fork 2.23.2 from Fork's own updater. An "app upgrade" is a copy of
+this tree's `fork_linux` package with a higher `VERSION` and one bumped step revision, started through
+the same `fork-linux` on `PATH` with the same helper directory, as a package replaces its files in place.
+The two bridge builds of A6 (`VERSION` 1.0.1 and 1.0.2) were made with `scripts/build-bridge.sh --out`.
+
+```
+FL_E2E_APP_UPGRADE=1 FL_E2E_BRIDGE_BUILDS=/e2e/bridge \
+  scripts/e2e-docker.sh --name upd-app-wine --keep pytest --durations=0 tests/e2e/test_wine_app_upgrade.py
+```
+
+Result: **7 passed in 884 s**, from a fresh prefix (`--keep` reuses only the download cache and the
+bridge builds in the scratch root).
+
+| Test | Time |
+|---|---|
+| `test_01_setup_with_the_previous_fork`: setup with Fork 2.23.1, `--list-steps` says nothing to re-run, first launch (first-run dialogs answered), a 2.23.1 snapshot | 281.6 s |
+| `test_02_a3_upgrade_reruns_only_the_bumped_step`: N bumps `display_dpi` and the manifest's revisions: `--list-steps` names exactly that step, the first launch re-runs it alone, records the new revisions and `written_by`, downloads nothing | 13.2 s |
+| `test_03_a5_upgrade_while_fork_runs`: N+1 (`fork_settings` bumped) installed while Fork runs: `run second` hands over to the running Fork, which stays the only one, and no marker changes; the launch after Fork closed re-runs that step alone | 15.7 s |
+| `test_04_a4_wine_pin_change_and_revert`: a persistent wineserver of 11.0 left in the prefix, pin changed to 11.19: setup re-runs `wine_runtime` and `prefix_init`, stops the old server with 11.0's own `wineserver -k`, boots the prefix with 11.19 (verified archive and `.complete`, 11.0 kept); `config unset wine.build` goes back without a download, nothing heavy re-runs, and Fork starts on 11.0 | 460.7 s |
+| `test_05_a11_uninstall_then_reinstall_keeps_the_prefix`: `uninstall` removes the menu entry and clears the `icon` / `desktop_entry` markers only; Fork's settings stay; the next launch re-runs those two, with no first-run dialog | 13.6 s |
+| `test_06_a6_bridge_binaries_replaced_while_the_daemon_runs`: bridge on with build 1; build 2 renamed over it while the daemon serves Fork: same daemon and port, its executable shows `(deleted)`, `git rev-parse HEAD` through the installed `git.exe` shim with Fork's environment still answers, the fast path hands over; after Fork closed the next launch re-runs `host_shims` only and starts the new helper | 38.1 s |
+| `test_07_a12_app_upgrade_and_fork_self_update_on_one_launch`: while Fork runs, N+2 (`host_integration` bumped) is installed and Fork updates itself (File > Check for Updates..., Restart and Update); the next launch re-runs `host_integration` and `icon` only, keeps 2.23.2 (never reinstalls the requested 2.23.1), reports "Fork updated 2.23.1 -> 2.23.2" once and snapshots 2.23.2 | 60.4 s |
+
+Found by this tier and fixed (with unit tests): updating a prefix that holds .NET for another Wine
+build (11.0 -> 11.1, 11.19 -> 11.0) leaves Wine's 32-bit `rundll32 ... Wow64Install` in a "This
+application could not be started" dialog; `wineboot` waits 5 minutes for it and `prefix_init` /
+`update --wine` then failed on `wineserver -w` (UPD-25: the leftovers are stopped after 2 minutes, the
+prefix is ready and Fork starts on it; A4 above still spends ~7 minutes on the way back). The shims are
+installed before Fork's settings, whose tools depend on them, so a bridge upgrade no longer re-runs
+`fork_settings` twice (UPD-28). Observed, not ours: Fork 2.23.1 does not start on Kron4ek 11.19 staging in
+a prefix 11.0 created (`System.IO.FileLoadException` in WPF's BAML reader), which is why A4 checks Fork
+after going back rather than on 11.19 (UPD-26); once, the dotnet40 installer of the first setup sat idle
+for 20 minutes without a window (the run was stopped and repeated).
+
 ## Manual scenario (timings and outcomes)
 
 | # | Step | Outcome | Time |
