@@ -160,27 +160,32 @@ fl_e2e_prepare_scratch() {
 }
 
 # fl_e2e_acquire_slot LOCKDIR SLOTS: hold one of SLOTS host-wide slots on fd 9 (flock): try
-# each slot without blocking, then wait on one. Sets FL_E2E_SLOT. Callers close fd 9 for
-# every child (docker run ... 9>&-), so no container process ever holds the lock.
+# each slot without blocking, and while all are busy try them all again every
+# FL_E2E_SLOT_POLL seconds (default 5), so a run takes whichever slot frees first (waiting on
+# one fixed slot left runs queued behind a long run while other slots stood idle). Sets
+# FL_E2E_SLOT. Callers close fd 9 for every child (docker run ... 9>&-), so no container
+# process ever holds the lock.
 fl_e2e_acquire_slot() {
-	local dir="$1" slots="$2" n
+	local dir="$1" slots="$2" poll="${FL_E2E_SLOT_POLL:-5}" n announced=0
 	[[ "${slots}" =~ ^[1-9][0-9]?$ ]] || fl_e2e_die "FL_E2E_SLOTS must be a number from 1 to 99 (got '${slots}')"
-	for ((n = 1; n <= slots; n++)); do
-		[[ ! -L "${dir}/slot-${n}" ]] || fl_e2e_refuse "lock file ${dir}/slot-${n} is a symlink"
-		exec 9>>"${dir}/slot-${n}"
-		if flock -n 9; then
-			FL_E2E_SLOT="${n}"
-			echo "==> holding E2E slot ${FL_E2E_SLOT}/${slots}"
-			return 0
+	[[ "${poll}" =~ ^[0-9]{1,3}(\.[0-9]{1,3})?$ ]] || fl_e2e_die "FL_E2E_SLOT_POLL must be a number of seconds (got '${poll}')"
+	while true; do
+		for ((n = 1; n <= slots; n++)); do
+			[[ ! -L "${dir}/slot-${n}" ]] || fl_e2e_refuse "lock file ${dir}/slot-${n} is a symlink"
+			exec 9>>"${dir}/slot-${n}"
+			if flock -n 9; then
+				FL_E2E_SLOT="${n}"
+				echo "==> holding E2E slot ${FL_E2E_SLOT}/${slots}"
+				return 0
+			fi
+			exec 9>&-
+		done
+		if ((announced == 0)); then
+			echo "==> all ${slots} E2E slots are busy (FL_E2E_SLOTS); waiting for the first one that frees"
+			announced=1
 		fi
-		exec 9>&-
+		sleep "${poll}"
 	done
-	n=$((($$ % slots) + 1))
-	echo "==> all ${slots} E2E slots are busy (FL_E2E_SLOTS); waiting for slot-${n}"
-	exec 9>>"${dir}/slot-${n}"
-	flock 9
-	FL_E2E_SLOT="${n}"
-	echo "==> holding E2E slot ${FL_E2E_SLOT}/${slots}"
 }
 
 # fl_e2e_build_image ROOT IMAGE [DOCKERFILE]: build IMAGE from DOCKERFILE (relative to ROOT;

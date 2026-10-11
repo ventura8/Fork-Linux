@@ -34,9 +34,10 @@
 # root without our marker is never wiped.
 #
 # Slots: at most FL_E2E_SLOTS (default 3) of these containers run host-wide (flock on
-# /var/tmp/fork-linux-e2e/locks/slot-<n>; every free slot is tried first, then the run waits).
+# /var/tmp/fork-linux-e2e/locks/slot-<n>; every slot is tried, again every FL_E2E_SLOT_POLL
+# seconds (default 5) while all are busy, and the first that frees is taken).
 # Every FL_E2E_* variable you set is passed through (except the runner's own: SCRATCH,
-# SEED_DIR, SLOTS, LOCK_DIR, and ROOT / SEED / WINETRICKS_CACHE, which point inside).
+# SEED_DIR, SLOTS, SLOT_POLL, LOCK_DIR, and ROOT / SEED / WINETRICKS_CACHE, which point inside).
 # Afterwards text logs (*.log *.json *.txt < 20 MB, not under drive_c) are copied from the
 # scratch root to logs/e2e-docker/<NAME>/; the scratch path is printed for the screenshots.
 set -euo pipefail
@@ -47,8 +48,8 @@ FL_E2E_PROG="e2e-docker.sh"
 . "${ROOT}/scripts/lib-e2e-docker.sh"
 
 # FL_E2E_* variables that steer this script and are not forwarded into the container as-is.
-RUNNER_VARS=(FL_E2E_SCRATCH FL_E2E_SEED_DIR FL_E2E_SLOTS FL_E2E_LOCK_DIR FL_E2E_ROOT FL_E2E_SEED
-	FL_E2E_WINETRICKS_CACHE FL_E2E_FORK)
+RUNNER_VARS=(FL_E2E_SCRATCH FL_E2E_SEED_DIR FL_E2E_SLOTS FL_E2E_SLOT_POLL FL_E2E_LOCK_DIR FL_E2E_ROOT
+	FL_E2E_SEED FL_E2E_WINETRICKS_CACHE FL_E2E_FORK)
 RESERVED_NAMES=(seed locks)
 SHELL_DISPLAY=":99"
 
