@@ -31,6 +31,11 @@ def _add_options(parser: argparse.ArgumentParser) -> None:
         "--no-hooks", action="store_true", help="skip the pre-launch snapshot, settings and ssh/git sync"
     )
     parser.add_argument(
+        "--restart",
+        action="store_true",
+        help="end the running Fork first (when it shows no window or stopped responding)",
+    )
+    parser.add_argument(
         "--from-file-manager",
         action="store_true",
         help="a file opens the repository that contains it (used by file manager actions)",
@@ -70,4 +75,5 @@ def run(args: argparse.Namespace, ctx: AppContext) -> int:
         no_setup=args.no_setup,
         no_hooks=args.no_hooks,
         from_file_manager=args.from_file_manager,
+        restart=args.restart,
     )

@@ -9,9 +9,9 @@ _fork_linux_node() {
     'setup')
       opts=(-h --help --json --prefix --gui --no-gui --offline -v --verbose -q --quiet --allow-root --fork-version --latest --allow-untested --wine --dotnet --accept-fork-eula --only --from-step --force --reset --no-launch --list-steps); vopts=(--prefix --fork-version --wine --dotnet --only --from-step); subs=(); pos=0; pos_words=() ;;
     'run')
-      opts=(-h --help --json --prefix --gui --no-gui --offline -v --verbose -q --quiet --allow-root --debug --wine-debug --x11 --wayland --no-setup --no-hooks --from-file-manager); vopts=(--prefix --wine-debug); subs=(); pos=1; pos_words=() ;;
+      opts=(-h --help --json --prefix --gui --no-gui --offline -v --verbose -q --quiet --allow-root --debug --wine-debug --x11 --wayland --no-setup --no-hooks --restart --from-file-manager); vopts=(--prefix --wine-debug); subs=(); pos=1; pos_words=() ;;
     'open')
-      opts=(-h --help --json --prefix --gui --no-gui --offline -v --verbose -q --quiet --allow-root --debug --wine-debug --x11 --wayland --no-setup --no-hooks --from-file-manager); vopts=(--prefix --wine-debug); subs=(); pos=1; pos_words=() ;;
+      opts=(-h --help --json --prefix --gui --no-gui --offline -v --verbose -q --quiet --allow-root --debug --wine-debug --x11 --wayland --no-setup --no-hooks --restart --from-file-manager); vopts=(--prefix --wine-debug); subs=(); pos=1; pos_words=() ;;
     'update')
       opts=(-h --help --json --prefix --gui --no-gui --offline -v --verbose -q --quiet --allow-root --check --fork --wine --fork-version --latest --allow-untested); vopts=(--prefix --fork-version); subs=(); pos=0; pos_words=() ;;
     'snapshot')

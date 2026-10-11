@@ -103,7 +103,7 @@ Downloads are cached in `~/.cache/fork-linux/` (winetricks' .NET and font downlo
 | Command | Purpose |
 |---|---|
 | `setup [--fork-version V \| --latest] [--allow-untested] [--wine managed\|system\|flatpak\|PATH] [--dotnet auto\|dotnet48\|dotnet472] [--accept-fork-eula] [--only STEP \| --from-step STEP] [--force] [--reset] [--no-launch] [--list-steps]` | Idempotent, resumable bootstrap |
-| `run [PATH …]`, `open PATH …`, `fork [PATH]` (`[--debug] [--wine-debug CHANNELS] [--x11 \| --wayland] [--no-setup] [--no-hooks]`) | Launch Fork or open repositories |
+| `run [PATH …]`, `open PATH …`, `fork [PATH]` (`[--debug] [--wine-debug CHANNELS] [--x11 \| --wayland] [--no-setup] [--no-hooks] [--restart]`) | Launch Fork or open repositories |
 | `update [--check \| --fork \| --wine] [--fork-version V \| --latest] [--allow-untested]` | Check for and apply Fork / Wine runtime updates |
 | `snapshot create [--reason R] \| list \| delete ID \| prune` | Manage snapshots of Fork's install |
 | `rollback [ID \| --to-version V] [--with-settings] [--no-pin]` | Restore a snapshot and pin that version |
@@ -156,6 +156,7 @@ Baseline: **Ubuntu 26.04**; oldest supported: **Ubuntu 22.04**. CI also covers U
 
 - **Start with `fork-linux doctor`.** It checks the host, Wine, the prefix, Fork and the integrations, and prints a fix for every failure; `fork-linux doctor --fix` applies the safe ones.
 - **Logs**: `fork-linux logs` (files in `~/.local/state/fork-linux/logs/`). `fork-linux logs --bundle` creates a redacted archive to attach to an issue. Earlier Fork sessions' `fork.log` files are kept there as `fork-<time>.log`.
+- **Fork shows no window or stopped responding**: while Fork runs, `fork-linux run` only hands the paths to it. `fork-linux run --restart` ends the running Fork (everything in its Wine prefix) and starts it again.
 - **Repository problems**: `fork-linux repo check` lists what breaks per repository (hooks, symlinks, submodules, remotes given as Linux paths, `core.filemode`); `fork-linux repo fix PATH` sets `core.filemode=false` and marks tracked symlinks `skip-worktree` after asking, and `fork-linux repo undo PATH` reverts exactly that.
 
 What fork-linux connects for you:

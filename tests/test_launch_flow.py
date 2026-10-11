@@ -732,6 +732,50 @@ def test_run_fast_path_when_fork_runs(
     assert dup2 == []
 
 
+def test_run_restart_stops_the_running_fork_first(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # E2E: a Fork that lost its window kept the fast path busy; --restart ends it, then starts Fork again.
+    launcher.write_session(ctx.paths, ctx.wine(), 99)
+    answers = iter([True, True, False])
+    monkeypatch.setattr(procs, "fork_running", lambda prefix, **_kw: next(answers))
+    monkeypatch.setattr(launcher.time, "sleep", lambda _seconds: None)
+    launcher.run(flow["app"], ["repo"], restart=True, execvpe=flow["exec"])
+    kill = flow["app"].runner.calls[0]
+    assert kill["argv"] == [str(ctx.wine().wineserver), "-k"]
+    assert kill["env"]["WINEPREFIX"] == str(ctx.paths.prefix)
+    # The normal path follows: setup check, hooks, a new session.
+    assert flow["ensure"] == [True]
+    assert flow["hooks"] == 1
+    assert launcher.read_session(ctx.paths)["pid"] == os.getpid()
+
+
+def test_run_restart_without_a_running_fork_just_starts_it(ctx: bootstrap.Ctx, flow: dict[str, Any]) -> None:
+    launcher.run(flow["app"], [], restart=True, execvpe=flow["exec"])
+    assert flow["app"].runner.calls == []
+    assert flow["hooks"] == 1
+
+
+def test_restart_needs_the_session_wine(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], not_running: list[bool]
+) -> None:
+    not_running[0] = True
+    with pytest.raises(ForkLinuxError, match="Wine of its session is unknown"):
+        launcher.run(flow["app"], [], restart=True, execvpe=flow["exec"])
+    assert flow["exec"].calls == []
+
+
+def test_restart_gives_up_when_fork_keeps_running(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], not_running: list[bool], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    launcher.write_session(ctx.paths, ctx.wine(), 99)
+    not_running[0] = True
+    monkeypatch.setattr(launcher, "RESTART_TIMEOUT", -1.0)
+    with pytest.raises(ForkLinuxError, match="Fork still runs"):
+        launcher.run(flow["app"], [], restart=True, execvpe=flow["exec"])
+    assert flow["exec"].calls == []
+
+
 def test_run_running_without_session_takes_the_normal_path_without_hooks(
     ctx: bootstrap.Ctx, flow: dict[str, Any], not_running: list[bool]
 ) -> None:
