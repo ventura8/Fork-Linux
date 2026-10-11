@@ -57,7 +57,11 @@ scripts/e2e-docker.sh --name shim --image fork-linux-ci-bridge:26.04 shell -- ba
   scripts that record them in `root/fork-update/logs/desktop-ui.log`; what Fork did is read from
   its `velopack.log`, `/proc`, the bridge daemon's log and native git.
 - `tests/e2e/test_wine_app_upgrade.py` (gated by `FL_E2E_APP_UPGRADE=1` as well) downloads Fork 2.23.1
-  and the Kron4ek 11.19 staging build in the container. Its A6 step needs two bridge builds of
+  in the container; its A4 step switches to the previous Wine pin, 11.0 staging (listed in the manifest; the
+  seed has it).
+- `tests/e2e/test_wine_pin_upgrade.py` (A24) sets a prefix of its own (`root/pin-upgrade`) up on the previous
+  pin (11.0), commits through Fork, then lets the packaged manifest move it to the current pin and commits
+  again; it downloads the current pin when the seed lacks it. Its A6 step needs two bridge builds of
   different versions, which the image cannot make (no MinGW): build them with
   `scripts/build-bridge.sh --out` from two copies of the tree with different `VERSION`s into
   `<scratch>/bridge/1/` and `<scratch>/bridge/2/`, then run with `--keep` and
