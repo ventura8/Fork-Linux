@@ -396,6 +396,46 @@ def test_diff_and_merge_templates(tmp_path: Path, tool: str, diff: list[str], me
     assert runner.argvs == [[tool, *expand(diff)], [tool, *expand(merge)]]
 
 
+@pytest.mark.parametrize("status", [0, 127])
+def test_merge_without_a_common_version_gets_an_empty_base(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: int
+) -> None:
+    """Fork passes an empty BASE when both sides added the file: the tool gets an empty file, deleted after."""
+    local, remote = _files(tmp_path, "added~Local.txt", "added~Remote.txt")
+    merged = str(tmp_path / "added.txt")
+    host, runner, _popen = _host(installed=("meld",))
+    seen: list[tuple[str, bool, str]] = []
+
+    def wait(argv: list[str]) -> int:
+        base = argv[3]
+        seen.append((base, os.path.isfile(base), Path(base).read_text(encoding="utf-8")))
+        if status == 127:
+            raise hh.ToolNotFound("meld is not installed")
+        return 0
+
+    monkeypatch.setattr(host, "wait", wait)
+    if status == 127:
+        with pytest.raises(hh.ToolNotFound):
+            host.merge("", local, remote, merged)
+    else:
+        assert host.merge("", local, remote, merged) == 0
+    [(base, existed, content)] = seen
+    assert existed
+    assert content == ""
+    assert Path(base).parent == tmp_path
+    assert Path(base).name.startswith("added~Local~Base-")
+    assert base.endswith(".txt")
+    assert not os.path.exists(base)
+    assert runner.argvs == []
+
+
+def test_merge_with_a_missing_base_is_a_usage_error(tmp_path: Path) -> None:
+    local, remote = _files(tmp_path, "LO", "RE")
+    host, _runner, _popen = _host(installed=("meld",))
+    with pytest.raises(UsageError, match="no such file"):
+        host.merge(str(tmp_path / "gone"), local, remote, str(tmp_path / "M"))
+
+
 def test_kompare_only_diffs(tmp_path: Path) -> None:
     left, right, base = _files(tmp_path, "L", "R", "B")
     host, runner, _popen = _host(installed=("kompare",))
