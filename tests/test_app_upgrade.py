@@ -9,11 +9,12 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import types
 from pathlib import Path
 
 import pytest
 
-from fork_linux import bootstrap, desktop_integration, launcher, resources, updates, wine_provider
+from fork_linux import bootstrap, bridge, desktop_integration, launcher, resources, updates, wine_provider
 from fork_linux.procrun import RecordingRunner
 from fork_linux import version as version_mod
 from fork_linux.bootstrap import Ctx
@@ -282,6 +283,30 @@ def test_a6_new_shims_rerun_host_shims_after_fork_closes(
     _running(monkeypatch, False)
     bootstrap.ensure_ready(ctx)
     assert "host_shims" in chosen[-1]
+
+
+def test_a6_new_shims_rerun_host_shims_only(xdg: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """UPD-28: Fork's tools depend on whether the installed shims match the shipped ones (the bridge is
+    ready), so host_shims runs before fork_settings: new bridge binaries re-run host_shims and nothing else.
+
+    With fork_settings first, it ran on every upgrade with the old shims (bridge "not ready", the tools
+    without fl-launch.exe) and once more on the next launch.
+    """
+    shipped = tmp_path / "shims"
+    shipped.mkdir()
+    for name in ("fl-shim.exe", "fl-launch.exe"):
+        (shipped / name).write_bytes(b"MZ " + name.encode() + b" 0.9.9")
+    monkeypatch.setenv(resources.SHIMS_ENV, str(shipped))
+    monkeypatch.setattr(bridge, "check", lambda ctx: types.SimpleNamespace(ready=not bridge.shims_problems(ctx.paths)))
+    ctx = make_ctx()
+    install_fork(ctx.layout, "2.23.2")
+    steps = [step for step in bootstrap.default_steps() if step.id in ("host_shims", "fork_settings")]
+    assert [step.id for step in steps] == ["host_shims", "fork_settings"]
+    assert bootstrap.run_steps(ctx, steps) == ["host_shims", "fork_settings"]
+    assert bootstrap.run_steps(ctx, steps) == []
+    (shipped / "fl-shim.exe").write_bytes(b"MZ fl-shim.exe 1.0.0")  # the package manager replaced it
+    assert bootstrap.run_steps(ctx, steps) == ["host_shims"]
+    assert bootstrap.run_steps(ctx, steps) == []
 
 
 # -- A7: a state.json written by a newer schema ----------------------------------------------

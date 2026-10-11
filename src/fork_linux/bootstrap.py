@@ -362,6 +362,18 @@ def update_completion(ctx: Ctx, steps: Sequence[Step] | None = None) -> bool:
     return complete
 
 
+def _current(ctx: Ctx, step: Step, *, planned: bool, explicit: bool) -> bool:
+    """True when ``step`` need not run once the run reaches it.
+
+    A planned step may have been made current by an earlier step of this run (host_shims
+    installs the shims fork_settings' inputs look at); an unplanned one runs only when its
+    marker vanished meanwhile (the .NET step rebuilds the prefix).
+    """
+    if not planned:
+        return is_done(step, ctx, cheap=True)
+    return not explicit and not step.always and is_done(step, ctx)
+
+
 def run_steps(
     ctx: Ctx,
     steps: Sequence[Step] | None = None,
@@ -374,8 +386,9 @@ def run_steps(
 
     ``force`` (or ``ctx.force``) re-runs every selected step; ``only`` and
     ``from_step`` always run what they select. A step whose marker vanished
-    during this run (the .NET step rebuilds the prefix) runs again. Returns
-    the ids of the steps that ran.
+    during this run (the .NET step rebuilds the prefix) runs again; a pending
+    step that an earlier step made current again is skipped. Returns the ids
+    of the steps that ran.
     """
     all_steps = default_steps() if steps is None else list(steps)
     selected = _select(all_steps, only, from_step)
@@ -391,7 +404,7 @@ def run_steps(
         with ctx.ui.progress(PROGRESS_TITLE) as progress:
             for step in selected:
                 planned = step in todo
-                if not planned and is_done(step, ctx, cheap=True):
+                if _current(ctx, step, planned=planned, explicit=explicit):
                     continue
                 progress.update(done_weight / total, step.title)
                 run_step(ctx, step)
