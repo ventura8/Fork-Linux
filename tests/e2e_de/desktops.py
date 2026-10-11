@@ -1145,15 +1145,18 @@ def _gtk_theme(name: str) -> Command:
 # mirrors Cinnamon's interface keys into org.gnome.desktop.interface for GNOME applications,
 # csd-xsettings publishes XSETTINGS and Xft.dpi), in the tier user's home as they left it: they
 # ran Ubuntu Cinnamon's gnome-terminal once (which then writes itself into xdg-terminal-exec's
-# lists), then picked Xfce Terminal in System Settings > Preferred Applications > Terminal
-# (cs_default stores its desktop entry's Exec), and the light Yaru-cinnamon theme (Ubuntu Cinnamon
-# ships Yaru-cinnamon-dark; the real-Fork scenario starts light).
+# lists), then picked Tilix in System Settings > Preferred Applications > Terminal (cs_default
+# stores its desktop entry's Exec) and answered Tilix's first-start VTE configuration notice with
+# "Don't show this message again", and the light Yaru-cinnamon theme (Ubuntu Cinnamon ships
+# Yaru-cinnamon-dark; the real-Fork scenario starts light). Tilix is a GTK 3 program whose icons
+# load through glycin: started inside Wine's process tree it aborts (DE-E2E.md, hand-off).
 _CINNAMON_SESSION = (
     'mkdir -p "$XDG_CONFIG_HOME"'
     ' && for list in x-cinnamon-xdg-terminals.list xdg-terminals.list; do'
     ' echo org.gnome.Terminal.desktop > "$XDG_CONFIG_HOME/$list"; done'
-    " && gsettings set org.cinnamon.desktop.default-applications.terminal exec xfce4-terminal"
-    " && gsettings set org.cinnamon.desktop.default-applications.terminal exec-arg -x"
+    " && gsettings set org.cinnamon.desktop.default-applications.terminal exec tilix"
+    " && gsettings set org.cinnamon.desktop.default-applications.terminal exec-arg -e"
+    " && gsettings set com.gexperts.Tilix.Settings warn-vte-config-issue false"
     " && gsettings set org.cinnamon.desktop.interface gtk-theme Yaru-cinnamon"
     " && { /usr/bin/csd-settings-remap & exec /usr/bin/csd-xsettings; }"
 )
@@ -1166,7 +1169,7 @@ _XORG_DUMMY = (
 
 CINNAMON = Desktop(
     key="cinnamon",
-    title="Ubuntu Cinnamon 26.04 (Cinnamon 6.4 on muffin, csd-xsettings, Nemo 6.4, xfce4-terminal, Yaru-cinnamon)",
+    title="Ubuntu Cinnamon 26.04 (Cinnamon 6.4 on muffin, csd-xsettings, Nemo 6.4, Tilix, Yaru-cinnamon)",
     # What lightdm + /etc/X11/Xsession.d (60x11-common_xdg_path) and cinnamon-session export for
     # the "Cinnamon" session (cinnamon.session: DesktopName=X-Cinnamon; no XDG_MENU_PREFIX: the
     # menu applet reads cinnamon-applications.menu by name).
@@ -1197,8 +1200,8 @@ CINNAMON = Desktop(
     menu_after_login=True,
     # The terminal of System Settings > Preferred Applications (exec of
     # org.cinnamon.desktop.default-applications.terminal), which Nemo's "Open in Terminal" starts.
-    terminal="xfce4-terminal",
-    terminal_class="Xfce4-terminal",
+    terminal="tilix",
+    terminal_class="Tilix",
     themes={
         LIGHT: (_gtk_theme("Yaru-cinnamon"),),
         # Ubuntu Cinnamon's default theme.
@@ -1231,7 +1234,7 @@ CINNAMON = Desktop(
     portal="xdg-desktop-portal-xapp",
     packages=(
         "cinnamon", "cinnamon-settings-daemon", "nemo", "ubuntucinnamon-environment", "yaru-cinnamon-theme-gtk",
-        "gir1.2-cmenu-3.0", "gnome-terminal", "xdg-terminal-exec", "xfce4-terminal", "xdg-desktop-portal-xapp",
+        "gir1.2-cmenu-3.0", "gnome-terminal", "xdg-terminal-exec", "tilix", "xdg-desktop-portal-xapp",
         "xserver-xorg-core", "xserver-xorg-video-dummy", "dconf-cli",
     ),
 )

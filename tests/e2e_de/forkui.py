@@ -181,6 +181,43 @@ def fork_pids(wine_prefix: Path) -> list[int]:
     return found
 
 
+CONFINEMENT_FIELDS = ("NoNewPrivs", "Seccomp", "Seccomp_filters")
+
+
+def confinement(pid: int) -> dict[str, str]:
+    """``NoNewPrivs``, ``Seccomp`` and ``Seccomp_filters`` from ``/proc/<pid>/status`` (empty when
+    the process is gone).
+
+    Programs Wine starts carry wine-staging's seccomp filter on top of whatever the process that
+    started Wine had (one more ``Seccomp_filters``, ``Seccomp: 2``) and ``NoNewPrivs: 1``; a program
+    the desktop hand-off started outside Wine's process tree has what any other program of the
+    session has (in the tier's container: Docker's default seccomp profile, one filter, and
+    ``NoNewPrivs: 0``).
+    """
+    try:
+        lines = Path("/proc", str(pid), "status").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    fields = dict(line.split(":", 1) for line in lines if ":" in line)
+    return {name: fields[name].strip() for name in CONFINEMENT_FIELDS if name in fields}
+
+
+def handoff_daemon(session: dekit.Session) -> dict[str, Any]:
+    """The daemon fork-linux recorded in ``session.json`` for this Fork (``{}`` without one)."""
+    try:
+        data = json.loads((session.runtime / "fork-linux" / "session.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    record = data.get("bridge") if isinstance(data, dict) else None
+    return record if isinstance(record, dict) else {}
+
+
+def handoff_log(session: dekit.Session) -> str:
+    """fork-linux-host's hand-off fallback log (each line: a tool that ran inside Wine's tree)."""
+    path = session.home / ".local" / "state" / "fork-linux" / "logs" / "handoff.log"
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
+
+
 def launch(session: dekit.Session, *targets: Path, extra: dict[str, str] | None = None) -> Any:
     """``fork-linux run TARGETS`` in the background (it execs Wine, which outlives the step)."""
     return session.spawn(f"launch-{time.time_ns()}", ["fork-linux", "run", *map(str, targets)], extra=extra)

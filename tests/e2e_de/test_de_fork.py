@@ -49,6 +49,8 @@ OPEN_IN_SHELL = (119, 445)
 RESTARTED_FILE_MANAGERS = {desktops.THUNAR_UCA: "thunar", desktops.NAUTILUS_EXTENSION: "nautilus"}
 # The repository of the tab step 04 opened, the active one from then on.
 ACTIVE = "second"
+# A terminal that aborts at start (Tilix inside Wine's tree: status 134) is gone well before this.
+TERMINAL_ALIVE_SECONDS = 5.0
 
 
 @pytest.fixture(scope="module")
@@ -140,6 +142,34 @@ def test_05_open_in_shell_opens_the_desktops_terminal(session: dekit.Session, de
     )
     session.evidence("05-terminal", window)
     dekit.wait_for(lambda: str(active) in dekit.children_cwds(window.pid or 0), 30, f"a shell in {active}")
+    # The container has no systemd user manager: the hand-off went through the launcher's daemon,
+    # so the terminal runs outside Wine's process tree, without Wine's NoNewPrivs and seccomp filter
+    # (a GTK 3 terminal that loads icons through glycin, such as Tilix, aborts with them). It has
+    # what this test process has (the container's own baseline: Docker's default seccomp profile).
+    terminal = window.pid or 0
+    daemon = forkui.handoff_daemon(session)
+    (fork,) = forkui.fork_pids(forkui.prefix(session))
+    baseline = forkui.confinement(os.getpid())
+    report = {
+        "this test (outside Wine)": (os.getpid(), baseline),
+        "Fork.exe (Wine)": (fork, forkui.confinement(fork)),
+        "hand-off daemon": (daemon.get("pid", 0), forkui.confinement(int(daemon.get("pid", 0)))),
+        f"{desktop.terminal} (Open in Shell)": (terminal, forkui.confinement(terminal)),
+    }
+    time.sleep(TERMINAL_ALIVE_SECONDS)
+    report[f"{desktop.terminal} after {TERMINAL_ALIVE_SECONDS:g} s"] = (terminal, forkui.confinement(terminal))
+    (session.logs / "05-confinement.txt").write_text(
+        "".join(f"{name}: pid {pid} {fields}\n" for name, (pid, fields) in report.items())
+        + f"daemon record: handoff={daemon.get('handoff')}\nhandoff.log: {forkui.handoff_log(session)!r}\n",
+        encoding="utf-8",
+    )
+    assert baseline["NoNewPrivs"] == "0", report
+    assert forkui.confinement(fork) != baseline, f"Fork runs without Wine's confinement: {report}"
+    assert daemon.get("handoff") is True, f"no hand-off daemon in session.json: {daemon}"
+    assert forkui.confinement(int(daemon["pid"])) == baseline, f"the daemon runs inside Wine's tree: {report}"
+    assert forkui.confinement(terminal) == baseline, report
+    assert window.id in {w.id for w in session.windows()}, f"{desktop.terminal} did not stay open"
+    assert forkui.handoff_log(session) == "", "the hand-off ran inside Wine's process tree"
 
 
 def test_06_open_in_file_explorer_opens_the_desktops_file_manager(
