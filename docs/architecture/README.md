@@ -17,7 +17,7 @@ were reconstructed 2026-10-10 from the NUC build (fork-linux 1.0.0 built from th
 | Setup: winetricks | `winetricks.py`, `steps/prefix.py` (`run_verbs`) | every verb runs with `W_CACHE=~/.cache/fork-linux/winetricks`, seeded read-only from `~/.cache/winetricks` |
 | Desktop integration | `desktop_integration.py`, `data/templates/*` | per-user menu entry and file-manager actions (`--file-managers auto` by default: the installed ones; Thunar's `uca.xml` seeded from the desktop's own); packages ship the same entry system-wide |
 | Icons | `pe_resources.py`, `imaging.py`, `icon_extract.py` | Fork's icon from the user's `Fork.exe` at every hicolor size (missing sizes shrunk from the largest image) plus a scalable SVG; our neutral placeholder until then |
-| Host helpers | `libexec/*` → `<prefix>/lib/fork-linux/` | terminal / explorer / open-url hand-off outside Wine's process tree |
+| Host helpers | `libexec/*` → `<prefix>/lib/fork-linux/`, `host_helper.py`, `handoff.py` | Wine starts `fork-linux-{terminal,explorer,open-url}`; `fork-linux-handoff` runs `fork-linux-host terminal\|reveal\|open\|open-url ARG` outside Wine's process tree: a transient `systemd-run --user` unit, else `fork-linux-host --handoff` asks the launcher's daemon (`FL_REQ_HANDOFF`; with the bridge off the launcher starts a `--handoff-only` daemon when there is no systemd user manager, `bridge.start_handoff`), else (logged in `<logs>/handoff.log`) inside Wine's tree |
 | Bridge | `bridge/` → `fl-bridge-helper` + personas, `win64/fl-shim.exe`, `fl-launch.exe` | see [bridge/README.md](../../bridge/README.md) |
 
 ## Build and packaging

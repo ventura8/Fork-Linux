@@ -14,11 +14,11 @@ root under `/var/tmp/fork-linux-e2e/`, the read-only seed for the real-Fork tier
 
 | Desktop | Image | Integration tier | Real-Fork tier | Evidence |
 |---|---|---|---|---|
-| Xubuntu 26.04, XFCE 4.20 (xfwm4, xfsettingsd, Thunar 4.20 + its FileManager1, xfce4-terminal, garcon menu, Greybird / Greybird-dark) | `fork-linux-e2e-de-xfce:26.04` | ✅ 15/15 | ✅ 9/9 (setup 281 s from the seed, tier 348 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
+| Xubuntu 26.04, XFCE 4.20 (xfwm4, xfsettingsd, Thunar 4.20 + its FileManager1, xfce4-terminal, garcon menu, Greybird / Greybird-dark) | `fork-linux-e2e-de-xfce:26.04` | ✅ 15/15 | ✅ 9/9 (setup 261 s from the seed, tier 322 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` with the hand-off daemon, 2026-10-11 |
 | Ubuntu 26.04, GNOME 50 (GNOME Shell 50 in Ubuntu's mode on mutter's headless Wayland backend + rootless Xwayland, gsd-xsettings, Nautilus 50 + python3-nautilus and its FileManager1, Ptyxis via xdg-terminal-exec, the shell's own app grid, Yaru / Yaru-dark + color-scheme) | `fork-linux-e2e-de-gnome:26.04` | ✅ 16/16 | ✅ 9/9 (setup 311 s from the seed, tier 391 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
 | Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, kcminit + kded6, Dolphin 25.12 + its FileManager1 and our service menu, Konsole, Kickoff's menu through kbuildsycoca6, Kubuntu / Kubuntu Dark / Breeze Dark global themes and colour schemes) | `fork-linux-e2e-de-kde:26.04` | ✅ 20/20 | ✅ 9/9 (setup 371 s from the seed, tier 440 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
 | Kubuntu 26.04, KDE Plasma 6.6 on Wayland, its default session (kwin_wayland + rootless Xwayland, kcminit + kded6, Dolphin + its FileManager1 and our service menu, Konsole, kbuildsycoca6's menu, the same themes, Display Configuration's scale through kscreen-doctor) | `fork-linux-e2e-de-kdewayland:26.04` | ✅ 19/19 | ✅ 9/9 (setup 261 s from the seed, tier 320 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
-| Ubuntu Cinnamon 26.04, Cinnamon 6.4 (rootless Xorg + dummy driver, cinnamon itself: panel, menu applet, window manager on libmuffin; csd-xsettings + csd-settings-remap, Nemo 6.4 + its FileManager1 and our Nemo actions, Xfce Terminal from Preferred Applications next to gnome-terminal + xdg-terminal-exec, Yaru-cinnamon / Yaru-cinnamon-dark + Dark mode, User interface scale x text scaling) | `fork-linux-e2e-de-cinnamon:26.04` | ✅ 17/17 | ✅ 9/9 (setup 314 s from the seed, tier 379 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
+| Ubuntu Cinnamon 26.04, Cinnamon 6.4 (rootless Xorg + dummy driver, cinnamon itself: panel, menu applet, window manager on libmuffin; csd-xsettings + csd-settings-remap, Nemo 6.4 + its FileManager1 and our Nemo actions, Tilix from Preferred Applications next to gnome-terminal + xdg-terminal-exec, Yaru-cinnamon / Yaru-cinnamon-dark + Dark mode, User interface scale x text scaling) | `fork-linux-e2e-de-cinnamon:26.04` | ✅ 17/17 | ✅ 9/9 (setup 440 s from the seed on a loaded host, tier 527 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` with the hand-off daemon, 2026-10-11 |
 | Ubuntu MATE 26.04, MATE 1.26 (marco, mate-settings-daemon, Caja 1.26 + its FileManager1 and caja-actions, mate-terminal, mate-panel's menu, Yaru-MATE light / dark and the stock Menta, BlackMATE, HighContrastInverse) | `fork-linux-e2e-de-mate:26.04` | ✅ 19/19 | ✅ 9/9 (setup 277 s from the seed, tier 337 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
 | Ubuntu Budgie 26.04, Budgie 10.10 (labwc 0.9 headless Wayland + rootless Xwayland, budgie-daemon, Nemo 6.4 + its FileManager1 service, xfce4-terminal, the panel menus' libbudgie-appindexer, Pocillo / Pocillo-dark + the Dark theme switch, display scale and text scaling) | `fork-linux-e2e-de-budgie:26.04` | ✅ 16/16 | ✅ 9/9 (setup 495 s from the seed, tier 577 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
 | Lubuntu 26.04, LXQt 2.3 (lxqt-session + openbox and lxqt-panel, pcmanfm-qt 2.3 + its FileManager1, qterminal, panel menu via GMenu, Kvantum Lubuntu / KvArcDark, Fusion palettes, Global Screen Scaling) | `fork-linux-e2e-de-lxqt:26.04` | ✅ 19/19 | ✅ 9/9 (setup 326 s from the seed, tier 386 s) | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
@@ -31,6 +31,17 @@ portal / kept-running checks and the Cinnamon / MATE menu notice, and fixed two 
 the final tree: setup's `prefix_init` failed with "wine: could not load kernel32.dll, status
 c0000135" 8 s into the Cinnamon run; another workflow's plain Xvfb runs on the same host showed
 the same error that day, nothing in it depends on the desktop, and the re-run passed.
+
+The hand-off fix (2026-10-11, maintainer decision for 1.0.0) re-ran both tiers on XFCE and
+Cinnamon (now with Tilix); the other desktops' rows are from the review before it. Step 05's
+`logs/05-confinement.txt`, XFCE, the tree before the fix (13002fe with the new step 05):
+`xfce4-terminal` had `NoNewPrivs: 1`, `Seccomp_filters: 2`, like Fork's Wine process, against
+the container's `NoNewPrivs: 0`, `Seccomp_filters: 1`; on Cinnamon no Tilix window ever appeared
+(step 05 timed out after 60 s). With the fix the hand-off daemon and the terminal (xfce4-terminal,
+Tilix) have the container's own values and Tilix stays open. One Cinnamon run of the fixed
+tree hung in setup (winetricks' .NET 4.0 installer idle for 20 min under a load average of 23,
+before Fork ever started; nothing in it depends on the hand-off) and was stopped; the re-run
+passed.
 
 Each desktop is one `docker/Dockerfile.e2e.de.<desktop>` plus one entry in
 `tests/e2e_de/desktops.py` (see "Adding a desktop").
@@ -126,7 +137,13 @@ re-verified) completes; 02 `doctor --deep` has no failure or warning; 03 Fork's 
 (framed, or in its `_NET_CLIENT_LIST` when it does not frame Fork's undecorated window) on the
 desktop's light theme, its screenshot is not uniform, settings say light; 04 `fork <repo>` hands a second
 tab to the running Fork (one process); 05 Repository > Open In Shell opens the desktop's terminal
-in the repository; 06 Repository > Open In File Explorer opens the desktop's file manager on it;
+in the repository, outside Wine's process tree: the container has no systemd user manager, so the
+hand-off goes through the launcher's hand-off daemon (`session.json` records it with
+`"handoff": true`); the daemon and the terminal have exactly the `NoNewPrivs`, `Seccomp` and
+`Seccomp_filters` of the test process itself (the container's baseline: `NoNewPrivs: 0` and
+Docker's default seccomp profile, one filter), while Fork's Wine process has `NoNewPrivs: 1` and
+one filter more (wine-staging's); the terminal still runs 5 s later, and `handoff.log` stays
+empty (no hand-off ran inside Wine's tree; `logs/05-confinement.txt` lists the four); 06 Repository > Open In File Explorer opens the desktop's file manager on it;
 07 the file manager's "Open in Fork" reaches the running Fork (the processes seen opening the
 repository go to `logs/07-opening.txt`); 08 after closing, Fork kept all three
 tabs and the terminal it opened still runs, and with the desktop switched to dark it relaunches
@@ -437,8 +454,9 @@ Fork's run.
   to Nemo through Budgie's `defaults.list` (`/usr/share/budgie-desktop/applications`).
 - Nemo's D-Bus service (`nemo --no-default-window`) quits about 10 s after its last window, so
   `org.freedesktop.FileManager1` is usually only activatable. A Nemo that `xdg-open` starts from
-  a program Wine started (no systemd user manager in the container) inherits Wine's seccomp
-  filter, its glycin image loaders are killed with SIGSYS and it aborts. `fork-linux-host open`
+  a program Wine started inherits Wine's seccomp filter, its glycin image loaders are killed with
+  SIGSYS and it aborts (seen before the hand-off daemon, when the helper ran inside Wine's tree
+  for lack of a systemd user manager; see Cinnamon). `fork-linux-host open`
   of a folder therefore asks `FileManager1.ShowFolders` first (gdbus, else dbus-send, shared with
   `reveal`): the session bus starts the file manager outside Wine's process tree; without a
   FileManager1 service it falls back to `xdg-open`. Nemo shows an action with `Selection=s` only on
@@ -602,7 +620,8 @@ Fork's run.
   (`org.cinnamon.desktop.default-applications.terminal exec`, the chosen terminal's desktop-entry
   `Exec`), which Nemo's "Open in Terminal" starts. The tier's user ran Ubuntu Cinnamon's
   gnome-terminal once (gnome-terminal then writes itself into `~/.config/x-cinnamon-xdg-terminals.list`
-  and `xdg-terminals.list`, which xdg-terminal-exec reads) and picked Xfce Terminal there. Before
+  and `xdg-terminals.list`, which xdg-terminal-exec reads) and picked Tilix there (and turned off
+  Tilix's first-start VTE configuration notice, `warn-vte-config-issue`). Before
   gnome-terminal has run, xdg-terminal-exec 0.14 picks `org.gnome.Terminal.Preferences.desktop`
   (`gnome-terminal --preferences`, no terminal) or whichever terminal entry it finds first, and
   afterwards gnome-terminal, never the user's choice. `fork-linux-host terminal` now reads the
@@ -610,16 +629,18 @@ Fork's run.
   Flatpak), drops desktop-entry field codes, and uses it when it is installed: a known terminal
   gets its own directory arguments, another one runs as stored, in the directory. Without an
   answer `X-Cinnamon` prefers gnome-terminal in the generic order.
-- The container has no systemd user manager, so `fork-linux-handoff` runs the host helper directly
-  inside Wine's process tree (`NoNewPrivs: 1`, `Seccomp: 2`). A GTK 3 program started from there
-  aborts when gdk-pixbuf's glycin loader is used for a raster icon (Tilix: status 134,
-  `ensure_surface_for_gicon: assertion failed ... Loader process exited early`); programs whose
-  window comes from a process the session bus starts (gnome-terminal-server, a FileManager1
-  service) and xfce4-terminal are not affected. This is why the recipe's user picked Xfce Terminal
-  rather than Tilix, and why folders open through FileManager1 (see Budgie). On a desktop with a
-  systemd user session the hand-off runs the helper as a transient unit outside Wine's tree, so
-  this concerns only systems without a systemd user manager (a terminal there should be one whose
-  window comes from a D-Bus service, or xfce4-terminal).
+- The container has no systemd user manager. Until 2026-10-11 `fork-linux-handoff` then ran the
+  host helper directly inside Wine's process tree (`NoNewPrivs: 1`, `Seccomp: 2`), and a GTK 3
+  program started from there aborted when gdk-pixbuf's glycin loader was used for a raster icon
+  (Tilix: status 134, `ensure_surface_for_gicon: assertion failed ... Loader process exited
+  early`; programs whose window comes from a process the session bus starts, such as
+  gnome-terminal-server or a FileManager1 service, and xfce4-terminal were not affected), so the
+  recipe's user had picked Xfce Terminal. Now (maintainer decision for 1.0.0) the launcher starts
+  a hand-off-only daemon outside Wine's tree when there is no systemd user manager, and
+  `fork-linux-host --handoff` asks it to start the helper (bridge/README.md, "Desktop
+  hand-off"): the recipe's user picked Tilix, and step 05 checks that the terminal Fork opens
+  runs without Wine's `NoNewPrivs` and seccomp filter and stays open. Folders still open through
+  FileManager1 first (see Budgie).
 
 ## Adding a desktop
 

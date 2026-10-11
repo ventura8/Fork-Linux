@@ -37,11 +37,11 @@ every desktop (`check.yml` and `e2e-wine.yml`, job `e2e-de`).
 
 | Desktop (container) | Integration | Real Fork | Evidence |
 |---|---|---|---|
-| Xubuntu 26.04, XFCE 4.20 (xfwm4, Thunar, xfce4-terminal) | ✅ 15/15 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
+| Xubuntu 26.04, XFCE 4.20 (xfwm4, Thunar, xfce4-terminal) | ✅ 15/15 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` with the hand-off daemon, 2026-10-11 |
 | Ubuntu 26.04, GNOME 50 (GNOME Shell + Xwayland, Nautilus, Ptyxis) | ✅ 16/16 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
 | Kubuntu 26.04, KDE Plasma 6.6 on X11 (kwin_x11, Dolphin, Konsole) | ✅ 20/20 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
 | Kubuntu 26.04, KDE Plasma 6.6 on Wayland, the default (kwin_wayland + Xwayland, Dolphin, Konsole) | ✅ 19/19 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
-| Ubuntu Cinnamon 26.04, Cinnamon 6.4 (cinnamon on Xorg, Nemo, Preferred Applications' terminal) | ✅ 17/17 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
+| Ubuntu Cinnamon 26.04, Cinnamon 6.4 (cinnamon on Xorg, Nemo, Tilix as Preferred Applications' terminal) | ✅ 17/17 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` with the hand-off daemon, 2026-10-11 |
 | Ubuntu MATE 26.04, MATE 1.26 (marco, Caja + caja-actions, mate-terminal) | ✅ 19/19 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
 | Ubuntu Budgie 26.04, Budgie 10.10 (labwc + Xwayland, Nemo, xfce4-terminal) | ✅ 16/16 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
 | Lubuntu 26.04, LXQt 2.3 (openbox, pcmanfm-qt, qterminal, Kvantum) | ✅ 19/19 | ✅ 9/9 | local `scripts/ci-e2e-de.sh <desktop> [--fork]` on the reviewed tree, 2026-10-11 |
