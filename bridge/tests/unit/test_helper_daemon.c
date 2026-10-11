@@ -779,8 +779,10 @@ static void test_serve_handoff(void)
     snprintf(marker, sizeof(marker), "%s/handoff-ran", g_tmp);
     snprintf(helper, sizeof(helper), "%s/fake-host-helper", g_tmp);
     {
-        char script[1024];
-        snprintf(script, sizeof(script), "#!/bin/sh\nprintf '%%s %%s' \"$1\" \"$2\" > '%s'\n", marker);
+        /* Written aside, then renamed: the marker appears only once it holds the whole line. */
+        char script[1536];
+        snprintf(script, sizeof(script), "#!/bin/sh\nprintf '%%s %%s' \"$1\" \"$2\" > '%s.tmp' && mv '%s.tmp' '%s'\n",
+                 marker, marker, marker);
         write_file(helper, script, 0700);
     }
     memset(&req, 0, sizeof(req));
