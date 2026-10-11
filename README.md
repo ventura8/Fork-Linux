@@ -171,7 +171,7 @@ Known Wine limitations:
 - **Symlinks** look like modified files to Fork (and committing them through Fork's git turns them into plain files); **submodule update / init** does nothing; **Git Bash** exits at once. Use a terminal for these; the git bridge fixes submodules and symlink-preserving commits.
 - **Git Flow**: *Initialize* works, but *Start Feature* (git-flow's shell scripts) silently does nothing with Fork's bundled git. With the git bridge it runs with your Linux git: install your distribution's `git-flow` package.
 - **Spell checking** does nothing under Wine; keep it disabled.
-- **GitHub account sign-in (OAuth) can crash Fork under Wine.** Use a GitHub personal access token instead. Credentials are stored with DPAPI inside the prefix.
+- **GitHub account sign-in (OAuth) can crash Fork under Wine.** Use a GitHub personal access token instead. For HTTPS remotes Fork's git uses Git Credential Manager: it asks once for the user name and password (or token) and keeps them with DPAPI inside the prefix.
 - **Wayland**: Fork runs through XWayland by default; Wine's native Wayland driver is opt-in and experimental.
 - **License activations**: each new Wine prefix may count as a new machine for your Fork license (3 per license). **Deactivate the license in Fork before `fork-linux uninstall --purge`** or before deleting the prefix.
 
