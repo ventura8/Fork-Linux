@@ -20,6 +20,7 @@ from ..bootstrap import Ctx, Step
 from ..errors import ForkLinuxError
 from ..registry import RegBatch
 from . import prefix as prefix_steps
+from . import runtime
 
 log = logging.getLogger(__name__)
 
@@ -134,8 +135,18 @@ def home_drive(ctx: Ctx) -> Path:
 
 
 def integration_inputs(ctx: Ctx) -> dict[str, Any]:
-    """The values to set and the home the ``H:`` drive points at."""
-    return {"registry": [list(item) for item in integration_expected(ctx)], "home": str(ctx.host_home)}
+    """The values to set, the home the ``H:`` drive points at and the Wine that updated the prefix.
+
+    A Wine change (a new pin, ``config set wine.build``) updates the prefix from that build's
+    ``wine.inf`` (step ``prefix_init``), which registers ``.js`` for its own ``JSFile`` again and
+    so replaces one of our open associations (E2E 2026-10-11, Kron4ek 11.0 -> 11.x). Setup checks
+    this step before ``prefix_init`` runs, so only the Wine in the inputs makes it run afterwards.
+    """
+    return {
+        "registry": [list(item) for item in integration_expected(ctx)],
+        "home": str(ctx.host_home),
+        "wine": runtime.wine_inputs(ctx),
+    }
 
 
 def run_integration(ctx: Ctx) -> None:

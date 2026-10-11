@@ -13,7 +13,7 @@ from fixtures.setup_ctx import make_ctx
 from fork_linux import APP_ID, desktop_integration, gitconfig, resources
 from fork_linux.bootstrap import Ctx
 from fork_linux.procrun import RecordingRunner
-from fork_linux.steps import integration
+from fork_linux.steps import integration, runtime
 
 
 def _env(xdg: Path, tmp_path: Path, **extra: str) -> dict[str, str]:
@@ -283,3 +283,16 @@ def test_host_integration_without_a_home_dir(xdg: Path, tmp_path: Path, monkeypa
     integration.run_integration(ctx)
     assert not os.path.lexists(integration.home_drive(ctx))
     assert integration.verify_integration(ctx)
+
+
+def test_integration_inputs_follow_the_wine_build(xdg: Path) -> None:
+    """A Wine change re-runs the step after prefix_init: wine.inf takes ``.js`` back for JSFile."""
+    ctx = make_ctx()
+    before = integration.integration_inputs(ctx)
+    assert before["wine"] == runtime.wine_inputs(ctx)
+    other = next(build.id for build in ctx.manifest.wine_builds if build.id != ctx.manifest.wine_default.id)
+    ctx.config.set("wine", "build", other)
+    after = integration.integration_inputs(ctx)
+    assert after["wine"]["build"] == other
+    assert after["registry"] == before["registry"]
+    assert after != before
