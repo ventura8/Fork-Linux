@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fork_driver import fork_pids, make_repo
+from fork_driver import fork_pids, make_repo, wait_until
+from fork_ui import ForkUI
 
 from fixtures import real_tier
 
@@ -27,6 +28,8 @@ DARK_MEAN = 0.35
 DIP_WIDTH = 820
 DIP_HEIGHT = 480
 SCALE_TOLERANCE = 0.03
+# The image's only monospace family, which setup maps Consolas (Fork's diff font) to.
+MONO_FONT = "dejavusansmono.ttf"
 
 
 def _repo(e2e: Any, name: str) -> Path:
@@ -72,18 +75,32 @@ def test_dpi_scales_fork_once(closed: Any, dpi: int) -> None:
         e2e.cli(*e2e.setup_args())
 
 
+def _mapped_fonts(pid: int) -> set[str]:
+    """The font files (lower-case names) process ``pid`` has mapped: the faces Wine really draws with."""
+    lines = Path("/proc", str(pid), "maps").read_text().splitlines()
+    return {Path(line.split()[-1]).name.lower() for line in lines if line.lower().endswith((".ttf", ".ttc", ".otf"))}
+
+
 def test_interface_text_is_drawn_in_selawik(closed: Any) -> None:
-    """Fork draws its interface with Selawik (installed by setup), not Wine's Tahoma.
+    """Fork draws its interface with Selawik (installed by setup), not Wine's Tahoma, and its diff in the
+    host's monospace font that replaces Consolas (no missing-font fallback).
 
     Scenarios: I-FONT-SELAWIK
     """
     e2e = closed
-    e2e.fork.start(_repo(e2e, "font"))
+    repo = _repo(e2e, "font")
+    (repo / "README.md").write_text("# display\nint main(void) { return 0; }\n", encoding="utf-8")
+    ui = ForkUI(e2e.fork)
+    window = ui.open(repo)
+    ui.refresh()
+    ui.local_changes()
+    ui.click(ui.unstaged_row(0))
     pid = fork_pids(e2e.prefix)[0]
-    mapped = {line.split()[-1] for line in Path("/proc", str(pid), "maps").read_text().splitlines()
-              if line.lower().endswith((".ttf", ".ttc", ".otf"))}
-    names = {Path(path).name.lower() for path in mapped}
+    wait_until(lambda: MONO_FONT in _mapped_fonts(pid) or None, 30, f"{MONO_FONT} (Consolas' replacement) in the diff")
+    names = _mapped_fonts(pid)
+    e2e.screen.screenshot("font-diff", window)
     assert "selawk.ttf" in names, sorted(names)
     assert not {"tahoma.ttf", "tahomabd.ttf"} & names, sorted(names)
     report = json.loads(e2e.cli("doctor", "--json", "--check", "prefix.ui_font", "prefix.font_replacements").stdout)
     assert {check["status"] for check in report["checks"]} == {"ok"}
+    (repo / "README.md").write_text("# display\n", encoding="utf-8")

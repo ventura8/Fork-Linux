@@ -1465,7 +1465,8 @@
     "provided_by": "this-branch",
     "pending_merge": false,
     "tests": [
-      "tests/e2e/test_real_bridge.py::test_linux_merge_tool_resolves_a_conflict"
+      "tests/e2e/test_real_bridge.py::test_linux_merge_tool_resolves_a_conflict",
+      "tests/e2e/test_real_bridge.py::test_linux_merge_tool_without_a_common_base"
     ]
   },
   {

@@ -33,17 +33,21 @@ REPO = Path(__file__).resolve().parents[2]
 SHIM_GIT = "C:\\fork-linux\\gitInstance\\bin\\git.exe"
 DAEMON_EXIT_SECONDS = 20.0
 REMOTES = remotes_dir()
-# The Linux tools the bridge's host actions start: a stand-in "meld" records what it was given.
+# The Linux tools the bridge's host actions start: a stand-in "meld" records what it was given. It
+# reads the files only after a pause, like a user who looks at them a while: Fork's temporary
+# copies must still be there, so Fork (through fl-launch.exe) waited for the tool.
+MELD_SECONDS = 5
 MELD_STUB = """#!/bin/sh
 log="{log}"
 printf 'meld %s\\n' "$*" >>"$log"
+sleep {seconds}
 for arg in "$@"; do
     case $arg in
         --output=*) out=${{arg#--output=}} ;;
-        *) [ -f "$arg" ] && {{ printf -- '--- %s\\n' "$arg"; cat "$arg"; }} >>"$log" ;;
+        *) if [ -f "$arg" ]; then {{ printf -- '--- %s\\n' "$arg"; cat "$arg"; }} >>"$log";
+           else printf -- '--- %s (missing)\\n' "$arg" >>"$log"; fi ;;
     esac
 done
-sleep 3
 [ -n "${{out:-}}" ] && printf 'line 1\\nline 2 resolved in Linux\\nline 3\\n' >"$out"
 printf 'meld done\\n' >>"$log"
 exit 0
@@ -69,7 +73,7 @@ def bridged(installed: Any) -> Iterator[tuple[ForkUI, dict[str, str], Path]]:
     stubs.mkdir(exist_ok=True)
     log = installed.root / "meld-calls.log"
     meld = stubs / "meld"
-    meld.write_text(MELD_STUB.format(log=log), encoding="utf-8")
+    meld.write_text(MELD_STUB.format(log=log, seconds=MELD_SECONDS), encoding="utf-8")
     meld.chmod(0o755)
     extra = {"PATH": f"{stubs}:{installed.env['PATH']}"}
     installed.fork.ensure_closed()
@@ -273,8 +277,31 @@ def test_lfs_push_uploads_the_object(bridged: Any, installed: Any) -> None:
     assert (bare / "lfs" / "objects" / oid[:2] / oid[2:4] / oid).is_file(), "the push left the LFS object behind"
 
 
+def _launchers() -> list[tuple[int, str]]:
+    return processes(lambda cmd: "fl-launch.exe" in cmd.lower())
+
+
+def _linux_tool(log: Path, start: Any, what: str) -> str:
+    """Run ``start()`` (a click that starts the Linux tool through fl-launch.exe); return the stub's log.
+
+    While the tool runs, fl-launch.exe (the program Fork started and waits for) must still run;
+    it ends with the tool. The stub reads Fork's files only after its pause, so they were kept.
+    """
+    if log.exists():
+        log.unlink()
+    start()
+    wait_until(lambda: log.is_file() and log.read_text(encoding="utf-8").startswith("meld ") or None, 60, what)
+    assert _launchers(), f"fl-launch.exe ended while {what} still ran"
+    wait_until(lambda: "meld done" in log.read_text(encoding="utf-8") or None, 60, f"{what} to finish")
+    wait_until(lambda: not _launchers() or None, 30, "fl-launch.exe to end with the tool")
+    recorded = log.read_text(encoding="utf-8")
+    assert "(missing)" not in recorded, recorded
+    return recorded
+
+
 def test_linux_diff_tool_runs_and_fork_waits(bridged: Any, installed: Any) -> None:
-    """Diff in Linux (fork-linux), Ctrl+D on a changed file, opens the Linux diff tool on both versions.
+    """Diff in Linux (fork-linux), Ctrl+D on a changed file, opens the Linux diff tool on both versions;
+    Fork waits for it.
 
     Scenarios: I-EXTERNAL-DIFF
     """
@@ -285,10 +312,35 @@ def test_linux_diff_tool_runs_and_fork_waits(bridged: Any, installed: Any) -> No
     ui.refresh()
     ui.local_changes()
     ui.click(ui.unstaged_row(0))
-    ui.keys("ctrl+d", settle=2.0)
-    wait_until(lambda: log.is_file() and "meld done" in log.read_text(encoding="utf-8"), 60, "the diff tool")
-    recorded = log.read_text(encoding="utf-8")
+    recorded = _linux_tool(log, lambda: ui.keys("ctrl+d", settle=0.5), "the diff tool")
     assert "old line" in recorded and "new line" in recorded
+
+
+def _conflict(repo: Path, name: str, ours: str, theirs: str) -> None:
+    """Commit ``theirs`` as ``name`` on branch other and ``ours`` on main, then merge: a conflict."""
+    git(repo, "checkout", "-q", "-b", "other")
+    (repo / name).write_text(theirs, encoding="utf-8")
+    git(repo, "add", name)
+    git(repo, "commit", "-qm", "other")
+    git(repo, "checkout", "-q", "main")
+    (repo / name).write_text(ours, encoding="utf-8")
+    git(repo, "add", name)
+    git(repo, "commit", "-qm", "main")
+    git(repo, "merge", "other", check=False)
+    assert git(repo, "diff", "--name-only", "--diff-filter=U") == name
+
+
+def _merge_in_linux(ui: ForkUI, repo: Path, extra: dict[str, str], log: Path, name: str) -> str:
+    """Merge in Linux (fork-linux) on the conflicted file; the tool's result ends up in ``name``."""
+    _start(ui, repo, extra)
+    ui.refresh()
+    ui.local_changes()
+    ui.click(CONFLICTED_FILE)
+    recorded = _linux_tool(log, lambda: ui.click(MERGE_IN_LINUX), "the merge tool")
+    assert "--output=" in recorded
+    wait_until(lambda: "resolved in Linux" in (repo / name).read_text(encoding="utf-8") or None, 60,
+               "the merged result")
+    return recorded
 
 
 def test_linux_merge_tool_resolves_a_conflict(bridged: Any, installed: Any) -> None:
@@ -298,24 +350,21 @@ def test_linux_merge_tool_resolves_a_conflict(bridged: Any, installed: Any) -> N
     """
     ui, extra, log = bridged
     repo = _repo(installed, "bridge-merge", {"shared.txt": "line 1\nline 2\nline 3\n"})
-    git(repo, "checkout", "-q", "-b", "other")
-    (repo / "shared.txt").write_text("line 1\nline 2 other\nline 3\n", encoding="utf-8")
-    git(repo, "commit", "-qam", "other")
-    git(repo, "checkout", "-q", "main")
-    (repo / "shared.txt").write_text("line 1\nline 2 main\nline 3\n", encoding="utf-8")
-    git(repo, "commit", "-qam", "main")
-    git(repo, "merge", "other", check=False)
-    if log.exists():
-        log.unlink()
-    _start(ui, repo, extra)
-    ui.refresh()
-    ui.local_changes()
-    ui.click(CONFLICTED_FILE)
-    ui.click(MERGE_IN_LINUX)
-    wait_until(lambda: log.is_file() and "meld done" in log.read_text(encoding="utf-8"), 60, "the merge tool")
-    assert "--output=" in log.read_text(encoding="utf-8")
-    wait_until(lambda: "resolved in Linux" in (repo / "shared.txt").read_text(encoding="utf-8"), 60,
-               "the merged result")
+    _conflict(repo, "shared.txt", "line 1\nline 2 main\nline 3\n", "line 1\nline 2 other\nline 3\n")
+    recorded = _merge_in_linux(ui, repo, extra, log, "shared.txt")
+    assert "line 2 main" in recorded and "line 2 other" in recorded
+
+
+def test_linux_merge_tool_without_a_common_base(bridged: Any, installed: Any) -> None:
+    """Both branches added the same file (no common version): Merge in Linux still runs the tool.
+
+    Scenarios: I-EXTERNAL-MERGE
+    """
+    ui, extra, log = bridged
+    repo = _repo(installed, "bridge-merge-added", {"README.md": "# added\n"})
+    _conflict(repo, "added.txt", "line 1\nline 2 main\n", "line 1\nline 2 other\n")
+    recorded = _merge_in_linux(ui, repo, extra, log, "added.txt")
+    assert "line 2 main" in recorded and "line 2 other" in recorded
 
 
 def _ssh_setup(e2e: Any, server: SshServer, *, name: str, passphrase: str) -> tuple[Path, Path]:

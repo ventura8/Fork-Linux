@@ -158,7 +158,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | I-GIT-BASH | Git Bash as Fork's terminal (it exits at once under Wine): doctor warns; unset, the Linux terminal is back | real-fork | this repository | `tests/e2e/test_real_doctor.py::test_git_bash_terminal_is_flagged_and_replaced` |
 | I-SSH-SYNC | ssh sync shares ~/.ssh keys and config with Fork's bundled ssh | real-fork | this repository | `tests/e2e/test_real_git_remotes.py::test_fetch_and_push_over_ssh_with_a_shared_key` |
 | I-EXTERNAL-DIFF | Diff in Linux: the Linux diff tool, Fork waits | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_linux_diff_tool_runs_and_fork_waits` |
-| I-EXTERNAL-MERGE | Merge in Linux: the Linux merge tool resolves a conflict | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_linux_merge_tool_resolves_a_conflict` |
+| I-EXTERNAL-MERGE | Merge in Linux: the Linux merge tool resolves a conflict | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_linux_merge_tool_resolves_a_conflict`<br>`tests/e2e/test_real_bridge.py::test_linux_merge_tool_without_a_common_base` |
 | I-THEME-LIGHT | Light desktop theme: Fork is light | real-fork | this repository | `tests/e2e/test_real_display.py::test_theme_follows_the_desktop[light]` |
 | I-THEME-DARK | Dark desktop theme: Fork is dark | real-fork | this repository | `tests/e2e/test_real_display.py::test_theme_follows_the_desktop[dark]`<br>`tests/e2e/test_real_fork.py::test_05_relaunch_applies_dark_theme` |
 | I-HIDPI-96 | 96 DPI: Fork scaled 1x, once | real-fork | this repository | `tests/e2e/test_real_display.py::test_dpi_scales_fork_once[96]` |
