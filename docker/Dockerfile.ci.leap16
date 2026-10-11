@@ -13,7 +13,7 @@ RUN zypper --non-interactive refresh \
     git python313 python313-pytest \
     meson ninja gcc glibc-devel \
     desktop-file-utils AppStream \
-    bash zsh fish file binutils xdg-utils curl which \
+    bash zsh fish file binutils xdg-utils curl which findutils \
     && zypper clean -a
 
 WORKDIR /src
