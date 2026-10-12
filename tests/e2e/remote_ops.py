@@ -29,7 +29,8 @@ GCM_PASSWORD_Y = 208
 PUSH_ALL_TAGS = (155, 158)
 # The inside of that box (x, y, width, height) and the mean red level below which it is ticked.
 PUSH_ALL_TAGS_BOX = (151, 147, 12, 10)
-TICKED_RED = 0.5
+# A ticked box is filled blue; an empty one is grey: white in the light theme, dark grey in the dark one.
+TICKED_BLUE = 0.2
 BOX_CLICKS = 3
 CLONE_BUTTON = (475, 218)
 CLONE_SECONDS = 120.0
@@ -131,9 +132,10 @@ def fetch_pull_push(ui: ForkUI, work: Path, seed: Path, bare: Path, *, open_work
 
 
 def push_all_tags_ticked(ui: ForkUI, dialog: Window) -> bool:
-    """Whether Push's "Push all tags" box is ticked: a ticked box is filled blue (no red), an empty one white."""
+    """Whether Push's "Push all tags" box is ticked: a ticked box is filled blue (far more blue than red), an
+    empty one grey (as much red as blue) in either theme."""
     shot = ui.screen.screenshot("push-dialog", dialog)
-    return ui.screen.stat(shot, "mean.r", PUSH_ALL_TAGS_BOX) < TICKED_RED
+    return ui.screen.stat(shot, "mean.b-mean.r", PUSH_ALL_TAGS_BOX) > TICKED_BLUE
 
 
 def push_with_all_tags(ui: ForkUI, ticked: bool) -> None:
