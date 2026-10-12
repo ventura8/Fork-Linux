@@ -1,0 +1,72 @@
+{
+  "setup": 330,
+  "measured": "provisional: tests/e2e/RESULTS.md 2026-10-12 release round 1, setup (~280 s) subtracted for template modules",
+  "modules": {
+    "test_fork_update.py": {
+      "seconds": 1124
+    },
+    "test_git_ops_local.py": {
+      "seconds": 279
+    },
+    "test_git_ops_remote_bridge.py": {
+      "seconds": 491
+    },
+    "test_git_ops_remote_ssh.py": {
+      "seconds": 450
+    },
+    "test_real_bridge.py": {
+      "seconds": 757
+    },
+    "test_real_display.py": {
+      "seconds": 197
+    },
+    "test_real_doctor.py": {
+      "seconds": 82
+    },
+    "test_real_fork.py": {
+      "seconds": 392
+    },
+    "test_real_git_advanced.py": {
+      "seconds": 219
+    },
+    "test_real_git_branches.py": {
+      "seconds": 475
+    },
+    "test_real_git_changes.py": {
+      "seconds": 222
+    },
+    "test_real_git_history.py": {
+      "seconds": 445
+    },
+    "test_real_git_remotes.py": {
+      "seconds": 957
+    },
+    "test_real_integration.py": {
+      "seconds": 1049
+    },
+    "test_real_launch.py": {
+      "seconds": 319
+    },
+    "test_real_setup_errors.py": {
+      "seconds": 4
+    },
+    "test_real_setup_variants.py": {
+      "seconds": 1107
+    },
+    "test_real_snapshots.py": {
+      "seconds": 69
+    },
+    "test_real_uninstall.py": {
+      "seconds": 30
+    },
+    "test_real_update_guards.py": {
+      "seconds": 140
+    },
+    "test_wine_app_upgrade.py": {
+      "seconds": 925
+    },
+    "test_wine_pin_upgrade.py": {
+      "seconds": 469
+    }
+  }
+}

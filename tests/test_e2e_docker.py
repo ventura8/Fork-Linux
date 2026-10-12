@@ -23,18 +23,25 @@ from typing import Any
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
-COPIED = ("scripts/e2e-docker.sh", "scripts/lib-e2e-docker.sh", "scripts/ci-e2e-wine.sh", "docker/Dockerfile.e2e.wine")
+COPIED = ("scripts/e2e-docker.sh", "scripts/lib-e2e-docker.sh", "scripts/ci-e2e-wine.sh", "scripts/e2e-plan.py",
+          "tests/e2e/timings.json", "docker/Dockerfile.e2e.wine")
 NAME = "unit"
 # The real-tier modules of the throwaway worktree (ci-e2e-wine.sh runs what tests/e2e holds).
 MODULES = ("test_fork_update.py", "test_real_bridge.py", "test_real_fork.py", "test_wine_app_upgrade.py")
 MARKER = ".fl-e2e-scratch"
 
 FAKE_DOCKER = """#!{python}
-import json, os, sys
-fds = {{fd: os.path.exists(f"/proc/self/fd/{{fd}}") for fd in (8, 9)}}
+import json, os, sys, time
+fds = {{fd: os.path.exists(f"/proc/self/fd/{{fd}}") for fd in (7, 8, 9)}}
 args = sys.argv[1:]
+# seen: the files already in the container's root when it starts (what the runner seeded it with).
+seen = []
+for i, arg in enumerate(args[:-1]):
+    if args[:1] == ["run"] and arg in ("--volume", "-v") and args[i + 1].split(":")[1:2] == ["/e2e"]:
+        top = os.path.join(args[i + 1].split(":")[0], "root")
+        seen = sorted(os.path.relpath(os.path.join(d, f), top) for d, _, fs in os.walk(top) for f in fs)
 with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as log:
-    log.write(json.dumps({{"tool": "docker", "args": args, "fds": fds}}) + "\\n")
+    log.write(json.dumps({{"tool": "docker", "args": args, "fds": fds, "seen": seen, "t": time.time()}}) + "\\n")
 if args[:2] == ["image", "inspect"]:
     if os.environ.get("FAKE_IMAGE_MISSING") == "1":
         sys.exit(1)
@@ -50,7 +57,11 @@ if args[:1] == ["run"]:
                 ("root/shots/03-main.png", "PNG"),
                 ("root/home/.local/share/fork-linux/prefix/drive_c/users/u/fork.log", "secret"),
                 ("root/home/.cache/fork-linux/downloads/notes.txt", "cache"),
+                ("root/home/.local/share/fork-linux/prefix/system.reg", "prefix"),
+                ("root/.fl-e2e-root", "fork-linux E2E root"),
             ):
+                if rel == "root/.fl-e2e-root" and os.environ.get("FAKE_NO_MARKER") == "1":
+                    continue
                 path = os.path.join(e2e, rel)
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 with open(path, "w", encoding="utf-8") as handle:
@@ -64,7 +75,10 @@ if args[:1] == ["run"]:
         nth = sum(1 for line in log if json.loads(line).get("args", [None])[:1] == ["run"]) - 1
     outputs = os.environ.get("FAKE_RUN_OUTPUTS")
     rcs = os.environ.get("FAKE_RUN_RCS")
+    time.sleep(float(os.environ.get("FAKE_RUN_SLEEP", "0")))
     print(outputs.split("|||")[nth] if outputs else os.environ.get("FAKE_RUN_OUTPUT", ""))
+    with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as log:
+        log.write(json.dumps({{"tool": "docker-end", "name": args[args.index("--name") + 1], "t": time.time()}}) + "\\n")
     sys.exit(int(rcs.split(",")[nth] if rcs else os.environ.get("FAKE_RUN_RC", "0")))
 sys.exit(0)
 """
@@ -141,6 +155,8 @@ class Box:
                 "FL_E2E_SCRATCH": str(self.scratch),
                 "FL_E2E_LOCK_DIR": str(self.locks),
                 "FL_E2E_SEED_DIR": str(self.seed),
+                # The default follows the host's cores and memory (test_default_slots_follow_cores_and_memory).
+                "FL_E2E_SLOTS": "3",
                 "SECRET_TOKEN": "do-not-pass",
             }
         )
@@ -607,18 +623,39 @@ def _bridge_built(box: Box) -> None:
     helper.chmod(0o755)
 
 
-def test_ci_e2e_wine_runs_each_module_of_a_shard_in_a_scratch_root_of_its_own(box: Box) -> None:
-    """Named modules: one container and one fresh root each, the update tiers switched on for their own
-    module only; the bridge is built first, the app-upgrade module gets two bridge builds read-only; every
-    module runs although each fails."""
-    tmpdir = box.tmp / "var" / "tmp"
-    tmpdir.mkdir()
+TEMPLATE_TEST = ["tests/e2e/test_real_fork.py", "-k", "test_01_setup_completes_and_resumes"]
+# tests/e2e/timings.json, longest first: what the four modules of the throwaway worktree run as.
+PLANNED = ["test_fork_update.py", "test_wine_app_upgrade.py", "test_real_bridge.py", "test_real_fork.py"]
+SEEDED_CACHE = [".fl-e2e-root", "home/.cache/fork-linux/downloads/notes.txt"]
+PREFIX_FILE = "home/.local/share/fork-linux/prefix/system.reg"
+
+
+def _variant_tools(box: Box) -> None:
     for name, text in (("build-version-variant.sh", FAKE_VARIANT), ("build-bridge.sh", FAKE_BUILD_BRIDGE)):
         path = box.wt / "scripts" / name
         path.write_text(text, encoding="utf-8")
         path.chmod(0o755)
-    shard = ["tests/e2e/test_real_fork.py", "tests/e2e/test_fork_update.py", "tests/e2e/test_wine_app_upgrade.py"]
-    result = box.run(*shard, "-x", script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_RC="3")
+
+
+def _root(argv: list[str]) -> str:
+    return next(v for v in _opts(argv, "-v") if v.endswith(":/e2e:rw"))
+
+
+def _env(argv: list[str], name: str) -> str:
+    return next(value.split("=", 1)[1] for value in _opts(argv, "-e") if value.startswith(f"{name}="))
+
+
+def test_ci_e2e_wine_runs_each_module_of_a_shard_in_a_scratch_root_of_its_own(box: Box) -> None:
+    """Named modules: the template first, then one container and root each, longest first; the update tiers
+    switched on for their own module only; the bridge is built first, the app-upgrade module gets two bridge
+    builds read-only; every module runs although each fails."""
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    _variant_tools(box)
+    shard = ["tests/e2e/test_real_fork.py", "tests/e2e/test_fork_update.py", "tests/e2e/test_wine_app_upgrade.py",
+             "tests/e2e/test_real_bridge.py"]
+    result = box.run("--jobs", "1", *shard, "-x", script="ci-e2e-wine.sh", TMPDIR=str(tmpdir),
+                     FAKE_RUN_RCS="0,3,3,3,3")
     assert result.returncode == 3, result.stdout + result.stderr
     builds = [row["args"] for row in box.calls() if row["tool"] in ("variant", "build-bridge")]
     assert builds[0] == ""
@@ -626,33 +663,197 @@ def test_ci_e2e_wine_runs_each_module_of_a_shard_in_a_scratch_root_of_its_own(bo
         ["--tree-only", "0.9.1"], ["--out", builds[2].split()[1]], ["--tree-only", "0.9.2"],
         ["--out", builds[4].split()[1]],
     ]
-    full = box.docker_runs()
-    assert [argv[-2:] for argv in full] == [[module, "-x"] for module in shard]
+    rows = [row for row in box.calls("docker") if row["args"][:1] == ["run"]]
+    full = [row["args"] for row in rows]
+    assert full[0][-3:] == TEMPLATE_TEST
+    assert [argv[-2:] for argv in full[1:]] == [[f"tests/e2e/{module}", "-x"] for module in PLANNED]
     runs = [argv[:_image_index(argv, "fork-linux-ci-e2e-wine:26.04")] for argv in full]
-    roots = [next(v for v in _opts(argv, "-v") if v.endswith(":/e2e:rw")) for argv in runs]
-    assert len(set(roots)) == 3
-    switches = [[env for env in _opts(argv, "-e") if env.startswith(("FL_E2E_FORK_UPDATES=", "FL_E2E_APP_UPGRADE="))]
+    assert len({_root(argv) for argv in runs}) == 5
+    assert all(_root(argv).startswith(f"{tmpdir}/fl-e2e-wine.") for argv in runs)
+    switches = [(_env(argv, "FL_E2E_FORK_UPDATES"), _env(argv, "FL_E2E_APP_UPGRADE"), _env(argv, "FL_E2E_REUSE"))
                 for argv in runs]
-    assert switches == [
-        ["FL_E2E_FORK_UPDATES=0", "FL_E2E_APP_UPGRADE=0"],
-        ["FL_E2E_FORK_UPDATES=1", "FL_E2E_APP_UPGRADE=0"],
-        ["FL_E2E_FORK_UPDATES=0", "FL_E2E_APP_UPGRADE=1"],
-    ]
-    for argv in runs[:2]:
+    assert switches == [("0", "0", "0"), ("1", "0", "0"), ("0", "1", "0"), ("0", "0", "1"), ("0", "0", "0")]
+    # The template's root: copied whole for a template module, its download caches for a fresh one.
+    seen = [row["seen"] for row in rows]
+    assert seen[0] == []
+    assert seen[1] == seen[2] == seen[4] == SEEDED_CACHE
+    assert PREFIX_FILE in seen[3] and "home/.cache/fork-linux/downloads/notes.txt" in seen[3]
+    names = [_opts(argv, "--name")[0] for argv in runs]
+    assert names[0].endswith("-template") and names[1].endswith("-test_fork_update")
+    for argv in (runs[0], runs[1], runs[3], runs[4]):
         assert len(_opts(argv, "-v")) == 2
-        assert "FL_E2E_BRIDGE_BUILDS=" in _opts(argv, "-e")
+        assert _env(argv, "FL_E2E_BRIDGE_BUILDS") == ""
     upgrade = _opts(runs[2], "-v")
     assert upgrade[2].endswith(":/bridge-builds:ro")
     built = Path(upgrade[2].split(":")[0])
-    assert "FL_E2E_BRIDGE_BUILDS=/bridge-builds" in _opts(runs[2], "-e")
+    assert _env(runs[2], "FL_E2E_BRIDGE_BUILDS") == "/bridge-builds"
     assert not built.exists(), "the bridge builds are deleted afterwards"
     assert list(tmpdir.iterdir()) == []
     logs = box.wt / "logs" / "e2e-wine"
-    assert sorted(path.name for path in logs.iterdir()) == ["test_fork_update", "test_real_fork",
-                                                             "test_wine_app_upgrade"]
-    for module in ("test_real_fork", "test_fork_update", "test_wine_app_upgrade"):
+    assert sorted(path.name for path in logs.iterdir()) == [
+        "results.tsv", "template", "test_fork_update", "test_real_bridge", "test_real_fork", "test_wine_app_upgrade"]
+    for module in ("test_real_fork", "test_fork_update", "test_wine_app_upgrade", "test_real_bridge"):
         assert f"tests/e2e/{module}.py exit 3" in result.stdout
         assert (logs / module / "pytest.log").is_file()
+        assert "fake container output" in (logs / module / "pytest.log").read_text(encoding="utf-8")
+    assert "the last 60 lines of" in result.stdout
+    assert "==> e2e-wine: template exit 0" in result.stdout
+    results = [line.split("\t") for line in (logs / "results.tsv").read_text(encoding="utf-8").splitlines()]
+    assert [(row[0], row[1], row[3]) for row in results] == [
+        ("template", "0", "-"),
+        *[(f"tests/e2e/{module}", "3", "template" if module == "test_real_bridge.py" else "fresh")
+          for module in PLANNED],
+    ]
+    for row in box.calls("docker"):
+        assert row["fds"]["7"] is False and row["fds"]["9"] is False
+
+
+def test_ci_e2e_wine_runs_the_modules_in_parallel(box: Box) -> None:
+    """--jobs 3: the template and two fresh modules at once; the template module only after the template,
+    from a copy of it; a fresh module that starts before the template is ready starts from nothing."""
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    _variant_tools(box)
+    _bridge_built(box)
+    result = box.run("--all", "--jobs", "3", script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_SLEEP="1")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "4 modules, 3 at a time" in result.stdout
+    rows = [row for row in box.calls("docker") if row["args"][:1] == ["run"]]
+    ends = {row["name"]: row["t"] for row in box.calls("docker-end")}
+    spans = {_opts(row["args"], "--name")[0].rsplit("-", 1)[-1]: (row["t"], ends[_opts(row["args"], "--name")[0]], row)
+             for row in rows}
+    assert sorted(spans) == ["template", "test_fork_update", "test_real_bridge", "test_real_fork",
+                             "test_wine_app_upgrade"]
+    first = sorted(spans, key=lambda name: spans[name][0])[:3]
+    assert sorted(first) == ["template", "test_fork_update", "test_wine_app_upgrade"]
+    assert max(spans[name][0] for name in first) < min(spans[name][1] for name in first), "they overlap"
+    bridge = spans["test_real_bridge"]
+    assert bridge[0] >= spans["template"][1]
+    assert PREFIX_FILE in bridge[2]["seen"]
+    for name in ("test_fork_update", "test_wine_app_upgrade"):
+        assert spans[name][2]["seen"] == []
+        assert _env(spans[name][2]["args"], "FL_E2E_REUSE") == "0"
+    # --all switches both update tiers on, each for its own module.
+    assert _env(spans["test_fork_update"][2]["args"], "FL_E2E_FORK_UPDATES") == "1"
+    assert _env(spans["test_wine_app_upgrade"][2]["args"], "FL_E2E_APP_UPGRADE") == "1"
+    assert list(tmpdir.iterdir()) == []
+
+
+def test_ci_e2e_wine_without_a_template(box: Box) -> None:
+    """FL_E2E_TEMPLATE=0, or a template that failed: every module sets up its own prefix; a failed template
+    fails the run."""
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    _bridge_built(box)
+    shard = ["tests/e2e/test_real_bridge.py", "tests/e2e/test_real_fork.py"]
+    off = box.run("--jobs", "1", *shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_TEMPLATE="0")
+    assert off.returncode == 0, off.stdout + off.stderr
+    rows = [row for row in box.calls("docker") if row["args"][:1] == ["run"]]
+    assert [row["args"][-1] for row in rows] == shard
+    assert [row["seen"] for row in rows] == [[], []]
+    assert [_env(row["args"], "FL_E2E_REUSE") for row in rows] == ["0", "0"]
+    box.log.unlink()
+    failed = box.run("--jobs", "1", *shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_RCS="4,0,0",
+                     FAKE_RUN_OUTPUTS="setup failed|||1 passed|||1 passed")
+    assert failed.returncode == 4, failed.stdout + failed.stderr
+    assert "==> e2e-wine: template exit 4" in failed.stdout
+    assert "setup failed" in failed.stdout
+    rows = [row for row in box.calls("docker") if row["args"][:1] == ["run"]]
+    assert [row["args"][-1] for row in rows] == ["test_01_setup_completes_and_resumes", *shard]
+    assert [row["seen"] for row in rows[1:]] == [[], []]
+    assert "tests/e2e/test_real_bridge.py exit 0" in failed.stdout
+    assert list(tmpdir.iterdir()) == []
+
+
+def test_ci_e2e_wine_reports_a_root_it_could_not_prepare(box: Box) -> None:
+    """A template without the tier's marker cannot seed a fresh root: that module fails, the others run."""
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    _bridge_built(box)
+    shard = ["tests/e2e/test_real_bridge.py", "tests/e2e/test_real_fork.py"]
+    result = box.run("--jobs", "1", *shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_NO_MARKER="1")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "test_real_fork: could not prepare its root (fresh)" in result.stdout
+    assert "tests/e2e/test_real_bridge.py exit 0" in result.stdout
+    assert len(box.docker_runs()) == 2
+    runner = (box.wt / "logs" / "e2e-wine" / "test_real_fork" / "runner.log").read_text(encoding="utf-8")
+    assert ".fl-e2e-root" in runner
+
+
+def test_ci_e2e_wine_keeps_a_template_cache_by_key(box: Box) -> None:
+    """FL_E2E_TEMPLATE_CACHE (local runs): built once into DIR/<key>, reused while the key holds, a template
+    of another key deleted; one run at a time; never inside a home."""
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    _bridge_built(box)
+    (box.wt / "src" / "fork_linux").mkdir(parents=True)
+    (box.wt / "src" / "fork_linux" / "setup.py").write_text("v1\n", encoding="utf-8")
+    (box.wt / "tests" / "e2e" / "conftest.py").write_text("", encoding="utf-8")
+    (box.wt / "tests" / "e2e" / "fork_driver.py").write_text("", encoding="utf-8")
+    cache = box.tmp / "var" / "templates"
+    stale = cache / "0123456789abcdef"
+    stale.mkdir(parents=True)
+    (stale / MARKER).write_text("x", encoding="utf-8")
+    shard = "tests/e2e/test_real_bridge.py"
+    first = box.run("--jobs", "1", shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_TEMPLATE_CACHE=str(cache))
+    assert first.returncode == 0, first.stdout + first.stderr
+    (template,) = [path for path in cache.iterdir() if path.is_dir()]
+    assert len(template.name) == 16 and template != stale
+    assert (template / ".complete").is_file() and (template / "root" / PREFIX_FILE).is_file()
+    assert len(box.docker_runs()) == 2
+    assert _root(box.docker_runs()[0]) == f"{template}:/e2e:rw"
+    box.log.unlink()
+    second = box.run("--jobs", "1", shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_TEMPLATE_CACHE=str(cache))
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert f"reusing the template {template}" in second.stdout
+    (run,) = [row for row in box.calls("docker") if row["args"][:1] == ["run"]]
+    assert PREFIX_FILE in run["seen"]
+    box.log.unlink()
+    (box.wt / "src" / "fork_linux" / "setup.py").write_text("v2\n", encoding="utf-8")
+    third = box.run("--jobs", "1", shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_TEMPLATE_CACHE=str(cache))
+    assert third.returncode == 0, third.stdout + third.stderr
+    assert not template.exists(), "the template of the old key is deleted"
+    assert len(box.docker_runs()) == 2
+    busy = box.run("--jobs", "1", shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_TEMPLATE_CACHE=str(cache),
+                   FAKE_FLOCK_BUSY=".lock")
+    assert busy.returncode == 1
+    assert "another run uses the template cache" in busy.stderr
+    home = box.run(shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_TEMPLATE_CACHE=str(box.home / "t"))
+    assert home.returncode == 2
+    assert "home directory" in home.stderr
+    assert list(tmpdir.iterdir()) == []
+
+
+@pytest.mark.parametrize(("args", "message"), [
+    (["--jobs"], "--jobs needs a number"),
+    (["--jobs", "0", "tests/e2e/test_real_fork.py"], "--jobs must be a number from 1 to 99 (got '0')"),
+    (["--jobs", "x", "tests/e2e/test_real_fork.py"], "--jobs must be a number from 1 to 99 (got 'x')"),
+    (["--all", "tests/e2e/test_real_fork.py"], "--all runs every module; name no test paths with it"),
+])
+def test_ci_e2e_wine_usage_errors(box: Box, args: list[str], message: str) -> None:
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    result = box.run(*args, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir))
+    assert result.returncode == 1
+    assert message in result.stderr
+    assert box.docker_runs() == []
+
+
+def _slots(*call: str, **env: str) -> str:
+    script = f'. "{REPO}/scripts/lib-e2e-docker.sh"; {" ".join(call)}'
+    environ = {key: value for key, value in os.environ.items() if key != "FL_E2E_SLOTS"} | env
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=True, env=environ).stdout.strip()
+
+
+@pytest.mark.parametrize(("cores", "mem_kb", "slots"), [
+    (16, 30 * 1048576, 8), (16, 12 * 1048576, 4), (4, 15 * 1048576, 2), (1, 1048576, 1), (400, 1024 * 1048576, 99)])
+def test_default_slots_follow_cores_and_memory(cores: int, mem_kb: int, slots: int) -> None:
+    assert _slots("fl_e2e_slots_for", str(cores), str(mem_kb)) == str(slots)
+
+
+def test_default_slots_of_this_host_and_the_override() -> None:
+    assert _slots("fl_e2e_default_slots", FL_E2E_SLOTS="5") == "5"
+    assert 1 <= int(_slots("fl_e2e_default_slots")) <= 99
 
 
 def test_ci_e2e_wine_whole_tier_takes_the_update_tiers_only_when_asked(box: Box) -> None:

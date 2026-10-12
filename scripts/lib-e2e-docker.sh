@@ -210,6 +210,33 @@ fl_e2e_prepare_scratch() {
 	return 0
 }
 
+# fl_e2e_slots_for CORES MEM_AVAILABLE_KB: how many real-Fork containers a host runs at once: one per
+# two cores and per 3 GiB of available memory (a container peaks at about 2 GiB: Wine, .NET, Fork,
+# Xvfb, pytest), the smaller of the two, from 1 to 99.
+fl_e2e_slots_for() {
+	local cores="$1" mem_kb="$2" slots
+	slots=$((cores / 2))
+	if ((mem_kb / 3145728 < slots)); then
+		slots=$((mem_kb / 3145728))
+	fi
+	((slots >= 1)) || slots=1
+	((slots <= 99)) || slots=99
+	printf '%s\n' "${slots}"
+	return 0
+}
+
+# fl_e2e_default_slots: FL_E2E_SLOTS when set, else fl_e2e_slots_for this host's cores and MemAvailable.
+fl_e2e_default_slots() {
+	local mem_kb
+	if [[ -n "${FL_E2E_SLOTS:-}" ]]; then
+		printf '%s\n' "${FL_E2E_SLOTS}"
+		return 0
+	fi
+	mem_kb="$(awk '$1 == "MemAvailable:" { print $2 }' /proc/meminfo 2>/dev/null || true)"
+	fl_e2e_slots_for "$(nproc 2>/dev/null || echo 2)" "${mem_kb:-3145728}"
+	return 0
+}
+
 # fl_e2e_acquire_slot LOCKDIR SLOTS: hold one of SLOTS host-wide slots on fd 9 (flock). Every
 # slot is tried without blocking; while all are busy, all are tried again every
 # FL_E2E_SLOT_POLL seconds (default 5), so a run takes the first slot that frees up (waiting on

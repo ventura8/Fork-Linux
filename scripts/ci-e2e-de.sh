@@ -195,7 +195,7 @@ if ((FORK)); then
 			args+=(--env FL_E2E_WINETRICKS_CACHE=/seed/winetricks)
 		fi
 	fi
-	fl_e2e_acquire_slot "${LOCK_DIR}" "${FL_E2E_SLOTS:-3}"
+	fl_e2e_acquire_slot "${LOCK_DIR}" "$(fl_e2e_default_slots)"
 fi
 
 TIER="integration"

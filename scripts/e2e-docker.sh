@@ -162,7 +162,7 @@ elif ! docker image inspect "${IMAGE}" >/dev/null 2>&1 8>&- 9>&-; then
 	fl_e2e_die "image ${IMAGE} not found (build it first, e.g. FL_CI_STAGE=bridge ./scripts/ci-docker.sh --build-only)"
 fi
 
-fl_e2e_acquire_slot "${LOCK_DIR}" "${FL_E2E_SLOTS:-3}"
+fl_e2e_acquire_slot "${LOCK_DIR}" "$(fl_e2e_default_slots)"
 
 # --- the container ---------------------------------------------------------------------------------
 args=(run --rm --init --name "${CONTAINER}" --label "fl-e2e=${NAME}"

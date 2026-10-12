@@ -4,20 +4,34 @@
 # under Xvfb, fork <repo>, doctor, snapshot / rollback, purge) in docker/Dockerfile.e2e.wine,
 # as the invoking unprivileged user with a scratch HOME (never ~/.wine, never root).
 #
-# Downloads happen on this machine at run time (~2.5 GB); nothing downloaded is cached in
-# CI or uploaded, and no seed is used. Only logs are kept: logs/e2e-wine/ (screenshots show
-# Fork's logo and stay in the scratch root, which is deleted afterwards).
+# Downloads happen on this machine at run time; nothing downloaded is cached in CI or uploaded,
+# and no seed is used. Only logs are kept: logs/e2e-wine/ (screenshots show Fork's logo and stay
+# in the scratch roots, which are deleted afterwards).
 #
-# Each scratch root is a fresh directory under ${TMPDIR:-/tmp}, refused when it is or lies
-# inside a home directory (AGENTS.md hard rule 18); a container sees only the read-only
-# source tree and its root. It shares scripts/lib-e2e-docker.sh (scratch checks, host-wide
+# Every scratch root lies in one fresh run directory under ${TMPDIR:-/tmp}, refused when it is or
+# lies inside a home directory (AGENTS.md hard rule 18); a container sees only the read-only
+# source tree and its own root. It shares scripts/lib-e2e-docker.sh (scratch checks, host-wide
 # slots, image build, logs-only copy) with scripts/e2e-docker.sh, the local runner.
 #
 # What runs:
-#   With test paths (tests/e2e/test_*.py: one CI shard of e2e-wine.yml), each module named runs
-#   in a pytest session, a container and a fresh scratch root of its own (the root deleted
-#   afterwards), so one module never depends on what another left behind; logs go to
-#   logs/e2e-wine/<module>/. Naming an update module switches its tier on.
+#   With test paths (tests/e2e/test_*.py: one CI shard of e2e-wine.yml) or --all (every module,
+#   both update tiers included), each module runs in a pytest session, a container and a scratch
+#   root of its own (deleted afterwards), so one module never depends on what another left
+#   behind; logs go to logs/e2e-wine/<module>/. Naming an update module switches its tier on.
+#   The modules run in parallel, --jobs N at a time (default: the host-wide slots, below),
+#   longest first (scripts/e2e-plan.py, durations in tests/e2e/timings.json):
+#     template  a module that only needs the main prefix set up starts from a copy of a template
+#               root: one container sets it up once per run (tests/e2e/test_real_fork.py's
+#               first test, logs in logs/e2e-wine/template/) and every such module reuses that
+#               prefix (FL_E2E_REUSE=1) instead of setting up its own. FL_E2E_TEMPLATE=0 turns it
+#               off; when the template fails, these modules set up their own prefix.
+#     fresh     a module that sets up prefixes of its own (test_real_fork.py, the setup errors,
+#               the update tiers) starts from the template's download caches only, or from
+#               nothing when it starts before the template is ready.
+#   A template lives in this run's directory and is deleted with it (CI never keeps one).
+#   Locally FL_E2E_TEMPLATE_CACHE=DIR (outside any home) keeps it across runs in DIR/<key>, the
+#   key being a hash of the image, the Fork version and the setup code (e2e-plan.py key); a
+#   template of another key there is deleted.
 #   Without test paths, the whole tier runs in one session and one root (the modules share the
 #   main prefix in tests/e2e/conftest.py's MODULE_ORDER; upstream-watch.yml), logs in
 #   logs/e2e-wine/tier/: every module except the two update tiers, which join only when asked:
@@ -29,10 +43,14 @@
 #                              first (variant trees of this one, 0.9.1 and 0.9.2, by
 #                              scripts/build-version-variant.sh --tree-only) into a directory of
 #                              their own, mounted read-only (FL_E2E_BRIDGE_BUILDS=/bridge-builds)
-#   Other arguments are extra pytest options for every session (-k, -x, ...).
+#   Other arguments are extra pytest options for every module's session (-k, -x, ...).
+# Slots: every container holds one of the host-wide slots shared with scripts/e2e-docker.sh
+# (FL_E2E_SLOTS; default one per two cores and per 3 GiB of available memory).
 # The bridge scenarios need the shims: scripts/build-bridge.sh (its own CI image) runs first
 # when build-bridge/ has none.
-# Every session runs even when an earlier one failed; the exit status is the first failure's.
+# Every session runs even when an earlier one failed; the exit status is the first failure's
+# (in the order the modules finish). Each finished module prints its status and time; a failed
+# one the end of its log. logs/e2e-wine/results.tsv lists module, status, seconds and root.
 # Velopack (Fork's own updater) now and then cannot start the updated Fork under Wine: "Failed to
 # start application (OS Error 731)" (maintainer decision 2026-10-12, docs/qa/RELEASE-DECISIONS.md).
 # A session that failed with it re-runs its failed modules once, each in a fresh root of its own
@@ -41,7 +59,7 @@
 # A skipped test fails its session: every tier this script runs was asked for, and its tools and
 # builds are made first, so a skip means a scenario silently did not run (pytest -rs lists why).
 #
-# Usage: ./scripts/ci-e2e-wine.sh [tests/e2e/test_*.py...] [pytest args...]
+# Usage: ./scripts/ci-e2e-wine.sh [--jobs N] [--all | tests/e2e/test_*.py...] [pytest args...]
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -57,16 +75,27 @@ BUILDS_IN="/bridge-builds"
 FORK_UPDATE="test_fork_update.py"
 VELOPACK_731="Failed to start application (OS Error 731)"
 APP_UPGRADE="test_wine_app_upgrade.py"
+# The template: the first test of test_real_fork.py, a fresh setup and its no-op re-run.
+TEMPLATE_TEST=(tests/e2e/test_real_fork.py -k test_01_setup_completes_and_resumes)
+TAIL_LINES=60
 
 command -v docker >/dev/null 2>&1 || fl_e2e_die "docker not found"
+((BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1))) ||
+	fl_e2e_die "bash 5.1 or newer is needed (wait -n -p)"
 TMP_BASE="$(fl_e2e_check_dir "${TMPDIR:-/tmp}" "TMPDIR")" || exit $?
-SCRATCH=""
+RUN=""
 BUILDS=""
-# On every exit: remove the container if it still runs, then the scratch roots (marker-checked).
+# On every exit: stop the module jobs and their containers, then delete the run directory (every
+# scratch root and the template inside it) and the bridge builds (marker-checked).
 cleanup() {
-	docker rm -f "${CONTAINER}" >/dev/null 2>&1 9>&- || true
-	if [[ -n "${SCRATCH}" ]]; then
-		fl_e2e_wipe "${SCRATCH}"
+	local pid
+	for pid in $(jobs -p); do
+		kill "${pid}" 2>/dev/null || true
+	done
+	wait 2>/dev/null || true
+	docker ps -aq --filter "name=^${CONTAINER}" 2>/dev/null 9>&- | xargs -r docker rm -f >/dev/null 2>&1 9>&- || true
+	if [[ -n "${RUN}" ]]; then
+		fl_e2e_wipe "${RUN}"
 	fi
 	if [[ -n "${BUILDS}" ]]; then
 		fl_e2e_wipe "${BUILDS}"
@@ -75,26 +104,38 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# new_scratch: a fresh, marked scratch root under TMPDIR (refused inside a home directory).
+# new_scratch [PARENT]: a fresh, marked scratch root in PARENT (default: TMPDIR), refused inside a home.
 new_scratch() {
 	local dir
-	dir="$(mktemp -d "${TMP_BASE}/fl-e2e-wine.XXXXXX")"
+	dir="$(mktemp -d "${1:-${TMP_BASE}}/fl-e2e-wine.XXXXXX")"
 	dir="$(fl_e2e_check_dir "${dir}" "scratch root")" || exit $?
 	fl_e2e_prepare_scratch "${dir}" 0 >&2
 	printf '%s\n' "${dir}"
 	return 0
 }
 
-# The arguments: test paths (one session each) and pytest options (for every session).
+# The arguments: --jobs N, --all, test paths (one session each) and pytest options (for every session).
 SHARD=()
 OPTIONS=()
-for arg in "$@"; do
-	if [[ "${arg}" == tests/* ]]; then
-		SHARD+=("${arg}")
-	else
-		OPTIONS+=("${arg}")
-	fi
+ALL=0
+JOBS=""
+while (($# > 0)); do
+	case "$1" in
+		--jobs)
+			(($# > 1)) || fl_e2e_die "--jobs needs a number"
+			JOBS="$2"
+			shift
+			;;
+		--all) ALL=1 ;;
+		tests/*) SHARD+=("$1") ;;
+		*) OPTIONS+=("$1") ;;
+	esac
+	shift
 done
+if ((ALL == 1)); then
+	((${#SHARD[@]} == 0)) || fl_e2e_die "--all runs every module; name no test paths with it"
+	SHARD=(tests/e2e/test_*.py)
+fi
 if ((${#SHARD[@]} > 0)); then
 	MODULES=("${SHARD[@]##*/}")
 else
@@ -111,6 +152,9 @@ fi
 for module in "${MODULES[@]}"; do
 	[[ -f "tests/e2e/${module}" ]] || fl_e2e_die "no such real-tier module: tests/e2e/${module}"
 done
+SLOTS="$(fl_e2e_default_slots)"
+JOBS="${JOBS:-${SLOTS}}"
+[[ "${JOBS}" =~ ^[1-9][0-9]?$ ]] || fl_e2e_die "--jobs must be a number from 1 to 99 (got '${JOBS}')"
 
 fl_e2e_build_image "${ROOT}" "${IMAGE}"
 if [[ ! -x "${ROOT}/build-bridge/bridge/fl-bridge-helper" ]]; then
@@ -124,40 +168,54 @@ if [[ " ${MODULES[*]} " == *" ${APP_UPGRADE} "* ]]; then
 	done
 	rm -rf -- "${BUILDS:?}/variants"
 fi
-# Host-wide slots shared with scripts/e2e-docker.sh (FL_E2E_SLOTS, default 3); one slot for the
-# sessions, which run one after the other.
+# Host-wide slots shared with scripts/e2e-docker.sh (FL_E2E_SLOTS): each container takes one.
 BASE="$(fl_e2e_base)"
 LOCK_DIR="$(fl_e2e_check_dir "${FL_E2E_LOCK_DIR:-${BASE}/locks}" "lock directory")" || exit $?
 if [[ "${LOCK_DIR}" == "${BASE}/locks" ]]; then
 	fl_e2e_own_dir "${BASE}" "E2E base directory"
 fi
 fl_e2e_own_dir "${LOCK_DIR}" "lock directory"
-fl_e2e_acquire_slot "${LOCK_DIR}" "${FL_E2E_SLOTS:-3}"
 
 USER_NAME="$(fl_e2e_user)"
+RUN="$(new_scratch)"
+TEMPLATE=""
 
-# run_session NAME MODULE...: one pytest session over MODULE... in a fresh scratch root, then its
-# logs (logs/e2e-wine/NAME/) and the root's deletion. Returns pytest's status (1 for a skip).
-run_session() {
-	local name="$1" logs status=0 updates=0 upgrade=0 builds_env="" module
-	shift
-	local -a targets=()
-	for module in "$@"; do
-		targets+=("tests/e2e/${module}")
-		[[ "${module}" != "${FORK_UPDATE}" ]] || updates=1
-		[[ "${module}" != "${APP_UPGRADE}" ]] || upgrade=1
-	done
-	logs="${LOG_DIR}/${name}"
-	SCRATCH="$(new_scratch)"
-	mkdir -p -- "${SCRATCH}/root" "${SCRATCH}/home" "${logs}"
-	local -a mounts=(-v "${ROOT}:/src:ro" -v "${SCRATCH}:/e2e:rw")
+# seed_root SCRATCH SEED: the root a session starts from: a copy of the template (SEED=template),
+# the template's download caches only (SEED=fresh) or nothing (SEED=none).
+seed_root() {
+	local scratch="$1" seed="$2" started="${SECONDS}"
+	case "${seed}" in
+		template)
+			cp -a --reflink=auto -- "${TEMPLATE}/root" "${scratch}/root" || return
+			echo "==> e2e-wine: copied the template root in $((SECONDS - started)) s"
+			;;
+		fresh)
+			mkdir -p -- "${scratch}/root/home"
+			cp -a -- "${TEMPLATE}/root/.fl-e2e-root" "${scratch}/root/" || return
+			if [[ -d "${TEMPLATE}/root/home/.cache" ]]; then
+				cp -a --reflink=auto -- "${TEMPLATE}/root/home/.cache" "${scratch}/root/home/" || return
+			fi
+			;;
+		*) mkdir -p -- "${scratch}/root" ;;
+	esac
+	mkdir -p -- "${scratch}/home"
+	return 0
+}
+
+# in_container NAME SCRATCH LOG UPDATES UPGRADE REUSE PYTEST-ARGS...: python3 -m pytest PYTEST-ARGS
+# in container CONTAINER-NAME with SCRATCH at /e2e, holding a host-wide slot (its wait goes to
+# runner.log next to LOG); output in LOG. Returns pytest's status.
+in_container() {
+	local name="$1" scratch="$2" log="$3" updates="$4" upgrade="$5" reuse="$6" builds_env="" status=0
+	shift 6
+	local -a mounts=(-v "${ROOT}:/src:ro" -v "${scratch}:/e2e:rw")
 	if ((upgrade == 1)); then
 		mounts+=(-v "${BUILDS}:${BUILDS_IN}:ro")
 		builds_env="${BUILDS_IN}"
 	fi
-	echo "==> e2e-wine: ${targets[*]} (scratch root ${SCRATCH})"
+	fl_e2e_acquire_slot "${LOCK_DIR}" "${SLOTS}" >>"${log%/*}/runner.log"
 	docker run --rm --init \
-		--name "${CONTAINER}" \
+		--name "${CONTAINER}-${name}" \
 		--label fl-e2e=ci-e2e-wine \
 		--user "$(id -u):$(id -g)" \
 		-e HOME=/e2e/home \
@@ -165,6 +223,7 @@ run_session() {
 		-e LOGNAME="${USER_NAME}" \
 		-e FL_E2E_FORK=1 \
 		-e FL_E2E_ROOT=/e2e/root \
+		-e FL_E2E_REUSE="${reuse}" \
 		-e FL_E2E_FORK_VERSION \
 		-e FL_E2E_FORK_UPDATES="${updates}" \
 		-e FL_E2E_APP_UPGRADE="${upgrade}" \
@@ -173,17 +232,48 @@ run_session() {
 		"${mounts[@]}" \
 		-w /src \
 		"${IMAGE}" \
-		python3 -m pytest -v -rs -p no:cacheprovider --basetemp=/e2e/pytest "${targets[@]}" "${OPTIONS[@]}" \
-		9>&- 2>&1 | tee "${logs}/pytest.log" 9>&- || status=$?
+		python3 -m pytest -v -rs -p no:cacheprovider --basetemp=/e2e/pytest "$@" \
+		>"${log}" 2>&1 7>&- 9>&- || status=$?
+	exec 9>&-
+	return "${status}"
+}
+
+# run_session NAME SEED MODULE...: one pytest session over MODULE... in a fresh scratch root that
+# starts as seed_root SEED says, then its logs (logs/e2e-wine/NAME/) and the root's deletion.
+# Returns pytest's status (1 for a skip).
+run_session() {
+	local name="$1" seed="$2" logs status=0 updates=0 upgrade=0 reuse=0 module scratch
+	shift 2
+	local -a targets=()
+	for module in "$@"; do
+		targets+=("tests/e2e/${module}")
+		[[ "${module}" != "${FORK_UPDATE}" ]] || updates=1
+		[[ "${module}" != "${APP_UPGRADE}" ]] || upgrade=1
+	done
+	[[ "${seed}" != "template" ]] || reuse=1
+	logs="${LOG_DIR}/${name}"
+	scratch="$(new_scratch "${RUN}")"
+	mkdir -p -- "${logs}"
+	echo "==> e2e-wine: ${targets[*]} started (${seed} root, scratch root ${scratch})"
+	if seed_root "${scratch}" "${seed}" >>"${logs}/runner.log" 2>&1; then
+		in_container "${name}" "${scratch}" "${logs}/pytest.log" "${updates}" "${upgrade}" "${reuse}" \
+			"${targets[@]}" "${OPTIONS[@]}" || status=$?
+	else
+		echo "==> e2e-wine: ${name}: could not prepare its root (${seed}); see ${logs}/runner.log" >"${logs}/pytest.log"
+		status=1
+	fi
 	if ((status == 0)) && grep -q '^SKIPPED ' "${logs}/pytest.log"; then
 		echo "==> e2e-wine: ${name} skipped tests; every scenario of a requested tier must run:" >&2
 		grep '^SKIPPED ' "${logs}/pytest.log" >&2
 		status=1
 	fi
+	if ((status != 0)); then
+		echo "==> e2e-wine: ${name}: the last ${TAIL_LINES} lines of ${logs}/pytest.log:"
+		tail -n "${TAIL_LINES}" "${logs}/pytest.log"
+	fi
 	# Logs only: text files from the scratch root, never images, executables or archives.
-	fl_e2e_copy_logs "${SCRATCH}" "${logs}"
-	fl_e2e_wipe "${SCRATCH}"
-	SCRATCH=""
+	fl_e2e_copy_logs "${scratch}" "${logs}"
+	fl_e2e_wipe "${scratch}"
 	return "${status}"
 }
 
@@ -193,11 +283,11 @@ failed_modules() {
 	return 0
 }
 
-# rerun_after_velopack_731 NAME: when session NAME failed (session_status != 0) and its log has
+# rerun_after_velopack_731 NAME SEED: when session NAME failed (session_status != 0) and its log has
 # Velopack's start failure, re-run its failed modules once, each in a session of its own;
 # session_status becomes the first failing re-run's status (0 when they all pass).
 rerun_after_velopack_731() {
-	local name="$1" log="${LOG_DIR}/$1/pytest.log" module rerun=0 rerun_status
+	local name="$1" seed="$2" log="${LOG_DIR}/$1/pytest.log" module rerun=0 rerun_status
 	local -a modules=()
 	if ((session_status == 0)) || ! grep -qF "${VELOPACK_731}" "${log}"; then
 		return 0
@@ -208,7 +298,7 @@ rerun_after_velopack_731() {
 		echo "==> e2e-wine: ${name}: Fork's updater failed with '${VELOPACK_731}'; re-running tests/e2e/${module} once" |
 			tee -a "${LOG_DIR}/reruns.log"
 		rerun_status=0
-		run_session "${module%.py}-rerun" "${module}" || rerun_status=$?
+		run_session "${module%.py}-rerun" "${seed}" "${module}" || rerun_status=$?
 		echo "==> e2e-wine: re-run of tests/e2e/${module} exit ${rerun_status}" | tee -a "${LOG_DIR}/reruns.log"
 		if ((rerun == 0)); then
 			rerun="${rerun_status}"
@@ -218,31 +308,161 @@ rerun_after_velopack_731() {
 	return 0
 }
 
-# record WHAT STATUS: print a session's result; the first failure becomes the script's status.
+# module_job WHAT NAME SEED MODULE...: a session (+ its Velopack re-run) as a background job: prints
+# "WHAT exit STATUS (N s)", appends a row to results.tsv and exits with the session's status.
+module_job() {
+	local what="$1" name="$2" seed="$3" started="${SECONDS}" session_status=0
+	shift 3
+	run_session "${name}" "${seed}" "$@" || session_status=$?
+	rerun_after_velopack_731 "${name}" "${seed}"
+	echo "==> e2e-wine: ${what} exit ${session_status} ($((SECONDS - started)) s)"
+	printf '%s\t%s\t%s\t%s\n' "${what}" "${session_status}" "$((SECONDS - started))" "${seed}" >>"${LOG_DIR}/results.tsv"
+	exit "${session_status}"
+}
+
+# template_job: set the main prefix up once in a root of its own (the template), keep that root.
+# Exits with the session's status; on success TEMPLATE/root is complete and TEMPLATE/.complete exists.
+template_job() {
+	local logs="${LOG_DIR}/template" status=0 started="${SECONDS}"
+	mkdir -p -- "${logs}" "${TEMPLATE}/home"
+	echo "==> e2e-wine: building the template root (${TEMPLATE_TEST[*]})"
+	in_container template "${TEMPLATE}" "${logs}/pytest.log" 0 0 0 "${TEMPLATE_TEST[@]}" || status=$?
+	fl_e2e_copy_logs "${TEMPLATE}" "${logs}"
+	if ((status == 0)); then
+		: >"${TEMPLATE}/.complete"
+	else
+		tail -n "${TAIL_LINES}" "${logs}/pytest.log"
+	fi
+	echo "==> e2e-wine: template exit ${status} ($((SECONDS - started)) s)"
+	printf 'template\t%s\t%s\t-\n' "${status}" "$((SECONDS - started))" >>"${LOG_DIR}/results.tsv"
+	exit "${status}"
+}
+
+# prepare_template: TEMPLATE in this run's directory, or DIR/<key> of FL_E2E_TEMPLATE_CACHE (local
+# runs only, one at a time: fd 7 holds DIR/.lock; other keys there are deleted). TEMPLATE_STATE
+# becomes "ready" when a complete template is there already.
+prepare_template() {
+	local cache key entry
+	if [[ -z "${FL_E2E_TEMPLATE_CACHE:-}" ]]; then
+		TEMPLATE="$(new_scratch "${RUN}")"
+		return 0
+	fi
+	cache="$(fl_e2e_check_dir "${FL_E2E_TEMPLATE_CACHE}" "template cache")" || exit $?
+	fl_e2e_own_dir "${cache}" "template cache"
+	[[ ! -L "${cache}/.lock" ]] || fl_e2e_refuse "lock file ${cache}/.lock is a symlink"
+	exec 7>>"${cache}/.lock"
+	flock -n 7 || fl_e2e_die "another run uses the template cache ${cache}"
+	key="$(python3 "${ROOT}/scripts/e2e-plan.py" key --image-id "$(docker image inspect "${IMAGE}" --format '{{.Id}}' 9>&-)" \
+		--fork-version "${FL_E2E_FORK_VERSION:-}")"
+	for entry in "${cache}"/*; do
+		if [[ -d "${entry}" && "${entry}" != "${cache}/${key:0:16}" ]]; then
+			fl_e2e_wipe "${entry}"
+		fi
+	done
+	TEMPLATE="${cache}/${key:0:16}"
+	if [[ -f "${TEMPLATE}/.complete" ]]; then
+		echo "==> e2e-wine: reusing the template ${TEMPLATE}"
+		TEMPLATE_STATE="ready"
+		return 0
+	fi
+	fl_e2e_prepare_scratch "${TEMPLATE}" 0 >&2
+	return 0
+}
+
+# record STATUS: the first failure becomes the script's status.
 status=0
 record() {
-	echo "==> e2e-wine: $1 exit $2"
 	if ((status == 0)); then
-		status="$2"
+		status="$1"
 	fi
+	return 0
+}
+
+# The scheduler: PENDING holds "module seed" rows longest first; a template module waits until the
+# template is ready (or failed: it then sets up its own prefix). JOBS sessions run at a time.
+declare -A RUNNING=()
+TEMPLATE_PID=""
+TEMPLATE_STATE="off"
+PENDING=()
+
+# launch_next: start the first pending module that can start now; status 1 when none can.
+launch_next() {
+	local index module seed
+	for index in "${!PENDING[@]}"; do
+		read -r module seed <<<"${PENDING[${index}]}"
+		if [[ "${seed}" == "template" && "${TEMPLATE_STATE}" == "building" ]]; then
+			continue
+		fi
+		case "${seed}:${TEMPLATE_STATE}" in
+			template:ready | fresh:ready) ;;
+			*) seed="none" ;;
+		esac
+		module_job "tests/e2e/${module}" "${module%.py}" "${seed}" "${module}" &
+		RUNNING[$!]="${module}"
+		unset "PENDING[${index}]"
+		PENDING=("${PENDING[@]}")
+		return 0
+	done
+	return 1
+}
+
+# reap: wait for one job; a finished template build sets TEMPLATE_STATE.
+reap() {
+	local done_pid="" rc=0
+	wait -n -p done_pid "${!RUNNING[@]}" || rc=$?
+	if [[ "${done_pid}" == "${TEMPLATE_PID}" ]]; then
+		TEMPLATE_STATE="ready"
+		if ((rc != 0)); then
+			TEMPLATE_STATE="failed"
+		fi
+	fi
+	unset "RUNNING[${done_pid}]"
+	record "${rc}"
+	return 0
+}
+
+# schedule MODULE...: every module in a session of its own, JOBS at a time, longest first.
+schedule() {
+	local module seed took plan needs_template=0
+	plan="$(python3 "${ROOT}/scripts/e2e-plan.py" plan "$@")" || fl_e2e_die "scripts/e2e-plan.py plan failed"
+	while read -r module seed took; do
+		PENDING+=("${module} ${seed}")
+		[[ "${seed}" != "template" ]] || needs_template=1
+		echo "==> e2e-wine: plan: ${module} (${seed} root, ~${took} s)"
+	done <<<"${plan}"
+	if [[ "${FL_E2E_TEMPLATE:-1}" == "1" ]] && ((needs_template == 1)); then
+		prepare_template
+		if [[ "${TEMPLATE_STATE}" != "ready" ]]; then
+			TEMPLATE_STATE="building"
+			template_job &
+			TEMPLATE_PID=$!
+			RUNNING[$!]="template"
+		fi
+	fi
+	while ((${#PENDING[@]} > 0 || ${#RUNNING[@]} > 0)); do
+		if ((${#RUNNING[@]} < JOBS)) && launch_next; then
+			continue
+		fi
+		reap
+	done
 	return 0
 }
 
 rm -rf -- "${LOG_DIR:?}"
 mkdir -p -- "${LOG_DIR}"
+STARTED="${SECONDS}"
 if ((${#SHARD[@]} > 0)); then
-	for module in "${MODULES[@]}"; do
-		session_status=0
-		run_session "${module%.py}" "${module}" || session_status=$?
-		rerun_after_velopack_731 "${module%.py}"
-		record "tests/e2e/${module}" "${session_status}"
-	done
+	echo "==> e2e-wine: ${#MODULES[@]} modules, ${JOBS} at a time"
+	schedule "${MODULES[@]}"
 else
-	session_status=0
-	run_session tier "${MODULES[@]}" || session_status=$?
-	rerun_after_velopack_731 tier
-	record "tests/e2e (${#MODULES[@]} modules)" "${session_status}"
+	JOBS=1
+	module_job "tests/e2e (${#MODULES[@]} modules)" tier none "${MODULES[@]}" &
+	RUNNING[$!]="tier"
+	reap
 fi
+echo "==> e2e-wine: done in $((SECONDS - STARTED)) s (exit ${status}); results: ${LOG_DIR}/results.tsv"
 cleanup
+RUN=""
+BUILDS=""
 echo "==> e2e-wine logs: ${LOG_DIR}"
 exit "${status}"
