@@ -732,6 +732,15 @@ def test_f21_no_dialog_for_terminals_other_commands_or_broken_dialogs(
         assert cli.main(["run", str(tmp_path)]) == 10
     assert len(shown) == 3
     shown.clear()
+    # Declining the license question in its dialog ends the launch without a second dialog.
+
+    def declined(*_args: object, **_kwargs: object) -> int:
+        raise errors.Declined("you did not accept Fork's license")
+
+    monkeypatch.setattr(launcher, "run", declined)
+    assert cli.main(["run", str(tmp_path)]) == 18
+    assert shown == []
+    monkeypatch.setattr(launcher, "run", failing)
     assert cli.main(["config", "get", "no.such-key"]) == 2  # not a launch: stderr is enough
     assert shown == []
     (Paths.from_env().config_file).parent.mkdir(parents=True, exist_ok=True)

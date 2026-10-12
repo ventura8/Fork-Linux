@@ -24,7 +24,7 @@ from typing import Any, NoReturn
 
 from . import APP_NAME, commands, credits, logging_setup
 from .config import Config
-from .errors import ExitCode, ForkLinuxError, UnsupportedEnvironment
+from .errors import Declined, ExitCode, ForkLinuxError, UnsupportedEnvironment
 from .paths import Paths
 from .procrun import Runner
 from .version import get_flavor, get_version
@@ -286,7 +286,9 @@ def _dispatch(argv: list[str]) -> int:
     except ForkLinuxError as exc:
         log.debug("%s failed", args.command, exc_info=True)
         print_error(exc.message, exc.hint)
-        _tell_desktop(ctx, exc.message, exc.hint)
+        # Declined: the user has just answered a dialog with "no"; a second one would only repeat it.
+        if not isinstance(exc, Declined):
+            _tell_desktop(ctx, exc.message, exc.hint)
         return int(exc.exit_code)
     except Exception as exc:
         log.debug("unexpected error in %s", args.command, exc_info=True)
