@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fork_driver import git, wait_until
+from fork_driver import DriverError, git, wait_until
 from fork_ui import ForkUI, conflicting_branches, dated_env, linear_history, new_repo, wait_ref
 
 from fixtures import real_tier
@@ -127,15 +127,8 @@ def test_rebase_onto_a_branch(ui: ForkUI, installed: Any) -> None:
     assert _current(repo) == "topic"
 
 
-def test_interactive_rebase_squash_and_drop(ui: ForkUI, installed: Any) -> None:
-    """Fork's Interactive Rebase window: squash one commit into its parent and drop another.
-
-    Scenarios: G-REBASE-INTERACTIVE
-    """
-    repo = _repo(installed, "irebase")
-    linear_history(repo, 4)
-    base = git(repo, "rev-parse", "HEAD~3")
-    ui.open(repo)
+def _interactive_rebase(ui: ForkUI, shot: str) -> None:
+    """Fork's Interactive Rebase of what follows "entry 0": squash entry 2 into entry 1, drop entry 3, Rebase."""
     ui.all_commits()
     # Rows: entry 3, entry 2, entry 1, entry 0, initial; rebase what follows "entry 0".
     before = ui.screen.windows()
@@ -147,12 +140,36 @@ def test_interactive_rebase_squash_and_drop(ui: ForkUI, installed: Any) -> None:
     ui.screen.key("s")
     ui.screen.click_in(window, REBASE_ROW_X, rows[0])
     ui.screen.key("d")
-    ui.screen.screenshot("interactive-rebase", window)
+    ui.screen.screenshot(shot, window)
     ui.screen.click_in(window, *REBASE_BUTTON, settle=2.0)
-    # Halfway (entry 1 reworded, entry 2 not squashed yet) the history has 3 commits too: wait for the end.
+
+
+def test_interactive_rebase_squash_and_drop(ui: ForkUI, installed: Any) -> None:
+    """Fork's Interactive Rebase window: squash one commit into its parent and drop another.
+
+    Scenarios: G-REBASE-INTERACTIVE
+    """
+    repo = _repo(installed, "irebase")
+    linear_history(repo, 4)
+    base = git(repo, "rev-parse", "HEAD~3")
+    start = git(repo, "rev-parse", "HEAD")
+    ui.open(repo)
     rebasing = repo / ".git" / "rebase-merge"
-    wait_until(lambda: not rebasing.exists() and git(repo, "rev-list", "--count", "HEAD") == "3", 90,
-               "the rebased history")
+    for attempt in (1, 2):
+        _interactive_rebase(ui, f"interactive-rebase-{attempt}")
+        # Halfway (entry 1 reworded, entry 2 not squashed yet) the history has 3 commits too: wait for the end.
+        try:
+            wait_until(lambda: not rebasing.exists() and git(repo, "rev-list", "--count", "HEAD") == "3", 90,
+                       "the rebased history")
+            break
+        except DriverError:
+            # A key the X server lost (the flaky-UI-spot decision: logged retries) leaves a finished rebase
+            # without the squash or the drop: put the history back and do it once more. A rebase still
+            # running is a real failure.
+            if attempt == 2 or rebasing.exists():
+                raise
+            ui.screen.screenshot("interactive-rebase-retry")
+            git(repo, "reset", "-q", "--hard", start)
     assert git(repo, "rev-parse", "HEAD~1") == base
     assert (repo / "log.txt").read_text(encoding="utf-8") == "entry 0\nentry 1\nentry 2\n"
 
