@@ -158,15 +158,18 @@ def tier_of(reference: str) -> str | None:
 # -- reading the test tree -----------------------------------------------------------------------
 
 
+def _pytest_param_id(call: ast.Call, index: int, argnames: list[str]) -> str | None:
+    """The id of ``pytest.param(...)``: its ``id=`` literal, else the id of its single value."""
+    for keyword in call.keywords:
+        if keyword.arg == "id" and isinstance(keyword.value, ast.Constant):
+            return str(keyword.value.value)
+    return _param_id(call.args[0], index, argnames) if len(call.args) == 1 else None
+
+
 def _param_id(value: ast.expr, index: int, argnames: list[str]) -> str | None:
     """pytest's default id of one parametrize value (literals only), or None when unknown."""
     if isinstance(value, ast.Call) and _call_name(value) == "param":
-        for keyword in value.keywords:
-            if keyword.arg == "id" and isinstance(keyword.value, ast.Constant):
-                return str(keyword.value.value)
-        if len(value.args) == 1:
-            return _param_id(value.args[0], index, argnames)
-        return None
+        return _pytest_param_id(value, index, argnames)
     if isinstance(value, ast.Tuple) and len(argnames) > 1:
         parts = [_scalar_id(item, index, name) for item, name in zip(value.elts, argnames, strict=False)]
         return None if None in parts else "-".join(str(part) for part in parts)
