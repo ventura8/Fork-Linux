@@ -102,8 +102,8 @@ runs the real tier in `e2e-wine.yml` weekly, on demand and on pull requests from
 template root (the main prefix, set up once) and running its modules two at a time, longest first,
 each in a container and a root of its own copied from the template, under an hour. Locally
 `./scripts/ci-e2e-wine.sh --all` runs the whole tier the same way, `--jobs` (default: the host-wide
-slots) at a time; the full tier with both update tiers takes about 40 minutes on a 16-core, 30 GB
-laptop (`tests/e2e/RESULTS.md`). `FL_E2E_TEMPLATE_CACHE=/var/tmp/fork-linux-e2e/templates` keeps the
+slots) at a time; the full tier with both update tiers took 29 minutes on a 16-core, 30 GB laptop
+(8 jobs) and 22 minutes shared with a second machine (`--remote`, `tests/e2e/RESULTS.md`). `FL_E2E_TEMPLATE_CACHE=/var/tmp/fork-linux-e2e/templates` keeps the
 template across local runs (keyed by `scripts/e2e-plan.py key`: image, Fork version, setup code), so
 re-running one module skips the setup; CI never keeps one.
 

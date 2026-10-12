@@ -44,8 +44,9 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
     (a template root); modules that use the main prefix start from a copy of it (`FL_E2E_REUSE=1`), modules that
     set up their own (`e2e-plan.py` `FRESH`) from its download caches; logs in `logs/e2e-wine/<module>/`. So a
     module must not depend on another having run (`installed` sets the prefix up when it is missing); without
-    paths the whole tier runs in one root. The full tier (`--all` with both update tiers) takes about 40 minutes
-    on the 16-core laptop; e2e-wine.yml runs it as five shards of two containers each, under an hour.
+    paths the whole tier runs in one root. The full tier (`--all` with both update tiers) took 29 minutes on the
+    16-core laptop (8 jobs; 22 with `--remote nuc`); e2e-wine.yml runs it as five shards of two containers
+    each (~28 min estimated per shard plus ~10 of image, bridge and downloads; the floor is `test_fork_update.py`).
     `--remote HOST [--remote-jobs M]` ships the last commit (git bundle) to HOST's clone
     (`FL_E2E_REMOTE_DIR`, default `~/fork-linux-ci`) and runs its share of the modules there (`e2e-plan.py
     split`), containers only on that machine too, logs in `logs/e2e-wine/remote-HOST/`.
