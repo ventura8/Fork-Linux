@@ -147,9 +147,10 @@ def test_10_logs_bundle_is_redacted(e2e: Any) -> None:
     Scenarios: D-LOGS-BUNDLE
     """
     fork_dir = e2e.fork.local_dir / "Fork"
-    (fork_dir / "accounts.json").write_text('{"token": "ghp_E2EACCOUNTSJSON000000000000000000"}', encoding="utf-8")
+    # Token-shaped test data is built here, never written out whole (scripts/secret-scan.py).
+    (fork_dir / "accounts.json").write_text('{"token": "%s"}' % ("gh" + "p_E2EACCOUNTSJSON" + "0" * 18), encoding="utf-8")
     with open(fork_dir / "logs" / "fork.log", "a", encoding="utf-8") as handle:
-        handle.write("E2E https://user:supersecretpw@example.invalid/x.git ghp_abcdefghijklmnopqrstuvwxyz0123456789\n")
+        handle.write("E2E https://user:supersecretpw@example.invalid/x.git gh" + "p_abcdefghijklmnopqrstuvwxyz0123456789\n")
     e2e.cli("logs", "--bundle")
     bundles = sorted(e2e.root.glob("fork-linux-logs-*.tar.gz"))
     assert bundles

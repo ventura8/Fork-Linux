@@ -198,6 +198,7 @@ def test_lint_stage_runs_every_linter() -> None:
         "run_py_compile",
         "run_ruff",
         "run_no_suppressions",
+        "run_secret_scan",
         "run_gen_data_check",
         "run_shellcheck",
         "run_actionlint",
