@@ -5,7 +5,8 @@
 #   lint      docker/Dockerfile.ci.lint      meson --werror build (native + MinGW) + data tests
 #                                            (desktop-file-validate, appstreamcli validate),
 #                                            clang-tidy + cppcheck on bridge/, Python syntax, ruff,
-#                                            no-suppressions-lint, gen-data check, shellcheck on
+#                                            no-suppressions-lint, sonar-local (SonarCloud's
+#                                            complexity / shell / CPD rules), gen-data check, shellcheck on
 #                                            every discovered shell file, actionlint, yamllint,
 #                                            hadolint, xmllint, bash -n / zsh -n / fish -n
 #   coverage  docker/Dockerfile.ci.coverage  pytest with the coverage gates (90% overall, 100%
@@ -90,6 +91,7 @@ resolve_stage() {
 			;;
 	esac
 	BUILD_DIR="${FL_CI_BUILD_DIR:-${BUILD_DIR}}"
+	return 0
 }
 
 scope_name() {
@@ -98,14 +100,17 @@ scope_name() {
 	else
 		echo "fork-linux-ci-${FL_CI_STAGE}"
 	fi
+	return 0
 }
 
 dockerfile_digest() {
-	sha256sum "${DOCKERFILE}" | awk '{print $1}'
+	sha256sum "${DOCKERFILE}" | awk '{print $1}' || return
+	return 0
 }
 
 image_digest() {
 	docker image inspect "${IMAGE}" --format "{{index .Config.Labels \"${DIGEST_LABEL}\"}}" 2>/dev/null || true
+	return 0
 }
 
 build_image() {
@@ -161,6 +166,7 @@ build_image() {
 			die "unknown FL_CI_DOCKER_CACHE='${FL_CI_DOCKER_CACHE}' (expected: gha local none)"
 			;;
 	esac
+	return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -173,17 +179,19 @@ meson_build() {
 	rm -rf "${BUILD_DIR}"
 	meson setup "${BUILD_DIR}" "${opts[@]}"
 	echo "==> meson compile"
-	meson compile -C "${BUILD_DIR}"
+	meson compile -C "${BUILD_DIR}" || return
+	return 0
 }
 
 run_meson_tests() {
 	echo "==> meson test"
-	meson test -C "${BUILD_DIR}" --print-errorlogs
+	meson test -C "${BUILD_DIR}" --print-errorlogs || return
+	return 0
 }
 
 run_py_compile() {
 	echo "==> Python syntax (compile() on every tracked Python file)"
-	python3 - <<'EOF'
+	python3 - <<'EOF' || return
 import subprocess
 
 files = subprocess.run(
@@ -195,16 +203,25 @@ for path in files:
         compile(handle.read(), path, "exec", dont_inherit=True)
 print(f"py_compile: {len(files)} files OK")
 EOF
+	return 0
 }
 
 run_no_suppressions() {
 	echo "==> no-suppressions-lint"
-	python3 scripts/no-suppressions-lint.py .
+	python3 scripts/no-suppressions-lint.py . || return
+	return 0
+}
+
+run_sonar_local() {
+	echo "==> sonar-local (SonarCloud's cognitive complexity, shell return / case default and CPD rules, no upload)"
+	python3 scripts/sonar-local.py || return
+	return 0
 }
 
 run_gen_data_check() {
 	echo "==> generated completions / manual pages are current"
-	python3 scripts/gen-data.py check
+	python3 scripts/gen-data.py check || return
+	return 0
 }
 
 # Shell files: *.sh plus anything whose first line is a sh/bash shebang, from git's view
@@ -225,6 +242,7 @@ discover_shell_files() {
 				;;
 		esac
 	done < <(git -c safe.directory='*' ls-files -co --exclude-standard)
+	return 0
 }
 
 run_shellcheck() {
@@ -232,49 +250,57 @@ run_shellcheck() {
 	mapfile -t files < <(discover_shell_files)
 	echo "==> shellcheck (${#files[@]} discovered files + the bash completion)"
 	shellcheck -x "${files[@]}"
-	shellcheck --shell=bash data/completions/fork-linux.bash
+	shellcheck --shell=bash data/completions/fork-linux.bash || return
+	return 0
 }
 
 run_actionlint() {
 	echo "==> actionlint"
-	actionlint
+	actionlint || return
+	return 0
 }
 
 run_ruff() {
 	echo "==> ruff $(ruff --version | awk '{print $2}') (pyproject.toml [tool.ruff]: py310, E F W B UP)"
-	ruff check --no-cache .
+	ruff check --no-cache . || return
+	return 0
 }
 
 run_yamllint() {
 	echo "==> yamllint (workflows, packaging manifests)"
 	yamllint --strict -c .github/yamllint.yaml .github/workflows packaging/snap/snapcraft.yaml \
-		packaging/flatpak/*.yml .github/actionlint.yaml
+		packaging/flatpak/*.yml .github/actionlint.yaml || return
+	return 0
 }
 
 run_hadolint() {
 	# Reported in full; only errors fail: the DL3008 / DL3041 / DL3037 "pin package versions"
 	# warnings contradict AGENTS.md §4.8 (packages are locked by the pinned base images).
 	echo "==> hadolint (docker/Dockerfile.*)"
-	hadolint --failure-threshold error docker/Dockerfile.*
+	hadolint --failure-threshold error docker/Dockerfile.* || return
+	return 0
 }
 
 run_xmllint() {
 	echo "==> xmllint (metainfo template + generated, Thunar template, our SVG icons)"
 	xmllint --noout data/*.metainfo.xml.in src/fork_linux/data/templates/thunar-uca-action.xml.in \
-		"${BUILD_DIR}"/*.metainfo.xml data/icons/hicolor/*/apps/*.svg
+		"${BUILD_DIR}"/*.metainfo.xml data/icons/hicolor/*/apps/*.svg || return
+	return 0
 }
 
 run_cppcheck() {
 	echo "==> cppcheck (bridge/common, bridge/unix)"
 	cppcheck --error-exitcode=1 --quiet --std=c11 --enable=warning,portability,performance \
-		-Ibridge/common -Ibridge/unix bridge/common bridge/unix
+		-Ibridge/common -Ibridge/unix bridge/common bridge/unix || return
+	return 0
 }
 
 run_completion_syntax() {
 	echo "==> bash -n / zsh -n / fish -n on data/completions"
 	bash -n data/completions/fork-linux.bash
 	zsh -n data/completions/_fork-linux
-	fish --no-execute data/completions/fork-linux.fish
+	fish --no-execute data/completions/fork-linux.fish || return
+	return 0
 }
 
 # The newest LLVM in the pinned ubuntu:26.04 base (docker/Dockerfile.ci.lint).
@@ -292,7 +318,8 @@ run_clang_tidy() {
 	"${CLANG_TIDY}" --quiet "${sources[@]}" -- \
 		--target=x86_64-w64-mingw32 -std=c11 -municode -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0601 \
 		-Ibridge/common -Ibridge/win -I"${BUILD_DIR}/bridge" \
-		-isystem "${sysroot:-/usr}/x86_64-w64-mingw32/include"
+		-isystem "${sysroot:-/usr}/x86_64-w64-mingw32/include" || return
+	return 0
 }
 
 run_pytest_coverage() {
@@ -316,6 +343,7 @@ run_pytest_coverage() {
 		python3 -m coverage report --data-file="${cov}" --include="*/fork_linux/${module}.py" \
 			--precision=2 --fail-under=100 | tail -n 1
 	done
+	return 0
 }
 
 run_sanitized_unit_tests() {
@@ -323,12 +351,14 @@ run_sanitized_unit_tests() {
 	rm -rf "${BUILD_DIR}-asan"
 	meson setup "${BUILD_DIR}-asan" -Dbridge=disabled -Db_sanitize=address,undefined -Db_lundef=false
 	meson compile -C "${BUILD_DIR}-asan"
-	meson test -C "${BUILD_DIR}-asan" --suite bridge-unit --print-errorlogs
+	meson test -C "${BUILD_DIR}-asan" --suite bridge-unit --print-errorlogs || return
+	return 0
 }
 
 run_pytest_compat() {
 	echo "==> pytest (compat, no coverage floors) [cell=${FL_CI_CELL}]"
-	python3 -m pytest -q -p no:cacheprovider --basetemp="${HOME}/pytest" tests
+	python3 -m pytest -q -p no:cacheprovider --basetemp="${HOME}/pytest" tests || return
+	return 0
 }
 
 run_bridge() {
@@ -336,7 +366,8 @@ run_bridge() {
 	./scripts/build-bridge.sh --no-docker --repro
 	echo "==> bridge: Wine tier (FL_REAL_WINE=1, unprivileged, throwaway prefixes)"
 	# The shims were just built above: the Wine tests must not rebuild them (in Docker).
-	FL_REAL_WINE=1 FL_BRIDGE_SKIP_BUILD=1 xvfb-run -a python3 -m pytest -q -p no:cacheprovider --basetemp="${HOME}/pytest" tests/bridge
+	FL_REAL_WINE=1 FL_BRIDGE_SKIP_BUILD=1 xvfb-run -a python3 -m pytest -q -p no:cacheprovider --basetemp="${HOME}/pytest" tests/bridge || return
+	return 0
 }
 
 run_inside() {
@@ -352,6 +383,7 @@ run_inside() {
 			run_py_compile
 			run_ruff
 			run_no_suppressions
+			run_sonar_local
 			run_gen_data_check
 			run_shellcheck
 			run_actionlint
@@ -378,6 +410,7 @@ run_inside() {
 			;;
 	esac
 	echo "==> CI checks passed [stage=${FL_CI_STAGE} cell=${FL_CI_CELL}]"
+	return 0
 }
 
 resolve_stage

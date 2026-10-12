@@ -17,6 +17,9 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 3. Read **every** `logs/ci-packaging/<format>.log`, `logs/ci-matrix/<cell>.log` and `logs/e2e-de/de-<desktop>.log`,
    not only exit codes.
 4. Fix the cause. Never add suppressions, lower floors, skip steps or ignore warnings (AGENTS.md §4.8, hard rule 14).
+   SonarCloud's own scan uploads (publishing) and serves only `main`'s results here: before a pull request,
+   `python3 scripts/sonar-local.py` (also in the lint stage) checks the rules a scan has flagged in this
+   repository (cognitive complexity, shell `return` / `case` defaults, duplicated blocks).
 5. Re-run until every stage and cell is green; report each result honestly.
 6. Real-Fork / Wine stages run only in containers (hard rule 18): the bridge stage through
    `ci-docker.sh`, the real tier through `./scripts/e2e-docker.sh --name <run> pytest tests/e2e`
