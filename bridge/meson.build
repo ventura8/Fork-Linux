@@ -50,6 +50,7 @@ fl_common_hdrs = files(
   'common/fl_translate.h',
 )
 fl_helper_util_src = files('unix/fl_helper_util.c')
+fl_agent_relay_src = files('unix/fl_agent_relay.c')
 
 # Extra warnings on top of the project's warning_level=3 (-Wall -Wextra -Wpedantic) and
 # werror=true; the same gate as bridge/unix/build-dev.sh and bridge/win/build-dev.sh.
@@ -71,7 +72,7 @@ fl_prefix_map = '-ffile-prefix-map=@0@=.'.format(fl_src_root)
 # --------------------------------------------------------------------------
 
 fl_helper_cargs = fl_warn + [fl_prefix_map, '-DFL_VERSION="@0@"'.format(fl_version)]
-fl_helper_sources = files('unix/fl_bridge_helper.c') + fl_helper_util_src + fl_proto_src + fl_sha256_src
+fl_helper_sources = files('unix/fl_bridge_helper.c') + fl_helper_util_src + fl_agent_relay_src + fl_proto_src + fl_sha256_src
 
 # Coverage builds (-Db_coverage=true; scripts/ci-c-coverage.sh): every session and
 # every spawn of the daemon ends in a forked child's _exit(), which skips libgcov's
@@ -109,7 +110,7 @@ if fl_musl_gcc.found()
     'fl-bridge-helper-static',
     input: fl_helper_sources,
     output: 'fl-bridge-helper-static',
-    depend_files: fl_common_hdrs + files('unix/fl_helper_util.h'),
+    depend_files: fl_common_hdrs + files('unix/fl_helper_util.h', 'unix/fl_agent_relay.h'),
     command: [
       fl_musl_gcc,
       '-std=c11', '-O2', '-Wall', '-Wextra', '-Wpedantic', '-Werror', fl_helper_cargs,

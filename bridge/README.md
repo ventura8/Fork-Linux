@@ -77,7 +77,8 @@ Three pieces, all built from this directory:
 The daemon also carries the **desktop hand-off** (below): with the bridge off the launcher
 starts it as a hand-off starter only (`--handoff-only`), so terminals and default
 applications Fork asks for start outside Wine's process tree even without a systemd user
-manager.
+manager. And it carries the **ssh-agent relay** (below), which lets Fork's bundled ssh use
+the user's ssh-agent without the bridge.
 
 `bridge/common/` holds the pure, OS-independent C shared by both sides (protocol codec,
 SHA-256/HMAC, POSIX sh quoting, translation tables). It is unit-tested natively under
@@ -165,6 +166,26 @@ programs and `FL_REQ_HOST_HELPER` requests get `SPAWN_ERR(EPERM)`. `fork-linux-h
 validates ARG as for every caller (Windows paths through `$WINEPREFIX`, existing files and
 folders, http / https / mailto links, local `file://` URLs) and never hands Wine's
 variables, `FL_BRIDGE_*`, `FL_WINE` or `FORKGITINSTANCE` to a tool.
+
+## ssh-agent relay (`--ssh-agent`, `[ssh] agent_relay`)
+
+Fork's bundled Git for Windows runs msys OpenSSH (`gitInstance\<ver>\usr\bin\ssh.exe`;
+Fork sets no `core.sshCommand`), which reads `SSH_AUTH_SOCK` as an msys AF_UNIX
+**emulation** file: `!<socket >PORT s W0-W1-W2-W3` with the Windows SYSTEM attribute, a TCP
+connection to `127.0.0.1:PORT` and a 16-byte secret handshake. It cannot open the Linux
+agent's Unix socket. So while Fork's git is bundled git (the bridge off, or in record mode)
+and the session has an agent (`$SSH_AUTH_SOCK` is a socket) and `[ssh] agent_relay` is on
+(the default), the launcher passes `--ssh-agent $SSH_AUTH_SOCK --ssh-agent-file
+<prefix>/drive_c/fork-linux/ssh-agent/agent.sock` to the daemon it starts (the hand-off
+daemon is then started even when a systemd user manager would make it unnecessary). The
+daemon writes that file (`0600`, a `0700` directory of ours, the SYSTEM attribute through
+Wine's `user.DOSATTRIB` extended attribute), listens on a second loopback port and forwards
+listing and signing requests (nothing else) to the agent; the launcher sets Fork's
+`SSH_AUTH_SOCK=C:/fork-linux/ssh-agent/agent.sock` only when the file exists after the port
+line. Verified with Fork 2.23.2's Git for Windows 2.50.1 under the pinned Wine: `ssh-add -l`
+through the file lists the agent's keys; without the SYSTEM attribute msys reports "Bad file
+descriptor". Daemon side: [`unix/README.md`](unix/README.md) ("The ssh-agent relay");
+threat model: [`../docs/SECURITY.md`](../docs/SECURITY.md).
 
 ## Exit codes
 

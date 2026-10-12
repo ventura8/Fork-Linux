@@ -6,6 +6,7 @@
  *   fl-bridge-helper --daemon [--token-file FILE] [--port N] [--host-helper PATH]
  *                    [--handoff-only] [--parent-pid PID]
  *                    [--watch-prefix DIR [--watch-exe-dir WINDIR]] [--log FILE]
+ *                    [--ssh-agent SOCK --ssh-agent-file FILE]
  *       The launcher-started daemon (outside Wine: wine-staging's seccomp filter
  *       makes Wine-spawned Linux helpers unusable, docs/spikes/B2-rendezvous.md).
  *       Binds 127.0.0.1:N (0 = ephemeral), prints "FL_BRIDGE_PORT=<n>\n" on stdout
@@ -25,6 +26,9 @@
  *       FL_REQ_HANDOFF requests (fork-linux-host --handoff, from a desktop hand-off that Wine
  *       started) run [host-helper, VERB, ARG] detached; with --handoff-only (the launcher's
  *       hand-off starter when the git bridge is off) every other request is refused.
+ *       With --ssh-agent SOCK --ssh-agent-file FILE it also relays Fork's bundled (msys) ssh
+ *       to the ssh-agent at SOCK: a second loopback port, FILE in the msys socket format,
+ *       one forked relay per connection (fl_agent_relay.h).
  *
  *   fl-winexec <WinExe> [args...]       re-enter Wine: wine <WinExe> <args as Windows paths>
  *   fl-askpass <prompt>                 wine $FL_ASKPASS_TARGET <prompt>
@@ -59,6 +63,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "fl_agent_relay.h"
 #include "fl_helper_util.h"
 #include "fl_proto.h"
 #include "fl_sha256.h"
@@ -91,6 +96,8 @@ static uint8_t g_key[FL_KEY_LEN];
 static char g_host_helper[PATH_MAX];
 static int g_have_host_helper;
 static int g_handoff_only;
+/* --ssh-agent / --ssh-agent-file: the msys ssh-agent relay (fl_agent_relay.h); lst -1 when off. */
+static struct fl_agent_relay g_agent = { .lst = -1 };
 
 /* ------------------------------------------------------------------------ */
 /* small utilities                                                           */
@@ -1450,6 +1457,8 @@ struct opts {
     const char *watch_prefix;
     const char *watch_exe_dir;
     int handoff_only;
+    const char *ssh_agent;
+    const char *ssh_agent_file;
 };
 
 /* Read the token file (regular, ours, mode 0600 or stricter), then unlink it. */
@@ -1516,6 +1525,7 @@ static void usage(int fd)
         "usage: fl-bridge-helper --daemon [--token-file FILE] [--port N] [--host-helper PATH]\n"
         "                        [--handoff-only] [--parent-pid PID]\n"
         "                        [--watch-prefix DIR [--watch-exe-dir WINDIR]] [--log FILE]\n"
+        "                        [--ssh-agent SOCK --ssh-agent-file FILE]\n"
         "       fl-bridge-helper --version | --help\n"
         "personas (by argv[0]): fl-winexec <WinExe> [args...], fl-askpass <prompt>,\n"
         "                       fl-ssh-askpass <prompt>\n"
@@ -1594,6 +1604,24 @@ static int set_watch_exe_dir(struct opts *o, const char *v)
     return 0;
 }
 
+static int set_ssh_agent(struct opts *o, const char *v)
+{
+    if (v == NULL || v[0] != '/') {
+        return -1;
+    }
+    o->ssh_agent = v;
+    return 0;
+}
+
+static int set_ssh_agent_file(struct opts *o, const char *v)
+{
+    if (v == NULL || v[0] != '/') {
+        return -1;
+    }
+    o->ssh_agent_file = v;
+    return 0;
+}
+
 static int set_log(struct opts *o, const char *v)
 {
     if (v == NULL || v[0] == '\0') {
@@ -1618,6 +1646,8 @@ static const struct opt_def k_opt_defs[] = {
     { "--watch-prefix", set_watch_prefix, "--watch-prefix needs an absolute path" },
     { "--watch-exe-dir", set_watch_exe_dir, "--watch-exe-dir needs a directory" },
     { "--log", set_log, "--log needs a path" },
+    { "--ssh-agent-file", set_ssh_agent_file, "--ssh-agent-file needs an absolute path" },
+    { "--ssh-agent", set_ssh_agent, "--ssh-agent needs an absolute path" },
 };
 
 /* One option at argv[*i] (*i is left on its last word). -1 go on, 1 exit 0, 2 usage error. */
@@ -1676,6 +1706,10 @@ static int parse_opts(int argc, char **argv, struct opts *o)
     }
     if (o->handoff_only && o->host_helper == NULL) {
         msg("--handoff-only needs --host-helper");
+        return 2;
+    }
+    if ((o->ssh_agent == NULL) != (o->ssh_agent_file == NULL)) {
+        msg("--ssh-agent and --ssh-agent-file go together");
         return 2;
     }
     return 0;
@@ -1954,8 +1988,32 @@ static int daemon_reap(struct daemon_state *d)
     return term;
 }
 
-/* Fork the session process for the accepted connection c. */
-static void fork_session(struct daemon_state *d, int c, const struct sockaddr_in *peer)
+/* A forked ssh-agent relay process (fl_agent_serve) for connection c; logs one line. Never returns. */
+static _Noreturn void agent_main(int c, const struct sockaddr_in *peer)
+{
+    struct fl_agent_result res;
+    char addr[INET_ADDRSTRLEN] = "?";
+    char line[192];
+    int64_t start = now_ms();
+    sigset_t none;
+    close_pair(g_sigpipe);
+    signal(SIGTERM, SIG_DFL);
+    signal(SIGINT, SIG_DFL);
+    signal(SIGHUP, SIG_DFL);
+    signal(SIGCHLD, SIG_DFL);
+    sigemptyset(&none);
+    sigprocmask(SIG_SETMASK, &none, NULL);
+    setsid();
+    fl_agent_serve(&g_agent, c, peer, &res);
+    inet_ntop(AF_INET, &peer->sin_addr, addr, sizeof(addr));
+    snprintf(line, sizeof(line), "agent peer=%s:%u result=%s requests=%u refused=%u ms=%lld", addr,
+             (unsigned)ntohs(peer->sin_port), res.why, res.requests, res.refused, (long long)(now_ms() - start));
+    log_text(line);
+    _exit(0);
+}
+
+/* Fork the session process (or, with agent, the ssh-agent relay) for the accepted connection c. */
+static void fork_session(struct daemon_state *d, int c, const struct sockaddr_in *peer, int agent)
 {
     sigset_t block;
     sigset_t old;
@@ -1970,6 +2028,13 @@ static void fork_session(struct daemon_state *d, int c, const struct sockaddr_in
     if (pid == 0) {
         close(d->lst);
         prctl(PR_SET_PDEATHSIG, 0);
+        if (agent) {
+            close(g_agent.lst);
+            agent_main(c, peer);
+        }
+        if (g_agent.lst >= 0) {
+            close(g_agent.lst);
+        }
         session_main(c, peer);
     }
     sigprocmask(SIG_SETMASK, &old, NULL);
@@ -1981,13 +2046,14 @@ static void fork_session(struct daemon_state *d, int c, const struct sockaddr_in
     close(c);
 }
 
-static void daemon_accept(struct daemon_state *d)
+/* Accept on lst (the daemon's or, with agent, the ssh-agent relay's) and fork its process. */
+static void daemon_accept(struct daemon_state *d, int lst, int agent)
 {
     struct sockaddr_in peer;
     socklen_t plen = sizeof(peer);
     int c;
     memset(&peer, 0, sizeof(peer));
-    c = accept4(d->lst, (struct sockaddr *)&peer, &plen, SOCK_CLOEXEC);
+    c = accept4(lst, (struct sockaddr *)&peer, &plen, SOCK_CLOEXEC);
     if (c < 0) {
         int e = errno;
         if (e == EMFILE || e == ENFILE || e == ENOBUFS || e == ENOMEM) {
@@ -2003,14 +2069,15 @@ static void daemon_accept(struct daemon_state *d)
         close(c);
         return;
     }
-    fork_session(d, c, &peer);
+    fork_session(d, c, &peer, agent);
 }
 
 /* One round of the accept loop; 0 when the daemon must exit. */
 static int daemon_step(struct daemon_state *d)
 {
-    struct pollfd p[2] = { { .fd = d->lst, .events = POLLIN, .revents = 0 },
-                           { .fd = g_sigpipe[0], .events = POLLIN, .revents = 0 } };
+    struct pollfd p[3] = { { .fd = d->lst, .events = POLLIN, .revents = 0 },
+                           { .fd = g_sigpipe[0], .events = POLLIN, .revents = 0 },
+                           { .fd = g_agent.lst, .events = POLLIN, .revents = 0 } };
     int timeout = -1;
     int r;
     int gone;
@@ -2018,7 +2085,7 @@ static int daemon_step(struct daemon_state *d)
         int64_t left = d->next_parent_check - now_ms();
         timeout = left > 0 ? (int)left : 0;
     }
-    r = poll(p, 2, timeout);
+    r = poll(p, g_agent.lst >= 0 ? 3 : 2, timeout);
     if (r < 0 && errno != EINTR) {
         log_num("daemon exit reason=poll-error errno=", (long)errno);
         return 0;
@@ -2033,9 +2100,28 @@ static int daemon_step(struct daemon_state *d)
         return 0;
     }
     if (r > 0 && (p[0].revents & POLLIN)) {
-        daemon_accept(d);
+        daemon_accept(d, d->lst, 0);
+    }
+    if (r > 0 && (p[2].revents & POLLIN)) {
+        daemon_accept(d, g_agent.lst, 1);
     }
     return 1;
+}
+
+/* Start the ssh-agent relay when asked; a failure only leaves it off (logged; no socket file). */
+static void agent_start(const struct opts *o)
+{
+    char why[256];
+    char line[320];
+    if (o->ssh_agent == NULL) {
+        return;
+    }
+    if (fl_agent_relay_open(&g_agent, o->ssh_agent_file, o->ssh_agent, why, sizeof(why)) != 0) {
+        snprintf(line, sizeof(line), "ssh-agent relay off: %s", why);
+        log_text(line);
+        return;
+    }
+    log_num("ssh-agent relay port=", (long)g_agent.port);
 }
 
 static int run_daemon(const struct opts *o)
@@ -2058,21 +2144,25 @@ static int run_daemon(const struct opts *o)
         return 1;
     }
     d.exe_dir = o->watch_exe_dir;
+    agent_start(o);
     if ((o->watch_prefix != NULL && watch_init(&d, o->watch_prefix, (unsigned)ntohs(a.sin_port)) != 0) ||
         daemon_signals(orig_ppid, o->watch_prefix == NULL) != 0 || publish_port((unsigned)ntohs(a.sin_port)) != 0) {
+        fl_agent_relay_close(&g_agent);
         close(d.lst);
         return 1;
     }
     snprintf(line, sizeof(line),
-             "daemon start port=%u pid=%ld parent=%ld host-helper=%s handoff-only=%s watch-prefix=%s",
+             "daemon start port=%u pid=%ld parent=%ld host-helper=%s handoff-only=%s watch-prefix=%s ssh-agent=%s",
              (unsigned)ntohs(a.sin_port), (long)getpid(), (long)(o->parent_pid ? o->parent_pid : orig_ppid),
-             g_have_host_helper ? "yes" : "no", g_handoff_only ? "yes" : "no", o->watch_prefix != NULL ? "yes" : "no");
+             g_have_host_helper ? "yes" : "no", g_handoff_only ? "yes" : "no", o->watch_prefix != NULL ? "yes" : "no",
+             g_agent.lst >= 0 ? "on" : "off");
     log_text(line);
 
     d.next_parent_check = now_ms() + PARENT_POLL_MS;
     do {
         running = daemon_step(&d);
     } while (running);
+    fl_agent_relay_close(&g_agent);
     close(d.lst);
     wipe(g_key, sizeof(g_key));
     return 0;

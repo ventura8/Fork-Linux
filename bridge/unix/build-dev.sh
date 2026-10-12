@@ -60,7 +60,8 @@ CFLAGS=(-std=c11 -O2 -Wall -Wextra -Werror -Wconversion -Wsign-conversion -Wshad
   -Wstrict-prototypes -Wmissing-prototypes -Wformat=2 -Wvla -Wundef -Wpointer-arith
   "-DFL_VERSION=\"${VERSION_TEXT}\"" "-ffile-prefix-map=${ROOT}=."
   "-I${HERE}" "-I${COMMON}")
-SRC=("${HERE}/fl_bridge_helper.c" "${HERE}/fl_helper_util.c" "${COMMON}/fl_proto.c" "${COMMON}/fl_sha256.c")
+SRC=("${HERE}/fl_bridge_helper.c" "${HERE}/fl_helper_util.c" "${HERE}/fl_agent_relay.c" "${COMMON}/fl_proto.c"
+  "${COMMON}/fl_sha256.c")
 
 # elf_type <file>: prints ET_EXEC / ET_DYN from the ELF header (e_type at offset 16).
 elf_type() {
