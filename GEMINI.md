@@ -6,11 +6,11 @@ This file is a thin project entrypoint for Gemini CLI context. Prefer `AGENTS.md
 
 Also load as needed:
 
-- [docs/INSTRUCTIONS.md](docs/INSTRUCTIONS.md) (planned)
-- [docs/architecture/README.md](docs/architecture/README.md) (planned)
-- [docs/SECURITY.md](docs/SECURITY.md) (planned)
+- [docs/INSTRUCTIONS.md](docs/INSTRUCTIONS.md)
+- [docs/architecture/README.md](docs/architecture/README.md)
+- [docs/SECURITY.md](docs/SECURITY.md)
 - [docs/CREDITS.md](docs/CREDITS.md)
-- [`.agents/skills/`](.agents/skills/) (planned)
+- [`.agents/skills/`](.agents/skills/)
 
 Optional import (if using Gemini `@` imports in your local setup):
 

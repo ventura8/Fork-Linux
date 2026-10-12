@@ -124,7 +124,7 @@ Exit codes are stable and documented in [AGENTS.md §5](AGENTS.md#5-standard-exi
 
 | Provider | What it uses |
 |---|---|
-| `managed` (default) | A pinned Kron4ek Wine 11.18 staging WoW64 build, downloaded and sha256-verified per user. No i386 multiarch needed. The previous pin, 11.0, stays selectable (`fork-linux config set wine.build kron4ek-11.0-staging-wow64`). |
+| `managed` (default) | A pinned Kron4ek Wine 11.18 staging WoW64 build, downloaded and sha256-verified per user. No i386 multiarch needed. Kron4ek 11.0 staging is also available (`fork-linux config set wine.build kron4ek-11.0-staging-wow64`). |
 | `system` | Your distribution's Wine ≥ 9.0. Non-staging builds trigger a warning: git hooks and bash-based features need staging ([Wine bug 55138](https://bugs.winehq.org/show_bug.cgi?id=55138)). |
 | `flatpak` | The Wine from the `org.winehq.Wine` BaseApp (Flatpak builds only). |
 | custom path | `fork-linux setup --wine /path/to/bin/wine` |

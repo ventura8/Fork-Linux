@@ -4,10 +4,10 @@ Canonical agent rules live in **[AGENTS.md](../AGENTS.md)** at the repository ro
 
 Additional context (do not fork rules into this file):
 
-- [docs/INSTRUCTIONS.md](../docs/INSTRUCTIONS.md) — setup and contribution (planned)
-- [docs/architecture/README.md](../docs/architecture/README.md) — system design (planned)
-- [docs/SECURITY.md](../docs/SECURITY.md) — security practices (planned)
+- [docs/INSTRUCTIONS.md](../docs/INSTRUCTIONS.md) — setup and contribution
+- [docs/architecture/README.md](../docs/architecture/README.md) — system design
+- [docs/SECURITY.md](../docs/SECURITY.md) — security practices
 - [docs/CREDITS.md](../docs/CREDITS.md) — credits and third-party components
-- [`.agents/skills/`](../.agents/skills/) — task-specific runbooks (planned)
+- [`.agents/skills/`](../.agents/skills/) — task-specific runbooks
 
 When changing behavior, update `AGENTS.md` and affected skills in the same change set. Lint and test new or changed code per `AGENTS.md` §4.5. Use `logs/` for agent progress output.

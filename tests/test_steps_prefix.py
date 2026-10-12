@@ -277,13 +277,13 @@ def test_winver(xdg: Path) -> None:
 def test_verbs_reuse_winetricks_default_cache(xdg: Path) -> None:
     ctx = make_ctx()
     fake = _fake(ctx)
-    legacy = ctx.paths.legacy_winetricks_cache_dir / "corefonts"
-    legacy.mkdir(parents=True)
-    (legacy / "arial32.exe").write_bytes(b"arial")
+    user_cache = ctx.paths.user_winetricks_cache_dir / "corefonts"
+    user_cache.mkdir(parents=True)
+    (user_cache / "arial32.exe").write_bytes(b"arial")
     prefix.run_verbs(ctx, "fonts", ["corefonts"])
     assert fake.verbs == ["corefonts"]
     assert (ctx.paths.winetricks_cache_dir / "corefonts" / "arial32.exe").read_bytes() == b"arial"
-    assert (legacy / "arial32.exe").read_bytes() == b"arial"
+    assert (user_cache / "arial32.exe").read_bytes() == b"arial"
 
 
 def test_winver_failure(xdg: Path) -> None:

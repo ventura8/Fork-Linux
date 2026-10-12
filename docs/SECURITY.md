@@ -4,9 +4,6 @@ Fork for Linux (unofficial) downloads and runs third-party code (Wine, winetrick
 .NET, Fork) in the user's account. **Wine is not a sandbox**: a Windows program in the prefix
 can read the user's files through `Z:`. The rules are in [AGENTS.md](../AGENTS.md) §1 and §4.3.
 
-Rows on the interface font, icon scaling, the winetricks cache and Thunar were reconstructed
-2026-10-10 from the NUC build (fork-linux 1.0.0 built from the lost `fix/nuc-integration` branch).
-
 Report vulnerabilities privately through GitHub's "Report a vulnerability" on
 https://github.com/ventura8/Fork-Linux (not to Fork's developers).
 

@@ -53,7 +53,7 @@ def ours(xdg: Path) -> Paths:
         where.config_dir,
         where.downloads_dir,
         where.winetricks_cache_dir,
-        where.legacy_winetricks_cache_dir,
+        where.user_winetricks_cache_dir,
         where.feeds_dir,
         where.logs_dir,
     ):
@@ -108,7 +108,7 @@ def test_purge_deletes_everything_we_created(
     assert not ours.session_file.exists()
     assert (xdg / ".wine" / "E2E_SENTINEL").read_text(encoding="utf-8") == "keep"
     # Winetricks' own default cache is only ever read (setup reuses its files).
-    assert (ours.legacy_winetricks_cache_dir / "file").exists()
+    assert (ours.user_winetricks_cache_dir / "file").exists()
     assert f"deleted {ours.prefix}" in out
     assert "~/.wine was never touched" in out
 

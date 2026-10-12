@@ -6,7 +6,7 @@ read at runtime from the Fork.exe the user installed and written to
 PNG images are passed through after a structural check; DIBs are converted.
 Every other fixed size of the hicolor theme below the largest image is
 downscaled from that image (area filter): GTK picks the scalable placeholder
-SVG for any size without its own PNG (QA NUC-XFCE issue 7).
+SVG for any size without its own PNG (found in manual QA on Xfce).
 """
 
 from __future__ import annotations

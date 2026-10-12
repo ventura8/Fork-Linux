@@ -1,9 +1,7 @@
 # Architecture
 
 The high-level diagram and lifecycle rules are in [AGENTS.md §2](../../AGENTS.md). This page
-maps the pieces to files. The text-rendering, winetricks-cache, desktop-integration and icon rows
-were reconstructed 2026-10-10 from the NUC build (fork-linux 1.0.0 built from the lost
-`fix/nuc-integration` branch).
+maps the pieces to files.
 
 ## Runtime
 

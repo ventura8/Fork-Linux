@@ -245,88 +245,88 @@ def test_run_verbs_without_a_cache_leaves_winetricks_default(tmp_path: Path) -> 
 # --------------------------------------------------------------------------- seed_cache
 
 
-def _legacy_tree(root: Path) -> Path:
-    legacy = root / "winetricks"
-    (legacy / "corefonts").mkdir(parents=True)
-    (legacy / "corefonts" / "arial32.exe").write_bytes(b"arial")
-    (legacy / "corefonts" / "times32.exe").write_bytes(b"times")
-    (legacy / "corefonts" / "empty.exe").write_bytes(b"")
-    (legacy / "corefonts" / ".hidden").write_bytes(b"x")
-    (legacy / "corefonts" / "subdir").mkdir()
-    (legacy / "corefonts" / "link.exe").symlink_to(legacy / "corefonts" / "arial32.exe")
-    (legacy / "dotnet48").mkdir()
-    (legacy / "dotnet48" / "ndp48-x86-x64-allos-enu.exe").write_bytes(b"dotnet")
-    (legacy / "vcrun2019").mkdir()
-    (legacy / "vcrun2019" / "vc_redist.x64.exe").write_bytes(b"vc")
-    return legacy
+def _user_cache_tree(root: Path) -> Path:
+    user_cache = root / "winetricks"
+    (user_cache / "corefonts").mkdir(parents=True)
+    (user_cache / "corefonts" / "arial32.exe").write_bytes(b"arial")
+    (user_cache / "corefonts" / "times32.exe").write_bytes(b"times")
+    (user_cache / "corefonts" / "empty.exe").write_bytes(b"")
+    (user_cache / "corefonts" / ".hidden").write_bytes(b"x")
+    (user_cache / "corefonts" / "subdir").mkdir()
+    (user_cache / "corefonts" / "link.exe").symlink_to(user_cache / "corefonts" / "arial32.exe")
+    (user_cache / "dotnet48").mkdir()
+    (user_cache / "dotnet48" / "ndp48-x86-x64-allos-enu.exe").write_bytes(b"dotnet")
+    (user_cache / "vcrun2019").mkdir()
+    (user_cache / "vcrun2019" / "vc_redist.x64.exe").write_bytes(b"vc")
+    return user_cache
 
 
 def test_seed_cache_links_the_known_packages(tmp_path: Path) -> None:
-    legacy = _legacy_tree(tmp_path)
+    user_cache = _user_cache_tree(tmp_path)
     cache = tmp_path / "fork-linux" / "winetricks"
-    added = winetricks.seed_cache(cache, legacy)
+    added = winetricks.seed_cache(cache, user_cache)
     assert added == [
         cache / "corefonts" / "arial32.exe",
         cache / "corefonts" / "times32.exe",
         cache / "dotnet48" / "ndp48-x86-x64-allos-enu.exe",
     ]
-    assert os.path.samefile(cache / "corefonts" / "arial32.exe", legacy / "corefonts" / "arial32.exe")
+    assert os.path.samefile(cache / "corefonts" / "arial32.exe", user_cache / "corefonts" / "arial32.exe")
     assert not (cache / "vcrun2019").exists()
     assert sorted(os.listdir(cache / "corefonts")) == ["arial32.exe", "times32.exe"]
     assert stat.S_IMODE((cache / "corefonts").stat().st_mode) == 0o755
-    # The legacy cache is only read.
-    assert sorted(os.listdir(legacy / "corefonts")) == [
+    # The user's winetricks cache is only read.
+    assert sorted(os.listdir(user_cache / "corefonts")) == [
         ".hidden", "arial32.exe", "empty.exe", "link.exe", "subdir", "times32.exe",
     ]
     # A second run adds nothing: every file is there already.
-    assert winetricks.seed_cache(cache, legacy) == []
+    assert winetricks.seed_cache(cache, user_cache) == []
 
 
 def test_seed_cache_keeps_our_own_files(tmp_path: Path) -> None:
-    legacy = _legacy_tree(tmp_path)
+    user_cache = _user_cache_tree(tmp_path)
     cache = tmp_path / "fork-linux" / "winetricks"
     (cache / "corefonts").mkdir(parents=True)
     (cache / "corefonts" / "arial32.exe").write_bytes(b"ours")
     (cache / "corefonts" / "times32.exe").symlink_to(tmp_path / "dangling")
-    added = winetricks.seed_cache(cache, legacy, packages=("corefonts",))
+    added = winetricks.seed_cache(cache, user_cache, packages=("corefonts",))
     assert added == []
     assert (cache / "corefonts" / "arial32.exe").read_bytes() == b"ours"
 
 
-def test_seed_cache_without_a_legacy_cache(tmp_path: Path) -> None:
+def test_seed_cache_without_a_user_cache(tmp_path: Path) -> None:
     assert winetricks.seed_cache(tmp_path / "ours", tmp_path / "missing") == []
     assert not (tmp_path / "ours").exists()
 
 
 def test_seed_cache_copies_across_file_systems(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    legacy = _legacy_tree(tmp_path)
+    user_cache = _user_cache_tree(tmp_path)
     cache = tmp_path / "fork-linux" / "winetricks"
 
     def no_link(source: object, target: object) -> None:
         raise OSError(18, "Invalid cross-device link")
 
     monkeypatch.setattr(winetricks.os, "link", no_link)
-    added = winetricks.seed_cache(cache, legacy, packages=("dotnet48",))
+    added = winetricks.seed_cache(cache, user_cache, packages=("dotnet48",))
     target = cache / "dotnet48" / "ndp48-x86-x64-allos-enu.exe"
     assert added == [target]
     assert target.read_bytes() == b"dotnet"
-    assert not os.path.samefile(target, legacy / "dotnet48" / "ndp48-x86-x64-allos-enu.exe")
+    assert not os.path.samefile(target, user_cache / "dotnet48" / "ndp48-x86-x64-allos-enu.exe")
 
 
 def test_seed_cache_replaces_a_stale_temp_file(tmp_path: Path) -> None:
-    legacy = _legacy_tree(tmp_path)
+    user_cache = _user_cache_tree(tmp_path)
     cache = tmp_path / "fork-linux" / "winetricks"
     (cache / "dotnet48").mkdir(parents=True)
     stale = cache / "dotnet48" / ".ndp48-x86-x64-allos-enu.exe.fork-linux-tmp"
     stale.symlink_to(tmp_path / "elsewhere")
-    added = winetricks.seed_cache(cache, legacy, packages=("dotnet48",))
+    added = winetricks.seed_cache(cache, user_cache, packages=("dotnet48",))
     assert added == [cache / "dotnet48" / "ndp48-x86-x64-allos-enu.exe"]
     assert not os.path.lexists(stale)
     assert not (tmp_path / "elsewhere").exists()
 
 
 def test_seed_cache_skips_a_file_it_cannot_take(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    legacy = _legacy_tree(tmp_path)
+    user_cache = _user_cache_tree(tmp_path)
     cache = tmp_path / "fork-linux" / "winetricks"
 
     def no_link(source: object, target: object) -> None:
@@ -337,7 +337,7 @@ def test_seed_cache_skips_a_file_it_cannot_take(tmp_path: Path, monkeypatch: pyt
 
     monkeypatch.setattr(winetricks.os, "link", no_link)
     monkeypatch.setattr(winetricks.shutil, "copyfile", no_copy)
-    assert winetricks.seed_cache(cache, legacy, packages=("dotnet48",)) == []
+    assert winetricks.seed_cache(cache, user_cache, packages=("dotnet48",)) == []
     assert os.listdir(cache / "dotnet48") == []
 
 

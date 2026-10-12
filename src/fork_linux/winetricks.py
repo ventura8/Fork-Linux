@@ -151,11 +151,11 @@ def _seed_package(source_dir: Path, target_dir: Path) -> list[Path]:
     return added
 
 
-def seed_cache(cache: Path, legacy: Path, packages: Iterable[str] = SEED_PACKAGES) -> list[Path]:
-    """Reuse files from winetricks' default cache ``legacy`` in our ``cache``; return the files added.
+def seed_cache(cache: Path, user_cache: Path, packages: Iterable[str] = SEED_PACKAGES) -> list[Path]:
+    """Reuse files from winetricks' default cache ``user_cache`` in our ``cache``; return the files added.
 
     Only non-empty regular files of the ``packages`` directories that ``cache``
-    lacks are taken, as hard links (copies across file systems). ``legacy``
+    lacks are taken, as hard links (copies across file systems). ``user_cache``
     itself is never changed: winetricks moves a file with a wrong checksum
     aside and downloads a new one, so it never writes into a linked file. An
     empty file is skipped because winetricks would resume its download in
@@ -163,9 +163,9 @@ def seed_cache(cache: Path, legacy: Path, packages: Iterable[str] = SEED_PACKAGE
     """
     added = []
     for package in packages:
-        added += _seed_package(legacy / package, cache / package)
+        added += _seed_package(user_cache / package, cache / package)
     if added:
-        log.info("reusing %d file(s) from %s in %s", len(added), legacy, cache)
+        log.info("reusing %d file(s) from %s in %s", len(added), user_cache, cache)
     return added
 
 

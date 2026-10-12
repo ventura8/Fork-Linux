@@ -96,7 +96,7 @@ def run_verbs(ctx: Ctx, step_id: str, verbs: Sequence[str]) -> None:
     the preflight sees free space only, not per-user quotas.
     """
     cache = ctx.paths.winetricks_cache_dir
-    winetricks.seed_cache(cache, ctx.paths.legacy_winetricks_cache_dir)
+    winetricks.seed_cache(cache, ctx.paths.user_winetricks_cache_dir)
     stop_leftovers(ctx)
     offset = _log_size(ctx.log_file)
     result = winetricks.run_verbs(

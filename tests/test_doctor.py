@@ -635,7 +635,7 @@ def test_prefix_font_replacements() -> None:
     assert result.status == "warn"
     assert "Segoe UI" in result.detail
     assert "Consolas" in result.detail
-    # The values fork-linux 1.0.0 wrote (a Linux font for Segoe UI itself) count as outdated.
+    # A Linux font for Segoe UI itself (instead of Selawik) counts as outdated.
     lines = [f'"{name}"="Noto Sans"' for name in ("Segoe UI", "Segoe UI Semibold", "Segoe UI Light")]
     user_values(ctx, FONT_KEY, *lines, '"Consolas"="DejaVu Sans Mono"', '"Segoe UI Symbol"="Noto Sans"')
     result = run(ctx, "prefix.font_replacements")

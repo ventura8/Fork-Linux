@@ -76,8 +76,8 @@ class Paths:
         return self.cache_dir / "winetricks"
 
     @property
-    def legacy_winetricks_cache_dir(self) -> Path:
-        """Winetricks' default cache, ``$XDG_CACHE_HOME/winetricks`` (setup used it before 1.0.1); only read."""
+    def user_winetricks_cache_dir(self) -> Path:
+        """Winetricks' default cache, ``$XDG_CACHE_HOME/winetricks`` filled by the user's own winetricks; only read."""
         return self.cache_dir.parent / "winetricks"
 
     @property
