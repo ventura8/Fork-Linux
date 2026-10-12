@@ -13,6 +13,7 @@ import os
 import pty
 import re
 import select
+import shutil
 import signal
 import subprocess
 import sys
@@ -43,19 +44,34 @@ def _files(directory: Path) -> dict[str, tuple[int, int]]:
 
 
 def test_winetricks_cache_is_reused_and_left_alone(closed: Any) -> None:
-    """Setup reused the .NET and font installers of ~/.cache/winetricks and never changed that folder.
+    """Setup reuses the installers of ~/.cache/winetricks (hard links into its own cache) and never changes
+    that folder. With a seeded cache (``FL_E2E_WINETRICKS_CACHE``, e2e-docker.sh) the session's setup is
+    checked; without one (CI's fresh downloads) the font installers setup downloaded become the user's own
+    winetricks cache and the fonts step runs again.
 
     Scenarios: S-WINETRICKS-CACHE
     """
     e2e = closed
     legacy = e2e.home / ".cache" / "winetricks"
     ours = e2e.home / ".cache" / "fork-linux" / "winetricks"
-    if not os.environ.get("FL_E2E_WINETRICKS_CACHE"):
-        pytest.skip("no winetricks cache was seeded (FL_E2E_WINETRICKS_CACHE)")
-    seeded = _files(Path(os.environ["FL_E2E_WINETRICKS_CACHE"]))
-    assert {name: size for name, (size, _mtime) in _files(legacy).items()} == \
-        {name: size for name, (size, _mtime) in seeded.items()}
-    assert any(name.startswith("dotnet48") for name in _files(ours)), "W_CACHE has no dotnet48 installer"
+    if os.environ.get("FL_E2E_WINETRICKS_CACHE"):
+        seeded = _files(Path(os.environ["FL_E2E_WINETRICKS_CACHE"]))
+        assert {name: size for name, (size, _mtime) in _files(legacy).items()} == \
+            {name: size for name, (size, _mtime) in seeded.items()}
+        assert any(name.startswith("dotnet48") for name in _files(ours)), "W_CACHE has no dotnet48 installer"
+        return
+    installers = sorted(path for path in (ours / "corefonts").iterdir() if path.is_file() and path.stat().st_size)
+    assert installers, "setup downloaded no corefonts installer into W_CACHE"
+    (legacy / "corefonts").mkdir(parents=True)
+    for path in installers:
+        shutil.copy2(path, legacy / "corefonts" / path.name)
+        path.unlink()
+    before = _files(legacy)
+    report = json.loads(e2e.cli(*e2e.setup_args(), "--only", "fonts", "--force", "--json").stdout)
+    assert "fonts" in report["ran"]
+    assert _files(legacy) == before, "~/.cache/winetricks was changed"
+    for path in installers:
+        assert os.path.samefile(path, legacy / "corefonts" / path.name), f"{path.name} was not reused"
 
 
 def test_setup_repairs_one_step(closed: Any) -> None:
