@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import socket
 import stat
@@ -22,7 +23,7 @@ from fixtures.setup_ctx import USER, FakeUI, make_ctx
 from fork_linux import bootstrap, bridge, resources, sandbox
 from fork_linux.cli import AppContext
 from fork_linux.config import Config
-from fork_linux.errors import UsageError
+from fork_linux.errors import ForkLinuxError, UsageError
 from fork_linux.steps import integration
 
 TOKEN = "ab" * 32
@@ -686,11 +687,65 @@ def test_relay_that_does_not_start_leaves_fork_without_it(
     ctx = _ctx(kit)
     ctx.env["SSH_AUTH_SOCK"] = str(agent_sock)
     ctx.env["FL_FAKE_DAEMON"] = "agentoff"
+    ctx.paths.prefix.mkdir(parents=True)
     daemon = bridge.start_handoff(ctx)
     assert daemon is not None and not daemon.agent
     assert "SSH_AUTH_SOCK" not in daemon.env
     assert "ssh-agent relay not started" in caplog.text
     daemon.stop()
+
+
+@pytest.mark.parametrize("damage", ["linked-fork-linux", "linked-drive-c", "socket-is-a-directory", "dir-is-a-file"])
+def test_a_damaged_relay_file_only_leaves_the_relay_off(
+    kit: bridge_kit.Kit, agent_sock: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture, damage: str
+) -> None:
+    """A problem with only the relay's socket file never stops the daemon: hand-offs still leave
+    Wine's tree, and nothing is created, changed or removed through a link in the prefix."""
+    ctx = _ctx(kit)
+    ctx.env["SSH_AUTH_SOCK"] = str(agent_sock)
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "ssh-agent").mkdir(parents=True)
+    (elsewhere / "ssh-agent" / "agent.sock").write_text("not yours to delete", encoding="utf-8")
+    (elsewhere / "ssh-agent").chmod(0o755)
+    drive_c = ctx.paths.prefix / "drive_c"
+    if damage == "linked-drive-c":
+        ctx.paths.prefix.mkdir(parents=True)
+        drive_c.symlink_to(tmp_path)
+        (tmp_path / "fork-linux").symlink_to(elsewhere)
+    elif damage == "linked-fork-linux":
+        drive_c.mkdir(parents=True)
+        ctx.paths.fork_linux_win_dir.symlink_to(elsewhere)
+    elif damage == "socket-is-a-directory":
+        (ctx.paths.fork_linux_win_dir / "ssh-agent" / "agent.sock").mkdir(parents=True)
+    else:
+        ctx.paths.fork_linux_win_dir.mkdir(parents=True)
+        (ctx.paths.fork_linux_win_dir / "ssh-agent").write_text("", encoding="utf-8")
+    with caplog.at_level(logging.WARNING, logger="fork_linux.bridge"):
+        daemon = bridge.start_handoff(ctx)
+    assert daemon is not None and daemon.handoff and not daemon.agent
+    assert "--ssh-agent" not in kit.starts()[-1]["argv"]
+    assert "SSH_AUTH_SOCK" not in daemon.env
+    assert "ssh-agent relay off: " in caplog.text
+    daemon.stop()
+    assert (elsewhere / "ssh-agent" / "agent.sock").read_text(encoding="utf-8") == "not yours to delete"
+    assert stat.S_IMODE((elsewhere / "ssh-agent").stat().st_mode) == 0o755
+
+
+def test_no_relay_never_deletes_through_a_link(kit: bridge_kit.Kit, tmp_path: Path) -> None:
+    """Without a relay a leftover socket file is removed, but never through a linked directory."""
+    ctx = _ctx(kit)
+    paths = ctx.paths
+    bridge._drop_agent_file(paths)  # nothing there: nothing to do
+    (paths.prefix / "drive_c").mkdir(parents=True)
+    bridge._drop_agent_file(paths)  # no C:\fork-linux yet
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "ssh-agent").mkdir(parents=True)
+    (elsewhere / "ssh-agent" / "agent.sock").write_text("keep", encoding="utf-8")
+    paths.fork_linux_win_dir.symlink_to(elsewhere)
+    with pytest.raises(ForkLinuxError, match="is a link or not a directory"):
+        bridge._drop_agent_file(paths)
+    assert bridge._relay_file(paths, None) is None
+    assert (elsewhere / "ssh-agent" / "agent.sock").read_text(encoding="utf-8") == "keep"
 
 
 def test_git_bridge_daemon_relays_only_in_record_mode(kit: bridge_kit.Kit, agent_sock: Path) -> None:

@@ -510,7 +510,7 @@ def _launch(
     """
     paths: Paths = ctx.paths
     log_file = _new_log(paths, LOG_PREFIX, ".log")
-    socket_file = _agent_file(paths) if agent is not None else _drop_agent_file(paths)
+    socket_file = _relay_file(paths, agent)
     token_file, token = write_token(paths)
     try:
         argv = [str(helper), "--daemon", "--token-file", str(token_file), "--parent-pid", str(os.getpid())]
@@ -713,13 +713,36 @@ def agent_socket(ctx: Any) -> Path | None:
     return host_agent(ctx.env)
 
 
+def _agent_dir(paths: Paths, *, create: bool) -> Path | None:
+    """``C:\\fork-linux\\ssh-agent`` on the Linux side, reached without following a link.
+
+    A Windows program in the prefix controls ``drive_c``, so every component below the prefix
+    (``drive_c``, ``fork-linux``, ``ssh-agent``) must be a real directory: a link raises
+    :class:`_StartError`. Missing components are created (``ssh-agent`` 0700) when ``create`` is
+    set; otherwise None is returned for a missing one.
+    """
+    current = paths.prefix
+    for part in (*paths.fork_linux_win_dir.relative_to(paths.prefix).parts, AGENT_DIR):
+        current = current / part
+        if not os.path.lexists(current):
+            if not create:
+                return None
+            os.mkdir(current, 0o700 if part == AGENT_DIR else 0o755)
+        info = os.lstat(current)
+        if not stat.S_ISDIR(info.st_mode):
+            raise _StartError(f"{current} is a link or not a directory")
+    return current
+
+
 def _agent_file(paths: Paths) -> Path:
     """``C:\\fork-linux\\ssh-agent\\agent.sock`` on the Linux side, in a checked 0700 directory of ours.
 
     A file a previous daemon left behind (it ended without its clean-up) is removed first, so
     :func:`_relay_up` only ever sees the new daemon's file.
     """
-    path = _private_dir(paths.fork_linux_win_dir / AGENT_DIR) / AGENT_FILE
+    directory = _agent_dir(paths, create=True)
+    assert directory is not None
+    path = _private_dir(directory) / AGENT_FILE
     if os.path.lexists(path):
         path.unlink()
     return path
@@ -727,9 +750,24 @@ def _agent_file(paths: Paths) -> Path:
 
 def _drop_agent_file(paths: Paths) -> None:
     """No relay this time: remove a socket file an earlier daemon left behind (never through a link)."""
-    path = paths.fork_linux_win_dir / AGENT_DIR / AGENT_FILE
-    if os.path.lexists(path) and not os.path.islink(path.parent):
-        path.unlink()
+    directory = _agent_dir(paths, create=False)
+    if directory is not None and os.path.lexists(directory / AGENT_FILE):
+        (directory / AGENT_FILE).unlink()
+
+
+def _relay_file(paths: Paths, agent: Path | None) -> Path | None:
+    """The socket file for the relay to the agent socket ``agent`` (None: no relay this time).
+
+    A problem with the file or its directory only leaves the relay off (logged as
+    ``ssh-agent relay off: ...``); it never stops the daemon from starting.
+    """
+    try:
+        if agent is not None:
+            return _agent_file(paths)
+        _drop_agent_file(paths)
+    except (_StartError, OSError) as exc:
+        log.warning("%s%s; Fork's ssh does not use your ssh-agent", _RELAY_OFF, exc)
+    return None
 
 
 def _relay_up(socket_file: Path) -> bool:
