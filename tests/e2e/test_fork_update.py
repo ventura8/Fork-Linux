@@ -744,7 +744,7 @@ def test_f9_stable_channel_reads_the_stable_feed(upd: Upd, fork: ForkSession) ->
 def test_f5_known_bad_override_warns_and_doctor_fails(upd: Upd, fork: ForkSession) -> None:
     """An override marks 2.23.1 known-bad: fork warns and still starts it, doctor fails with the rollback hint.
 
-    Scenarios: F5
+    Scenarios: F5, F21
     """
     override = upd.home / ".config" / "fork-linux" / "manifest.local.json"
     reason = "E2E: marked known-bad by the test"
@@ -816,9 +816,10 @@ def _probe_during_restart(upd: Upd, fork: ForkSession) -> Callable[[], None]:
 
 
 def test_f1_in_app_update_keeps_env_and_notifies(upd: Upd, fork: ForkSession) -> None:
-    """File > Check for Updates..., Restart and Update: the new Fork keeps our environment; the next fork says so.
+    """File > Check for Updates..., Restart and Update: the new Fork keeps our environment; the next fork says so
+    in a desktop notification that never holds Fork's start (F21).
 
-    Scenarios: F1
+    Scenarios: F1, F21
     """
     fork.start(make_repo(upd, "demo"))
     assert upd.settings()["ApplicationUpdateType"] == 0  # the unpin brought the user's channel back (F4)

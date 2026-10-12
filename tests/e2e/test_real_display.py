@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fork_driver import fork_pids, make_repo, wait_until
+from fork_driver import fork_pids, git, make_repo, wait_until
 from fork_ui import ForkUI
 
 from fixtures import real_tier
@@ -134,6 +134,47 @@ def _mapped_fonts(pid: int) -> set[str]:
     """The font files (lower-case names) process ``pid`` has mapped: the faces Wine really draws with."""
     lines = Path("/proc", str(pid), "maps").read_text().splitlines()
     return {Path(line.split()[-1]).name.lower() for line in lines if line.lower().endswith((".ttf", ".ttc", ".otf"))}
+
+
+# One commit subject per script WPF's composite font falls back for (font_fallback): Cyrillic and Greek
+# (Selawik has neither), Hangul and Han.
+NON_LATIN_SUBJECTS = ("Привет, мир", "Καλημέρα κόσμε", "안녕하세요 세계", "你好，世界")
+
+
+def _font_file(family: str) -> str:
+    """The font file (lower-case name) fontconfig gives for ``family``."""
+    found = subprocess.run(["fc-match", "-f", "%{file}", family], capture_output=True, text=True, timeout=60,
+                           check=True).stdout
+    return Path(found).name.lower()
+
+
+def test_non_latin_text_is_drawn_with_the_linux_fonts(closed: Any) -> None:
+    """Commit subjects and a branch name in Cyrillic, Greek, Korean and Chinese are drawn with the Linux
+    Noto fonts setup mapped into WPF's composite font (not boxes, not left out): Fork maps those font files
+    as it draws its history.
+
+    Scenarios: FF-NON-LATIN
+    """
+    e2e = closed
+    repo = e2e.repos / "non-latin"
+    if not repo.is_dir():
+        make_repo(repo, {".gitignore": "*.tmp\n", "README.md": "# non-latin\n"})
+        for index, subject in enumerate(NON_LATIN_SUBJECTS):
+            (repo / f"note-{index}.txt").write_text(f"{subject}\n", encoding="utf-8")
+            git(repo, "add", "-A")
+            git(repo, "commit", "-qm", subject)
+        git(repo, "branch", "ветка-분기-分支")
+    sans, cjk = _font_file("Noto Sans"), _font_file("Noto Sans CJK KR")
+    report = json.loads(e2e.cli("doctor", "--json", "--check", "prefix.font_fallback").stdout)
+    assert [check["status"] for check in report["checks"]] == ["ok"], report
+    ui = ForkUI(e2e.fork)
+    window = ui.open(repo)
+    pid = fork_pids(e2e.prefix)[0]
+    wait_until(lambda: {sans, cjk} <= _mapped_fonts(pid) or None, 60,
+               f"{sans} and {cjk} (the fallback fonts) in Fork's process")
+    e2e.screen.screenshot("non-latin-history", window)
+    names = _mapped_fonts(pid)
+    assert "selawk.ttf" in names, sorted(names)
 
 
 def test_interface_text_is_drawn_in_selawik(closed: Any) -> None:

@@ -78,6 +78,8 @@ jobs:
             tests: tests/e2e/test_git_ops_remote_bridge.py
           - shard: integration-real-integration
             tests: tests/e2e/test_real_integration.py
+          - shard: updates-real-update-guards
+            tests: tests/e2e/test_real_update_guards.py
           - shard: updates-fork-update
             tests: tests/e2e/test_fork_update.py
           - shard: updates-wine-app-upgrade

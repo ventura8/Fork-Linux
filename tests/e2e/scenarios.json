@@ -2496,6 +2496,31 @@
     ]
   },
   {
+    "id": "F8",
+    "area": "fork-update",
+    "title": "update --check / update --fork --latest offline, with the feed unreachable (DNS, TLS, HTTP 5xx) or malformed (garbage, oversized, invalid versions)",
+    "tiers": [
+      "real-fork",
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_update_guards.py::test_f8_update_without_fork_s_feed_changes_nothing",
+      "tests/test_cmd_update.py::test_check_offline_without_a_cache",
+      "tests/test_cmd_update.py::test_feed_assets_uses_its_own_cache",
+      "tests/test_cmd_update.py::test_f8_update_fork_offline_changes_nothing",
+      "tests/test_cmd_update.py::test_f8_malformed_feed_installs_nothing",
+      "tests/test_feeds.py::test_garbage_documents",
+      "tests/test_feeds.py::test_offline_uses_cache_or_fails",
+      "tests/test_feeds.py::test_validate_runs_before_caching",
+      "tests/test_feeds.py::test_http_errors",
+      "tests/test_feeds.py::test_network_errors",
+      "tests/test_feeds.py::test_oversized_feed_is_refused_from_its_content_length",
+      "tests/test_doctor.py::test_fork_version_with_network"
+    ]
+  },
+  {
     "id": "F9",
     "area": "fork-update",
     "title": "Fork's own channel (Develop, Stable, Off) in update --check",
@@ -2542,6 +2567,42 @@
       "tests/test_fork_install.py::test_run_installer_failure_is_a_setup_failure"
     ],
     "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
+  },
+  {
+    "id": "F12",
+    "area": "fork-update",
+    "title": "Pinned, but Fork already updated itself past the pin (it was updated before the pin, or the pin was set by hand)",
+    "tiers": [
+      "real-fork",
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_update_guards.py::test_f12_a_pin_older_than_the_installed_fork_warns_and_never_downgrades",
+      "tests/test_launch_flow.py::test_pin_hook_warns_when_fork_already_updated_past_the_pin"
+    ]
+  },
+  {
+    "id": "F13",
+    "area": "fork-update",
+    "title": "update --fork guards: Fork not installed, already on the target, Fork running, --fork-version / --latest / --allow-untested without --fork, an invalid or unpinned version, another setup / update holding the lock",
+    "tiers": [
+      "real-fork",
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_update_guards.py::test_f13_update_fork_guards",
+      "tests/test_cmd_update.py::test_fork_needs_an_installed_fork",
+      "tests/test_cmd_update.py::test_fork_already_on_the_default",
+      "tests/test_cmd_update.py::test_fork_needs_fork_closed",
+      "tests/test_cmd_update.py::test_version_flags_need_fork",
+      "tests/test_cmd_update.py::test_f13_update_fork_respects_the_lock",
+      "tests/test_fork_install.py::test_plan_rejects_invalid_versions",
+      "tests/test_fork_install.py::test_plan_requested_unknown_needs_allow_untested"
+    ]
   },
   {
     "id": "F14",
@@ -2650,6 +2711,27 @@
     "pending_merge": false,
     "tests": [
       "tests/e2e/test_fork_update.py::test_f20_interrupted_apply_is_reinstalled_keeping_the_users_files"
+    ]
+  },
+  {
+    "id": "F21",
+    "area": "fork-update",
+    "title": "The update notice and the known-bad warning when Fork is started from the menu (no terminal)",
+    "tiers": [
+      "real-fork",
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_fork_update.py::test_f1_in_app_update_keeps_env_and_notifies",
+      "tests/e2e/test_fork_update.py::test_f5_known_bad_override_warns_and_doctor_fails",
+      "tests/e2e/test_real_launch.py::test_missing_path_is_a_usage_error",
+      "tests/test_ui.py::test_notify_uses_notify_send_in_the_background",
+      "tests/test_ui.py::test_notify_falls_back_to_the_passive_popup",
+      "tests/test_ui.py::test_notify_that_cannot_start_only_logs",
+      "tests/test_cli.py::test_f21_desktop_launch_errors_are_shown_in_a_dialog",
+      "tests/test_cli.py::test_f21_no_dialog_for_terminals_other_commands_or_broken_dialogs"
     ]
   },
   {
@@ -2876,6 +2958,39 @@
     ]
   },
   {
+    "id": "A13",
+    "area": "app-upgrade",
+    "title": "install.sh on a machine where a package manager installed fork-linux",
+    "tiers": [
+      "de",
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_10_install_sh_never_breaks_the_installed_fork_linux",
+      "tests/test_install_sh.py::test_a13_refuses_to_shadow_a_package_install"
+    ]
+  },
+  {
+    "id": "A14",
+    "area": "app-upgrade",
+    "title": "install.sh upgrade interrupted half way (killed, disk full)",
+    "tiers": [
+      "de",
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e_de/test_de_fork.py::test_10_install_sh_never_breaks_the_installed_fork_linux",
+      "tests/test_install_sh.py::test_a14_failed_upgrade_keeps_the_previous_install",
+      "tests/test_install_sh.py::test_a14_refuses_a_staging_path_that_is_not_ours",
+      "tests/test_install_sh.py::test_a14_uninstall_removes_leftovers_of_an_interrupted_upgrade",
+      "tests/test_install_sh.py::test_a14_upgrade_interrupted_after_the_swap_keeps_the_commands"
+    ]
+  },
+  {
     "id": "A15",
     "area": "app-upgrade",
     "title": "config.ini written by another version (unknown or removed keys)",
@@ -2958,6 +3073,21 @@
       "tests/test_desktop_integration.py::test_thunar_entry_without_a_recorded_seed_keeps_the_file"
     ],
     "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
+  },
+  {
+    "id": "A20",
+    "area": "app-upgrade",
+    "title": "A user manifest override that no longer validates against N's manifest",
+    "tiers": [
+      "real-fork",
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_update_guards.py::test_a20_a_manifest_override_that_no_longer_fits_is_named",
+      "tests/test_manifest.py::test_override_that_breaks_validation"
+    ]
   },
   {
     "id": "A21",
@@ -4835,6 +4965,19 @@
     "pending_merge": false,
     "tests": [
       "tests/e2e/test_real_fork.py::test_02_doctor_has_no_failures"
+    ]
+  },
+  {
+    "id": "FF-NON-LATIN",
+    "area": "font-fallback",
+    "title": "Commit subjects and branch names in Cyrillic, Greek, Korean and Chinese are drawn with the Linux Noto fonts mapped into WPF's composite font",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_display.py::test_non_latin_text_is_drawn_with_the_linux_fonts"
     ]
   }
 ]

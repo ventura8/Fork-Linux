@@ -98,7 +98,7 @@ def test_missing_path_is_a_usage_error(closed: Any) -> None:
     """A path that does not exist is refused (exit 2) and no Fork starts: on stderr in a terminal, and from
     the menu or a file manager (no terminal) also in a dialog, which the launch waits for.
 
-    Scenarios: L-BAD-PATH, L-ERROR-DIALOG
+    Scenarios: L-BAD-PATH, L-ERROR-DIALOG, F21
     """
     e2e = closed
     missing = e2e.repos / "does-not-exist"

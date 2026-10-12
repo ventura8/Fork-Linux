@@ -35,6 +35,7 @@ real_tier.enforce()
 
 pytestmark = pytest.mark.usefixtures("in_order", "wine_stopped_afterwards")
 
+REPO = Path(__file__).resolve().parents[2]
 SETUP = ("fork-linux", "setup", "--accept-fork-eula", "--no-gui")
 SETUP_TIMEOUT = 3600.0
 FAST_PATH_SECONDS = 30.0
@@ -300,3 +301,47 @@ def test_09_doctor_after_use_has_no_failures(session: dekit.Session) -> None:
     assert handoff.get("detail") == f"{HANDOFF_ROUTE}: a hand-off-only daemon starts with Fork", handoff
     # The desktop held up through Fork's whole run: none of its own programs crashed.
     assert session.components_gone() == [], dekit.PROCESS_LOG
+
+
+def _tree(prefix: Path) -> list[tuple[str, int]]:
+    """The installed tree as install.sh left it: relative paths and sizes."""
+    return sorted((str(path.relative_to(prefix)), path.stat().st_size) for path in prefix.rglob("*") if path.is_file())
+
+
+def test_10_install_sh_never_breaks_the_installed_fork_linux(session: dekit.Session, installed: dekit.Installed) -> None:
+    """install.sh on top of the working install, with the official Fork set up: refused while a package
+    manager owns fork-linux (A13: nothing written), and an upgrade interrupted after its trees were swapped
+    (A14: ``ln`` fails) leaves ``fork-linux`` on PATH, which still starts Fork; the next install finishes.
+
+    Scenarios: A13, A14
+    """
+    tarball = Path(os.environ["FL_E2E_DE_TARBALL"])
+    install = ["bash", str(REPO / "install.sh"), "--from-tarball", str(tarball), "--no-deps"]
+    command = session.home / ".local" / "bin" / "fork-linux"
+    target = str(installed.prefix / "bin" / "fork-linux")
+    before = _tree(installed.prefix)
+    assert os.readlink(command) == target
+    fakes = session.home / "a13-a14-fakes"
+    for name, body in (("package/dpkg-query", "printf 'install ok installed'"), ("broken/ln", "exit 1")):
+        tool = fakes / name
+        tool.parent.mkdir(parents=True, exist_ok=True)
+        tool.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+        tool.chmod(0o755)
+    path = session.env["PATH"]
+    owned = session.run(install, check=False, timeout=300, extra={"PATH": f"{fakes / 'package'}:{path}"})
+    assert owned.returncode != 0
+    assert "fork-linux is installed by your package manager (dpkg)" in owned.stderr
+    assert _tree(installed.prefix) == before, "a refused install.sh writes nothing"
+    interrupted = session.run(install, check=False, timeout=300, extra={"PATH": f"{fakes / 'broken'}:{path}"})
+    assert interrupted.returncode != 0, interrupted.stdout + interrupted.stderr
+    assert os.readlink(command) == target, "fork-linux stays on PATH through an interrupted upgrade"
+    version = session.run(["fork-linux", "--version"])
+    assert version.stdout.startswith("fork-linux "), version.stdout
+    forkui.launch(session, _repos(session) / ACTIVE)
+    forkui.wait_main_window(session)
+    assert len(forkui.fork_pids(forkui.prefix(session))) == 1
+    forkui.close_fork(session)
+    session.run(install, timeout=300)
+    assert not list(installed.prefix.parent.glob("fork-linux.*")), "no staged or retired tree is left"
+    assert not list(command.parent.glob("*.fl-new"))
+    assert os.readlink(command) == target

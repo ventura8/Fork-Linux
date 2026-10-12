@@ -103,6 +103,7 @@ MODULE_ORDER = (
     "test_real_bridge.py",
     "test_git_ops_remote_bridge.py",
     "test_real_doctor.py",
+    "test_real_update_guards.py",
     "test_real_snapshots.py",
     # Prefixes of their own (E2E.child), seeded from the session's caches before uninstall --purge.
     "test_fork_update.py",
