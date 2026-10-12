@@ -41,7 +41,8 @@ scripts/e2e-docker.sh --name shim --image fork-linux-ci-bridge:26.04 shell -- ba
 - The two update modules each build their own prefix in a sub-root of the session root
   (`root/fork-update`, `root/app-upgrade`), seeded from the session's caches, so they never share
   another module's prefix. Their steps build on each other; a failed step fails the rest of that
-  module only. CI (`scripts/ci-e2e-wine.sh`) still gives every module a fresh scratch root, and
+  module only. CI (`scripts/ci-e2e-wine.sh`) still gives every module a scratch root of its own (a copy of the
+  run's template root, or its download caches only), and
   fails a module that skipped a test (`pytest -rs`; every tier it runs was asked for).
 - Fork checks for updates by itself about a minute after it starts, when `LastUpdateCheck` in its
   `settings.json` is old enough; on Develop it then downloads the update and shows "ready to be
@@ -106,7 +107,7 @@ host: no `$HOME`, no host X socket. `FL_E2E_*` variables you set are passed thro
 
 ## Slots
 
-At most `FL_E2E_SLOTS` (default 3) of these containers run host-wide: each run tries every
+At most `FL_E2E_SLOTS` (default: one per two cores and per 3 GiB of available memory, `fl_e2e_default_slots`) of these containers run host-wide: each run tries every
 `/var/tmp/fork-linux-e2e/locks/slot-<n>` without blocking; while all are busy ("all N E2E slots
 are busy") it tries them all again every `FL_E2E_SLOT_POLL` seconds (default 5) and takes the
 first that frees up. Do not raise `FL_E2E_SLOTS` to get around a busy host.

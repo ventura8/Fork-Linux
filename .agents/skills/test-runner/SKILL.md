@@ -37,8 +37,13 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
     Fork-update tier `FL_E2E_FORK_UPDATES=1 ... pytest tests/e2e/test_fork_update.py` (after
     `scripts/build-bridge.sh`), the app-upgrade tier `FL_E2E_APP_UPGRADE=1 ... pytest tests/e2e/test_wine_app_upgrade.py`
     (each sets up its own prefix in a sub-root, `E2E.child`). CI's tier: `./scripts/ci-e2e-wine.sh` (fresh
-    downloads, ~2.5 GB per scratch root): e2e-wine.yml runs one job per module (`./scripts/ci-e2e-wine.sh
-    tests/e2e/<module>.py`: naming an update module switches its tier on; every named module in a container and
-    scratch root of its own, logs in `logs/e2e-wine/<module>/`), so a module must not depend on another having run
-    (`installed` sets the prefix up when it is missing); without paths the whole tier runs in one root.
+    downloads, no seed): `--all` or named modules (`tests/e2e/<module>.py`; naming an update module switches its
+    tier on) each run in a container and scratch root of their own, `--jobs N` at a time (default: the host-wide
+    slots), longest first (`scripts/e2e-plan.py`, durations in `tests/e2e/timings.json`: update it from
+    `logs/e2e-wine/results.tsv` when a module's time changes a lot). One container sets the main prefix up once
+    (a template root); modules that use the main prefix start from a copy of it (`FL_E2E_REUSE=1`), modules that
+    set up their own (`e2e-plan.py` `FRESH`) from its download caches; logs in `logs/e2e-wine/<module>/`. So a
+    module must not depend on another having run (`installed` sets the prefix up when it is missing); without
+    paths the whole tier runs in one root. The full tier (`--all` with both update tiers) takes about 40 minutes
+    on the 16-core laptop; e2e-wine.yml runs it as five shards of two containers each, under an hour.
 - Tests never touch the real home, network or Wine unless gated (hard rule 16); use `xdg`, `fake_bin`, `http_server`.

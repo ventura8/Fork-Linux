@@ -2,15 +2,17 @@
 name: E2E (real Fork under Wine)
 
 # The real tier: managed Wine + .NET + the official Fork installer under Xvfb, every scenario of
-# docs/qa/E2E-SCENARIOS.md in parallel shards, one per module (each sets up its own prefix
-# and takes about 10-40 minutes, ~2.5 GB of downloads made on the runner), among them the
-# Fork-update tier (Fork 2.23.1 updating itself and through fork-linux) and the app-upgrade
-# tier (a step revision, an upgrade while Fork runs, a Wine pin change and back, uninstall /
-# reinstall, the bridge replaced under a running daemon, our upgrade plus Fork's own); and the
-# same setup under each desktop of the desktop E2E tier (docs/qa/DE-E2E.md: Fork under the
-# desktop's window manager, its terminal, file manager and "Open in Fork"). Weekly, on demand,
-# and on same-repo PRs from release branches (feature/vX.Y.Z). Every job downloads fresh (no
-# seed). Uploads logs only: no screenshots (they show Fork's logo), no binaries, and the Fork
+# docs/qa/E2E-SCENARIOS.md in a few parallel shards. Each shard sets the main prefix up once (a
+# template root, built in the job and deleted with it) and runs its modules two at a time, longest
+# first, each in a container and a root of its own copied from that template (modules that set up
+# prefixes of their own start from its download caches): scripts/ci-e2e-wine.sh. Among them the
+# Fork-update tier (Fork 2.23.1 updating itself and through fork-linux) and the app-upgrade tier
+# (a step revision, an upgrade while Fork runs, a Wine pin change and back, uninstall / reinstall,
+# the bridge replaced under a running daemon, our upgrade plus Fork's own); and the same setup under
+# each desktop of the desktop E2E tier (docs/qa/DE-E2E.md: Fork under the desktop's window manager,
+# its terminal, file manager and "Open in Fork"). Weekly, on demand, and on same-repo PRs from
+# release branches (feature/vX.Y.Z). Every job downloads fresh (no seed, nothing kept between
+# runs). Uploads logs only: no screenshots (they show Fork's logo), no binaries, and the Fork
 # installer is never cached (AGENTS.md hard rules 1, 4).
 on:
   schedule:
@@ -33,59 +35,41 @@ jobs:
       (github.event.pull_request.head.repo.full_name == github.repository &&
        startsWith(github.head_ref, 'feature/v'))
     runs-on: ubuntu-26.04
-    timeout-minutes: 90
-    # One job per module of tests/e2e, grouped by area in its name: each job is its own runner
-    # with its own scratch root and prefix, so no module depends on what another left behind,
-    # and each stays well under the timeout. Every module is in exactly one job
-    # (tests/test_workflows.py).
+    timeout-minutes: 70
+    # A few shards of tests/e2e, balanced on tests/e2e/timings.json (tests/test_e2e_plan.py estimates
+    # each and keeps it well under the hour; every module is in exactly one shard,
+    # tests/test_workflows.py). A runner (4 cores, 16 GB) runs two real-Fork containers at once.
     strategy:
       fail-fast: false
       matrix:
         include:
-          - shard: setup-real-setup-errors
-            tests: tests/e2e/test_real_setup_errors.py
-          - shard: setup-real-fork
-            tests: tests/e2e/test_real_fork.py
-          - shard: setup-real-setup-variants
-            tests: tests/e2e/test_real_setup_variants.py
-          - shard: setup-real-uninstall
-            tests: tests/e2e/test_real_uninstall.py
-          - shard: launch-real-launch
-            tests: tests/e2e/test_real_launch.py
-          - shard: launch-real-display
-            tests: tests/e2e/test_real_display.py
-          - shard: doctor-real-doctor
-            tests: tests/e2e/test_real_doctor.py
-          - shard: snapshots-real-snapshots
-            tests: tests/e2e/test_real_snapshots.py
-          - shard: git-real-git-history
-            tests: tests/e2e/test_real_git_history.py
-          - shard: git-real-git-changes
-            tests: tests/e2e/test_real_git_changes.py
-          - shard: git-real-git-branches
-            tests: tests/e2e/test_real_git_branches.py
-          - shard: git-real-git-advanced
-            tests: tests/e2e/test_real_git_advanced.py
-          - shard: git-git-ops-local
-            tests: tests/e2e/test_git_ops_local.py
-          - shard: remotes-real-git-remotes
-            tests: tests/e2e/test_real_git_remotes.py
-          - shard: remotes-git-ops-remote-ssh
-            tests: tests/e2e/test_git_ops_remote_ssh.py
-          - shard: bridge-real-bridge
-            tests: tests/e2e/test_real_bridge.py
-          - shard: bridge-git-ops-remote-bridge
-            tests: tests/e2e/test_git_ops_remote_bridge.py
-          - shard: integration-real-integration
-            tests: tests/e2e/test_real_integration.py
-          - shard: updates-real-update-guards
-            tests: tests/e2e/test_real_update_guards.py
-          - shard: updates-fork-update
-            tests: tests/e2e/test_fork_update.py
-          - shard: updates-wine-app-upgrade
-            tests: tests/e2e/test_wine_app_upgrade.py
-          - shard: updates-wine-pin-upgrade
-            tests: tests/e2e/test_wine_pin_upgrade.py
+          - shard: setup-and-fork-update
+            jobs: 2
+            tests: >-
+              tests/e2e/test_fork_update.py tests/e2e/test_real_setup_variants.py
+          - shard: integration
+            jobs: 2
+            tests: >-
+              tests/e2e/test_real_integration.py
+          - shard: git
+            jobs: 2
+            tests: >-
+              tests/e2e/test_real_git_remotes.py tests/e2e/test_real_git_history.py
+              tests/e2e/test_real_fork.py tests/e2e/test_real_git_changes.py
+              tests/e2e/test_real_git_advanced.py tests/e2e/test_real_snapshots.py
+          - shard: app-upgrade-bridge-launch
+            jobs: 2
+            tests: >-
+              tests/e2e/test_wine_app_upgrade.py tests/e2e/test_real_bridge.py
+              tests/e2e/test_real_launch.py tests/e2e/test_real_display.py
+              tests/e2e/test_real_doctor.py tests/e2e/test_real_uninstall.py
+              tests/e2e/test_real_setup_errors.py
+          - shard: remotes-and-guards
+            jobs: 2
+            tests: >-
+              tests/e2e/test_git_ops_remote_bridge.py tests/e2e/test_real_git_branches.py
+              tests/e2e/test_wine_pin_upgrade.py tests/e2e/test_git_ops_remote_ssh.py
+              tests/e2e/test_git_ops_local.py tests/e2e/test_real_update_guards.py
     steps:
       - name: Checkout source
         uses: actions/checkout@v7.0.1
@@ -98,9 +82,10 @@ jobs:
       - name: Real Fork under Wine, shard ${{ matrix.shard }} (Xvfb)
         env:
           TESTS: ${{ matrix.tests }}
+          JOBS: ${{ matrix.jobs }}
         run: |
           read -r -a tests <<<"${TESTS}"
-          ./scripts/ci-e2e-wine.sh "${tests[@]}"
+          ./scripts/ci-e2e-wine.sh --jobs "${JOBS}" "${tests[@]}"
 
       - name: Keep the logs (text only)
         if: always()

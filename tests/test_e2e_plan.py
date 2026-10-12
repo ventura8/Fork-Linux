@@ -177,7 +177,7 @@ def test_the_template_is_the_first_setup_test() -> None:
 
 def _shards() -> list[tuple[str, list[str], int]]:
     text = WORKFLOW.read_text(encoding="utf-8")
-    rows = re.findall(r"- shard: (\S+)\n +jobs: (\d+)\n +tests: (.+)", text)
+    rows = re.findall(r"- shard: (\S+)\n +jobs: (\d+)\n +tests: >-\n((?: {14}\S.*\n)+)", text)
     return [(name, tests.split(), int(jobs)) for name, jobs, tests in rows]
 
 

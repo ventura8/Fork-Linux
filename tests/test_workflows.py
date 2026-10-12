@@ -190,7 +190,7 @@ E2E_SCRIPT = (ROOT / "scripts" / "ci-e2e-wine.sh").read_text(encoding="utf-8")
 
 def test_e2e_wine_runs_the_fork_update_tier() -> None:
     """The Fork-update module has a shard; the script switches its tier on when named, and builds the bridge."""
-    assert re.search(r"- shard: updates-fork-update\n +tests: tests/e2e/test_fork_update.py\n", E2E)
+    assert any("tests/e2e/test_fork_update.py" in tests for _name, _jobs, tests in _e2e_shards())
     assert '-e FL_E2E_FORK_UPDATES="${updates}"' in E2E_SCRIPT
     assert '[[ "${module}" != "${FORK_UPDATE}" ]] || updates=1' in E2E_SCRIPT
     build = E2E_SCRIPT.index('"${ROOT}/scripts/build-bridge.sh"\n')
@@ -203,7 +203,7 @@ def test_e2e_wine_runs_the_fork_update_tier() -> None:
 
 def test_e2e_wine_runs_the_app_upgrade_tier() -> None:
     """The app-upgrade module has a shard; the script switches it on with two bridge builds for A6."""
-    assert re.search(r"- shard: updates-wine-app-upgrade\n +tests: tests/e2e/test_wine_app_upgrade.py\n", E2E)
+    assert any("tests/e2e/test_wine_app_upgrade.py" in tests for _name, _jobs, tests in _e2e_shards())
     assert '-e FL_E2E_APP_UPGRADE="${upgrade}"' in E2E_SCRIPT
     assert '-e FL_E2E_BRIDGE_BUILDS="${builds_env}"' in E2E_SCRIPT
     assert '"${module}" == "${APP_UPGRADE}" && "${FL_E2E_APP_UPGRADE:-0}" != "1"' in E2E_SCRIPT
@@ -215,18 +215,20 @@ def test_e2e_wine_runs_the_app_upgrade_tier() -> None:
 
 
 def test_e2e_wine_gives_every_module_of_a_shard_a_scratch_root_of_its_own() -> None:
-    """Each named module is one scenario: its own pytest session, container and fresh root."""
-    loop = E2E_SCRIPT[E2E_SCRIPT.index('for module in "${MODULES[@]}"; do\n\t\tsession_status=0'):]
-    assert 'run_session "${module%.py}" "${module}"' in loop
-    body = E2E_SCRIPT[E2E_SCRIPT.index("run_session() {"):E2E_SCRIPT.index("record() {")]
-    order = ['SCRATCH="$(new_scratch)"', '-v "${SCRATCH}:/e2e:rw"', '"${targets[@]}" "${OPTIONS[@]}"',
-             'fl_e2e_copy_logs "${SCRATCH}" "${logs}"', 'fl_e2e_wipe "${SCRATCH}"']
+    """Each named module is one scenario: its own pytest session, container and root, which starts as a copy
+    of the shard's template (or its download caches) and is deleted afterwards."""
+    launch = E2E_SCRIPT[E2E_SCRIPT.index("launch_next() {"):E2E_SCRIPT.index("reap() {")]
+    assert 'module_job "tests/e2e/${module}" "${module%.py}" "${seed}" "${module}" &' in launch
+    body = E2E_SCRIPT[E2E_SCRIPT.index("run_session() {"):E2E_SCRIPT.index("failed_modules() {")]
+    order = ['scratch="$(new_scratch "${RUN}")"', 'seed_root "${scratch}" "${seed}"',
+             '"${targets[@]}" "${OPTIONS[@]}"', 'fl_e2e_copy_logs "${scratch}" "${logs}"',
+             'fl_e2e_wipe "${scratch}"']
     positions = [body.index(item) for item in order]
     assert positions == sorted(positions)
     assert 'logs="${LOG_DIR}/${name}"' in body
+    assert '-v "${scratch}:/e2e:rw"' in E2E_SCRIPT
     # Without paths: the whole tier in one session and root (upstream-watch.yml).
-    assert 'run_session tier "${MODULES[@]}"' in E2E_SCRIPT
-    assert "timeout-minutes: 90" in _job(E2E, "e2e")
+    assert 'module_job "tests/e2e (${#MODULES[@]} modules)" tier none "${MODULES[@]}" &' in E2E_SCRIPT
 
 
 def test_e2e_wine_runs_on_release_branches_weekly_and_on_demand() -> None:
@@ -271,22 +273,29 @@ def test_check_runs_the_scenario_registry_gate() -> None:
     assert "\n        if:" not in step[: step.index("\n      - name:")]
 
 
+def _e2e_shards() -> list[tuple[str, int, list[str]]]:
+    rows = re.findall(r"- shard: (\S+)\n +jobs: (\d+)\n +tests: >-\n((?: {14}\S.*\n)+)", E2E)
+    return [(name, int(jobs), tests.split()) for name, jobs, tests in rows]
+
+
 def test_e2e_wine_shards_cover_every_real_tier_module_once() -> None:
     named = re.findall(r"tests/e2e/test_\w+\.py", E2E)
     modules = sorted(f"tests/e2e/{path.name}" for path in (ROOT / "tests" / "e2e").glob("test_*.py"))
     assert sorted(named) == modules
     assert len(set(named)) == len(named)
-    # One module per shard: each runs in its own job, scratch root and prefix.
-    shards = re.findall(r"tests: (.+)", E2E)
-    assert shards and all(re.fullmatch(r"tests/e2e/test_\w+\.py", shard) for shard in shards)
+    shards = _e2e_shards()
+    assert len(shards) == E2E.count("- shard: ") and len(shards) <= 8
+    assert sorted(test for _name, _jobs, tests in shards for test in tests) == modules
+    assert len({name for name, _jobs, _tests in shards}) == len(shards)
+    # A GitHub runner (4 cores, 16 GB) runs two real-Fork containers at once.
+    assert all(jobs == 2 for _name, jobs, _tests in shards)
+    assert './scripts/ci-e2e-wine.sh --jobs "${JOBS}" "${tests[@]}"' in E2E
+    assert "JOBS: ${{ matrix.jobs }}" in E2E
     assert "fail-fast: false" in E2E
-    # Each job is named <area>-<module> and stays under the 90-minute bar.
-    names = re.findall(r"- shard: (\S+)", E2E)
-    assert len(names) == len(shards) == len(set(names))
-    for name, shard in zip(names, shards, strict=True):
-        module = shard.removeprefix("tests/e2e/test_").removesuffix(".py").replace("_", "-")
-        assert name.endswith(f"-{module}") and name != module, name
-    assert "timeout-minutes: 90" in E2E
+    # The whole workflow stays under the hour (tests/test_e2e_plan.py estimates each shard).
+    assert "timeout-minutes: 70" in _job(E2E, "e2e")
+    # No template or seed is ever kept between runs.
+    assert "FL_E2E_TEMPLATE_CACHE" not in E2E and "FL_E2E_SEED" not in E2E
     # Weekly, on demand and on pull requests from the release branches.
     assert "startsWith(github.head_ref, 'feature/v')" in E2E
     # The bridge scenarios need the shims: built before the tier runs.

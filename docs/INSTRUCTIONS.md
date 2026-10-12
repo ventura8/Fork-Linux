@@ -55,8 +55,9 @@ FL_CI_STAGE=compat FL_CI_CELL=jammy ./scripts/ci-docker.sh
 ./scripts/ci-packaging-cell.sh deb             # one packaging cell: build + smoke + live E2E
 ./scripts/ci-packaging-matrix.sh               # 9 cells in parallel
 ./scripts/ci-pipeline.sh                       # everything, fail-fast, tee'd under logs/
-./scripts/ci-e2e-wine.sh                       # CI's real tier: Fork under Wine (Xvfb, ~2.5 GB download, no seed)
-FL_E2E_FORK_UPDATES=1 FL_E2E_APP_UPGRADE=1 ./scripts/ci-e2e-wine.sh  # + both update tiers (as e2e-wine.yml), one fresh root per module
+./scripts/ci-e2e-wine.sh --all                 # CI's real tier, every module (both update tiers too), in parallel from a template root
+./scripts/ci-e2e-wine.sh --jobs 2 tests/e2e/test_real_doctor.py tests/e2e/test_real_launch.py  # some modules, two at a time
+./scripts/ci-e2e-wine.sh                       # the whole tier in one session and one root (upstream-watch.yml)
 ```
 
 ### Real Fork / Wine locally: containers only
@@ -80,7 +81,7 @@ root `/var/tmp/fork-linux-e2e/<NAME>` (`/e2e`, 0700; `FL_E2E_SCRATCH` overrides,
 `$HOME`) and the seed `/var/tmp/fork-linux-e2e/seed` (`/seed`, read-only: `wine-*.tar.xz`,
 `Fork-*.exe`, `winetricks-*`, `selawik-*.zip`, `winetricks/` cache; `FL_E2E_SEED_DIR` overrides).
 Logs land in `logs/e2e-docker/<NAME>/`; screenshots stay in `<scratch>/root/shots/` (Fork's logo:
-never commit them). At most `FL_E2E_SLOTS` (default 3) such containers run at once on the host.
+never commit them). At most `FL_E2E_SLOTS` (default: one per two cores and per 3 GiB of available memory, `fl_e2e_default_slots`) such containers run at once on the host.
 Runbook: [`.agents/skills/e2e-docker/SKILL.md`](../.agents/skills/e2e-docker/SKILL.md).
 
 Desktop E2E tier (fork-linux from the release tarball inside a real desktop session in a
@@ -96,9 +97,14 @@ The real tier covers every user-facing scenario listed in
 CI checks the registry on every pull request (check.yml, `gen-scenarios-doc.py validate` and `check`,
 even when the lint stage failed) next to the per-file coverage gate (`scripts/check-coverage.py`), and
 runs the real tier in `e2e-wine.yml` weekly, on demand and on pull requests from release branches
-(`feature/vX.Y.Z`): one parallel job per module, named `<area>-<module>`, each with its own runner,
-scratch root and prefix and under 90 minutes; locally,
-`./scripts/ci-e2e-wine.sh tests/e2e/test_real_doctor.py` runs one such job.
+(`feature/vX.Y.Z`): five parallel shards (balanced on `tests/e2e/timings.json`), each building one
+template root (the main prefix, set up once) and running its modules two at a time, longest first,
+each in a container and a root of its own copied from the template, under an hour. Locally
+`./scripts/ci-e2e-wine.sh --all` runs the whole tier the same way, `--jobs` (default: the host-wide
+slots) at a time; the full tier with both update tiers takes about 40 minutes on a 16-core, 30 GB
+laptop (`tests/e2e/RESULTS.md`). `FL_E2E_TEMPLATE_CACHE=/var/tmp/fork-linux-e2e/templates` keeps the
+template across local runs (keyed by `scripts/e2e-plan.py key`: image, Fork version, setup code), so
+re-running one module skips the setup; CI never keeps one.
 
 Read every `logs/ci-packaging/<format>.log` after a packaging run (exit 0 is not enough).
 

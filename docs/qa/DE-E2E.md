@@ -67,7 +67,7 @@ Each desktop is one `docker/Dockerfile.e2e.de.<desktop>` plus one entry in
   instead), and runs `tests/e2e_de/test_de_integration.py` (or `test_de_fork.py` with `--fork`).
 - It shares `scripts/lib-e2e-docker.sh` with `scripts/e2e-docker.sh`: the same scratch-root
   refusals (`/`, `$HOME`, symlinks, unmarked directories), one run per name, and for `--fork` one
-  of the host-wide E2E slots (`FL_E2E_SLOTS`, default 3) and the seed
+  of the host-wide E2E slots (`FL_E2E_SLOTS`, default from the host's cores and memory) and the seed
   (`/var/tmp/fork-linux-e2e/seed`, or `FL_E2E_SEED_DIR`; without one everything is downloaded).
 - Logs: `logs/e2e-de/<NAME>.log` (pytest) and `logs/e2e-de/<NAME>/` (text logs from the scratch
   root: the session's daemons, fork-linux's logs, the setup log; never `drive_c`, never images).
