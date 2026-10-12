@@ -13,7 +13,7 @@ Fork 2.23 keeps its Repository Manager state in
 
 With no repository yet the last line is ``repository = []``. Fork 2.23.2
 rejects a file that lacks any of the four keys (``missing field `ignore` ``,
-then ``missing field `repository` ``; QA NUC-XFCE issue 5) and rebuilds it
+then ``missing field `repository` ``; found in manual QA on Xfce) and rebuilds it
 from the legacy ``settings.json`` key ``RepositoryManager.SourceDirectories``,
 falling back to ``C:\\users\\<u>\\``. ``source_dirs`` is the folder
 Preferences > General, the welcome dialog and the Clone dialog offer. Its
@@ -243,35 +243,22 @@ def new_file(source_dir: str) -> str:
     return f"{SOURCE_DIRS} = [{quote(source_dir)}]\nscan_depth = {SCAN_DEPTH}\nignore = []\nrepository = []\n"
 
 
-def _legacy(text: str) -> str | None:
-    """The folder of a file fork-linux 1.0.0 created (only ``source_dirs``, which Fork rejects), else None."""
-    dirs = source_dirs(text)
-    if dirs is None or len(dirs) != 1 or text != f"{SOURCE_DIRS} = [{quote(dirs[0])}]\n":
-        return None
-    return dirs[0]
-
-
 def ensure_source_dirs(forkdata_dir: Path, *, user: str, home_win: str, backup_dir: Path) -> bool:
     """Point Fork's default source folder at ``home_win``; True if the file was written.
 
-    A missing file is created as Fork itself writes it (:func:`new_file`); the
-    one-line file fork-linux 1.0.0 created, which Fork rejects, is completed
-    the same way. An existing file is changed only when ``source_dirs`` is
-    still Fork's default ``C:\\users\\<user>``; a folder the user chose is
-    kept. The caller makes sure Fork is closed.
+    A missing file is created as Fork itself writes it (:func:`new_file`). An
+    existing file is changed only when ``source_dirs`` is still Fork's default
+    ``C:\\users\\<user>``; a folder the user chose is kept. The caller makes
+    sure Fork is closed.
     """
     file = path(forkdata_dir)
     text = read_text(file)
     if text is None:
         fsutil.atomic_write(file, new_file(home_win), mode=FILE_MODE)
         return True
-    legacy = _legacy(text)
-    if legacy is not None:
-        new = new_file(home_win if is_default([legacy], user) else legacy)
-    elif is_default(source_dirs(text), user):
-        new = with_source_dirs(text, [home_win])
-    else:
+    if not is_default(source_dirs(text), user):
         return False
+    new = with_source_dirs(text, [home_win])
     backup(text, backup_dir=backup_dir)
     fsutil.atomic_write(file, new.encode("utf-8", errors="surrogateescape"), mode=FILE_MODE)
     return True

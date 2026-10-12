@@ -555,24 +555,15 @@ def _install_thunar(dirs: _Dirs, cmd: list[str], registry: _Registry) -> bool:
     entry = registry.get(path) or {}
     created = bool(entry.get("created"))
     fields = {key: entry[key] for key in ("seed", "seed_sha256") if key in entry}
-    root: ET.Element | None = None
     if path.exists():
         tree = _read_uca(path)
         if tree is None:
             return False
         root = tree.getroot()
-        if created and "seed_sha256" not in entry and all(_ours(child) for child in root if child.tag == "action"):
-            # fork-linux 1.0.0 created the file with only our action, which hid the desktop's own actions.
-            root = None
-    if root is None:
+    else:
         root, fields = _thunar_seed(dirs)
         created = True
     _drop_ours(root)
-    if created and "seed_sha256" not in fields:
-        # Recorded by a build without seed fields: adopt the seed when the file is still exactly it.
-        seed_fields = _thunar_seed(dirs)[1]
-        if _sha256(_uca_bytes(root)) == seed_fields["seed_sha256"]:
-            fields = seed_fields
     root.append(_thunar_action(cmd))
     _make_parents(path, registry)
     _write_uca(path, root)
@@ -583,10 +574,8 @@ def _install_thunar(dirs: _Dirs, cmd: list[str], registry: _Registry) -> bool:
 def _back_to_seed(root: ET.Element, entry: Mapping[str, Any]) -> bool:
     """True when ``root`` (our action already removed) is what fork-linux created the file from."""
     seed_sha = entry.get("seed_sha256")
-    if isinstance(seed_sha, str):
-        return _sha256(_uca_bytes(root)) == seed_sha
-    # Created before seeding existed: from an empty <actions>.
-    return not any(child.tag == "action" for child in root)
+    # No recorded seed (an edited registry): nothing proves the file is ours alone, so it stays.
+    return isinstance(seed_sha, str) and _sha256(_uca_bytes(root)) == seed_sha
 
 
 def _remove_thunar(path: Path, entry: Mapping[str, Any]) -> bool:

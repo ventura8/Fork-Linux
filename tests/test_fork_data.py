@@ -162,43 +162,22 @@ def test_new_file_matches_forks_own_layout() -> None:
 
 
 @pytest.mark.parametrize(
-    ("legacy", "folder"),
+    ("text", "expected"),
     [
-        # The one-line file fork-linux 1.0.0 wrote over Fork's default: the home goes in.
-        ("source_dirs = ['C:\\users\\tester\\']\n", HOME),
-        # ... or with a folder already chosen: the folder is kept.
-        ("source_dirs = ['Z:\\home\\tester']\n", HOME),
-        ("source_dirs = ['D:\\src']\n", "D:\\src"),
+        # Only the source_dirs line changes, even in a file Fork would reject and rebuild.
+        ("source_dirs = ['C:\\users\\tester\\']\n", f"source_dirs = ['{HOME}']\n"),
+        ("source_dirs = ['D:\\src']\n", None),
     ],
 )
-def test_ensure_source_dirs_completes_the_file_fork_linux_1_0_0_wrote(
-    tmp_path: Path, legacy: str, folder: str
-) -> None:
+def test_ensure_source_dirs_of_an_incomplete_file(tmp_path: Path, text: str, expected: str | None) -> None:
     forkdata = tmp_path / "ForkData"
     forkdata.mkdir()
     file = fork_data.path(forkdata)
-    file.write_text(legacy, encoding="utf-8")
+    file.write_text(text, encoding="utf-8")
     backups = tmp_path / "backups"
-    assert fork_data.ensure_source_dirs(forkdata, user="tester", home_win=HOME, backup_dir=backups)
-    assert file.read_text(encoding="utf-8") == fork_data.new_file(folder)
-    [saved] = fork_data.list_backups(backups)
-    assert saved.read_text(encoding="utf-8") == legacy
+    assert fork_data.ensure_source_dirs(forkdata, user="tester", home_win=HOME, backup_dir=backups) is bool(expected)
+    assert file.read_text(encoding="utf-8") == (expected or text)
     assert not fork_data.ensure_source_dirs(forkdata, user="tester", home_win=HOME, backup_dir=backups)
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "source_dirs = ['a', 'b']\n",
-        "source_dirs = []\n",
-        "source_dirs = ['D:\\src']\n\n",
-        "source_dirs = [ 'D:\\src' ]\n",
-        "source_dirs = ['D:\\src']",
-        "scan_depth = 5\n",
-    ],
-)
-def test_only_the_exact_one_line_file_counts_as_legacy(text: str) -> None:
-    assert fork_data._legacy(text) is None
 
 
 def test_list_backups_of_a_missing_dir(tmp_path: Path) -> None:

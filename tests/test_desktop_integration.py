@@ -734,69 +734,28 @@ def test_thunar_seed_without_our_action_and_unusable_seeds(
         assert not dirs.thunar_uca.exists()
 
 
-def _legacy_entry(paths: Paths, dirs: di._Dirs) -> None:
-    """The registry entry fork-linux 1.0.0 wrote for a uca.xml it created (no seed fields)."""
+def test_thunar_entry_without_a_recorded_seed_keeps_the_file(
+    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
+) -> None:
+    """A created entry without seed fields (an edited registry) never gets the file deleted."""
+    dirs = _dirs(env)
+    dirs.thunar_uca.parent.mkdir(parents=True)
+    dirs.thunar_uca.write_text(
+        f"<actions><action><unique-id>{di.UNIQUE_ID}</unique-id></action></actions>", encoding="utf-8"
+    )
     registry = di._Registry.load(paths.integrations_file)
     registry.record(dirs.thunar_uca, di.THUNAR, unique_id=di.UNIQUE_ID, created=True)
     registry.save()
-
-
-def test_thunar_file_created_by_1_0_0_is_reseeded(
-    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
-) -> None:
-    dirs = _dirs(env)
-    dirs.thunar_uca.parent.mkdir(parents=True)
-    dirs.thunar_uca.write_text(
-        f"<actions><action><name>Open in Fork</name><unique-id>{di.UNIQUE_ID}</unique-id></action></actions>",
-        encoding="utf-8",
-    )
-    _legacy_entry(paths, dirs)
-    system = _system_uca(env, tmp_path)
-    _install(paths, env, runner, menu=False, file_managers="thunar")
-    # 1.0.0 hid the desktop's "Open Terminal Here": it is back.
-    assert _actions(dirs.thunar_uca) == ["1-1", di.UNIQUE_ID]
-    assert _registry(paths)[str(dirs.thunar_uca)]["seed"] == str(system)
-    assert di.remove(paths, env, runner=runner) == [dirs.thunar_uca]
-    assert not dirs.thunar_uca.exists()
-
-
-def test_thunar_file_created_by_1_0_0_and_extended_by_the_user(
-    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
-) -> None:
-    dirs = _dirs(env)
-    dirs.thunar_uca.parent.mkdir(parents=True)
-    mine = "<action><name>Mine</name><unique-id>2-2</unique-id></action>"
-    dirs.thunar_uca.write_text(
-        f"<actions>{mine}<action><unique-id>{di.UNIQUE_ID}</unique-id></action></actions>", encoding="utf-8"
-    )
-    _legacy_entry(paths, dirs)
     _system_uca(env, tmp_path)
     _install(paths, env, runner, menu=False, file_managers="thunar")
-    # The user's own action stays; the file is not the seed, so no seed is adopted.
-    assert _actions(dirs.thunar_uca) == ["2-2", di.UNIQUE_ID]
+    # The file is the user's to keep: it is not re-seeded and no seed is adopted.
+    assert _actions(dirs.thunar_uca) == [di.UNIQUE_ID]
     entry = _registry(paths)[str(dirs.thunar_uca)]
     assert entry["created"] is True
     assert "seed_sha256" not in entry
     assert di.remove(paths, env, runner=runner) == [dirs.thunar_uca]
-    assert _actions(dirs.thunar_uca) == ["2-2"]
-
-
-def test_thunar_file_created_by_1_0_0_that_matches_the_seed_adopts_it(
-    paths: Paths, env: dict[str, str], runner: RecordingRunner, tmp_path: Path
-) -> None:
-    dirs = _dirs(env)
-    system = _system_uca(env, tmp_path)
-    # The user copied the desktop's file and 1.0.0 added its action to it, recording it as created.
-    seed = ET.fromstring(XUBUNTU_UCA, parser=ET.XMLParser(target=ET.TreeBuilder(insert_comments=True)))
-    seed.append(ET.fromstring(f"<action><unique-id>{di.UNIQUE_ID}</unique-id></action>"))
-    dirs.thunar_uca.parent.mkdir(parents=True)
-    dirs.thunar_uca.write_bytes(ET.tostring(seed))
-    _legacy_entry(paths, dirs)
-    _install(paths, env, runner, menu=False, file_managers="thunar")
-    entry = _registry(paths)[str(dirs.thunar_uca)]
-    assert entry["seed"] == str(system)
-    assert di.remove(paths, env, runner=runner) == [dirs.thunar_uca]
-    assert not dirs.thunar_uca.exists()
+    assert dirs.thunar_uca.exists()
+    assert _actions(dirs.thunar_uca) == []
 
 
 def test_uca_bytes_of_an_empty_file() -> None:
@@ -811,9 +770,13 @@ def test_remove_thunar_edge_cases(tmp_path: Path) -> None:
     assert not di._remove_thunar(uca, {"created": True})
     uca.write_text("<actions><action><unique-id>x</unique-id></action></actions>", encoding="utf-8")
     assert not di._remove_thunar(uca, {"created": True})
-    uca.write_text(f"<actions><action><unique-id>{di.UNIQUE_ID}</unique-id></action></actions>", encoding="utf-8")
-    assert di._remove_thunar(uca, {"created": True})
+    ours = f"<actions><action><unique-id>{di.UNIQUE_ID}</unique-id></action></actions>"
+    uca.write_text(ours, encoding="utf-8")
+    assert di._remove_thunar(uca, {"created": True, "seed_sha256": di._sha256(EMPTY_UCA)})
     assert not uca.exists()
+    uca.write_text(ours, encoding="utf-8")
+    assert di._remove_thunar(uca, {"created": True, "seed_sha256": None})
+    assert uca.exists()
 
 
 def test_read_uca_unreadable(tmp_path: Path) -> None:

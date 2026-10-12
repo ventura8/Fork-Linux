@@ -114,8 +114,8 @@ STDIN*  STDIN_EOF  SIGNAL(signo)            ──►
   running in its own session), `FL_REQ_HOST_HELPER` (0x2, the daemon prepends its
   configured `--host-helper`) and `FL_REQ_HANDOFF` (0x4, the desktop hand-off: alone, argv
   exactly `{ VERB, ARG }`, see below). Unknown bits and unknown TLV tags are rejected (the
-  protocol version changes instead). `FL_REQ_HANDOFF` was added in 1.0.0 without a version
-  change: a daemon without it rejects the bit, and the hand-off then falls back.
+  protocol version changes instead), so a daemon that does not know `FL_REQ_HANDOFF` refuses
+  the request and the hand-off falls back.
 - `SIGNAL(13)` means "Fork closed its reader": the daemon closes the child's stdout so it
   gets a genuine `EPIPE` / `SIGPIPE`. `SIGNAL` 1/2/9/15 are `killpg`'d; others ignored.
 - If the shim's socket goes away (Fork killed `git.exe`), the daemon `killpg`s the child's
