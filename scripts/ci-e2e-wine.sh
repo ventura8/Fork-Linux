@@ -33,6 +33,11 @@
 # The bridge scenarios need the shims: scripts/build-bridge.sh (its own CI image) runs first
 # when build-bridge/ has none.
 # Every session runs even when an earlier one failed; the exit status is the first failure's.
+# Velopack (Fork's own updater) now and then cannot start the updated Fork under Wine: "Failed to
+# start application (OS Error 731)" (maintainer decision 2026-10-12, docs/qa/RELEASE-DECISIONS.md).
+# A session that failed with it re-runs its failed modules once, each in a fresh root of its own
+# (logs in logs/e2e-wine/<module>-rerun/), and says so on stdout and in logs/e2e-wine/reruns.log;
+# the re-run's status counts. Any other failure is never re-run.
 # A skipped test fails its session: every tier this script runs was asked for, and its tools and
 # builds are made first, so a skip means a scenario silently did not run (pytest -rs lists why).
 #
@@ -50,6 +55,7 @@ LOG_DIR="${ROOT}/logs/e2e-wine"
 CONTAINER="fl-e2e-ci-wine-$$"
 BUILDS_IN="/bridge-builds"
 FORK_UPDATE="test_fork_update.py"
+VELOPACK_731="Failed to start application (OS Error 731)"
 APP_UPGRADE="test_wine_app_upgrade.py"
 
 command -v docker >/dev/null 2>&1 || fl_e2e_die "docker not found"
@@ -181,6 +187,37 @@ run_session() {
 	return "${status}"
 }
 
+# failed_modules LOG: the tests/e2e modules with a FAILED or ERROR line in a pytest log, one per line.
+failed_modules() {
+	grep -oE '^(FAILED|ERROR) tests/e2e/test_[A-Za-z0-9_]+\.py' "$1" | sed 's|.*/||' | sort -u
+	return 0
+}
+
+# rerun_after_velopack_731 NAME: when session NAME failed (session_status != 0) and its log has
+# Velopack's start failure, re-run its failed modules once, each in a session of its own;
+# session_status becomes the first failing re-run's status (0 when they all pass).
+rerun_after_velopack_731() {
+	local name="$1" log="${LOG_DIR}/$1/pytest.log" module rerun=0 rerun_status
+	local -a modules=()
+	if ((session_status == 0)) || ! grep -qF "${VELOPACK_731}" "${log}"; then
+		return 0
+	fi
+	mapfile -t modules < <(failed_modules "${log}")
+	((${#modules[@]} > 0)) || return 0
+	for module in "${modules[@]}"; do
+		echo "==> e2e-wine: ${name}: Fork's updater failed with '${VELOPACK_731}'; re-running tests/e2e/${module} once" |
+			tee -a "${LOG_DIR}/reruns.log"
+		rerun_status=0
+		run_session "${module%.py}-rerun" "${module}" || rerun_status=$?
+		echo "==> e2e-wine: re-run of tests/e2e/${module} exit ${rerun_status}" | tee -a "${LOG_DIR}/reruns.log"
+		if ((rerun == 0)); then
+			rerun="${rerun_status}"
+		fi
+	done
+	session_status="${rerun}"
+	return 0
+}
+
 # record WHAT STATUS: print a session's result; the first failure becomes the script's status.
 status=0
 record() {
@@ -197,11 +234,13 @@ if ((${#SHARD[@]} > 0)); then
 	for module in "${MODULES[@]}"; do
 		session_status=0
 		run_session "${module%.py}" "${module}" || session_status=$?
+		rerun_after_velopack_731 "${module%.py}"
 		record "tests/e2e/${module}" "${session_status}"
 	done
 else
 	session_status=0
 	run_session tier "${MODULES[@]}" || session_status=$?
+	rerun_after_velopack_731 tier
 	record "tests/e2e (${#MODULES[@]} modules)" "${session_status}"
 fi
 cleanup

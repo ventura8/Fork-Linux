@@ -59,8 +59,13 @@ if args[:1] == ["run"]:
             if not os.path.lexists(link):
                 os.symlink("/etc/hostname", link)
     print("fake container output")
-    print(os.environ.get("FAKE_RUN_OUTPUT", ""))
-    sys.exit(int(os.environ.get("FAKE_RUN_RC", "0")))
+    # FAKE_RUN_OUTPUTS / FAKE_RUN_RCS: one value per docker run, in order ("|||" / "," separated).
+    with open(os.environ["FAKE_LOG"], encoding="utf-8") as log:
+        nth = sum(1 for line in log if json.loads(line).get("args", [None])[:1] == ["run"]) - 1
+    outputs = os.environ.get("FAKE_RUN_OUTPUTS")
+    rcs = os.environ.get("FAKE_RUN_RCS")
+    print(outputs.split("|||")[nth] if outputs else os.environ.get("FAKE_RUN_OUTPUT", ""))
+    sys.exit(int(rcs.split(",")[nth] if rcs else os.environ.get("FAKE_RUN_RC", "0")))
 sys.exit(0)
 """
 
@@ -690,6 +695,77 @@ def test_ci_e2e_wine_fails_a_module_that_skipped_a_test(box: Box) -> None:
     assert passed.returncode == 0, passed.stdout + passed.stderr
     failed = box.run(shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_OUTPUT=skipped, FAKE_RUN_RC="4")
     assert failed.returncode == 4, "pytest's own failure status wins"
+
+
+VELOPACK_731 = "Failed: Velopack could not start the updated Fork: Apply error: Failed to start application (OS Error 731)"
+
+
+def test_ci_e2e_wine_reruns_a_module_once_after_velopack_731(box: Box) -> None:
+    """Fork's updater failing to start the new Fork under Wine re-runs that module once, logged; the
+    re-run's status counts. Another failure is never re-run."""
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    _bridge_built(box)
+    shard = "tests/e2e/test_fork_update.py"
+    first = f"FAILED tests/e2e/test_fork_update.py::test_f1_in_app_update - {VELOPACK_731}\n1 failed"
+    result = box.run(shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir),
+                     FAKE_RUN_OUTPUTS=f"{first}|||1 passed", FAKE_RUN_RCS="1,0")
+    assert result.returncode == 0, result.stdout + result.stderr
+    notice = ("test_fork_update: Fork's updater failed with 'Failed to start application (OS Error 731)'; "
+              "re-running tests/e2e/test_fork_update.py once")
+    assert notice in result.stdout
+    assert "re-run of tests/e2e/test_fork_update.py exit 0" in result.stdout
+    assert "tests/e2e/test_fork_update.py exit 0" in result.stdout
+    runs = box.docker_runs()
+    assert len(runs) == 2
+    roots = {next(v for v in _opts(argv, "-v") if v.endswith(":/e2e:rw")) for argv in runs}
+    assert len(roots) == 2, "the re-run gets a fresh scratch root"
+    assert "FL_E2E_FORK_UPDATES=1" in _opts(runs[1], "-e")
+    logs = box.wt / "logs" / "e2e-wine"
+    assert (logs / "test_fork_update" / "pytest.log").read_text(encoding="utf-8").count("OS Error 731") == 1
+    assert (logs / "test_fork_update-rerun" / "pytest.log").is_file()
+    assert notice in (logs / "reruns.log").read_text(encoding="utf-8")
+    assert list(tmpdir.iterdir()) == []
+
+
+def test_ci_e2e_wine_reruns_only_once_and_never_for_other_failures(box: Box) -> None:
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    _bridge_built(box)
+    shard = "tests/e2e/test_fork_update.py"
+    again = f"FAILED tests/e2e/test_fork_update.py::test_f1_in_app_update - {VELOPACK_731}"
+    twice = box.run(shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir),
+                    FAKE_RUN_OUTPUTS=f"{again}|||{again}|||1 passed", FAKE_RUN_RCS="1,5,0")
+    assert twice.returncode == 5, "the re-run's failure counts, and there is no second re-run"
+    assert len(box.docker_runs()) == 2
+    box.log.unlink()
+    other = box.run(shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir),
+                    FAKE_RUN_OUTPUT="FAILED tests/e2e/test_fork_update.py::test_f2 - AssertionError", FAKE_RUN_RC="1")
+    assert other.returncode == 1
+    assert len(box.docker_runs()) == 1
+    assert "re-running" not in other.stdout
+    box.log.unlink()
+    no_module = box.run(shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir),
+                        FAKE_RUN_OUTPUT=f"{VELOPACK_731} (in a log line, no FAILED line)", FAKE_RUN_RC="2")
+    assert no_module.returncode == 2
+    assert len(box.docker_runs()) == 1
+
+
+def test_ci_e2e_wine_whole_tier_reruns_its_velopack_731_modules(box: Box) -> None:
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    _bridge_built(box)
+    first = (f"FAILED tests/e2e/test_fork_update.py::test_f1 - {VELOPACK_731}\n"
+             "ERROR tests/e2e/test_fork_update.py::test_f2 - chained\n"
+             "FAILED tests/e2e/test_real_fork.py::test_03 - AssertionError")
+    result = box.run(script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_FORK_UPDATES="1",
+                     FAKE_RUN_OUTPUTS=f"{first}|||1 passed|||2 failed", FAKE_RUN_RCS="1,0,3")
+    assert result.returncode == 3, result.stdout + result.stderr
+    runs = box.docker_runs()
+    assert [argv[-1] for argv in runs[1:]] == ["tests/e2e/test_fork_update.py", "tests/e2e/test_real_fork.py"]
+    assert "re-run of tests/e2e/test_fork_update.py exit 0" in result.stdout
+    assert "re-run of tests/e2e/test_real_fork.py exit 3" in result.stdout
+    assert "tests/e2e (3 modules) exit 3" in result.stdout
 
 
 def test_ci_e2e_wine_refuses_a_tmpdir_in_home(box: Box) -> None:

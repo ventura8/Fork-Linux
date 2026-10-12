@@ -478,9 +478,27 @@ def _forks_own_update(e2e: Any) -> None:
     ready = ui.wait_for(lambda: ui.find_window(e2e, READY_TITLE), UPDATE_TIMEOUT, "Fork's update to be ready")
     ui.screenshot(e2e, "07-a12-update-ready")
     old = set(ui.fork_pids(e2e.prefix))
+    mark = len(_velopack_log(e2e))
     ui.click(e2e, ready, READY_RESTART)
-    ui.wait_for(lambda: set(ui.fork_pids(e2e.prefix)) - old, UPDATE_TIMEOUT, "the Fork Velopack restarted")
-    ui.wait_main_window(e2e)
+    try:
+        ui.wait_for(lambda: set(ui.fork_pids(e2e.prefix)) - old, UPDATE_TIMEOUT, "the Fork Velopack restarted")
+        ui.wait_main_window(e2e)
+    except pytest.fail.Exception:
+        # Velopack applied the update but Wine did not start the new Fork.exe ("Failed to start
+        # application (OS Error 731)"): named, so scripts/ci-e2e-wine.sh re-runs the module once.
+        failed = [line for line in _velopack_log(e2e)[mark:].splitlines() if "Apply error" in line]
+        if failed:
+            pytest.fail(f"Velopack could not start the updated Fork: {failed[-1]}")
+        raise
+
+
+def _velopack_log(e2e: Any) -> str:
+    """Fork's ``velopack.log`` (empty while there is none)."""
+    fork_dir = e2e.prefix / "drive_c" / "users" / winecmd.windows_user(e2e.env) / "AppData" / "Local" / "Fork"
+    try:
+        return (fork_dir / "velopack.log").read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return ""
 
 
 def test_07_a12_app_upgrade_and_fork_self_update_on_one_launch(e2e: Any, releases: Releases) -> None:

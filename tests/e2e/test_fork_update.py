@@ -675,6 +675,7 @@ def restart_and_update(fork: ForkSession, during: Callable[[], None] | None = No
     except Fail:
         # Velopack applied the update but Wine did not start the new Fork.exe (seen once under heavy
         # load: "Failed to start application (OS Error 731)", ERROR_WAIT_1: it died while starting).
+        # Named in the failure, so scripts/ci-e2e-wine.sh re-runs the module once (RELEASE-DECISIONS).
         failed = [line for line in fork.context.velopack_log()[mark:].splitlines() if "Apply error" in line]
         if failed:
             raise Fail(f"Velopack could not start the updated Fork: {failed[-1]}") from None
