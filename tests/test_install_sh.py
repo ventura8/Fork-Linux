@@ -85,14 +85,30 @@ def home(tmp_path: Path) -> Path:
     (home / ".wine" / "E2E_SENTINEL").write_text("keep\n", encoding="utf-8")
     (home / ".local" / "share" / "fork-linux").mkdir(parents=True)
     (home / ".local" / "share" / "fork-linux" / "E2E_MARKER").write_text("keep\n", encoding="utf-8")
+    # The host may have fork-linux installed by its package manager (the scripts then refuse to
+    # run): every package manager the scripts ask reports "not installed" unless a test says so.
+    _fake_tools(_no_package_bin(home), {"dpkg-query": "exit 1", "rpm": "exit 1", "pacman": "exit 1"})
+    (home.parent / "system-share").mkdir()
     return home
+
+
+def _no_package_bin(home: Path) -> Path:
+    return home.parent / "no-package-bin"
+
+
+def _fake_tools(directory: Path, fakes: dict[str, str]) -> None:
+    directory.mkdir(exist_ok=True)
+    for name, body in fakes.items():
+        (directory / name).write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+        (directory / name).chmod(0o755)
 
 
 def _env(home: Path, **extra: str) -> dict[str, str]:
     python_dir = str(Path(sys.executable).resolve().parent)
     return {
         "HOME": str(home),
-        "PATH": f"{home / '.local' / 'bin'}:{python_dir}:/usr/bin:/bin",
+        "PATH": f"{home / '.local' / 'bin'}:{_no_package_bin(home)}:{python_dir}:/usr/bin:/bin",
+        "XDG_DATA_DIRS": str(home.parent / "system-share"),
         "FORK_LINUX_PYTHON": sys.executable,
         "LANG": "C.UTF-8",
         "TMPDIR": str(home.parent),
@@ -317,6 +333,17 @@ def test_uninstall_without_install_is_a_no_op(home: Path) -> None:
     assert _snapshot(home) == before
 
 
+def test_uninstall_points_a_dpkg_install_at_apt(tmp_path: Path, home: Path) -> None:
+    _skip_if_root()
+    fake_bin = tmp_path / "fake-bin"
+    _fake_tools(fake_bin, {"dpkg-query": "printf 'install ok installed'"})
+    before = _snapshot(home)
+    result = _run(UNINSTALL, home, PATH=f"{fake_bin}:{_env(home)['PATH']}")
+    assert result.returncode != 0
+    assert "fork-linux was installed with apt/dpkg: sudo apt remove fork-linux" in result.stderr
+    assert _snapshot(home) == before
+
+
 def test_uninstall_dry_run_keeps_everything(home: Path, release) -> None:
     _need_downloader()
     assert _run(INSTALL, home, "--no-deps", FORK_LINUX_RELEASES_URL=release.url("")).returncode == 0
@@ -445,10 +472,7 @@ def test_a13_refuses_to_shadow_a_package_install(
 ) -> None:
     _skip_if_root()
     fake_bin = tmp_path / "fake-bin"
-    fake_bin.mkdir()
-    for name, body in fakes.items():
-        (fake_bin / name).write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
-        (fake_bin / name).chmod(0o755)
+    _fake_tools(fake_bin, fakes)
     path = f"{fake_bin}:{_env(home)['PATH']}"
     result = _run(INSTALL, home, "--no-deps", "--from-tarball", str(_local_tarball(tmp_path / "a", VERSION)), PATH=path)
     assert result.returncode != 0

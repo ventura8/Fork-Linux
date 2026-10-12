@@ -33,16 +33,23 @@ def pytest_configure(config: pytest.Config) -> None:
 
 @pytest.fixture
 def xdg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Point HOME and every XDG base directory at a fresh temp tree; return the fake HOME."""
+    """Point HOME and every XDG base and search directory at a fresh temp tree; return the fake HOME."""
     home = tmp_path / "home"
     for sub in (".config", ".local/share", ".cache", ".local/state", "run"):
         (home / sub).mkdir(parents=True, exist_ok=True)
+    # The system search dirs too: a fork-linux package installed on the host (its menu entry in
+    # /usr/share/applications, its icon) must not change what a user install does under test.
+    system = tmp_path / "system"
+    for sub in ("share", "xdg"):
+        (system / sub).mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
     monkeypatch.setenv("XDG_DATA_HOME", str(home / ".local/share"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(home / ".cache"))
     monkeypatch.setenv("XDG_STATE_HOME", str(home / ".local/state"))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(home / "run"))
+    monkeypatch.setenv("XDG_DATA_DIRS", str(system / "share"))
+    monkeypatch.setenv("XDG_CONFIG_DIRS", str(system / "xdg"))
     # SSH_AUTH_SOCK: the developer's own ssh-agent must not switch the launcher's ssh-agent relay on.
     for var in ("FORK_LINUX_PREFIX", "WINEPREFIX", "FLATPAK_ID", "SNAP", "APPIMAGE", "APPDIR", "SSH_AUTH_SOCK"):
         monkeypatch.delenv(var, raising=False)
