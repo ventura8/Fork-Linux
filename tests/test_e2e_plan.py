@@ -130,7 +130,23 @@ def test_main_estimate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> No
     assert plan_mod.main(["estimate", "--timings", str(path), "--jobs", "1", "test_a.py", "test_real_fork.py"]) == 0
     assert capsys.readouterr().out == "90\n"
     assert plan_mod.main(["estimate", "--timings", str(path), "--jobs", "0", "test_a.py"]) == 2
-    assert "--jobs must be at least 1" in capsys.readouterr().err
+    assert "--jobs and --remote-jobs must be at least 1" in capsys.readouterr().err
+
+
+def test_split_ends_both_machines_about_together() -> None:
+    seconds = {"test_a.py": 600.0, "test_b.py": 500.0, "test_c.py": 100.0, "test_real_fork.py": 300.0}
+    local, remote = plan_mod.split(list(seconds), 1, 2, 60.0, seconds)
+    assert local == ["test_a.py"]
+    assert remote == ["test_b.py", "test_real_fork.py", "test_c.py"]
+    assert plan_mod.split(["test_a.py"], 1, 1, 60.0, seconds) == (["test_a.py"], [])
+
+
+def test_main_split(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = _timings(tmp_path, 60, {"test_a.py": 600, "test_b.py": 500})
+    assert plan_mod.main(["split", "--timings", str(path), "--jobs", "1", "--remote-jobs", "1", "test_a.py",
+                          "test_b.py"]) == 0
+    assert capsys.readouterr().out.splitlines() == ["local test_a.py", "remote test_b.py"]
+    assert plan_mod.main(["split", "--timings", str(path), "--jobs", "1", "--remote-jobs", "0", "test_a.py"]) == 2
 
 
 def test_main_key(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

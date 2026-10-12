@@ -15,6 +15,9 @@ there counts as the longest, so it starts first.
 Usage:
   e2e-plan.py plan MODULE...                       one line per module: NAME MODE SECONDS
   e2e-plan.py estimate --jobs N MODULE...          the run's wall-clock estimate in seconds
+  e2e-plan.py split --jobs N --remote-jobs M MODULE...
+                                                   one line per module: local|remote NAME, so that
+                                                   both machines (each its own template) end together
   e2e-plan.py key --image-id ID [--fork-version V] the template key (sha256 of what setup depends on)
 
 Standard library only; it reads files and prints, it never starts a container.
@@ -93,6 +96,19 @@ def estimate(modules: Sequence[str], jobs: int, setup: float, seconds: dict[str,
     return end
 
 
+def split(modules: Sequence[str], jobs: int, remote_jobs: int, setup: float,
+          seconds: dict[str, float]) -> tuple[list[str], list[str]]:
+    """Share the modules between this machine (``jobs`` at a time) and a second one (``remote_jobs``), each
+    building its own template: longest first, each module where the estimated end is earlier."""
+    local: list[str] = []
+    remote: list[str] = []
+    for module, _how, _took in plan(modules, seconds):
+        here = estimate([*local, module], jobs, setup, seconds)
+        there = estimate([*remote, module], remote_jobs, setup, seconds)
+        (local if here <= there else remote).append(module)
+    return local, remote
+
+
 def _files(root: Path) -> list[Path]:
     found = [root / rel for rel in KEY_FILES]
     for tree in KEY_TREES:
@@ -114,12 +130,14 @@ def template_key(root: Path, image_id: str, fork_version: str) -> str:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="e2e-plan.py", description=__doc__.split("\n", 1)[0])
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("plan", "estimate"):
+    for name in ("plan", "estimate", "split"):
         command = commands.add_parser(name)
         command.add_argument("modules", nargs="+")
         command.add_argument("--timings", type=Path, default=TIMINGS)
-        if name == "estimate":
+        if name != "plan":
             command.add_argument("--jobs", type=int, required=True)
+        if name == "split":
+            command.add_argument("--remote-jobs", type=int, required=True)
     key = commands.add_parser("key")
     key.add_argument("--image-id", required=True)
     key.add_argument("--fork-version", default="")
@@ -138,10 +156,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         for module, how, took in plan(modules, seconds):
             print(f"{module} {how} {took:.0f}" if took != float("inf") else f"{module} {how} unknown")
         return 0
-    if args.jobs < 1:
-        print("e2e-plan.py: --jobs must be at least 1", file=sys.stderr)
+    if min(args.jobs, getattr(args, "remote_jobs", 1)) < 1:
+        print("e2e-plan.py: --jobs and --remote-jobs must be at least 1", file=sys.stderr)
         return 2
-    print(f"{estimate(modules, args.jobs, setup, seconds):.0f}")
+    if args.command == "estimate":
+        print(f"{estimate(modules, args.jobs, setup, seconds):.0f}")
+        return 0
+    local, remote = split(modules, args.jobs, args.remote_jobs, setup, seconds)
+    for where, names in (("local", local), ("remote", remote)):
+        for module in names:
+            print(f"{where} {module}")
     return 0
 
 

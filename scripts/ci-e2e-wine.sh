@@ -43,6 +43,12 @@
 #                              first (variant trees of this one, 0.9.1 and 0.9.2, by
 #                              scripts/build-version-variant.sh --tree-only) into a directory of
 #                              their own, mounted read-only (FL_E2E_BRIDGE_BUILDS=/bridge-builds)
+#   --remote HOST [--remote-jobs M] (with --all or test paths) shares the modules with a second
+#   machine reached by ssh, so that both end about together (e2e-plan.py split): this commit is
+#   shipped as a git bundle into its clone (FL_E2E_REMOTE_DIR, default ~/fork-linux-ci; the
+#   worktree must be clean), which runs its share with this script, M at a time (default --jobs),
+#   under the same container-only rules and its own template; its logs land in
+#   logs/e2e-wine/remote-HOST/ and its status counts like a module's.
 #   Other arguments are extra pytest options for every module's session (-k, -x, ...).
 # Slots: every container holds one of the host-wide slots shared with scripts/e2e-docker.sh
 # (FL_E2E_SLOTS; default one per two cores and per 3 GiB of available memory).
@@ -59,7 +65,8 @@
 # A skipped test fails its session: every tier this script runs was asked for, and its tools and
 # builds are made first, so a skip means a scenario silently did not run (pytest -rs lists why).
 #
-# Usage: ./scripts/ci-e2e-wine.sh [--jobs N] [--all | tests/e2e/test_*.py...] [pytest args...]
+# Usage: ./scripts/ci-e2e-wine.sh [--jobs N] [--remote HOST [--remote-jobs M]]
+#                                [--all | tests/e2e/test_*.py...] [pytest args...]
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -119,11 +126,17 @@ SHARD=()
 OPTIONS=()
 ALL=0
 JOBS=""
+REMOTE=""
+REMOTE_JOBS=""
 while (($# > 0)); do
 	case "$1" in
-		--jobs)
-			(($# > 1)) || fl_e2e_die "--jobs needs a number"
-			JOBS="$2"
+		--jobs | --remote | --remote-jobs)
+			(($# > 1)) || fl_e2e_die "$1 needs a value"
+			case "$1" in
+				--jobs) JOBS="$2" ;;
+				--remote) REMOTE="$2" ;;
+				*) REMOTE_JOBS="$2" ;;
+			esac
 			shift
 			;;
 		--all) ALL=1 ;;
@@ -155,6 +168,26 @@ done
 SLOTS="$(fl_e2e_default_slots)"
 JOBS="${JOBS:-${SLOTS}}"
 [[ "${JOBS}" =~ ^[1-9][0-9]?$ ]] || fl_e2e_die "--jobs must be a number from 1 to 99 (got '${JOBS}')"
+REMOTE_JOBS="${REMOTE_JOBS:-${JOBS}}"
+REMOTE_MODULES=()
+if [[ -n "${REMOTE}" ]]; then
+	((${#SHARD[@]} > 0)) || fl_e2e_die "--remote needs --all or test paths"
+	[[ "${REMOTE}" =~ ^[A-Za-z0-9][A-Za-z0-9_.@-]*$ ]] || fl_e2e_die "--remote must be an ssh host name (got '${REMOTE}')"
+	[[ "${REMOTE_JOBS}" =~ ^[1-9][0-9]?$ ]] ||
+		fl_e2e_die "--remote-jobs must be a number from 1 to 99 (got '${REMOTE_JOBS}')"
+	[[ -z "$(git status --porcelain --untracked-files=no)" ]] ||
+		fl_e2e_die "--remote ships the last commit: commit or stash your changes first"
+	split="$(python3 "${ROOT}/scripts/e2e-plan.py" split --jobs "${JOBS}" --remote-jobs "${REMOTE_JOBS}" \
+		"${MODULES[@]}")" || fl_e2e_die "scripts/e2e-plan.py split failed"
+	MODULES=()
+	while read -r where module; do
+		if [[ "${where}" == "remote" ]]; then
+			REMOTE_MODULES+=("${module}")
+		else
+			MODULES+=("${module}")
+		fi
+	done <<<"${split}"
+fi
 
 fl_e2e_build_image "${ROOT}" "${IMAGE}"
 if [[ ! -x "${ROOT}/build-bridge/bridge/fl-bridge-helper" ]]; then
@@ -369,6 +402,39 @@ prepare_template() {
 	return 0
 }
 
+# remote_job: ship this commit to REMOTE's clone, run REMOTE_MODULES there with this script, copy its
+# logs to logs/e2e-wine/remote-REMOTE/ and its results into results.tsv; exits with its status.
+remote_job() {
+	local dir="${FL_E2E_REMOTE_DIR:-fork-linux-ci}" logs="${LOG_DIR}/remote-${REMOTE}" status=0 started="${SECONDS}"
+	local tag="fl-remote-$$-${RANDOM}" command arg base
+	base="$(fl_e2e_base)"
+	mkdir -p -- "${logs}"
+	command="set -e; cd ${dir@Q}; mkdir -p -m 0700 ${base}/${tag}; cat >${base}/${tag}.bundle;"
+	command+=" git fetch -q ${base}/${tag}.bundle HEAD; git checkout -q --detach FETCH_HEAD; rm -f ${base}/${tag}.bundle;"
+	command+=" rc=0; TMPDIR=${base}/${tag}"
+	if [[ -n "${FL_E2E_FORK_VERSION:-}" ]]; then
+		command+=" FL_E2E_FORK_VERSION=${FL_E2E_FORK_VERSION@Q}"
+	fi
+	command+=" ./scripts/ci-e2e-wine.sh"
+	command+=" --jobs ${REMOTE_JOBS}"
+	for arg in "${REMOTE_MODULES[@]/#/tests/e2e/}" "${OPTIONS[@]}"; do
+		command+=" ${arg@Q}"
+	done
+	command+=" || rc=\$?; rmdir ${base}/${tag}; exit \$rc"
+	echo "==> e2e-wine: ${REMOTE}: ${REMOTE_MODULES[*]} (${REMOTE_JOBS} at a time)"
+	git bundle create - HEAD 2>/dev/null | ssh -o BatchMode=yes "${REMOTE}" "${command}" >"${logs}/runner.log" 2>&1 9>&- ||
+		status=$?
+	scp -o BatchMode=yes -rq "${REMOTE}:${dir}/logs/e2e-wine/." "${logs}/" 9>&- || true
+	if [[ -f "${logs}/results.tsv" ]]; then
+		sed "s|^|${REMOTE}:|" "${logs}/results.tsv" >>"${LOG_DIR}/results.tsv"
+	fi
+	if ((status != 0)); then
+		tail -n "${TAIL_LINES}" "${logs}/runner.log"
+	fi
+	echo "==> e2e-wine: remote ${REMOTE} exit ${status} ($((SECONDS - started)) s)"
+	exit "${status}"
+}
+
 # record STATUS: the first failure becomes the script's status.
 status=0
 record() {
@@ -452,8 +518,19 @@ rm -rf -- "${LOG_DIR:?}"
 mkdir -p -- "${LOG_DIR}"
 STARTED="${SECONDS}"
 if ((${#SHARD[@]} > 0)); then
+	if ((${#REMOTE_MODULES[@]} > 0)); then
+		remote_job &
+		RUNNING[$!]="remote"
+	fi
 	echo "==> e2e-wine: ${#MODULES[@]} modules, ${JOBS} at a time"
-	schedule "${MODULES[@]}"
+	# The remote run holds no local slot.
+	JOBS=$((JOBS + ${#RUNNING[@]}))
+	if ((${#MODULES[@]} > 0)); then
+		schedule "${MODULES[@]}"
+	fi
+	while ((${#RUNNING[@]} > 0)); do
+		reap
+	done
 else
 	JOBS=1
 	module_job "tests/e2e (${#MODULES[@]} modules)" tier none "${MODULES[@]}" &

@@ -243,7 +243,7 @@ def test_pytest_mode_mounts_env_and_logs(box: Box) -> None:
     assert all(not value.startswith(("DISPLAY", "XAUTHORITY", "SECRET")) for value in _opts(opts, "--env"))
     # The lock descriptors never reach docker (and so never a container process).
     for row in box.calls("docker"):
-        assert row["fds"] == {"8": False, "9": False}
+        assert row["fds"] == {"7": False, "8": False, "9": False}
     # Scratch root: private, marked, with HOME and the E2E root inside.
     assert stat.S_IMODE(box.scratch.stat().st_mode) == 0o700
     assert (box.scratch / MARKER).is_file()
@@ -825,7 +825,7 @@ def test_ci_e2e_wine_keeps_a_template_cache_by_key(box: Box) -> None:
 
 
 @pytest.mark.parametrize(("args", "message"), [
-    (["--jobs"], "--jobs needs a number"),
+    (["--jobs"], "--jobs needs a value"),
     (["--jobs", "0", "tests/e2e/test_real_fork.py"], "--jobs must be a number from 1 to 99 (got '0')"),
     (["--jobs", "x", "tests/e2e/test_real_fork.py"], "--jobs must be a number from 1 to 99 (got 'x')"),
     (["--all", "tests/e2e/test_real_fork.py"], "--all runs every module; name no test paths with it"),
@@ -837,6 +837,92 @@ def test_ci_e2e_wine_usage_errors(box: Box, args: list[str], message: str) -> No
     assert result.returncode == 1
     assert message in result.stderr
     assert box.docker_runs() == []
+
+
+FAKE_SSH = """#!{python}
+import json, os, sys
+data = sys.stdin.buffer.read()
+with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as log:
+    log.write(json.dumps({{"tool": "ssh", "args": sys.argv[1:], "stdin": data[:20].decode("latin-1")}}) + "\\n")
+print("remote output")
+sys.exit(int(os.environ.get("FAKE_SSH_RC", "0")))
+"""
+FAKE_SCP = """#!{python}
+import json, os, sys
+with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as log:
+    log.write(json.dumps({{"tool": "scp", "args": sys.argv[1:]}}) + "\\n")
+dest = sys.argv[-1]
+os.makedirs(os.path.join(dest, "test_real_bridge"), exist_ok=True)
+with open(os.path.join(dest, "results.tsv"), "w", encoding="utf-8") as handle:
+    handle.write("tests/e2e/test_real_bridge.py\\t0\\t700\\ttemplate\\n")
+"""
+
+
+def _remote_tools(box: Box) -> None:
+    for name, text in (("ssh", FAKE_SSH), ("scp", FAKE_SCP)):
+        tool = box.bin / name
+        tool.write_text(text.format(python=sys.executable), encoding="utf-8")
+        tool.chmod(0o755)
+
+
+def test_ci_e2e_wine_shares_the_modules_with_a_remote_machine(box: Box) -> None:
+    """--remote: the plan splits the modules; this commit goes to the remote clone as a bundle, its share runs
+    there with this script, its logs and results come back; its failure counts."""
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    _bridge_built(box)
+    _remote_tools(box)
+    shard = ["tests/e2e/test_real_bridge.py", "tests/e2e/test_real_fork.py"]
+    result = box.run("--jobs", "1", "--remote", "nuc", "--remote-jobs", "1", *shard, "-x", script="ci-e2e-wine.sh",
+                     TMPDIR=str(tmpdir), FL_E2E_FORK_VERSION="2.23.2")
+    assert result.returncode == 0, result.stdout + result.stderr
+    (ssh,) = box.calls("ssh")
+    assert ssh["args"][:3] == ["-o", "BatchMode=yes", "nuc"]
+    assert ssh["stdin"].startswith("# v2 git bundle")
+    command = ssh["args"][3]
+    assert command.startswith("set -e; cd 'fork-linux-ci'; ")
+    assert "git fetch -q /var/tmp/fork-linux-e2e/fl-remote-" in command
+    assert "FL_E2E_FORK_VERSION='2.23.2' ./scripts/ci-e2e-wine.sh --jobs 1 'tests/e2e/test_real_fork.py' '-x'" in command
+    # The longer module stays here (after its template), the other one ends sooner on the remote machine.
+    runs = box.docker_runs()
+    assert [argv[-1] for argv in runs] == ["test_01_setup_completes_and_resumes", "-x"]
+    assert runs[1][-2:] == ["tests/e2e/test_real_bridge.py", "-x"]
+    logs = box.wt / "logs" / "e2e-wine"
+    assert "remote output" in (logs / "remote-nuc" / "runner.log").read_text(encoding="utf-8")
+    assert (logs / "remote-nuc" / "test_real_bridge").is_dir()
+    rows = (logs / "results.tsv").read_text(encoding="utf-8").splitlines()
+    assert "nuc:tests/e2e/test_real_bridge.py\t0\t700\ttemplate" in rows
+    assert "==> e2e-wine: remote nuc exit 0" in result.stdout
+    box.log.unlink()
+    failed = box.run("--remote", "nuc", *shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_SSH_RC="5")
+    assert failed.returncode == 5, failed.stdout + failed.stderr
+    assert "remote output" in failed.stdout
+    (ssh,) = box.calls("ssh")
+    assert "FL_E2E_FORK_VERSION" not in ssh["args"][3]
+    assert list(tmpdir.iterdir()) == []
+
+
+@pytest.mark.parametrize(("args", "message"), [
+    (["--remote", "nuc"], "--remote needs --all or test paths"),
+    (["--remote", "-x", "tests/e2e/test_real_fork.py"], "--remote must be an ssh host name (got '-x')"),
+    (["--remote", "nuc", "--remote-jobs", "0", "tests/e2e/test_real_fork.py"],
+     "--remote-jobs must be a number from 1 to 99 (got '0')"),
+])
+def test_ci_e2e_wine_remote_usage_errors(box: Box, args: list[str], message: str) -> None:
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    result = box.run(*args, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir))
+    assert result.returncode == 1
+    assert message in result.stderr
+
+
+def test_ci_e2e_wine_remote_ships_only_committed_work(box: Box) -> None:
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    (box.wt / "scripts" / "e2e-plan.py").write_text("# changed\n", encoding="utf-8")
+    result = box.run("--remote", "nuc", "tests/e2e/test_real_fork.py", script="ci-e2e-wine.sh", TMPDIR=str(tmpdir))
+    assert result.returncode == 1
+    assert "--remote ships the last commit: commit or stash your changes first" in result.stderr
 
 
 def _slots(*call: str, **env: str) -> str:
