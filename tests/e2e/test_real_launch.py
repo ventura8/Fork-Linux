@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -24,6 +25,8 @@ if os.environ.get("FL_E2E_FORK") != "1":
 real_tier.enforce()
 
 FAST_PATH_SECONDS = 30.0
+# zenity's error dialog: its OK button's centre above the bottom edge (measured on the tier's Xvfb).
+ERROR_DIALOG_OK_FROM_BOTTOM = 51
 GITIGNORE = {".gitignore": "*.tmp\n"}
 
 
@@ -112,12 +115,13 @@ def test_missing_path_is_a_usage_error(closed: Any) -> None:
         )
         e2e.screen.screenshot("bad-path-dialog")
         assert launch.poll() is None, "the launch waits until the dialog is closed"
-        e2e.screen.xdotool("windowactivate", "--sync", dialog.id, check=True)
-        e2e.screen.key("Return")
+        # The dialog's one button, OK, spans its width at the bottom (no window manager gives it the keyboard).
+        e2e.screen.click_in(dialog, dialog.width // 2, -ERROR_DIALOG_OK_FROM_BOTTOM)
         assert launch.wait(timeout=FAST_PATH_SECONDS) == 2
     finally:
         if launch.poll() is None:
-            launch.kill()
+            # The launch runs in a session of its own: end it with its dialog.
+            os.killpg(launch.pid, signal.SIGKILL)
             launch.wait(timeout=10)
     log = max((e2e.logs).glob("launch-*.log"), key=lambda path: path.stat().st_mtime)
     assert "does-not-exist" in log.read_text(encoding="utf-8", errors="replace")
