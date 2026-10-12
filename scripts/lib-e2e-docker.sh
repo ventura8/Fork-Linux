@@ -211,13 +211,13 @@ fl_e2e_prepare_scratch() {
 }
 
 # fl_e2e_slots_for CORES MEM_AVAILABLE_KB: how many real-Fork containers a host runs at once: one per
-# two cores and per 3 GiB of available memory (a container peaks at about 2 GiB: Wine, .NET, Fork,
-# Xvfb, pytest), the smaller of the two, from 1 to 99.
+# two cores and per 2 GiB of available memory (a container peaked under 1 GiB in a full run: Wine,
+# .NET, Fork, Xvfb, pytest; the rest is room for the page cache), the smaller of the two, 1 to 99.
 fl_e2e_slots_for() {
 	local cores="$1" mem_kb="$2" slots
 	slots=$((cores / 2))
-	if ((mem_kb / 3145728 < slots)); then
-		slots=$((mem_kb / 3145728))
+	if ((mem_kb / 2097152 < slots)); then
+		slots=$((mem_kb / 2097152))
 	fi
 	((slots >= 1)) || slots=1
 	((slots <= 99)) || slots=99
@@ -233,7 +233,7 @@ fl_e2e_default_slots() {
 		return 0
 	fi
 	mem_kb="$(awk '$1 == "MemAvailable:" { print $2 }' /proc/meminfo 2>/dev/null || true)"
-	fl_e2e_slots_for "$(nproc 2>/dev/null || echo 2)" "${mem_kb:-3145728}"
+	fl_e2e_slots_for "$(nproc 2>/dev/null || echo 2)" "${mem_kb:-2097152}"
 	return 0
 }
 

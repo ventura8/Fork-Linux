@@ -51,12 +51,13 @@
 #   logs/e2e-wine/remote-HOST/ and its status counts like a module's.
 #   Other arguments are extra pytest options for every module's session (-k, -x, ...).
 # Slots: every container holds one of the host-wide slots shared with scripts/e2e-docker.sh
-# (FL_E2E_SLOTS; default one per two cores and per 3 GiB of available memory).
+# (FL_E2E_SLOTS; default one per two cores and per 2 GiB of available memory).
 # The bridge scenarios need the shims: scripts/build-bridge.sh (its own CI image) runs first
 # when build-bridge/ has none.
 # Every session runs even when an earlier one failed; the exit status is the first failure's
 # (in the order the modules finish). Each finished module prints its status and time; a failed
-# one the end of its log. logs/e2e-wine/results.tsv lists module, status, seconds and root.
+# one the end of its log. logs/e2e-wine/results.tsv lists module, status, seconds, root and the
+# seconds it waited for a slot (not counted in its time).
 # Velopack (Fork's own updater) now and then cannot start the updated Fork under Wine: "Failed to
 # start application (OS Error 731)" (maintainer decision 2026-10-12, docs/qa/RELEASE-DECISIONS.md).
 # A session that failed with it re-runs its failed modules once, each in a fresh root of its own
@@ -210,6 +211,8 @@ fi
 fl_e2e_own_dir "${LOCK_DIR}" "lock directory"
 
 USER_NAME="$(fl_e2e_user)"
+# Seconds a job waited for host-wide slots (taken by other runs); not counted in its time.
+SLOT_WAIT=0
 RUN="$(new_scratch)"
 TEMPLATE=""
 
@@ -246,7 +249,9 @@ in_container() {
 		mounts+=(-v "${BUILDS}:${BUILDS_IN}:ro")
 		builds_env="${BUILDS_IN}"
 	fi
+	local asked="${SECONDS}"
 	fl_e2e_acquire_slot "${LOCK_DIR}" "${SLOTS}" >>"${log%/*}/runner.log"
+	SLOT_WAIT=$((SLOT_WAIT + SECONDS - asked))
 	docker run --rm --init \
 		--name "${CONTAINER}-${name}" \
 		--label fl-e2e=ci-e2e-wine \
@@ -265,21 +270,22 @@ in_container() {
 		"${mounts[@]}" \
 		-w /src \
 		"${IMAGE}" \
-		python3 -m pytest -v -rs -p no:cacheprovider --basetemp=/e2e/pytest "$@" \
+		python3 -m pytest -v -rs --durations=0 --durations-min=5 -p no:cacheprovider --basetemp=/e2e/pytest "$@" \
 		>"${log}" 2>&1 7>&- 9>&- || status=$?
 	exec 9>&-
 	return "${status}"
 }
 
-# run_session NAME SEED MODULE...: one pytest session over MODULE... in a fresh scratch root that
-# starts as seed_root SEED says, then its logs (logs/e2e-wine/NAME/) and the root's deletion.
-# Returns pytest's status (1 for a skip).
+# run_session NAME SEED TARGET...: one pytest session over TARGET... (tests/e2e/<module>[::test], or
+# --deselect=...) in a fresh scratch root that starts as seed_root SEED says, then its logs
+# (logs/e2e-wine/NAME/) and the root's deletion. Returns pytest's status (1 for a skip).
 run_session() {
-	local name="$1" seed="$2" logs status=0 updates=0 upgrade=0 reuse=0 module scratch
+	local name="$1" seed="$2" logs status=0 updates=0 upgrade=0 reuse=0 target module scratch
 	shift 2
-	local -a targets=()
-	for module in "$@"; do
-		targets+=("tests/e2e/${module}")
+	local -a targets=("$@")
+	for target in "${targets[@]}"; do
+		module="${target%%::*}"
+		module="${module##*/}"
 		[[ "${module}" != "${FORK_UPDATE}" ]] || updates=1
 		[[ "${module}" != "${APP_UPGRADE}" ]] || upgrade=1
 	done
@@ -331,7 +337,7 @@ rerun_after_velopack_731() {
 		echo "==> e2e-wine: ${name}: Fork's updater failed with '${VELOPACK_731}'; re-running tests/e2e/${module} once" |
 			tee -a "${LOG_DIR}/reruns.log"
 		rerun_status=0
-		run_session "${module%.py}-rerun" "${seed}" "${module}" || rerun_status=$?
+		run_session "${module%.py}-rerun" "${seed}" "tests/e2e/${module}" || rerun_status=$?
 		echo "==> e2e-wine: re-run of tests/e2e/${module} exit ${rerun_status}" | tee -a "${LOG_DIR}/reruns.log"
 		if ((rerun == 0)); then
 			rerun="${rerun_status}"
@@ -341,15 +347,16 @@ rerun_after_velopack_731() {
 	return 0
 }
 
-# module_job WHAT NAME SEED MODULE...: a session (+ its Velopack re-run) as a background job: prints
+# module_job WHAT NAME SEED TARGET...: a session (+ its Velopack re-run) as a background job: prints
 # "WHAT exit STATUS (N s)", appends a row to results.tsv and exits with the session's status.
 module_job() {
-	local what="$1" name="$2" seed="$3" started="${SECONDS}" session_status=0
+	local what="$1" name="$2" seed="$3" started="${SECONDS}" session_status=0 took
 	shift 3
 	run_session "${name}" "${seed}" "$@" || session_status=$?
 	rerun_after_velopack_731 "${name}" "${seed}"
-	echo "==> e2e-wine: ${what} exit ${session_status} ($((SECONDS - started)) s)"
-	printf '%s\t%s\t%s\t%s\n' "${what}" "${session_status}" "$((SECONDS - started))" "${seed}" >>"${LOG_DIR}/results.tsv"
+	took=$((SECONDS - started - SLOT_WAIT))
+	echo "==> e2e-wine: ${what} exit ${session_status} (${took} s, ${SLOT_WAIT} s waiting for a slot)"
+	printf '%s\t%s\t%s\t%s\t%s\n' "${what}" "${session_status}" "${took}" "${seed}" "${SLOT_WAIT}" >>"${LOG_DIR}/results.tsv"
 	exit "${session_status}"
 }
 
@@ -366,8 +373,8 @@ template_job() {
 	else
 		tail -n "${TAIL_LINES}" "${logs}/pytest.log"
 	fi
-	echo "==> e2e-wine: template exit ${status} ($((SECONDS - started)) s)"
-	printf 'template\t%s\t%s\t-\n' "${status}" "$((SECONDS - started))" >>"${LOG_DIR}/results.tsv"
+	echo "==> e2e-wine: template exit ${status} ($((SECONDS - started - SLOT_WAIT)) s, ${SLOT_WAIT} s waiting for a slot)"
+	printf 'template\t%s\t%s\t-\t%s\n' "${status}" "$((SECONDS - started - SLOT_WAIT))" "${SLOT_WAIT}" >>"${LOG_DIR}/results.tsv"
 	exit "${status}"
 }
 
@@ -444,18 +451,22 @@ record() {
 	return 0
 }
 
-# The scheduler: PENDING holds "module seed" rows longest first; a template module waits until the
+# The scheduler: PENDING holds e2e-plan.py's "WHAT SEED SECONDS TARGET..." rows longest first; a template module waits until the
 # template is ready (or failed: it then sets up its own prefix). JOBS sessions run at a time.
 declare -A RUNNING=()
 TEMPLATE_PID=""
 TEMPLATE_STATE="off"
 PENDING=()
 
-# launch_next: start the first pending module that can start now; status 1 when none can.
+# launch_next: start the first pending session that can start now; status 1 when none can. Its logs
+# go to logs/e2e-wine/<module> (tests/e2e/<module>.py[<part>]: <module>-<part>).
 launch_next() {
-	local index module seed
+	local index what seed name
+	local -a row
 	for index in "${!PENDING[@]}"; do
-		read -r module seed <<<"${PENDING[${index}]}"
+		read -r -a row <<<"${PENDING[${index}]}"
+		what="${row[0]}"
+		seed="${row[1]}"
 		if [[ "${seed}" == "template" && "${TEMPLATE_STATE}" == "building" ]]; then
 			continue
 		fi
@@ -463,8 +474,11 @@ launch_next() {
 			template:ready | fresh:ready) ;;
 			*) seed="none" ;;
 		esac
-		module_job "tests/e2e/${module}" "${module%.py}" "${seed}" "${module}" &
-		RUNNING[$!]="${module}"
+		name="${what#tests/e2e/}"
+		name="${name/.py[/-}"
+		name="${name%]}"
+		module_job "${what}" "${name%.py}" "${seed}" "${row[@]:3}" &
+		RUNNING[$!]="${what}"
 		unset "PENDING[${index}]"
 		PENDING=("${PENDING[@]}")
 		return 0
@@ -489,12 +503,13 @@ reap() {
 
 # schedule MODULE...: every module in a session of its own, JOBS at a time, longest first.
 schedule() {
-	local module seed took plan needs_template=0
+	local what seed took line plan needs_template=0
 	plan="$(python3 "${ROOT}/scripts/e2e-plan.py" plan "$@")" || fl_e2e_die "scripts/e2e-plan.py plan failed"
-	while read -r module seed took; do
-		PENDING+=("${module} ${seed}")
+	while read -r line; do
+		read -r what seed took _ <<<"${line}"
+		PENDING+=("${line}")
 		[[ "${seed}" != "template" ]] || needs_template=1
-		echo "==> e2e-wine: plan: ${module} (${seed} root, ~${took} s)"
+		echo "==> e2e-wine: plan: ${what} (${seed} root, ~${took} s)"
 	done <<<"${plan}"
 	if [[ "${FL_E2E_TEMPLATE:-1}" == "1" ]] && ((needs_template == 1)); then
 		prepare_template
@@ -533,7 +548,7 @@ if ((${#SHARD[@]} > 0)); then
 	done
 else
 	JOBS=1
-	module_job "tests/e2e (${#MODULES[@]} modules)" tier none "${MODULES[@]}" &
+	module_job "tests/e2e (${#MODULES[@]} modules)" tier none "${MODULES[@]/#/tests/e2e/}" &
 	RUNNING[$!]="tier"
 	reap
 fi

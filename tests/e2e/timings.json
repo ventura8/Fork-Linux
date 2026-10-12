@@ -1,72 +1,75 @@
 {
-  "setup": 330,
-  "measured": "provisional: tests/e2e/RESULTS.md 2026-10-12 release round 1, setup (~280 s) subtracted for template modules",
+  "setup": 458,
+  "measured": "2026-10-12, ci-e2e-wine.sh --all (6 jobs, two host slots held by other runs, load average 20-45): pytest's own seconds per module, the main setup excluded for template modules (they start from the template); setup is the template build",
   "modules": {
     "test_fork_update.py": {
-      "seconds": 1124
+      "seconds": 1685
     },
     "test_git_ops_local.py": {
-      "seconds": 279
+      "seconds": 296
     },
     "test_git_ops_remote_bridge.py": {
-      "seconds": 491
+      "seconds": 496
     },
     "test_git_ops_remote_ssh.py": {
-      "seconds": 450
+      "seconds": 261
     },
     "test_real_bridge.py": {
-      "seconds": 757
+      "seconds": 852
     },
     "test_real_display.py": {
-      "seconds": 197
+      "seconds": 324
     },
     "test_real_doctor.py": {
-      "seconds": 82
+      "seconds": 116
     },
     "test_real_fork.py": {
-      "seconds": 392
+      "seconds": 626
     },
     "test_real_git_advanced.py": {
-      "seconds": 219
+      "seconds": 248
     },
     "test_real_git_branches.py": {
-      "seconds": 475
+      "seconds": 598
     },
     "test_real_git_changes.py": {
-      "seconds": 222
+      "seconds": 241
     },
     "test_real_git_history.py": {
-      "seconds": 445
+      "seconds": 485
     },
     "test_real_git_remotes.py": {
-      "seconds": 957
+      "seconds": 813
     },
     "test_real_integration.py": {
-      "seconds": 1049
+      "seconds": 671
     },
     "test_real_launch.py": {
-      "seconds": 319
+      "seconds": 397
     },
     "test_real_setup_errors.py": {
-      "seconds": 4
+      "seconds": 13
     },
     "test_real_setup_variants.py": {
-      "seconds": 1107
+      "seconds": 2080,
+      "parts": {
+        "dotnet472": 1130
+      }
     },
     "test_real_snapshots.py": {
-      "seconds": 69
+      "seconds": 93
     },
     "test_real_uninstall.py": {
-      "seconds": 30
+      "seconds": 44
     },
     "test_real_update_guards.py": {
-      "seconds": 140
+      "seconds": 155
     },
     "test_wine_app_upgrade.py": {
-      "seconds": 925
+      "seconds": 1309
     },
     "test_wine_pin_upgrade.py": {
-      "seconds": 469
+      "seconds": 1021
     }
   }
 }

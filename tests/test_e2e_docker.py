@@ -699,6 +699,7 @@ def test_ci_e2e_wine_runs_each_module_of_a_shard_in_a_scratch_root_of_its_own(bo
     assert "the last 60 lines of" in result.stdout
     assert "==> e2e-wine: template exit 0" in result.stdout
     results = [line.split("\t") for line in (logs / "results.tsv").read_text(encoding="utf-8").splitlines()]
+    assert all(row[4] == "0" for row in results)
     assert [(row[0], row[1], row[3]) for row in results] == [
         ("template", "0", "-"),
         *[(f"tests/e2e/{module}", "3", "template" if module == "test_real_bridge.py" else "fresh")
@@ -737,6 +738,31 @@ def test_ci_e2e_wine_runs_the_modules_in_parallel(box: Box) -> None:
     assert _env(spans["test_fork_update"][2]["args"], "FL_E2E_FORK_UPDATES") == "1"
     assert _env(spans["test_wine_app_upgrade"][2]["args"], "FL_E2E_APP_UPGRADE") == "1"
     assert list(tmpdir.iterdir()) == []
+
+
+def test_ci_e2e_wine_runs_a_long_module_in_parts(box: Box) -> None:
+    """A module of e2e-plan.py's PARTS runs as several sessions, each from the template: its named tests,
+    then the rest of the module without them; logs in logs/e2e-wine/<module>-<part>/."""
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    _bridge_built(box)
+    (box.wt / "tests" / "e2e" / "test_real_setup_variants.py").write_text('"""Setup variants."""\n', encoding="utf-8")
+    result = box.run("--jobs", "1", "tests/e2e/test_real_setup_variants.py", script="ci-e2e-wine.sh",
+                     TMPDIR=str(tmpdir))
+    assert result.returncode == 0, result.stdout + result.stderr
+    path = "tests/e2e/test_real_setup_variants.py"
+    rows = [row for row in box.calls("docker") if row["args"][:1] == ["run"]]
+    assert [row["args"][-2:] for row in rows[1:]] == [
+        ["--basetemp=/e2e/pytest", f"{path}::test_dotnet472_prefix_runs_fork"],
+        [path, f"--deselect={path}::test_dotnet472_prefix_runs_fork"],
+    ]
+    assert all(PREFIX_FILE in row["seen"] for row in rows[1:])
+    assert "--durations=0" in rows[1]["args"]
+    logs = box.wt / "logs" / "e2e-wine"
+    assert (logs / "test_real_setup_variants-dotnet472" / "pytest.log").is_file()
+    assert (logs / "test_real_setup_variants-rest" / "pytest.log").is_file()
+    assert f"{path}[dotnet472] exit 0" in result.stdout
+    assert f"{path}[rest] exit 0" in result.stdout
 
 
 def test_ci_e2e_wine_without_a_template(box: Box) -> None:
@@ -854,7 +880,7 @@ with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as log:
 dest = sys.argv[-1]
 os.makedirs(os.path.join(dest, "test_real_bridge"), exist_ok=True)
 with open(os.path.join(dest, "results.tsv"), "w", encoding="utf-8") as handle:
-    handle.write("tests/e2e/test_real_bridge.py\\t0\\t700\\ttemplate\\n")
+    handle.write("tests/e2e/test_real_bridge.py\\t0\\t700\\ttemplate\\t0\\n")
 """
 
 
@@ -891,7 +917,7 @@ def test_ci_e2e_wine_shares_the_modules_with_a_remote_machine(box: Box) -> None:
     assert "remote output" in (logs / "remote-nuc" / "runner.log").read_text(encoding="utf-8")
     assert (logs / "remote-nuc" / "test_real_bridge").is_dir()
     rows = (logs / "results.tsv").read_text(encoding="utf-8").splitlines()
-    assert "nuc:tests/e2e/test_real_bridge.py\t0\t700\ttemplate" in rows
+    assert "nuc:tests/e2e/test_real_bridge.py\t0\t700\ttemplate\t0" in rows
     assert "==> e2e-wine: remote nuc exit 0" in result.stdout
     box.log.unlink()
     failed = box.run("--remote", "nuc", *shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_SSH_RC="5")
@@ -932,7 +958,7 @@ def _slots(*call: str, **env: str) -> str:
 
 
 @pytest.mark.parametrize(("cores", "mem_kb", "slots"), [
-    (16, 30 * 1048576, 8), (16, 12 * 1048576, 4), (4, 15 * 1048576, 2), (1, 1048576, 1), (400, 1024 * 1048576, 99)])
+    (16, 30 * 1048576, 8), (16, 12 * 1048576, 6), (4, 15 * 1048576, 2), (1, 1048576, 1), (400, 1024 * 1048576, 99)])
 def test_default_slots_follow_cores_and_memory(cores: int, mem_kb: int, slots: int) -> None:
     assert _slots("fl_e2e_slots_for", str(cores), str(mem_kb)) == str(slots)
 

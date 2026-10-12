@@ -46,4 +46,7 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
     module must not depend on another having run (`installed` sets the prefix up when it is missing); without
     paths the whole tier runs in one root. The full tier (`--all` with both update tiers) takes about 40 minutes
     on the 16-core laptop; e2e-wine.yml runs it as five shards of two containers each, under an hour.
+    `--remote HOST [--remote-jobs M]` ships the last commit (git bundle) to HOST's clone
+    (`FL_E2E_REMOTE_DIR`, default `~/fork-linux-ci`) and runs its share of the modules there (`e2e-plan.py
+    split`), containers only on that machine too, logs in `logs/e2e-wine/remote-HOST/`.
 - Tests never touch the real home, network or Wine unless gated (hard rule 16); use `xdg`, `fake_bin`, `http_server`.

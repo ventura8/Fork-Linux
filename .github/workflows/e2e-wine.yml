@@ -43,33 +43,32 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: setup-and-fork-update
+          - shard: setup-variants
             jobs: 2
             tests: >-
-              tests/e2e/test_fork_update.py tests/e2e/test_real_setup_variants.py
-          - shard: integration
+              tests/e2e/test_real_setup_variants.py tests/e2e/test_real_git_advanced.py
+              tests/e2e/test_real_uninstall.py
+          - shard: fork-update
             jobs: 2
             tests: >-
-              tests/e2e/test_real_integration.py
-          - shard: git
+              tests/e2e/test_fork_update.py tests/e2e/test_real_git_changes.py tests/e2e/test_real_doctor.py
+          - shard: app-upgrade-and-bridge
             jobs: 2
             tests: >-
-              tests/e2e/test_real_git_remotes.py tests/e2e/test_real_git_history.py
-              tests/e2e/test_real_fork.py tests/e2e/test_real_git_changes.py
-              tests/e2e/test_real_git_advanced.py tests/e2e/test_real_snapshots.py
-          - shard: app-upgrade-bridge-launch
+              tests/e2e/test_wine_app_upgrade.py tests/e2e/test_real_bridge.py tests/e2e/test_git_ops_local.py
+              tests/e2e/test_git_ops_remote_ssh.py tests/e2e/test_real_snapshots.py
+          - shard: pin-upgrade-and-remotes
             jobs: 2
             tests: >-
-              tests/e2e/test_wine_app_upgrade.py tests/e2e/test_real_bridge.py
-              tests/e2e/test_real_launch.py tests/e2e/test_real_display.py
-              tests/e2e/test_real_doctor.py tests/e2e/test_real_uninstall.py
-              tests/e2e/test_real_setup_errors.py
-          - shard: remotes-and-guards
+              tests/e2e/test_wine_pin_upgrade.py tests/e2e/test_real_git_remotes.py
+              tests/e2e/test_git_ops_remote_bridge.py tests/e2e/test_real_display.py
+              tests/e2e/test_real_update_guards.py
+          - shard: integration-and-git
             jobs: 2
             tests: >-
-              tests/e2e/test_git_ops_remote_bridge.py tests/e2e/test_real_git_branches.py
-              tests/e2e/test_wine_pin_upgrade.py tests/e2e/test_git_ops_remote_ssh.py
-              tests/e2e/test_git_ops_local.py tests/e2e/test_real_update_guards.py
+              tests/e2e/test_real_integration.py tests/e2e/test_real_fork.py
+              tests/e2e/test_real_git_branches.py tests/e2e/test_real_git_history.py
+              tests/e2e/test_real_launch.py tests/e2e/test_real_setup_errors.py
     steps:
       - name: Checkout source
         uses: actions/checkout@v7.0.1

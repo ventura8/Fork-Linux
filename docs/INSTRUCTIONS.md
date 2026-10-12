@@ -57,6 +57,7 @@ FL_CI_STAGE=compat FL_CI_CELL=jammy ./scripts/ci-docker.sh
 ./scripts/ci-pipeline.sh                       # everything, fail-fast, tee'd under logs/
 ./scripts/ci-e2e-wine.sh --all                 # CI's real tier, every module (both update tiers too), in parallel from a template root
 ./scripts/ci-e2e-wine.sh --jobs 2 tests/e2e/test_real_doctor.py tests/e2e/test_real_launch.py  # some modules, two at a time
+./scripts/ci-e2e-wine.sh --all --remote nuc --remote-jobs 5  # share the modules with a second machine over ssh (its clone ~/fork-linux-ci; committed work only)
 ./scripts/ci-e2e-wine.sh                       # the whole tier in one session and one root (upstream-watch.yml)
 ```
 
@@ -81,7 +82,7 @@ root `/var/tmp/fork-linux-e2e/<NAME>` (`/e2e`, 0700; `FL_E2E_SCRATCH` overrides,
 `$HOME`) and the seed `/var/tmp/fork-linux-e2e/seed` (`/seed`, read-only: `wine-*.tar.xz`,
 `Fork-*.exe`, `winetricks-*`, `selawik-*.zip`, `winetricks/` cache; `FL_E2E_SEED_DIR` overrides).
 Logs land in `logs/e2e-docker/<NAME>/`; screenshots stay in `<scratch>/root/shots/` (Fork's logo:
-never commit them). At most `FL_E2E_SLOTS` (default: one per two cores and per 3 GiB of available memory, `fl_e2e_default_slots`) such containers run at once on the host.
+never commit them). At most `FL_E2E_SLOTS` (default: one per two cores and per 2 GiB of available memory, `fl_e2e_default_slots`) such containers run at once on the host.
 Runbook: [`.agents/skills/e2e-docker/SKILL.md`](../.agents/skills/e2e-docker/SKILL.md).
 
 Desktop E2E tier (fork-linux from the release tarball inside a real desktop session in a

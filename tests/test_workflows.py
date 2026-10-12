@@ -218,7 +218,7 @@ def test_e2e_wine_gives_every_module_of_a_shard_a_scratch_root_of_its_own() -> N
     """Each named module is one scenario: its own pytest session, container and root, which starts as a copy
     of the shard's template (or its download caches) and is deleted afterwards."""
     launch = E2E_SCRIPT[E2E_SCRIPT.index("launch_next() {"):E2E_SCRIPT.index("reap() {")]
-    assert 'module_job "tests/e2e/${module}" "${module%.py}" "${seed}" "${module}" &' in launch
+    assert 'module_job "${what}" "${name%.py}" "${seed}" "${row[@]:3}" &' in launch
     body = E2E_SCRIPT[E2E_SCRIPT.index("run_session() {"):E2E_SCRIPT.index("failed_modules() {")]
     order = ['scratch="$(new_scratch "${RUN}")"', 'seed_root "${scratch}" "${seed}"',
              '"${targets[@]}" "${OPTIONS[@]}"', 'fl_e2e_copy_logs "${scratch}" "${logs}"',
@@ -228,7 +228,7 @@ def test_e2e_wine_gives_every_module_of_a_shard_a_scratch_root_of_its_own() -> N
     assert 'logs="${LOG_DIR}/${name}"' in body
     assert '-v "${scratch}:/e2e:rw"' in E2E_SCRIPT
     # Without paths: the whole tier in one session and root (upstream-watch.yml).
-    assert 'module_job "tests/e2e (${#MODULES[@]} modules)" tier none "${MODULES[@]}" &' in E2E_SCRIPT
+    assert 'module_job "tests/e2e (${#MODULES[@]} modules)" tier none "${MODULES[@]/#/tests/e2e/}" &' in E2E_SCRIPT
 
 
 def test_e2e_wine_runs_on_release_branches_weekly_and_on_demand() -> None:
