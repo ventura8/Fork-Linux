@@ -1496,7 +1496,7 @@ def check_ssh_config(ctx: DoctorCtx) -> Result:
 
 
 def check_ssh_passphrase(ctx: DoctorCtx) -> Result:
-    """Shared keys with a passphrase: Fork's bundled ssh asks for it every time, never through ssh-agent (info)."""
+    """Shared keys with a passphrase: Fork's bundled ssh asks for them unless they are in the ssh-agent (info)."""
     why = _ssh_wanted(ctx)
     if why:
         return Result("info", why)
@@ -1509,6 +1509,54 @@ def check_ssh_passphrase(ctx: DoctorCtx) -> Result:
     if _bridge_ready(ctx):
         return Result("ok", f"{names} need(s) a passphrase: the git bridge's Linux ssh asks for it")
     return Result("info", f"{names} need(s) a passphrase: {ssh_sync.PASSPHRASE_PROBLEM}", ssh_sync.PASSPHRASE_HINT)
+
+
+AGENT_OFF_HINT = "'fork-linux config set ssh.agent_relay on' lets Fork's bundled ssh use your ssh-agent"
+AGENT_RESTART_HINT = "close Fork and start it again: the launcher starts the relay with Fork"
+AGENT_XATTR_HINT = (
+    "the relay needs a file system with user extended attributes for the prefix (Wine keeps the SYSTEM "
+    "attribute msys needs there); 'fork-linux logs --path' has the daemon's bridge-*.log"
+)
+
+
+def _relay_problem(ctx: DoctorCtx) -> Result | None:
+    """A relay that cannot or did not start: no helper, the last start failed, or Fork runs without it."""
+    if not bridge.helper_path().is_file():
+        return Result(
+            "warn",
+            f"this installation has no {bridge.HELPER}: Fork's bundled ssh cannot use your ssh-agent",
+            "install fork-linux from a package or the release tarball (in a source checkout: "
+            "scripts/build-bridge.sh)",
+        )
+    failure = bridge.relay_failure(ctx.paths.logs_dir)
+    if failure is not None:
+        return Result("warn", f"the last launch could not start the ssh-agent relay: {failure}", AGENT_XATTR_HINT)
+    session = _our_session(ctx)
+    record = session.get("bridge") if session is not None else None
+    if procs.fork_running(ctx.paths.prefix, proc_root=ctx.proc_root) and not (
+        isinstance(record, dict) and record.get("agent") is True
+    ):
+        return Result("warn", "Fork runs without the ssh-agent relay", AGENT_RESTART_HINT)
+    return None
+
+
+def check_ssh_agent(ctx: DoctorCtx) -> Result:
+    """Fork's ssh and the session's ssh-agent: the launcher's relay for bundled ssh, the bridge's Linux ssh."""
+    if not bridge.agent_relay_enabled(ctx):
+        return Result("info", "the ssh-agent relay is off ([ssh] agent_relay)", AGENT_OFF_HINT)
+    agent = bridge.host_agent(ctx.env)
+    if agent is None:
+        return Result(
+            "info",
+            "no ssh-agent in this session ($SSH_AUTH_SOCK is unset or not a socket): Fork's ssh uses the shared "
+            "keys and asks for their passphrases",
+        )
+    if _bridge_ready(ctx) and bridge.mode(ctx) == bridge.MODE_BRIDGE:
+        return Result("ok", f"the git bridge's Linux ssh uses your ssh-agent ({agent})")
+    problem = _relay_problem(ctx)
+    if problem is not None:
+        return problem
+    return Result("ok", f"Fork's bundled ssh uses your ssh-agent ({agent}) through the launcher's relay")
 
 
 def check_git_overlay(ctx: DoctorCtx) -> Result:
@@ -1903,6 +1951,7 @@ CHECKS: list[Check] = [
     Check("ssh.dir", "ssh keys", "ssh", check_ssh_dir, fix_steps=("ssh_sync",)),
     Check("ssh.config", "ssh config", "ssh", check_ssh_config, fix_steps=("ssh_sync",)),
     Check("ssh.passphrase", "ssh key passphrases", "ssh", check_ssh_passphrase),
+    Check("ssh.agent", "ssh-agent for Fork's ssh", "ssh", check_ssh_agent),
     Check("git.overlay", "git config overlay", "git", check_git_overlay, fix_steps=("git_overlay",)),
     Check("git.selftest", "Bundled git self-test", "git", check_git_selftest, deep=True),
     Check("bridge.status", "Native-git bridge", "bridge", check_bridge),

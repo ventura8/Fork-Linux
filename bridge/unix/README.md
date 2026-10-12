@@ -12,6 +12,10 @@ there is no systemd user manager to start it, `fork-linux-host --handoff` asks t
 run `fork-linux-host VERB ARG` (`FL_REQ_HANDOFF`, below). With the git bridge off the
 launcher starts it as a hand-off starter only (`--handoff-only`).
 
+It also carries the **ssh-agent relay** (`--ssh-agent`, below): Fork's bundled Git for
+Windows runs msys OpenSSH, which cannot open the Linux agent's Unix socket; the daemon gives
+it an msys socket file to connect to and forwards its agent requests to `$SSH_AUTH_SOCK`.
+
 The launcher starts the daemon **outside Wine, before Wine starts**. Spike B2 explains why
 (`docs/spikes/B2-rendezvous.md`). On the pinned wine-staging runtime, every Linux process
 spawned by a Wine process inherits staging's seccomp filter and `NoNewPrivs`. Go tools and
@@ -31,6 +35,8 @@ Sources:
 
 - `fl_bridge_helper.c`: the daemon, sessions and personas.
 - `fl_helper_util.{c,h}`: pure helpers, unit-tested natively.
+- `fl_agent_relay.{c,h}`: the ssh-agent relay (msys socket file, peer check, request
+  filter, one connection), unit-tested natively (`bridge/tests/unit/test_agent_relay.c`).
 
 The wire format is the frozen contract in `bridge/common/fl_proto.h`. Hashing comes from
 `bridge/common/fl_sha256.h`.
@@ -41,6 +47,7 @@ The wire format is the frozen contract in `bridge/common/fl_proto.h`. Hashing co
 fl-bridge-helper --daemon [--token-file FILE] [--port N] [--host-helper PATH]
                  [--handoff-only] [--parent-pid PID]
                  [--watch-prefix DIR [--watch-exe-dir WINDIR]] [--log FILE]
+                 [--ssh-agent SOCK --ssh-agent-file FILE]
 fl-bridge-helper --version | --help
 ```
 
@@ -57,6 +64,8 @@ Every option also accepts the `--opt=value` form.
 | `--watch-prefix DIR` | Outlive the parent (no PDEATHSIG) while a process of this user carries both `WINEPREFIX=DIR` and `FL_BRIDGE_PORT=<this daemon's port>` in its environment (`/proc/<pid>/environ`, every 2 s); exit 6 s after the last one is gone (`reason=prefix-idle`). Fork restarted by its own updater inherits both (spike S9). |
 | `--watch-exe-dir WINDIR` | With `--watch-prefix`: only processes whose `argv[0]` starts with `WINDIR` (ASCII case-insensitive; Wine shows the Windows path, e.g. `C:\users\<u>\AppData\Local\Fork\`) count, so Wine's own services that inherited the environment do not keep the daemon alive. |
 | `--log FILE` | Append one line per session (mode `0600`, `O_APPEND`, `O_NOFOLLOW`). The log never contains the token, arguments, environment values or stream data. |
+| `--ssh-agent SOCK` | With `--ssh-agent-file`: run the ssh-agent relay for the agent socket `SOCK` (absolute; the session's `$SSH_AUTH_SOCK`). Only one of the two is a usage error. |
+| `--ssh-agent-file FILE` | The msys socket file the relay writes (absolute; the launcher passes `<prefix>/drive_c/fork-linux/ssh-agent/agent.sock`, which Fork's `SSH_AUTH_SOCK` names as `C:/fork-linux/ssh-agent/agent.sock`). Its directory must be a directory of this user without group or other access. When the relay cannot start (no socket at `SOCK`, the directory, no extended attributes, ...) the daemon runs without it, writes no file and logs `ssh-agent relay off: <why>`. |
 
 `FL_BRIDGE_TOKEN` is always scrubbed: the value is overwritten in place, which also blanks
 `/proc/<pid>/environ`, and then unset. This happens even when `--token-file` is used. The
@@ -90,6 +99,44 @@ Daemon exit codes:
    launcher must give the daemon a stderr that is always drained (a log file, its own
    terminal or `/dev/null`), never a pipe it stops reading, or a chatty detached program
    blocks on a full pipe.
+
+### The ssh-agent relay (`--ssh-agent`)
+
+msys (Git for Windows' Cygwin fork) emulates AF_UNIX sockets: a socket is a file with the
+Windows SYSTEM attribute whose content is `!<socket >PORT s W0-W1-W2-W3\0` (four 8-digit
+hex words), and `connect()` opens TCP `127.0.0.1:PORT`, then runs a handshake: the client
+sends the 16 secret bytes (the words as little-endian u32s), the server sends them back,
+then each sends 12 bytes of credentials (pid, uid, gid, i32 LE). After that the stream is
+the agent protocol. Without the SYSTEM attribute msys does not see a socket ("Bad file
+descriptor"); Wine keeps that attribute in the `user.DOSATTRIB` extended attribute (`0x4`).
+
+At start-up, right after binding its own port (step 5), the daemon:
+
+1. checks `SOCK` (absolute, fits `sun_path`, `stat` says socket) and that `FILE`'s directory
+   is a real directory owned by this user with no group or other access;
+2. listens on a second ephemeral `127.0.0.1` port (non-blocking, in the same `poll()` set);
+3. draws a 128-bit secret (`getrandom`) and writes `FILE.tmp` (`O_CREAT|O_EXCL|O_NOFOLLOW`,
+   `0600`, then `fsetxattr user.DOSATTRIB=0x4`), renamed onto `FILE`.
+
+Any failure only leaves the relay off (logged; no file). Per connection the daemon forks a
+relay process (counted with the sessions, at most 256), which:
+
+1. looks up the peer's end of the connection in `/proc/net/tcp` and refuses a socket that
+   does not belong to this user (`auth-failed:peer-uid`);
+2. reads the 16-byte secret within 5 s and compares it in constant time
+   (`auth-failed:no-secret`, `auth-failed:secret`), sends it back, reads the client's
+   credentials and sends its own (`auth-failed:handshake`);
+3. connects to `SOCK` (`agent-unreachable`) and relays one request at a time (u32 BE length,
+   1 byte to 256 KiB, else `bad-message`): `SSH_AGENTC_REQUEST_IDENTITIES` (11),
+   `SSH_AGENTC_SIGN_REQUEST` (13) and `SSH_AGENTC_EXTENSION` (27) named
+   `session-bind@openssh.com` go to the agent and its answer comes back; every other request
+   is answered `SSH_AGENT_FAILURE` (5) by the relay and never reaches the agent;
+4. ends when the client closes (`done`), or the agent (`agent-gone`) or the client
+   (`client-gone`) fails, and logs one line.
+
+On exit the daemon closes the relay's port and removes `FILE` while it still holds its
+secret (a file someone else put there is left alone). Running relay processes end with their
+connection, like sessions.
 
 ### Shutdown
 
@@ -204,6 +251,17 @@ The possible `result=` values are:
 - `peer-closed`
 - `protocol-error`
 
+The ssh-agent relay adds `ssh-agent relay port=<n>` or `ssh-agent relay off: <why>` at
+start-up, `ssh-agent=on|off` on the start line, and one line per relay connection (no key
+material, no request contents):
+
+```text
+2026-10-12T11:00:02.789Z fl-bridge-helper[4260] agent peer=127.0.0.1:51240 result=done requests=2 refused=0 ms=310
+```
+
+with `result=` one of `done`, `auth-failed:peer-uid|no-secret|secret|handshake`,
+`agent-unreachable`, `out-of-memory`, `bad-message`, `agent-gone`, `client-gone`.
+
 The `argv0=` field is the basename of the requested program, cut at 63 bytes, with
 every control character, space and DEL replaced by `?` so a client cannot forge lines
 or fields.
@@ -287,8 +345,9 @@ the persona's exit status.
 
 The flags are `-std=c11 -Wall -Wextra -Werror -Wconversion -Wsign-conversion -Wshadow
 -Wstrict-prototypes -Wmissing-prototypes -Wformat=2 -Wvla -Wundef -Wpointer-arith`, plus
-`-DFL_VERSION` from `VERSION`. The helper needs only
-`bridge/common/fl_proto.c` and `fl_sha256.c`. The daemon is never spawned by Wine, so the
+`-DFL_VERSION` from `VERSION`. Besides its own sources (`fl_bridge_helper.c`,
+`fl_helper_util.c`, `fl_agent_relay.c`) the helper needs only `bridge/common/fl_proto.c`
+and `fl_sha256.c`. The daemon is never spawned by Wine, so the
 spike's `-static -no-pie` requirement no longer applies. The distro build can be a normal
 PIE, and the musl build exists only for portability (AppImage, tarball).
 
@@ -296,6 +355,9 @@ PIE, and the musl build exists only for portability (AppImage, tarball).
 
 - `bridge/tests/unit/test_helper_util.c` and `test_helper_paths.c` cover the pure helpers.
   They run under `meson test --suite bridge-unit`, `build-dev.sh --test`, and pytest.
+- `bridge/tests/unit/test_agent_relay.c` covers the ssh-agent relay (socket file, peer
+  check, filter, whole connections against a fake agent, injected system-call and
+  allocation failures); `meson test --suite bridge-unit`.
 - `tests/bridge/test_daemon_protocol.py` (pytest, stdlib-only client) builds the daemon
   with the host `gcc` under ASan/UBSan, or uses `FL_BRIDGE_HELPER_BIN`. It covers:
   - mutual authentication in both directions
@@ -308,6 +370,9 @@ PIE, and the musl build exists only for portability (AppImage, tarball).
   - `--parent-pid` and PDEATHSIG shutdown
   - token scrubbing, the log format
   - the personas, with a fake `wine`
+  - the ssh-agent relay: an msys-style client lists keys through it (a fake agent, and
+    OpenSSH's own `ssh-agent` when installed), key management is refused, a wrong secret
+    is closed, no agent leaves it off, the file is removed on exit
 
 ## Security notes
 
@@ -315,5 +380,10 @@ PIE, and the musl build exists only for portability (AppImage, tarball).
   as the user, and that includes every Windows process in the prefix (Wine is not a
   sandbox). The daemon binds loopback only and authenticates in both directions. It never
   logs the token, arguments or data, and it never passes the token to children.
+- The ssh-agent relay's gate is the secret in its socket file (0600 in a 0700 directory
+  inside the 0700 prefix) plus the peer's owner in `/proc/net/tcp`. Every Windows process in
+  the prefix can read that file, so while Fork runs any of them can list the agent's keys
+  and ask it to sign; nothing else (no adding, removing or locking keys). The agent's own
+  confirmation and constraints still apply. `docs/SECURITY.md` has the threat model.
 - Nothing is exec'd through a shell or built from strings. PATH lookup ignores relative
   entries, and children only inherit fds 0–2.

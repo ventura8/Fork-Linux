@@ -15,3 +15,8 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 - Install layout and protocol: `bridge/README.md`. Packages ship the glibc PIE helper; tarball / AppImage / snap ship the
   static musl helper (ET_EXEC), checked by the packaging E2E.
 - C rules: C11, `-Werror`, clang-tidy (`.clang-tidy`, WarningsAsErrors), cppcheck, no `system()` / shell strings.
+- The daemon also runs the **ssh-agent relay** for Fork's bundled (msys) ssh (`--ssh-agent SOCK --ssh-agent-file
+  FILE`, `bridge/unix/fl_agent_relay.{c,h}`; launcher side `bridge.agent_socket` / `_launch`). Tests:
+  `bridge/tests/unit/test_agent_relay.c` (meson suite bridge-unit, includes the .c so its wraps survive
+  `_FORTIFY_SOURCE`), `tests/bridge/test_daemon_protocol.py -k ssh_agent` (an msys-style client in Python; the
+  bridge image carries `openssh-client` for the real-agent case), `tests/e2e/test_git_ops_remote_ssh.py`.

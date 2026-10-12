@@ -30,7 +30,7 @@ CONTRACT = {
         "enforce_settings": "UpdateSubmodulesOnCheckout, DisableHardwareAcceleration",
     },
     "display": {"dpi": "auto", "theme": "follow"},
-    "ssh": {"sync": "auto", "mode": "link"},
+    "ssh": {"sync": "auto", "mode": "link", "agent_relay": "on"},
     "git": {
         "config_overlay": "translate",
         "env_overrides": "core.filemode=false, core.autocrlf=false, core.checkStat=minimal",

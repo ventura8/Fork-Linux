@@ -105,7 +105,7 @@ def helper_bin(tmp_path_factory: pytest.TempPathFactory) -> Path:
     if cc is None:
         pytest.skip("no C compiler (gcc/cc) on PATH")
     out = tmp_path_factory.mktemp("fl-helper-wine") / "fl-bridge-helper"
-    sources = [UNIX_DIR / "fl_bridge_helper.c", UNIX_DIR / "fl_helper_util.c"]
+    sources = [UNIX_DIR / "fl_bridge_helper.c", UNIX_DIR / "fl_helper_util.c", UNIX_DIR / "fl_agent_relay.c"]
     sources += [COMMON_DIR / "fl_proto.c", COMMON_DIR / "fl_sha256.c"]
     cmd = [
         cc,

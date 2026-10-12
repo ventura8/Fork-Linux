@@ -1,8 +1,8 @@
 # bridge/tests/meson.build - tests of the native-git bridge (option 'tests').
 #
 #   meson test --suite bridge-unit    native unit tests (TAP): bridge/common (protocol,
-#                                     SHA-256/HMAC, sh quoting, translation vectors) and
-#                                     the daemon's pure helpers
+#                                     SHA-256/HMAC, sh quoting, translation vectors), the
+#                                     daemon's pure helpers and its ssh-agent relay
 #   fl-testdriver.exe, fl-testdrv.exe test-only MinGW drivers for the Wine tier
 #                                     (tests/bridge/wine/, tests/bridge/test_shims_wine.py);
 #                                     console subsystem, never installed
@@ -74,11 +74,32 @@ test(
   'test-helper-daemon',
   executable(
     'test_helper_daemon',
-    files('unit/test_helper_daemon.c', 'unit/test_sys.c', 'unit/test_alloc.c') + fl_helper_util_src
+    files('unit/test_helper_daemon.c', 'unit/test_sys.c', 'unit/test_alloc.c') + fl_helper_util_src + fl_agent_relay_src
       + fl_proto_src + fl_sha256_src + fl_helper_cov_sources,
     include_directories: [fl_unix_inc, fl_unit_inc],
     c_args: fl_warn + ['-U_FORTIFY_SOURCE'],
     link_args: fl_alloc_wrap + fl_sys_wrap + fl_helper_cov_ldflags,
+    build_by_default: true,
+  ),
+  suite: 'bridge-unit',
+  timeout: 120,
+)
+
+# The ssh-agent relay (unit/test_agent_relay.c includes bridge/unix/fl_agent_relay.c): the msys socket
+# file, the peer check and whole connections against a fake agent, with system-call failures
+# injected through ld --wrap (the wraps are in the test itself) and allocation failures.
+fl_agent_wrap = []
+foreach fl_fn : ['socket', 'listen', 'getrandom', 'write', 'fsetxattr', 'rename', 'read', 'send']
+  fl_agent_wrap += '-Wl,--wrap=' + fl_fn
+endforeach
+test(
+  'test-agent-relay',
+  executable(
+    'test_agent_relay',
+    files('unit/test_agent_relay.c', 'unit/test_alloc.c'),
+    include_directories: [fl_unix_inc, fl_unit_inc],
+    c_args: fl_warn + ['-U_FORTIFY_SOURCE'],
+    link_args: fl_alloc_wrap + fl_agent_wrap,
     build_by_default: true,
   ),
   suite: 'bridge-unit',

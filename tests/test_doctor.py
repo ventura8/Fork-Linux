@@ -1193,6 +1193,45 @@ def test_ssh_passphrase_check(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+def test_ssh_agent_check(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from fork_linux import bridge, launcher
+
+    agent = tmp_path / "agent.sock"
+    ctx = make(env={"FORK_LINUX_SSH_AGENT_RELAY": "off"})
+    off = Result("info", "the ssh-agent relay is off ([ssh] agent_relay)", doctor.AGENT_OFF_HINT)
+    assert run(ctx, "ssh.agent") == off
+    ctx = make()
+    assert run(ctx, "ssh.agent").status == "info"
+    assert "no ssh-agent in this session" in run(ctx, "ssh.agent").detail
+    monkeypatch.setattr(bridge, "host_agent", lambda env: agent)
+    monkeypatch.setattr(doctor, "_bridge_ready", lambda _ctx: True)
+    assert run(ctx, "ssh.agent") == Result("ok", f"the git bridge's Linux ssh uses your ssh-agent ({agent})")
+    monkeypatch.setattr(doctor, "_bridge_ready", lambda _ctx: False)
+    helper = tmp_path / "fl-bridge-helper"
+    monkeypatch.setattr(bridge, "helper_path", lambda: helper)
+    result = run(ctx, "ssh.agent")
+    assert result.status == "warn" and "has no fl-bridge-helper" in result.detail
+    helper.write_text("", encoding="utf-8")
+    assert run(ctx, "ssh.agent") == Result(
+        "ok", f"Fork's bundled ssh uses your ssh-agent ({agent}) through the launcher's relay"
+    )
+    monkeypatch.setattr(bridge, "relay_failure", lambda logs: "mark the socket file: Operation not supported")
+    assert run(ctx, "ssh.agent") == Result(
+        "warn",
+        "the last launch could not start the ssh-agent relay: mark the socket file: Operation not supported",
+        doctor.AGENT_XATTR_HINT,
+    )
+    monkeypatch.setattr(bridge, "relay_failure", lambda logs: None)
+    monkeypatch.setattr(procs, "fork_running", lambda prefix, proc_root=None: True)
+    session: dict[str, Any] = {"prefix": str(ctx.paths.prefix), "bridge": {"pid": 1, "agent": False}}
+    monkeypatch.setattr(launcher, "read_session", lambda paths: session)
+    assert run(ctx, "ssh.agent") == Result("warn", "Fork runs without the ssh-agent relay", doctor.AGENT_RESTART_HINT)
+    session["bridge"]["agent"] = True
+    assert run(ctx, "ssh.agent").status == "ok"
+    session.pop("bridge")
+    assert run(ctx, "ssh.agent").status == "warn"
+
+
 def test_git_overlay() -> None:
     ctx = make()
     prefix(ctx)

@@ -1035,14 +1035,14 @@ static void test_accept_loop(void)
     CHECK(parent_check(&d) == 0 && d.next_parent_check > 0);
 
     fl_sys_fail(FL_SYS_ACCEPT4, 1, EMFILE);
-    daemon_accept(&d);
-    daemon_accept(&d); /* nothing pending (EAGAIN) */
+    daemon_accept(&d, d.lst, 0);
+    daemon_accept(&d, d.lst, 0); /* nothing pending (EAGAIN) */
 
     c = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
     CHECK(connect(c, (struct sockaddr *)&a, sizeof(a)) == 0);
     d.nsessions = MAX_SESSIONS;
     poll(NULL, 0, 50);
-    daemon_accept(&d); /* refused: too many sessions */
+    daemon_accept(&d, d.lst, 0); /* refused: too many sessions */
     close(c);
 
     c = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
@@ -1050,7 +1050,7 @@ static void test_accept_loop(void)
     d.nsessions = 0;
     poll(NULL, 0, 50);
     fl_sys_fail(FL_SYS_FORK, 1, EAGAIN);
-    daemon_accept(&d); /* fork failed */
+    daemon_accept(&d, d.lst, 0); /* fork failed */
     CHECK(d.nsessions == 0);
     close(c);
 

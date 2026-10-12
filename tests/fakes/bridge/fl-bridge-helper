@@ -6,9 +6,11 @@ the token file, prints ``FL_BRIDGE_PORT=<n>`` and then stays until SIGTERM or un
 ``--parent-pid`` is gone. ``$FL_FAKE_DAEMON`` picks a misbehaviour instead: ``exit``
 (prints the port, then exits), ``fail`` (exit 1, nothing printed), ``bad`` (a garbage
 line), ``port0`` (port 0), ``noeol`` (64 bytes without a newline), ``silent`` (prints
-nothing, keeps running), ``stubborn`` (ignores SIGTERM). Each start appends one JSON line
-to ``$FL_FAKE_DAEMON_LOG``: argv, pid, the token file's mode, the token, and the
-environment variables the tests look at.
+nothing, keeps running), ``stubborn`` (ignores SIGTERM), ``agentoff`` (no ssh-agent relay).
+With ``--ssh-agent SOCK --ssh-agent-file FILE`` and SOCK a socket it writes FILE (0600) the
+way the real daemon does before its port line. Each start appends one JSON line to
+``$FL_FAKE_DAEMON_LOG``: argv, pid, the token file's mode, the token, and the environment
+variables the tests look at.
 """
 
 from __future__ import annotations
@@ -53,6 +55,11 @@ def main() -> int:
     if mode == "stubborn":
         # Before the port line: the launcher may send SIGTERM as soon as it has read it.
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    agent, agent_file = _option(argv, "--ssh-agent"), _option(argv, "--ssh-agent-file")
+    if agent and agent_file and mode != "agentoff" and os.path.exists(agent) and stat.S_ISSOCK(os.stat(agent).st_mode):
+        fd = os.open(agent_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        os.write(fd, b"!<socket >4243 s 00000001-00000002-00000003-00000004\0")
+        os.close(fd)
     lines = {"bad": b"garbage\n", "port0": b"FL_BRIDGE_PORT=0\n", "noeol": b"x" * 64, "silent": b""}
     os.write(1, lines.get(mode, b"FL_BRIDGE_PORT=4242\n"))
     if mode == "exit":

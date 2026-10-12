@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import shutil
 import signal
@@ -307,7 +308,7 @@ class Session:
 
 def _compile(cc: str, out: Path, sanitize: bool) -> subprocess.CompletedProcess[str]:
     """Compile the daemon with the bridge warning flags (optionally under ASan/UBSan)."""
-    sources = [UNIX_DIR / "fl_bridge_helper.c", UNIX_DIR / "fl_helper_util.c"]
+    sources = [UNIX_DIR / "fl_bridge_helper.c", UNIX_DIR / "fl_helper_util.c", UNIX_DIR / "fl_agent_relay.c"]
     sources += [COMMON_DIR / "fl_proto.c", COMMON_DIR / "fl_sha256.c"]
     cmd = [cc, "-std=c11", "-O1", "-g", *WARN_FLAGS]
     if sanitize:
@@ -1289,8 +1290,24 @@ def test_bad_token_file_is_refused(
         ["--daemon", "--host-helper", "relative/path"],
         ["--daemon", "--watch-prefix", "relative"],
         ["--daemon", "--handoff-only"],
+        ["--daemon", "--ssh-agent", "/run/agent.sock"],
+        ["--daemon", "--ssh-agent-file", "/tmp/x/agent.sock"],
+        ["--daemon", "--ssh-agent", "agent.sock", "--ssh-agent-file", "/tmp/x/agent.sock"],
+        ["--daemon", "--ssh-agent", "/run/agent.sock", "--ssh-agent-file", "x/agent.sock"],
     ],
-    ids=["no-daemon", "bad-port", "bad-pid", "unknown", "relative-helper", "relative-prefix", "handoff-no-helper"],
+    ids=[
+        "no-daemon",
+        "bad-port",
+        "bad-pid",
+        "unknown",
+        "relative-helper",
+        "relative-prefix",
+        "handoff-no-helper",
+        "agent-without-file",
+        "file-without-agent",
+        "relative-agent",
+        "relative-agent-file",
+    ],
 )
 def test_usage_errors(helper_bin: Path, tmp_path: Path, args: list[str]) -> None:
     """Bad command lines exit 2 without listening."""
@@ -1653,3 +1670,170 @@ def test_winexec_keeps_windows_switches(
         "Z:\\tmp",
         "Z:\\fl-no-such-dir\\file",
     ]
+
+
+# --------------------------------------------------------------------------
+# ssh-agent relay (--ssh-agent / --ssh-agent-file; bridge/unix/fl_agent_relay.h)
+# --------------------------------------------------------------------------
+
+AGENT_FAILURE, AGENT_IDENTITIES, AGENT_IDENTITIES_ANSWER = 5, 11, 12
+AGENT_ADD_IDENTITY = 17
+_SOCKET_FILE_RE = r"^!<socket >(\d+) s ([0-9a-f]{8})-([0-9a-f]{8})-([0-9a-f]{8})-([0-9a-f]{8})\x00$"
+
+
+class FakeAgent:
+    """A Unix-socket ssh-agent stand-in: answers every request with IDENTITIES_ANSWER (no keys)
+    and records the message numbers it received."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.seen: list[int] = []
+        self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.server.bind(str(path))
+        self.server.listen(8)
+        self.thread = threading.Thread(target=self._serve, daemon=True)
+        self.thread.start()
+
+    def _serve(self) -> None:
+        while True:
+            try:
+                conn, _addr = self.server.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._conn, args=(conn,), daemon=True).start()
+
+    def _conn(self, conn: socket.socket) -> None:
+        with conn:
+            while True:
+                try:
+                    (length,) = struct.unpack(">I", recv_exact(conn, 4))
+                    body = recv_exact(conn, length)
+                except (EOFError, OSError):
+                    return
+                self.seen.append(body[0])
+                conn.sendall(struct.pack(">IBI", 5, AGENT_IDENTITIES_ANSWER, 0))
+
+    def close(self) -> None:
+        self.server.close()
+
+
+def msys_connect(socket_file: Path) -> socket.socket:
+    """Connect the way msys ssh does: read the socket file, TCP to its port, the secret / cred handshake."""
+    match = re.match(_SOCKET_FILE_RE, socket_file.read_text(encoding="ascii"))
+    assert match, socket_file.read_text(encoding="ascii")
+    secret = b"".join(struct.pack("<I", int(word, 16)) for word in match.groups()[1:])
+    sock = socket.create_connection(("127.0.0.1", int(match.group(1))), timeout=SOCK_TIMEOUT)
+    sock.sendall(secret)
+    assert recv_exact(sock, 16) == secret
+    sock.sendall(struct.pack("<3i", os.getpid(), os.getuid(), os.getgid()))
+    pid, uid, _gid = struct.unpack("<3i", recv_exact(sock, 12))
+    assert uid == os.getuid() and pid > 0
+    return sock
+
+
+def agent_request(sock: socket.socket, body: bytes) -> bytes:
+    """One agent request and its answer (bodies without the length prefix)."""
+    sock.sendall(struct.pack(">I", len(body)) + body)
+    (length,) = struct.unpack(">I", recv_exact(sock, 4))
+    return recv_exact(sock, length)
+
+
+def _agent_daemon(helper_bin: Path, root: Path, agent: Path) -> tuple[Daemon, Path]:
+    directory = root / "ssh-agent"
+    directory.mkdir(mode=0o700)
+    socket_file = directory / "agent.sock"
+    d = start_daemon(helper_bin, root, extra_args=["--ssh-agent", str(agent), "--ssh-agent-file", str(socket_file)])
+    return d, socket_file
+
+
+def test_ssh_agent_relay_forwards_listing_and_refuses_key_management(helper_bin: Path, tmp_path: Path) -> None:
+    """The socket file is in msys' format (0600, SYSTEM attribute); a client that knows its secret lists keys
+    through the relay; adding a key is answered by the relay and never reaches the agent; the file is
+    removed when the daemon stops. Git sessions still work next to it."""
+    agent = FakeAgent(tmp_path / "agent.sock")
+    d, socket_file = _agent_daemon(helper_bin, tmp_path, agent.path)
+    try:
+        assert stat.S_IMODE(socket_file.stat().st_mode) == 0o600
+        try:
+            assert os.getxattr(socket_file, "user.DOSATTRIB") == b"0x4"
+        except OSError as exc:
+            if exc.errno != errno.ENOTSUP:
+                raise
+        with msys_connect(socket_file) as sock:
+            assert agent_request(sock, bytes([AGENT_IDENTITIES]))[0] == AGENT_IDENTITIES_ANSWER
+            assert agent_request(sock, bytes([AGENT_ADD_IDENTITY]) + b"key")[0] == AGENT_FAILURE
+        assert d.run(["true"]).exit_code == 0
+        assert _wait_for_log(d.log, "result=done requests=1 refused=1")
+    finally:
+        err = d.stop()
+        agent.close()
+    assert_clean_stderr(err)
+    assert agent.seen == [AGENT_IDENTITIES]
+    assert not socket_file.exists()
+    text = d.log.read_text()
+    assert "ssh-agent=on" in text
+    assert "ssh-agent relay port=" in text
+
+
+def test_ssh_agent_relay_refuses_a_wrong_secret(helper_bin: Path, tmp_path: Path) -> None:
+    """Knowing the port is not enough: the relay closes on a wrong secret and logs it."""
+    agent = FakeAgent(tmp_path / "agent.sock")
+    d, socket_file = _agent_daemon(helper_bin, tmp_path, agent.path)
+    try:
+        port = int(socket_file.read_text(encoding="ascii").split()[1].split(">")[-1])
+        with socket.create_connection(("127.0.0.1", port), timeout=SOCK_TIMEOUT) as sock:
+            sock.sendall(b"\0" * 16)
+            assert sock.recv(16) == b""
+        assert _wait_for_log(d.log, "result=auth-failed:secret")
+    finally:
+        d.stop()
+        agent.close()
+    assert agent.seen == []
+
+
+def test_ssh_agent_relay_stays_off_without_an_agent(helper_bin: Path, tmp_path: Path) -> None:
+    """No agent socket: the daemon still starts, writes no socket file and logs why."""
+    not_a_socket = tmp_path / "agent.sock"
+    not_a_socket.write_text("x")
+    d, socket_file = _agent_daemon(helper_bin, tmp_path, not_a_socket)
+    try:
+        assert d.run(["true"]).exit_code == 0
+    finally:
+        err = d.stop()
+    assert_clean_stderr(err)
+    assert not socket_file.exists()
+    text = d.log.read_text()
+    assert "ssh-agent relay off: the agent path is not a socket" in text
+    assert "ssh-agent=off" in text
+
+
+def test_ssh_agent_relay_with_a_real_agent(helper_bin: Path, tmp_path: Path) -> None:
+    """With OpenSSH's own ssh-agent: a key added on the Linux side is listed through the relay."""
+    tools = [shutil.which(name) for name in ("ssh-agent", "ssh-add", "ssh-keygen")]
+    if None in tools:
+        pytest.skip("OpenSSH's ssh-agent, ssh-add and ssh-keygen are not installed")
+    agent = tmp_path / "real-agent.sock"
+    proc = subprocess.Popen(["ssh-agent", "-D", "-a", str(agent)], stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, start_new_session=True)
+    try:
+        deadline = time.monotonic() + 10
+        while not agent.exists():
+            assert time.monotonic() < deadline, "ssh-agent did not start"
+            time.sleep(0.05)
+        key = tmp_path / "id_test"
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "relay-test", "-f", str(key)],
+                       check=True, timeout=60)
+        subprocess.run(["ssh-add", str(key)], check=True, timeout=30, capture_output=True,
+                       env={**base_env(tmp_path), "SSH_AUTH_SOCK": str(agent)})
+        d, socket_file = _agent_daemon(helper_bin, tmp_path, agent)
+        try:
+            with msys_connect(socket_file) as sock:
+                answer = agent_request(sock, bytes([AGENT_IDENTITIES]))
+        finally:
+            d.stop()
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)
+    assert answer[0] == AGENT_IDENTITIES_ANSWER
+    assert struct.unpack(">I", answer[1:5])[0] == 1
+    assert b"relay-test" in answer

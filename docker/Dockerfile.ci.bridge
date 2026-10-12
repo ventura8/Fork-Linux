@@ -8,6 +8,8 @@
 # "bridge" stage runs FL_REAL_WINE=1 python3 -m pytest tests/bridge in here
 # (as an unprivileged user with a writable HOME it owns, e.g. -e HOME=/tmp/h and
 # --basetemp=/tmp/h/pt; isolated WINEPREFIX; never as root; no TMPDIR, see B5).
+# openssh-client: the daemon protocol tests run the ssh-agent relay against OpenSSH's own
+# ssh-agent.
 # Source is bind-mounted at /src (no COPY).
 FROM ubuntu:26.04
 
@@ -24,7 +26,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     musl-tools gcc libc6-dev \
     meson ninja-build \
     python3 python3-pytest file \
-    git \
+    git openssh-client \
     wine wine64 xvfb xauth
 
 WORKDIR /src

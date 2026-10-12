@@ -14,6 +14,10 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
   `fork-linux doctor --check desktop.handoff` (route: systemd user session, launcher daemon, flatpak-spawn --host;
   warns on a recent `<logs>/handoff.log` line = the tool ran inside Wine's tree with `NoNewPrivs=1` + seccomp).
   Design: bridge/README.md "Desktop hand-off".
+- Fork asks for a key's passphrase although the key is in the ssh-agent: `fork-linux doctor --check ssh.agent`
+  (relay off, no `$SSH_AUTH_SOCK` when Fork started: `fork-linux run --restart`, no helper, or the daemon's
+  `bridge-*.log` says `ssh-agent relay off: <why>`). Design: bridge/README.md "ssh-agent relay",
+  bridge/unix/README.md; the e2e scenarios G-SSH-AGENT-RELAY / G-SSH-AGENT-BUNDLED.
 - Setup resumes at the failed step: `fork-linux setup --list-steps`, `--from-step STEP`, `--only STEP`.
 - Wrong or narrow interface text: `fork-linux doctor --check prefix.ui_font --check prefix.font_replacements --check prefix.font_smoothing`,
   then `fork-linux setup --only ui_font --only font_replacements` (design: `docs/spikes/S10-text-rendering.md`).

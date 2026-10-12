@@ -9,7 +9,9 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +21,7 @@ from fixtures.setup_ctx import USER, FakeUI, make_ctx
 
 from fork_linux import bootstrap, bridge, resources, sandbox
 from fork_linux.cli import AppContext
+from fork_linux.config import Config
 from fork_linux.errors import UsageError
 from fork_linux.steps import integration
 
@@ -605,6 +608,133 @@ def test_start_handoff_failure_is_only_logged(kit: bridge_kit.Kit, caplog: pytes
     assert list(ctx.paths.runtime_dir.glob("bridge-token-*")) == []
 
 
+# -- the ssh-agent relay ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def agent_sock() -> Iterator[Path]:
+    """A listening AF_UNIX socket standing in for the session's ssh-agent (short path: sun_path)."""
+    directory = Path(tempfile.mkdtemp(prefix="fl-agent-"))
+    path = directory / "agent.sock"
+    server = socket.socket(socket.AF_UNIX)
+    server.bind(str(path))
+    server.listen(1)
+    try:
+        yield path
+    finally:
+        server.close()
+        path.unlink()
+        directory.rmdir()
+
+
+def test_host_agent(tmp_path: Path, agent_sock: Path) -> None:
+    assert bridge.host_agent({}) is None
+    assert bridge.host_agent({"SSH_AUTH_SOCK": "relative.sock"}) is None
+    assert bridge.host_agent({"SSH_AUTH_SOCK": str(tmp_path / "missing")}) is None
+    (tmp_path / "file").write_text("", encoding="utf-8")
+    assert bridge.host_agent({"SSH_AUTH_SOCK": str(tmp_path / "file")}) is None
+    assert bridge.host_agent({"SSH_AUTH_SOCK": str(agent_sock)}) == agent_sock
+
+
+def test_agent_socket_follows_the_setting(kit: bridge_kit.Kit, agent_sock: Path) -> None:
+    ctx = _ctx(kit)
+    assert bridge.agent_socket(ctx) is None, "no agent in the session"
+    ctx.env["SSH_AUTH_SOCK"] = str(agent_sock)
+    assert bridge.agent_relay_enabled(ctx)
+    assert bridge.agent_socket(ctx) == agent_sock
+    ctx.config.set("ssh", "agent_relay", "off")
+    assert bridge.agent_socket(ctx) is None
+    ctx.config.set("ssh", "agent_relay", "on")
+    ctx.env["FORK_LINUX_SSH_AGENT_RELAY"] = "maybe"
+    ctx.config = Config.load(ctx.paths, ctx.env)
+    assert not bridge.agent_relay_enabled(ctx), "an invalid value counts as off"
+
+
+def _agent_args(argv: list[str]) -> tuple[str, str]:
+    return argv[argv.index("--ssh-agent") + 1], argv[argv.index("--ssh-agent-file") + 1]
+
+
+def test_start_handoff_starts_for_the_relay(
+    kit: bridge_kit.Kit, agent_sock: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With a systemd user manager no hand-off daemon is needed, but the relay starts one: Fork's
+    SSH_AUTH_SOCK names the msys socket file the daemon wrote in our 0700 directory."""
+    ctx = _ctx(kit)
+    ctx.env["SSH_AUTH_SOCK"] = str(agent_sock)
+    monkeypatch.setattr(bridge, "systemd_user_manager", lambda env: True)
+    socket_file = ctx.paths.fork_linux_win_dir / "ssh-agent" / "agent.sock"
+    socket_file.parent.mkdir(parents=True)
+    socket_file.write_text("left by a daemon that crashed", encoding="utf-8")
+    daemon = bridge.start_handoff(ctx)
+    assert daemon is not None and daemon.handoff and daemon.agent
+    (start,) = kit.starts()
+    argv = start["argv"]
+    assert isinstance(argv, list)
+    assert _agent_args(argv) == (str(agent_sock), str(socket_file))
+    assert stat.S_IMODE(socket_file.parent.stat().st_mode) == 0o700
+    assert socket_file.read_bytes().startswith(b"!<socket >4243 s ")
+    assert daemon.env["SSH_AUTH_SOCK"] == "C:/fork-linux/ssh-agent/agent.sock"
+    assert bridge.launch_env(ctx, daemon)["SSH_AUTH_SOCK"] == bridge.AGENT_SOCK_WIN
+    record = bridge.session_record(daemon)
+    assert record is not None and record["agent"] is True
+    daemon.stop()
+
+
+def test_relay_that_does_not_start_leaves_fork_without_it(
+    kit: bridge_kit.Kit, agent_sock: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    ctx = _ctx(kit)
+    ctx.env["SSH_AUTH_SOCK"] = str(agent_sock)
+    ctx.env["FL_FAKE_DAEMON"] = "agentoff"
+    daemon = bridge.start_handoff(ctx)
+    assert daemon is not None and not daemon.agent
+    assert "SSH_AUTH_SOCK" not in daemon.env
+    assert "ssh-agent relay not started" in caplog.text
+    daemon.stop()
+
+
+def test_git_bridge_daemon_relays_only_in_record_mode(kit: bridge_kit.Kit, agent_sock: Path) -> None:
+    """Native git runs Linux ssh, which reaches the agent itself; record mode forwards to bundled git."""
+    ctx = _ready(kit)
+    ctx.env["SSH_AUTH_SOCK"] = str(agent_sock)
+    leftover = ctx.paths.fork_linux_win_dir / "ssh-agent" / "agent.sock"
+    leftover.parent.mkdir(parents=True)
+    leftover.write_text("left by a daemon that crashed", encoding="utf-8")
+    daemon = bridge.start_daemon(ctx)
+    assert daemon is not None and not daemon.agent
+    assert not leftover.exists(), "a leftover file is removed when no relay starts too"
+    assert "--ssh-agent" not in kit.starts()[-1]["argv"]
+    assert "SSH_AUTH_SOCK" not in daemon.env
+    daemon.stop()
+    fork_git = ctx.paths.fork_local_dir(ctx.user) / "gitInstance" / "2.50.1" / "cmd"
+    fork_git.mkdir(parents=True)
+    (fork_git / "git.exe").write_bytes(b"MZ")
+    ctx.config.set("git", "bridge_mode", "record")
+    daemon = bridge.start_daemon(ctx)
+    assert daemon is not None and daemon.agent
+    argv = kit.starts()[-1]["argv"]
+    assert isinstance(argv, list) and _agent_args(argv)[0] == str(agent_sock)
+    assert daemon.env["SSH_AUTH_SOCK"] == bridge.AGENT_SOCK_WIN
+    assert bridge.launch_env(ctx, daemon)["SSH_AUTH_SOCK"] == bridge.AGENT_SOCK_WIN
+    daemon.stop()
+
+
+def test_relay_failure_reads_the_newest_daemon_log(tmp_path: Path) -> None:
+    logs = tmp_path / "logs"
+    assert bridge.relay_failure(logs) is None, "no logs directory"
+    logs.mkdir()
+    assert bridge.relay_failure(logs) is None, "no daemon log"
+    (logs / "bridge-calls-20990101T000000Z.log").write_text("ssh-agent relay off: not this one\n", encoding="utf-8")
+    (logs / "bridge-20260101T000000Z.log").write_text(
+        "x ssh-agent relay off: the agent path is not a socket\n", encoding="utf-8"
+    )
+    assert bridge.relay_failure(logs) == "the agent path is not a socket"
+    (logs / "bridge-20260102T000000Z.log").write_text("x daemon start ssh-agent=on\n", encoding="utf-8")
+    assert bridge.relay_failure(logs) is None
+    (logs / "bridge-20260103T000000Z.log").mkdir()
+    assert bridge.relay_failure(logs) is None, "unreadable"
+
+
 def test_launch_env_without_a_daemon(kit: bridge_kit.Kit) -> None:
     ctx = _ready(kit)
     assert bridge.launch_env(ctx, None) == {}
@@ -627,7 +757,7 @@ def test_session_record_and_env(kit: bridge_kit.Kit, tmp_path: Path) -> None:
     assert bridge.session_record(None) is None
     env = {"FL_BRIDGE_PORT": "4242", "FL_BRIDGE_TOKEN": TOKEN, "FORKGITINSTANCE": "C:\\fork-linux\\gitInstance"}
     record = bridge.session_record(bridge.Daemon(77, 4242, env))
-    assert record == {"pid": 77, "port": 4242, "env": env, "handoff": False}
+    assert record == {"pid": 77, "port": 4242, "env": env, "handoff": False, "agent": False}
     session: dict[str, Any] = {"prefix": str(ctx.paths.prefix), "bridge": record}
     assert bridge.session_env(ctx, session, proc) == env
     assert bridge.running_daemon(ctx.paths, session, proc) == {"pid": 77, "port": 4242}

@@ -151,7 +151,8 @@ def test_translate_config_directives(host: Path) -> None:
         "    CertificateFile=~/.ssh/id_ed25519-cert.pub",
         f"    UserKnownHostsFile ~/.ssh/known_hosts /z{home}/other_hosts /dev/null",
         "    GlobalKnownHostsFile none",
-        "    # fork-linux: dropped (the agent socket of the Linux session is not reachable from Wine): "
+        "    # fork-linux: dropped (it names a Linux socket; Fork's ssh reaches $SSH_AUTH_SOCK's agent through "
+        "fork-linux's relay): "
         "IdentityAgent ~/.1password/agent.sock",
         "    # fork-linux: dropped (macOS only): UseKeychain yes",
         "    # fork-linux: dropped (connection sharing needs Unix sockets that Wine's ssh cannot use): "

@@ -1,11 +1,13 @@
 """ssh with Fork's bundled git beyond a plain key: a key protected by a passphrase, and ssh-agent.
 
 Under the pinned Wine (Kron4ek 11.18) Fork's bundled (msys) ssh starts its askpass program: Fork asks
-for a key's passphrase in its own prompt, and the fetch goes through. It still cannot reach the Linux
-agent's socket, so with ssh-agent it asks for the passphrase too. ``ssh sync`` and ``doctor`` name
-such keys and point at the git bridge, whose Linux ssh uses the agent (``test_real_bridge.py``:
-G-SSH-PASSPHRASE, G-SSH-AGENT). Under Wine 11.0 the bundled ssh could not ask at all (the fetch
-failed with "Permission denied (publickey)"); these tests pin the current behaviour.
+for a key's passphrase in its own prompt, and the fetch goes through. msys ssh cannot open the Linux
+agent's Unix socket itself; the launcher's ssh-agent relay (``[ssh] agent_relay``, on by default:
+``fl-bridge-helper --ssh-agent``, an msys socket file in ``C:\\fork-linux\\ssh-agent``) lets it use the
+agent, so a key loaded there is never asked for. With the relay off it asks, as before. ``ssh sync``
+and ``doctor`` name such keys and point at ``ssh-add`` and the git bridge, whose Linux ssh uses the
+agent too (``test_real_bridge.py``: G-SSH-PASSPHRASE, G-SSH-AGENT). Under Wine 11.0 the bundled ssh
+could not ask at all (the fetch failed with "Permission denied (publickey)").
 
 The sshd listens on 127.0.0.1 inside the container; keys and passphrases are made for the run.
 Gated by ``FL_E2E_FORK=1``; containers only.
@@ -22,10 +24,20 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fork_driver import git, wait_until
+from fork_driver import commit_file, git, wait_until
 from fork_ui import ForkUI
 from git_servers import SshServer
-from remote_ops import bare_remote, clone, credential_prompt, fetch, push_theirs
+from remote_ops import (
+    bare_remote,
+    clone,
+    credential_prompt,
+    fetch,
+    pull,
+    push,
+    push_theirs,
+    wait_pulled,
+    wait_pushed,
+)
 
 from fixtures import real_tier
 
@@ -130,7 +142,7 @@ def test_a_passphrase_key_is_named_and_bundled_ssh_asks_for_it(passphrase_key: _
     """
     synced = installed.cli("ssh", "sync").stdout
     assert f"needs a passphrase: {KEY}\n" in synced, synced
-    assert "git-bridge enable" in synced
+    assert "ssh-add" in synced and "git-bridge enable" in synced
     status = json.loads(installed.cli("ssh", "status", "--json").stdout)
     assert status["passphrase_keys"] == [KEY]
     report = json.loads(installed.cli("doctor", "--json", "--check", "ssh.passphrase", check=False).stdout)
@@ -141,26 +153,108 @@ def test_a_passphrase_key_is_named_and_bundled_ssh_asks_for_it(passphrase_key: _
     _fetch_asks_for_the_passphrase(ForkUI(installed.fork), work, theirs)
 
 
-def test_bundled_ssh_cannot_use_the_agent(passphrase_key: _Setup, installed: Any) -> None:
-    """The same key loaded into the Linux ssh-agent: Fork's bundled ssh cannot reach the agent's socket, so it
-    asks for the passphrase anyway.
+class _Agent:
+    """An OpenSSH ssh-agent for the run with the passphrase key added (the passphrase given once, here)."""
+
+    def __init__(self, e2e: Any, key: Path) -> None:
+        self.e2e = e2e
+        self.key = key
+        self.sock = e2e.root / "bundled-agent.sock"
+        self.process: subprocess.Popen[bytes] | None = None
+
+    def start(self) -> None:
+        real_tier.remove_inside(self.sock, self.e2e.root)
+        self.process = subprocess.Popen(["ssh-agent", "-D", "-a", str(self.sock)], stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.DEVNULL, start_new_session=True)
+        wait_until(self.sock.exists, 15, "the ssh agent")
+        askpass = self.e2e.root / "bundled-askpass.sh"
+        askpass.write_text(f"#!/bin/sh\necho '{PASSPHRASE}'\n", encoding="utf-8")
+        askpass.chmod(0o755)
+        subprocess.run(["ssh-add", str(self.key)], check=True, timeout=30, stdin=subprocess.DEVNULL,
+                       env={**os.environ, "SSH_AUTH_SOCK": str(self.sock), "SSH_ASKPASS": str(askpass),
+                            "SSH_ASKPASS_REQUIRE": "force"})
+
+    def stop(self) -> None:
+        if self.process is not None:
+            self.process.send_signal(signal.SIGTERM)
+            self.process.wait(timeout=30)
+
+
+@pytest.fixture
+def agent(passphrase_key: _Setup, installed: Any) -> Iterator[_Agent]:
+    """The passphrase key loaded into a running ssh-agent; ``[ssh] agent_relay`` back to its default after."""
+    running = _Agent(installed, passphrase_key.key)
+    try:
+        running.start()
+        yield running
+    finally:
+        installed.fork.ensure_closed()
+        installed.cli("config", "unset", "ssh.agent_relay", check=False)
+        running.stop()
+
+
+def _newest_daemon_log(e2e: Any) -> str:
+    logs = e2e.home / ".local" / "state" / "fork-linux" / "logs"
+    names = sorted(path for path in logs.glob("bridge-*.log") if not path.name.startswith("bridge-calls-"))
+    return names[-1].read_text(encoding="utf-8", errors="replace") if names else ""
+
+
+def test_bundled_ssh_with_the_agent_relay_off_asks_for_the_passphrase(agent: _Agent, installed: Any) -> None:
+    """``[ssh] agent_relay = off``: the launcher starts no relay, Fork's bundled ssh cannot reach the Linux agent
+    and asks for the passphrase (the state before the relay existed).
 
     Scenarios: G-SSH-AGENT-BUNDLED
     """
-    agent = installed.root / "bundled-agent.sock"
-    real_tier.remove_inside(agent, installed.root)
-    process = subprocess.Popen(["ssh-agent", "-D", "-a", str(agent)], stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, start_new_session=True)
-    try:
-        wait_until(agent.exists, 15, "the ssh agent")
-        askpass = installed.root / "bundled-askpass.sh"
-        askpass.write_text(f"#!/bin/sh\necho '{PASSPHRASE}'\n", encoding="utf-8")
-        askpass.chmod(0o755)
-        subprocess.run(["ssh-add", str(passphrase_key.key)], check=True, timeout=30, stdin=subprocess.DEVNULL,
-                       env={**os.environ, "SSH_AUTH_SOCK": str(agent), "SSH_ASKPASS": str(askpass),
-                            "SSH_ASKPASS_REQUIRE": "force"})
-        work, theirs = _work(installed, "ssh-agent-bundled")
-        _fetch_asks_for_the_passphrase(ForkUI(installed.fork), work, theirs, {"SSH_AUTH_SOCK": str(agent)})
-    finally:
-        process.send_signal(signal.SIGTERM)
-        process.wait(timeout=30)
+    installed.cli("config", "set", "ssh.agent_relay", "off")
+    report = json.loads(installed.cli("doctor", "--json", "--check", "ssh.agent", check=False,
+                                      extra={"SSH_AUTH_SOCK": str(agent.sock)}).stdout)
+    check = next(item for item in report["checks"] if item["id"] == "ssh.agent")
+    assert check["status"] == "info" and "relay is off" in check["detail"], check
+    work, theirs = _work(installed, "ssh-agent-off")
+    _fetch_asks_for_the_passphrase(ForkUI(installed.fork), work, theirs, {"SSH_AUTH_SOCK": str(agent.sock)})
+    socket_file = installed.prefix / "drive_c" / "fork-linux" / "ssh-agent" / "agent.sock"
+    assert not socket_file.exists()
+
+
+def test_bundled_ssh_uses_the_agent_through_the_relay(agent: _Agent, installed: Any) -> None:
+    """The passphrase key in the Linux ssh-agent and the relay on (the default): Fork's own Fetch, Pull and Push
+    over ssh with its bundled git go through without any passphrase prompt; doctor says the relay serves the
+    agent; the relay's msys socket file exists while Fork runs and is gone after Fork closes.
+
+    Scenarios: G-SSH-AGENT-RELAY
+    """
+    extra = {"SSH_AUTH_SOCK": str(agent.sock)}
+    report = json.loads(installed.cli("doctor", "--json", "--check", "ssh.agent", check=False, extra=extra).stdout)
+    check = next(item for item in report["checks"] if item["id"] == "ssh.agent")
+    assert check["status"] == "ok" and "through the launcher's relay" in check["detail"], check
+    bare, seed = bare_remote(installed, "ssh-agent-relay")
+    work = clone(f"file://{bare}", installed.repos / "ssh-agent-relay-work")
+    git(work, "remote", "set-url", "origin", f"{ALIAS}:{bare}")
+    theirs = push_theirs(seed)
+    ui = ForkUI(installed.fork)
+    ui.fork.ensure_closed()
+    ui.fork.focus(ui.fork.start(work, extra=extra))
+    socket_file = installed.prefix / "drive_c" / "fork-linux" / "ssh-agent" / "agent.sock"
+    assert socket_file.read_bytes().startswith(b"!<socket >"), "the relay's msys socket file"
+    assert os.getxattr(socket_file, "user.DOSATTRIB") == b"0x4"
+    fetch(ui)
+    outcome = wait_until(
+        lambda: ("fetched" if git(work, "rev-parse", "--verify", "--quiet", "origin/main", check=False) == theirs
+                 else "git error" if ui.screen.find(GIT_ERROR) else "prompt" if credential_prompt(ui, work.name)
+                 else None),
+        FETCH_SECONDS, "the fetch through the ssh-agent relay")
+    ui.screen.screenshot("bundled-ssh-agent-relay-fetch")
+    assert outcome == "fetched", f"the fetch did not go through the agent: {outcome}"
+    pull(ui)
+    wait_pulled(work, theirs, "the pull through the ssh-agent relay")
+    ours = commit_file(work, "ours.txt", "our work\n", "our work")
+    ui.refresh()
+    push(ui)
+    wait_pushed(bare, ours, "the push through the ssh-agent relay")
+    assert credential_prompt(ui, work.name) is None, "no passphrase prompt at any point"
+    ui.fork.ensure_closed()
+    wait_until(lambda: not socket_file.exists(), 60, "the relay's socket file removed after Fork closed")
+    log = _newest_daemon_log(installed)
+    assert "ssh-agent=on" in log, log
+    assert " agent peer=127.0.0.1:" in log and "result=done" in log, log
+    assert "refused=0" in log, log
