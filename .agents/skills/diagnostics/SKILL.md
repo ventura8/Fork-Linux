@@ -18,4 +18,9 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 - `desktop.handoff`: how Fork's terminals and apps leave Wine's process tree (`bridge.handoff_route`; without
   systemd: the running daemon in `session.json`, else the one the next launch starts) and a warn for a
   `handoff.log` line newer than the last launch. Only reads: no daemon, no Wine.
+- `ssh.agent`: whether Fork's ssh can use the session's ssh-agent (the launcher's relay for bundled ssh,
+  `[ssh] agent_relay`): info when the relay is off or `$SSH_AUTH_SOCK` is no socket, ok with the native-git
+  bridge, warn without `fl-bridge-helper`, when the newest `bridge-*.log` has `ssh-agent relay off: <why>`
+  (`bridge.relay_failure`; usually no extended attributes on the prefix's file system) or when Fork runs
+  without the relay (`session.json` `bridge.agent`). `ssh.passphrase` names keys with a passphrase.
 - Host libraries and their package names: `fork_linux.hostdeps` (also used by install.sh and `scripts/check-dep-names.py`).
