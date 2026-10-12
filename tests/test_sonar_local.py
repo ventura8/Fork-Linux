@@ -102,8 +102,20 @@ def test_check_complexity_reports_methods_over_the_limit_and_syntax_errors() -> 
     assert sl.check_complexity("x.py", source, 3) == []
     [broken] = sl.check_complexity("bad.py", "def f(:\n", 15)
     assert broken.rule == "python:syntax"
-    [nameless] = sl.check_complexity("bad.py", "\x00", 15)
-    assert nameless.line >= 1
+    # A NUL byte: SyntaxError since Python 3.12, ValueError on 3.10 and 3.11.
+    [nul] = sl.check_complexity("bad.py", "\x00", 15)
+    assert (nul.line, nul.rule) == (1, "python:syntax")
+
+
+def test_check_complexity_reports_a_value_error_as_syntax(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse(*_args: object, **_kwargs: object) -> ast.Module:
+        raise ValueError("source code string cannot contain null bytes")
+
+    monkeypatch.setattr(sl.ast, "parse", refuse)
+    [finding] = sl.check_complexity("bad.py", "x = 1\n", 15)
+    assert (finding.line, finding.rule, finding.message) == (
+        1, "python:syntax", "source code string cannot contain null bytes"
+    )
 
 
 # -- shelldre:S7682 / S131 ------------------------------------------------------------------------

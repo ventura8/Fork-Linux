@@ -220,6 +220,8 @@ def check_complexity(path: str, text: str, limit: int) -> list[Finding]:
         tree = ast.parse(text, filename=path)
     except SyntaxError as exc:
         return [Finding(path, exc.lineno or 1, "python:syntax", str(exc.msg))]
+    except ValueError as exc:  # Python 3.10 and 3.11: a NUL byte in the source
+        return [Finding(path, 1, "python:syntax", str(exc))]
     findings = []
     for node in _functions(tree):
         score = function_complexity(node)
