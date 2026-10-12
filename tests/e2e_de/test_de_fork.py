@@ -157,9 +157,10 @@ def test_05_open_in_shell_opens_the_desktops_terminal(session: dekit.Session, de
     session.evidence("05-terminal", window)
     dekit.wait_for(lambda: str(active) in dekit.children_cwds(window.pid or 0), 30, f"a shell in {active}")
     # The container has no systemd user manager: the hand-off went through the launcher's daemon,
-    # so the terminal runs outside Wine's process tree, without Wine's NoNewPrivs and seccomp filter
-    # (a GTK 3 terminal that loads icons through glycin, such as Tilix, aborts with them). It has
-    # what this test process has (the container's own baseline: Docker's default seccomp profile).
+    # so the terminal runs outside Wine's process tree, without any NoNewPrivs and seccomp filter a
+    # Wine build gives its programs (a GTK 3 terminal that loads icons through glycin, such as Tilix,
+    # aborts with them). It has what this test process has (the container's own baseline: Docker's
+    # default seccomp profile).
     terminal = window.pid or 0
     daemon = forkui.handoff_daemon(session)
     (fork,) = forkui.fork_pids(forkui.prefix(session))
@@ -177,8 +178,10 @@ def test_05_open_in_shell_opens_the_desktops_terminal(session: dekit.Session, de
         + f"daemon record: handoff={daemon.get('handoff')}\nhandoff.log: {forkui.handoff_log(session)!r}\n",
         encoding="utf-8",
     )
+    # Kron4ek 11.0 staging gave Fork NoNewPrivs and an extra seccomp filter; the pinned 11.18 adds neither
+    # (Fork's line in 05-confinement.txt shows which). Either way nothing the hand-off starts may carry more
+    # than this process.
     assert baseline["NoNewPrivs"] == "0", report
-    assert forkui.confinement(fork) != baseline, f"Fork runs without Wine's confinement: {report}"
     assert daemon.get("handoff") is True, f"no hand-off daemon in session.json: {daemon}"
     assert forkui.confinement(int(daemon["pid"])) == baseline, f"the daemon runs inside Wine's tree: {report}"
     assert forkui.confinement(terminal) == baseline, report
