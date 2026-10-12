@@ -37,30 +37,6 @@ def _translate(text: str, pathmap: PathMap) -> tuple[list[str], list[str]]:
     return out.splitlines(), notes
 
 
-# --- host_config_text ----------------------------------------------------------
-
-
-def test_host_config_text_reads_xdg_then_home(tmp_path: Path) -> None:
-    (tmp_path / ".config" / "git").mkdir(parents=True)
-    (tmp_path / ".config" / "git" / "config").write_text("[core]\n\teditor = vim", encoding="utf-8")
-    (tmp_path / ".gitconfig").write_text("[user]\n\tname = A\n", encoding="utf-8")
-    text = gitconfig.host_config_text(tmp_path)
-    assert text == (
-        "# from ~/.config/git/config\n[core]\n\teditor = vim\n"
-        "# from ~/.gitconfig\n[user]\n\tname = A\n"
-    )
-
-
-def test_host_config_text_missing_files(tmp_path: Path) -> None:
-    assert gitconfig.host_config_text(tmp_path) == ""
-
-
-def test_host_config_text_unreadable(tmp_path: Path) -> None:
-    (tmp_path / ".gitconfig").mkdir()
-    with pytest.raises(ForkLinuxError, match="cannot read"):
-        gitconfig.host_config_text(tmp_path)
-
-
 # --- value parsing and quoting ---------------------------------------------------
 
 
@@ -383,6 +359,13 @@ def test_sync_requires_the_wine_user_dir(xdg: Path, pathmap: PathMap, tmp_path: 
     home = _home(tmp_path)
     with pytest.raises(NotSetUpError):
         gitconfig.sync(paths, "nobody", home, pathmap)
+
+
+def test_sync_reports_an_unreadable_host_file(paths: Paths, pathmap: PathMap, tmp_path: Path) -> None:
+    home = _home(tmp_path, None)
+    (home / ".gitconfig").mkdir()
+    with pytest.raises(ForkLinuxError, match="cannot read"):
+        gitconfig.sync(paths, USER, home, pathmap)
 
 
 def test_sync_writes_overlay_and_block(paths: Paths, pathmap: PathMap, tmp_path: Path) -> None:

@@ -417,17 +417,3 @@ class PEFile:
                     text = string.value.decode("utf-16-le", "replace").split("\x00", 1)[0]
                     info.setdefault(string.key, text)
         return info
-
-
-def pe_machine(path: Path | str) -> int:
-    """The COFF machine type of the PE file at ``path`` (e.g. 0x8664 for x86-64)."""
-    return PEFile.from_path(path).machine
-
-
-def is_pe32_plus_x86_64(path: Path | str) -> bool:
-    """True when ``path`` is a well-formed PE32+ image for x86-64 (OSError if unreadable)."""
-    try:
-        pe = PEFile.from_path(path)
-    except IntegrityFailed:
-        return False
-    return pe.is_pe32_plus and pe.machine == MACHINE_AMD64

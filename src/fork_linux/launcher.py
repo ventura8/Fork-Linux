@@ -533,15 +533,6 @@ def _is_fork_copy(name: str) -> bool:
     return name.startswith(FORK_LOG_PREFIX) and name.endswith(".log") and name[len(FORK_LOG_PREFIX) : -4].endswith("Z")
 
 
-def fork_log_history(paths: Paths) -> list[Path]:
-    """The kept copies of earlier ``fork.log`` files, newest first."""
-    try:
-        names = os.listdir(paths.logs_dir)
-    except OSError:
-        return []
-    return [paths.logs_dir / name for name in sorted((n for n in names if _is_fork_copy(n)), reverse=True)]
-
-
 # -- session ---------------------------------------------------------------------------
 
 

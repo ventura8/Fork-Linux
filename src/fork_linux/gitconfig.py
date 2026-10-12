@@ -150,15 +150,6 @@ def _write(path: Path, text: str, *, mode: int = FILE_MODE) -> None:
     fsutil.atomic_write(path, text.encode(ENCODING, ERRORS), mode=mode)
 
 
-def host_config_text(host_home: Path) -> str:
-    """The user's global git configuration: ``~/.config/git/config`` then ``~/.gitconfig``.
-
-    Git reads them in this order (later values win), so they are
-    concatenated the same way. Missing files contribute nothing.
-    """
-    return "".join(_from_header(rel, text) for rel, text in _host_files(host_home))
-
-
 def _host_files(host_home: Path) -> list[tuple[tuple[str, ...], str]]:
     """``(relative path, text)`` of every non-empty host git config file, in git's order."""
     files = []

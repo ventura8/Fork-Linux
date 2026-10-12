@@ -141,42 +141,6 @@ def render_text() -> str:
     return "\n".join(lines) + "\n"
 
 
-def _md_list(entries: tuple[tuple[str, str, str], ...]) -> str:
-    """``[name](url), [name](url)``."""
-    return ", ".join(f"[{name}]({url})" for name, url, _note in entries)
-
-
-def render_markdown() -> str:
-    """The README / CREDITS "Credits & support the developers" block (Markdown, no heading)."""
-    tracker_win = f"[fork-dev/TrackerWin]({LINKS['tracker_win']})"
-    lines = [
-        f"**Fork** is made by **{DEVELOPERS[0]}** and **{DEVELOPERS[1]}** — {LINKS['website']}. "
-        "Everything that makes Fork great is their work; this wrapper only makes it start on Linux.",
-        "",
-        f"- **Please buy a license:** {LINKS['buy']} — the evaluation is free; a license "
-        f"({PRICE} at the time of writing) covers {LICENSE_SCOPE}.",
-        f"- Release notes: {LINKS['release_notes']} · License (EULA): {LINKS['license']} "
-        f"· Twitter: [@git_fork]({LINKS['twitter']})",
-        f"- Fork's issue trackers: {tracker_win} (Windows) · "
-        f"[fork-dev/Tracker]({LINKS['tracker_mac']}) (Mac and general). "
-        f"{LINKS['support']} is for licensing questions only.",
-        "",
-        f"> {APP_NAME} is **NOT affiliated with, endorsed by, or supported by** Fork's developers. "
-        f"Report Linux and wrapper issues to [ventura8/Fork-Linux]({LINKS['project_issues']}) "
-        f"({LINKS['project']}), not to Fork support. "
-        f"If a problem also happens on Windows, report it to {tracker_win}.",
-        "",
-        f"> Fork is proprietary software under its [EULA]({LINKS['license']}). fork-linux downloads "
-        f"the official installer from `{INSTALLER_HOST}` on your machine and never redistributes, "
-        "patches or decompiles Fork.",
-        "",
-        f"**Community prior art:** {_md_list(COMMUNITY_PRIOR_ART)}.",
-        "",
-        f"**Upstream projects:** {_md_list(UPSTREAM_PROJECTS)}.",
-    ]
-    return "\n".join(lines) + "\n"
-
-
 def render_desktop_comment() -> str:
     """The ``.desktop`` ``Comment=`` value: one line of at most 120 characters."""
     return (

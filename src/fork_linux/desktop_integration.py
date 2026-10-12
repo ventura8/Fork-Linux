@@ -91,7 +91,6 @@ FMA = "fma"
 DOLPHIN = "dolphin"
 THUNAR = "thunar"
 CLI_ALIAS = "cli-alias"
-FILE_KINDS = (MENU, ICON, NAUTILUS, NAUTILUS_SCRIPT, NEMO, NEMO_FOLDER, FMA, DOLPHIN)
 # Indexes the desktop cache tools write next to our files (update-desktop-database, gtk-update-icon-cache).
 CACHE_INDEXES = frozenset({"mimeinfo.cache", "icon-theme.cache"})
 

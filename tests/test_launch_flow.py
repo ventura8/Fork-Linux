@@ -932,7 +932,7 @@ def test_keep_fork_log_copies_once_and_rotates(ctx: bootstrap.Ctx, monkeypatch: 
     for n in range(1, 5):
         _fork_log(ctx, f"session {n + 1}\n", 1_790_000_000 + n * 60)
         launcher.keep_fork_log(ctx.paths, ctx.layout)
-    history = launcher.fork_log_history(ctx.paths)
+    history = sorted(ctx.paths.logs_dir.glob("fork-*Z.log"), reverse=True)
     assert [path.read_text(encoding="utf-8") for path in history] == ["session 5\n", "session 4\n", "session 3\n"]
     assert (ctx.paths.logs_dir / "fork-linux.log").exists()
 
@@ -948,16 +948,12 @@ def test_keep_fork_log_refuses_links_and_fifos(ctx: bootstrap.Ctx, tmp_path: Pat
     assert launcher.keep_fork_log(ctx.paths, ctx.layout) is None
 
 
-def test_fork_log_history_without_logs(ctx: bootstrap.Ctx) -> None:
-    assert launcher.fork_log_history(ctx.paths) == []
-
-
 def test_run_keeps_the_previous_fork_log(
     ctx: bootstrap.Ctx, flow: dict[str, Any], monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     _fork_log(ctx, "previous session\n", 1_790_000_000)
     launcher.run(flow["app"], [], no_hooks=True, execvpe=flow["exec"])
-    assert [p.read_text(encoding="utf-8") for p in launcher.fork_log_history(ctx.paths)] == ["previous session\n"]
+    assert [p.read_text(encoding="utf-8") for p in ctx.paths.logs_dir.glob("fork-*Z.log")] == ["previous session\n"]
 
     def broken(paths: Any, layout: Any) -> None:
         raise OSError("disk full")

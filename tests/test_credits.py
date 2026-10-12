@@ -28,7 +28,7 @@ EXPECTED_LINKS = {
     "project_issues": "https://github.com/ventura8/Fork-Linux/issues",
 }
 
-RENDERERS = {"text": credits.render_text, "markdown": credits.render_markdown}
+RENDERERS = {"text": credits.render_text}
 
 
 def test_links_are_exactly_the_contract() -> None:
@@ -88,17 +88,6 @@ def test_about_text_content() -> None:
     assert "Thanks to" in text
     for name, _url, _note in credits.PRIOR_ART:
         assert name in text
-
-
-def test_markdown_uses_links_for_prior_art_and_trackers() -> None:
-    text = credits.render_markdown()
-    for name, url, _note in credits.PRIOR_ART:
-        assert f"[{name}]({url})" in text
-    assert f"]({credits.LINKS['tracker_win']})" in text
-    assert f"]({credits.LINKS['tracker_mac']})" in text
-    assert f"]({credits.LINKS['twitter']})" in text
-    assert not text.startswith("#")  # the caller owns the heading
-    assert text.count("[") == text.count("]")
 
 
 def test_desktop_comment() -> None:

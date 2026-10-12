@@ -410,8 +410,6 @@ def test_from_path_and_helpers(tmp_path: Path) -> None:
     exe.write_bytes(pb.build_pe())
     assert PEFile.from_path(exe).machine == pb.MACHINE_AMD64
     assert PEFile.from_path(str(exe)).is_pe32_plus
-    assert pe_resources.pe_machine(exe) == pb.MACHINE_AMD64
-    assert pe_resources.is_pe32_plus_x86_64(exe) is True
 
 
 def test_from_path_size_cap(tmp_path: Path) -> None:
@@ -465,7 +463,6 @@ def test_from_path_refuses_non_regular_files(tmp_path: Path) -> None:
     with pytest.raises(IntegrityFailed, match="is not a regular file") as caught:
         PEFile.from_path(fifo)
     assert caught.value.exit_code == ExitCode.INTEGRITY_FAILED
-    assert pe_resources.is_pe32_plus_x86_64(fifo) is False
     with pytest.raises(IntegrityFailed, match="is not a regular file"):
         PEFile.from_path(tmp_path)
 
@@ -473,28 +470,25 @@ def test_from_path_refuses_non_regular_files(tmp_path: Path) -> None:
 def test_from_path_missing_file_raises_oserror(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         PEFile.from_path(tmp_path / "missing.exe")
-    with pytest.raises(FileNotFoundError):
-        pe_resources.is_pe32_plus_x86_64(tmp_path / "missing.exe")
 
 
-def test_is_pe32_plus_x86_64_rejects_other_images(tmp_path: Path) -> None:
-    cases = {
-        "pe32.exe": pb.build_pe(pe32_plus=False),
-        "arm64.exe": pb.build_pe(machine=0xAA64),
-        "i386-plus.exe": pb.build_pe(machine=pb.MACHINE_I386),
-        "text.exe": b"#!/bin/sh\necho not a PE\n",
+def test_machine_and_magic_of_other_images(tmp_path: Path) -> None:
+    images = {
+        "pe32.exe": (pb.build_pe(pe32_plus=False), pb.MACHINE_I386, False),
+        "arm64.exe": (pb.build_pe(machine=0xAA64), 0xAA64, True),
+        "i386-plus.exe": (pb.build_pe(machine=pb.MACHINE_I386), pb.MACHINE_I386, True),
     }
-    for name, data in cases.items():
+    for name, (data, machine, plus) in images.items():
         (tmp_path / name).write_bytes(data)
-        assert pe_resources.is_pe32_plus_x86_64(tmp_path / name) is False, name
-    assert pe_resources.pe_machine(tmp_path / "arm64.exe") == 0xAA64
+        pe = PEFile.from_path(tmp_path / name)
+        assert (pe.machine, pe.is_pe32_plus) == (machine, plus), name
 
 
-def test_pe_machine_raises_on_non_pe(tmp_path: Path) -> None:
+def test_from_path_raises_on_non_pe(tmp_path: Path) -> None:
     target = tmp_path / "plain.txt"
     target.write_text("hello")
     with pytest.raises(IntegrityFailed):
-        pe_resources.pe_machine(target)
+        PEFile.from_path(target)
 
 
 def test_fixture_is_accepted_by_binutils(tmp_path: Path) -> None:
