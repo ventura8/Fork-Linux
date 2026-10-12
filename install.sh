@@ -551,8 +551,6 @@ fl_manifest_has() {
 	[[ -f "${dest}/${MANIFEST_NAME}" ]] && awk -F '\t' -v p="$1" '$2 == p {found=1} END {exit !found}' "${dest}/${MANIFEST_NAME}"
 }
 
-# Remove what an earlier manifest recorded: links that still point where we left them and
-# files whose content is unchanged; anything else is reported and kept.
 # fl_clear_ours PATH MARKER: remove PATH, a leftover of an interrupted install, when it is a
 # directory carrying our marker; refuse anything else at that path.
 fl_clear_ours() {
@@ -565,6 +563,8 @@ fl_clear_ours() {
 	fi
 }
 
+# fl_remove_manifest_files MANIFEST: remove what an earlier manifest recorded: links that still
+# point where we left them and files whose content is unchanged; anything else is reported and kept.
 fl_remove_manifest_files() {
 	local manifest="$1" kind path extra
 	while IFS=$'\t' read -r kind path extra; do
