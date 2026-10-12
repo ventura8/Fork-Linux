@@ -282,15 +282,19 @@ def _desired(config: Config, **overrides: Any) -> dict[str, object]:
 
 
 def test_desired_defaults_enforce_wine_safe_keys(tmp_path: Path) -> None:
-    assert _desired(_config(tmp_path)) == {"UpdateSubmodulesOnCheckout": False, "DisableHardwareAcceleration": True}
+    assert _desired(_config(tmp_path)) == {
+        "UpdateSubmodulesOnCheckout": False,
+        "DisableHardwareAcceleration": True,
+        "FollowSystemTheme": True,
+    }
 
 
 def test_desired_enforce_list_unknown_and_empty(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    config = _config(tmp_path, fork__enforce_settings="DisableHardwareAcceleration, Bogus")
+    config = _config(tmp_path, fork__enforce_settings="DisableHardwareAcceleration, Bogus", display__theme="off")
     with caplog.at_level(logging.WARNING, logger="fork_linux.fork_settings"):
         assert _desired(config) == {"DisableHardwareAcceleration": True}
     assert "Bogus" in caplog.text
-    assert _desired(_config(tmp_path, fork__enforce_settings="")) == {}
+    assert _desired(_config(tmp_path, fork__enforce_settings="", display__theme="off")) == {}
 
 
 @pytest.mark.parametrize(
@@ -298,8 +302,9 @@ def test_desired_enforce_list_unknown_and_empty(tmp_path: Path, caplog: pytest.L
     [
         ("follow", "dark", {"Theme": 1, "FollowSystemTheme": False}),
         ("follow", "light", {"Theme": 0, "FollowSystemTheme": False}),
-        ("follow", None, {}),
-        ("follow", "purple", {}),
+        # No desktop probe answered: Fork's own "follow system theme" is turned back on.
+        ("follow", None, {"FollowSystemTheme": True}),
+        ("follow", "purple", {"FollowSystemTheme": True}),
         ("dark", None, {"Theme": 1, "FollowSystemTheme": False}),
         ("Light", "dark", {"Theme": 0, "FollowSystemTheme": False}),
         ("off", "dark", {}),

@@ -1769,6 +1769,19 @@
     ]
   },
   {
+    "id": "I-THEME-UNKNOWN",
+    "area": "integration",
+    "title": "Desktop theme unknown with theme=follow: Fork's own \"follow system theme\" is turned back on",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_display.py::test_an_unknown_desktop_theme_hands_control_back_to_fork"
+    ]
+  },
+  {
     "id": "I-HIDPI-96",
     "area": "integration",
     "title": "96 DPI: Fork scaled 1x, once",

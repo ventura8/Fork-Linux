@@ -234,7 +234,12 @@ def save(path: Path, data: Mapping[str, Any], *, backup_dir: Path, keep: int = D
 
 
 def _theme_values(mode: str, theme: str | None) -> dict[str, object]:
-    """``Theme`` / ``FollowSystemTheme`` for ``[display] theme`` and the desktop's theme."""
+    """``Theme`` / ``FollowSystemTheme`` for ``[display] theme`` and the desktop's theme.
+
+    With ``follow`` and a desktop theme nobody could read (no probe answered),
+    control goes back to Fork: its own "follow system theme" is turned back on
+    instead of keeping the theme we last forced.
+    """
     if mode == "follow":
         chosen = theme
     elif mode in ("dark", "light"):
@@ -245,7 +250,7 @@ def _theme_values(mode: str, theme: str | None) -> dict[str, object]:
         return {THEME: THEME_DARK, FOLLOW_SYSTEM_THEME: False}
     if chosen == "light":
         return {THEME: THEME_LIGHT, FOLLOW_SYSTEM_THEME: False}
-    return {}
+    return {FOLLOW_SYSTEM_THEME: True}
 
 
 def _tool_replaceable(key: str, tool: Any) -> bool:

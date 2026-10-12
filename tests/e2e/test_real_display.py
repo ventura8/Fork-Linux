@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,25 @@ def test_theme_follows_the_desktop(closed: Any, theme: str) -> None:
     shot = e2e.screen.screenshot(f"theme-{theme}", window)
     mean = e2e.screen.stat(shot, "mean")
     assert (mean < DARK_MEAN) if theme == "dark" else (mean > LIGHT_MEAN), f"{theme}: mean brightness {mean:.2f}"
+
+
+def test_an_unknown_desktop_theme_hands_control_back_to_fork(closed: Any) -> None:
+    """With ``theme=follow`` and no desktop probe answering, the launch turns Fork's own "follow system
+    theme" back on instead of keeping the dark theme an earlier launch forced.
+
+    Scenarios: I-THEME-UNKNOWN
+    """
+    e2e = closed
+    # The image has no gsettings / dconf and the test home no GTK settings.ini: nothing can answer.
+    assert shutil.which("gsettings") is None and shutil.which("dconf") is None
+    assert "GTK_THEME" not in e2e.fork.env
+    e2e.fork.start(_repo(e2e, "theme"), extra={"FORK_LINUX_DISPLAY_THEME": "dark"})
+    assert e2e.fork.settings()["FollowSystemTheme"] is False
+    e2e.fork.ensure_closed()
+    e2e.fork.start(_repo(e2e, "theme"), extra={"FORK_LINUX_DISPLAY_THEME": "follow"})
+    settings = e2e.fork.settings()
+    assert settings["FollowSystemTheme"] is True, settings
+    assert fork_pids(e2e.prefix), "Fork must start with its own theme following on"
 
 
 @pytest.mark.parametrize("dpi", [96, 144, 192])

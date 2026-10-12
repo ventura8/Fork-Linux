@@ -17,7 +17,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | Setup | 28 | 28 | 0 |
 | Launch | 17 | 16 | 0 |
 | Git operations through Fork's UI | 66 | 66 | 0 |
-| OS integration | 29 | 28 | 0 |
+| OS integration | 30 | 29 | 0 |
 | Native-git bridge | 9 | 9 | 0 |
 | Doctor and repository fixes | 16 | 15 | 0 |
 | Uninstall | 8 | 8 | 0 |
@@ -26,7 +26,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | Fork for Linux upgrades | 13 | 2 | 0 |
 | Desktop environments | 136 | 0 | 0 |
 | Non-Latin font fallback | 1 | 0 | 0 |
-| **Total** | 343 | 179 | 0 |
+| **Total** | 344 | 180 | 0 |
 
 ## Setup
 
@@ -181,6 +181,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | I-EXTERNAL-MERGE | Merge in Linux: the Linux merge tool resolves a conflict | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_linux_merge_tool_resolves_a_conflict`<br>`tests/e2e/test_real_bridge.py::test_linux_merge_tool_without_a_common_base` |
 | I-THEME-LIGHT | Light desktop theme: Fork is light | real-fork | this repository | `tests/e2e/test_real_display.py::test_theme_follows_the_desktop[light]` |
 | I-THEME-DARK | Dark desktop theme: Fork is dark | real-fork | this repository | `tests/e2e/test_real_display.py::test_theme_follows_the_desktop[dark]`<br>`tests/e2e/test_real_fork.py::test_05_relaunch_applies_dark_theme` |
+| I-THEME-UNKNOWN | Desktop theme unknown with theme=follow: Fork's own "follow system theme" is turned back on | real-fork | this repository | `tests/e2e/test_real_display.py::test_an_unknown_desktop_theme_hands_control_back_to_fork` |
 | I-HIDPI-96 | 96 DPI: Fork scaled 1x, once | real-fork | this repository | `tests/e2e/test_real_display.py::test_dpi_scales_fork_once[96]` |
 | I-HIDPI-144 | 144 DPI: Fork scaled 1.5x, once | real-fork | this repository | `tests/e2e/test_real_display.py::test_dpi_scales_fork_once[144]` |
 | I-HIDPI-192 | 192 DPI: Fork scaled 2x, once | real-fork | this repository | `tests/e2e/test_real_display.py::test_dpi_scales_fork_once[192]` |

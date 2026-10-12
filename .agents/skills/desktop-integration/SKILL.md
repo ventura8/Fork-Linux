@@ -42,5 +42,6 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
   qterminal).
 - Theme (`theme.py`): Cinnamon's `org.x.apps.portal color-scheme`, KDE's window background colour (grey < 192 is dark,
   as Plasma's portal), known dark names without "dark" (`DARK_THEMES`: BlackMATE, HighContrastInverse), LXQt's
-  Kvantum theme / widget palette over `lxqt.conf` merged from `$XDG_CONFIG_DIRS`. Scale (`display.py`): GNOME and
+  Kvantum theme / widget palette over `lxqt.conf` merged from `$XDG_CONFIG_DIRS`. With `theme=follow` and no probe
+  answering, `fork_settings._theme_values` turns Fork's `FollowSystemTheme` back on (maintainer decision). Scale (`display.py`): GNOME and
   Cinnamon read `Xft.dpi` before GNOME's keys. Every desktop is checked end to end in `docs/qa/DE-E2E.md`.
