@@ -1,5 +1,61 @@
 # E2E results: official Fork 2.23.2 on the managed Wine runtime
 
+## 2026-10-12: release round 1 (`fix/integration`, the v1.0.0 tree)
+
+**CI's runner, fresh downloads.** `scripts/ci-e2e-wine.sh` ran every module as e2e-wine.yml's jobs
+do: one fresh scratch root and prefix per module, Wine 11.18, winetricks, .NET and Fork downloaded
+fresh, no seed (three runner processes in parallel, slots shared):
+
+| Module | Result | Time |
+|---|---|---|
+| `test_real_setup_errors.py` | 8 passed | 4 s |
+| `test_real_fork.py` | 7 passed | 392 s |
+| `test_real_launch.py` | 12 passed | 599 s |
+| `test_real_display.py` (with the new I-SCALE-USER-KEPT) | 7 passed | 477 s |
+| `test_real_doctor.py` | 15 passed | 362 s |
+| `test_real_snapshots.py` | 3 passed | 349 s |
+| `test_wine_pin_upgrade.py` | 3 passed | 469 s |
+| `test_real_git_history.py` | 11 passed | 725 s |
+| `test_real_git_changes.py` | 7 passed | 502 s |
+| `test_real_git_branches.py` | 10 passed | 755 s |
+| `test_real_git_advanced.py` | 4 passed | 499 s |
+| `test_git_ops_local.py` | 6 passed | 559 s |
+| `test_real_git_remotes.py` | 8 passed | 1237 s |
+| `test_git_ops_remote_ssh.py` | 2 passed | 730 s |
+| `test_real_setup_variants.py` (S-RESET now also checks non-Wine processes survive) | 12 passed (after the fix below) | 1387 s |
+| `test_real_uninstall.py` | 5 passed | 299 s |
+| `test_real_bridge.py` | 17 passed | 1037 s |
+| `test_git_ops_remote_bridge.py` | 6 passed | 771 s |
+| `test_real_integration.py` | 15 passed | 1329 s |
+| `test_fork_update.py` | 13 passed | 1124 s |
+| `test_wine_app_upgrade.py` (A6 with two bridge builds) | 7 passed | 925 s |
+
+178 tests in 21 modules. The first pass of `test_real_setup_variants.py` failed CI's rule that a
+skip fails a tier: `test_winetricks_cache_is_reused_and_left_alone` skipped without a seeded
+winetricks cache, which CI never has. Without one it now turns the font installers setup downloaded
+into the user's own `~/.cache/winetricks`, runs the `winver` step (winetricks runs, after taking
+what that cache has) and checks the hard links and that the folder was not changed.
+
+**The git shard in one fresh root** (`e2e-docker.sh --name rf1-t2`, seeded, history, changes,
+branches, remotes, ssh remotes, advanced, local ops; the A6 evidence): 47 passed, 1 failed in
+3161 s. The failure was `test_lfs_files_are_committed_as_pointers` again: Local Changes stayed empty
+after Git LFS > Initialize although F5 was pressed before each retry. A probe in that prefix found
+Fork's own log saying `Refresh 'lfs-work' status. Updated 2 files` while the view showed nothing
+(and once "Local Changes" without its count); native git listed both files. It happened while the
+host ran three other real-Fork containers; the module alone then passed 11 times in a row in the
+same prefix. Under CPU load (15 busy loops, load average 19 to 24) the empty list came back in every
+run: showing All Commits, F5 and Local Changes again did not bring the files back, closing the tab
+and opening the repository again did (4 of 4 runs passed that way). A repeated double-click now
+reopens the tab first; with that, 3 of 3 runs under the same load passed (2 after one reopen).
+On the final tree the same shard then passed **48 of 48 in a fresh root** (`e2e-docker.sh --name rf1-t2-final`, 2641 s), no retry needed.
+
+**The two flaky tests of the audit** (`test_blame_window_opens_for_a_file`, Quick Launch > Blame now
+after selecting HEAD; `test_lfs_files_are_committed_as_pointers`): 7 of 7 runs passed in a fresh
+root and its reruns (`rf1-flakes`), and both passed in their CI modules above.
+
+**Desktops** (`ci-e2e-de.sh --name rf1-de-<desktop> <desktop> [--fork]`): integration 141 of 141 on
+all 8 desktops, real Fork 9 of 9 on all 8 (Wine 11.18): `docs/qa/DE-E2E.md`, `docs/COMPATIBILITY.md`.
+
 ## 2026-10-12 (later): completeness review: Fork's menus, every CLI option, new scenarios (`fix/e2e-coverage`)
 
 **Method.** Fork's menu bar, toolbar drop-downs and context menus were walked and screenshotted in a

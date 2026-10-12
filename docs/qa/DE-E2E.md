@@ -678,8 +678,15 @@ Fork's run.
 On the merged v1.0.0 tree (Wine 11.18, the images with the Noto fonts): the integration tier
 passed on all 8 desktops (xfce 15, gnome 16, kde 20, kdewayland 19, cinnamon 17, mate 19, budgie 16,
 lxqt 19: 141 tests), and the real-Fork tier 9 of 9 on xfce, gnome, kde and cinnamon (mate,
-budgie, lxqt and kdewayland were not run in this pass). Two changes came out of it: the images
+budgie, lxqt and kdewayland were not run in this pass; they passed 9 of 9 each later that day, on
+the same tree with Wine 11.18). Two changes came out of it: the images
 install fonts-noto-core and fonts-noto-cjk (as the flavours do; without them doctor's
 `prefix.font_fallback` warned), and the hand-off check no longer expects Wine 11.18 to confine
 Fork (it gives Fork no NoNewPrivs and no extra seccomp filter).
 
+## Release round 1 (2026-10-12)
+
+On the release tree after round 1's fixes, every desktop ran both tiers under run names of their
+own (`ci-e2e-de.sh --name rf1-de-<desktop> <desktop> [--fork]`): the integration tier passed on all 8
+(141 tests) and the real-Fork tier 9 of 9 on all 8 (xfce, gnome, kde, kdewayland, cinnamon, mate,
+budgie, lxqt), Wine 11.18 downloaded in each root.
