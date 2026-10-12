@@ -18,6 +18,11 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
   (relay off, no `$SSH_AUTH_SOCK` when Fork started: `fork-linux run --restart`, no helper, or the daemon's
   `bridge-*.log` says `ssh-agent relay off: <why>`). Design: bridge/README.md "ssh-agent relay",
   bridge/unix/README.md; the e2e scenarios G-SSH-AGENT-RELAY / G-SSH-AGENT-BUNDLED.
+- Fork shows a *Git Error* / a pane shows `Win32Exception ... StartWithCreateProcess` (Git Flow: `OS Error 731`)
+  now and then, mostly on busy repositories: Wine failed to start one of Fork's bundled git processes (GLE 731).
+  Tell users to repeat the action, and point them to the experimental git bridge (`fork-linux git-bridge enable`)
+  as the way to avoid it (maintainer decision, docs/qa/RELEASE-DECISIONS.md). Not the same as Velopack's
+  "Failed to start application (OS Error 731)" after Restart and Update, which CI re-runs once.
 - Setup resumes at the failed step: `fork-linux setup --list-steps`, `--from-step STEP`, `--only STEP`.
 - Wrong or narrow interface text: `fork-linux doctor --check prefix.ui_font --check prefix.font_replacements --check prefix.font_smoothing`,
   then `fork-linux setup --only ui_font --only font_replacements` (design: `docs/spikes/S10-text-rendering.md`).

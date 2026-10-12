@@ -51,7 +51,7 @@ The installer verifies the release tarball against `SHA256SUMS` and keeps a mani
 
 ## Install methods
 
-All channels are **x86_64 only** and never depend on your distribution's `wine` package. The first release is in preparation: channels go live with v1.0.0.
+All channels are **x86_64 only** and never depend on your distribution's `wine` package. The packages and the installer script are on the [GitHub Release](https://github.com/ventura8/Fork-Linux/releases); Ubuntu and Mint can use the PPA.
 
 | Channel | Command |
 |---|---|
@@ -59,11 +59,11 @@ All channels are **x86_64 only** and never depend on your distribution's `wine` 
 | Debian / Ubuntu `.deb` | Download from [Releases](https://github.com/ventura8/Fork-Linux/releases), then `sudo apt install ./fork-linux_<version>_amd64.deb` |
 | Fedora 44 | `sudo dnf install ./fork-linux-<version>-1.fc44.x86_64.rpm` |
 | openSUSE Leap 16.0 | `sudo zypper install ./fork-linux-<version>-*.x86_64.rpm` |
-| Arch Linux / AUR | `yay -S fork-linux` (or `makepkg -si` with the release `PKGBUILD`) |
 | Flatpak | `flatpak install --user ./io.github.ventura8.ForkLinux-<version>-x86_64.flatpak` (uses the `org.winehq.Wine` BaseApp) |
 | AppImage | `chmod +x fork-linux-<version>-x86_64.AppImage && ./fork-linux-<version>-x86_64.AppImage --install-desktop` |
-| Snap (classic) | `sudo snap install fork-linux --classic` |
 | Tarball | `fork-linux-<version>-x86_64.tar.gz` — relocatable; `install.sh --from-tarball` installs it |
+
+**Coming later:** the AUR (`fork-linux`) and the Snap Store. Until then, on Arch Linux use `install.sh`, the AppImage or the Flatpak.
 
 ## First run
 
@@ -95,7 +95,7 @@ Downloads are cached in `~/.cache/fork-linux/` (winetricks' .NET and font downlo
 - **Before every launch** fork-linux keeps a snapshot of the installed Fork (the newest two are kept), and the first start after an update tells you about it. If a new version misbehaves under Wine, close Fork and run `fork-linux rollback` (or `fork-linux rollback --to-version 2.23.2`). A rollback **pins** that version: fork-linux turns Fork's own update check off until you run `fork-linux config set fork.update_policy auto`, which turns it back on with your previous channel. `fork-linux snapshot list` shows what you can go back to.
 - `fork-linux update --check` shows the installed, tested and newest Fork versions and Fork's update channel; `fork-linux update --fork` reinstalls the tested version from Fork's CDN (`--latest` for the newest). It downloads first and snapshots the installed version before it changes anything; a `--latest` install whose package does not match Fork's update feed is undone at once.
 - While Fork's **Restart and Update** runs, `fork <path>` waits for the restarted Fork and opens the path there; `update`, `rollback` and `setup` ask you to wait.
-- **fork-linux itself** (this wrapper) is updated by whatever installed it: your package manager (`apt`, `dnf`, `zypper`, `pacman`/AUR helper, `flatpak update`, `snap refresh`), re-running `install.sh` for a per-user install, or the AppImage's zsync update information (e.g. `appimageupdatetool`). The next launch re-runs only the setup steps the new release changed (nothing is downloaded again unless the pinned Wine changed; the previous Wine build is kept). `fork-linux update --wine` moves to the Wine runtime a new fork-linux release pins. Going back to an older fork-linux works too; it warns once.
+- **fork-linux itself** (this wrapper) is updated by whatever installed it: your package manager (`apt`, `dnf`, `zypper`, `flatpak update`), re-running `install.sh` for a per-user install, or the AppImage's zsync update information (e.g. `appimageupdatetool`). The next launch re-runs only the setup steps the new release changed (nothing is downloaded again unless the pinned Wine changed; the previous Wine build is kept). `fork-linux update --wine` moves to the Wine runtime a new fork-linux release pins. Going back to an older fork-linux works too; it warns once.
 
 ## CLI
 
@@ -181,7 +181,7 @@ Known Wine limitations:
 - **Symlinks** look like modified files to Fork (and committing them through Fork's git turns them into plain files); **submodule update / init** does nothing; **Git Bash** exits at once. Use a terminal for these; the git bridge fixes submodules and symlink-preserving commits.
 - **Git Flow**: *Initialize* works, but *Start Feature* (git-flow's shell scripts) silently does nothing with Fork's bundled git. With the git bridge it runs with your Linux git: install your distribution's `git-flow` package.
 - **Spell checking** does nothing under Wine; keep it disabled.
-- **Now and then a pane shows `Win32Exception ... StartWithCreateProcess`** instead of a diff, or an action (applying a stash, for example) ends in a *Git Error* that shows it (Git Flow commands show `OS Error 731` instead): Wine failed to start one of Fork's git processes, so that git call did not run. Select the commit or file again (or press F5), or close the report and repeat the action. When it is the last step of *Initialize Git Flow* (`git config gitflow.path.hooks`), Git Flow is already set up: just close the report.
+- **Now and then a pane shows `Win32Exception ... StartWithCreateProcess`** instead of a diff, or an action (applying a stash, for example) ends in a *Git Error* that shows it (Git Flow commands show `OS Error 731` instead): Wine failed to start one of Fork's git processes, so that git call did not run. Select the commit or file again (or press F5), or close the report and repeat the action. It happens most on busy repositories; to avoid it there, enable the experimental [git bridge](#git-bridge-experimental-opt-in) (`fork-linux git-bridge enable`), which runs Fork's git calls with your Linux git outside Wine. When it is the last step of *Initialize Git Flow* (`git config gitflow.path.hooks`), Git Flow is already set up: just close the report.
 - **GitHub account sign-in (OAuth) can crash Fork under Wine.** Use a GitHub personal access token instead. For HTTPS remotes Fork's git uses Git Credential Manager: it asks once for the user name and password (or token) and keeps them with DPAPI inside the prefix. When its window cannot open under Wine (now and then on the first prompt after Fork starts), Fork's own prompt asks instead, and the account is kept just the same.
 - **Copy Path / Copy Full Path** in Fork put the path Fork sees on your clipboard: a full path is a Windows path such as `Z:\home\you\src\file.txt`. A repository opened by typing `H:\...` stays under `H:` in Fork's tab list; fork-linux's `repo check` and `doctor` find it all the same.
 - **Wayland**: Fork runs through XWayland by default; Wine's native Wayland driver is opt-in and experimental.
@@ -194,7 +194,7 @@ fork-linux uninstall            # remove menu entries, icons and file-manager ac
 fork-linux uninstall --purge    # also delete the prefix, runtimes, snapshots and caches (deactivate your license first)
 ```
 
-Then remove the program with the tool you installed it with: `curl -fsSL https://github.com/ventura8/Fork-Linux/releases/latest/download/uninstall.sh | bash` (for `install.sh` installs), `sudo apt remove fork-linux`, `sudo dnf remove fork-linux`, `sudo zypper remove fork-linux`, `sudo pacman -R fork-linux`, `flatpak uninstall io.github.ventura8.ForkLinux`, `sudo snap remove fork-linux`, or delete the AppImage. Packages never touch your home directory, and nothing ever touches `~/.wine`.
+Then remove the program with the tool you installed it with: `curl -fsSL https://github.com/ventura8/Fork-Linux/releases/latest/download/uninstall.sh | bash` (for `install.sh` installs), `sudo apt remove fork-linux`, `sudo dnf remove fork-linux`, `sudo zypper remove fork-linux`, `flatpak uninstall io.github.ventura8.ForkLinux`, or delete the AppImage. Packages never touch your home directory, and nothing ever touches `~/.wine`.
 
 ## Credits & support the developers
 
