@@ -1,4 +1,4 @@
-"""The desktop's session type and UI scale, mapped to Fork's ``LayoutScaling`` and Wine's DPI.
+"""The desktop's session type and UI scale, mapped to Wine's DPI (Fork's ``LayoutScaling`` stays the user's).
 
 Scale sources, first match wins:
 

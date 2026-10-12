@@ -215,7 +215,7 @@ def test_list_steps_json_tells_what_the_next_launch_reruns(
     assert harness.run("--list-steps", "--json") == 0
     changed = json.loads(capsys.readouterr().out)
     assert changed["needs_setup"] is True
-    assert [row["id"] for row in changed["steps"] if row["recorded"] is False] == ["display_dpi", "fork_settings"]
+    assert [row["id"] for row in changed["steps"] if row["recorded"] is False] == ["display_dpi"]
 
 
 def test_non_interactive_without_consent_is_declined(harness: Harness) -> None:

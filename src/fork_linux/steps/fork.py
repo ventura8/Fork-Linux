@@ -19,7 +19,6 @@ from typing import Any
 
 from .. import (
     bridge,
-    display,
     feeds,
     fork_data,
     fork_install,
@@ -276,7 +275,6 @@ def settings_inputs(ctx: Ctx) -> dict[str, Any]:
     """The configuration that shapes ``settings.json`` (the file itself is seeded when missing)."""
     return {
         "theme": ctx.config.raw("display", "theme"),
-        "dpi": ctx.config.raw("display", "dpi"),
         "enforce": ctx.config.getlist("fork", "enforce_settings"),
         "tools": tools(ctx),
         "home": _home_win(ctx),
@@ -294,10 +292,10 @@ def run_settings(ctx: Ctx) -> None:
     """Merge the Wine-safe values into ``settings.json``, creating it before Fork's first start.
 
     Seeding is safe (E2E, Fork 2.23.2): Fork keeps the seeded keys, so even
-    the first session runs with the Wine-safe values and theme. A
-    ``LayoutScaling`` an earlier fork-linux wrote goes back to 100 (Wine's
-    ``LogPixels`` does the scaling now), and ``ForkData\\repositories.toml``
-    gets the Linux home as the default source folder.
+    the first session runs with the Wine-safe values and theme, and
+    ``ForkData\\repositories.toml`` gets the Linux home as the default source
+    folder. Fork's ``LayoutScaling`` is left to the user (Wine's ``LogPixels``
+    does the scaling).
     """
     path = ctx.layout.settings_file
     current = fork_settings.load(path)
@@ -309,9 +307,6 @@ def run_settings(ctx: Ctx) -> None:
         tools=tools(ctx),
         home_win=home,
         current=current,
-        reset_scaling=fork_settings.legacy_scaling(
-            ctx.config.raw("display", "dpi").strip().lower(), display.scale_percent(ctx.env, ctx.runner)
-        ),
     )
     backup_dir = fork_settings.default_backup_dir(ctx.paths)
     fork_settings.seed(ctx.layout, wanted, backup_dir=backup_dir)

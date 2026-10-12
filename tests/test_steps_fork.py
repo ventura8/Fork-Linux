@@ -380,10 +380,10 @@ def test_settings_are_merged(xdg: Path, monkeypatch: pytest.MonkeyPatch, tmp_pat
     data = json.loads(ctx.layout.settings_file.read_text())
     assert data["UpdateSubmodulesOnCheckout"] is False
     assert data["DisableHardwareAcceleration"] is True
-    # The old double scaling (LayoutScaling = the desktop's 125 %) is undone: LogPixels scales now.
     assert data["Theme"] == 1
     assert data["FollowSystemTheme"] is False
-    assert data["LayoutScaling"] == 100
+    # LayoutScaling is the user's own (Wine's LogPixels scales), even when it equals the desktop's 125 %.
+    assert data["LayoutScaling"] == 125
     assert data["ShellTool"] == terminal
     assert data["Unknown"] == 1
     home = "Z:" + str(ctx.host_home).replace("/", "\\")

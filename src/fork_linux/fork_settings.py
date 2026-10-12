@@ -36,7 +36,6 @@ log = logging.getLogger(__name__)
 GUID = "Guid"
 THEME = "Theme"  # 0 light, 1 dark
 FOLLOW_SYSTEM_THEME = "FollowSystemTheme"
-LAYOUT_SCALING = "LayoutScaling"  # percent
 UPDATE_SUBMODULES_ON_CHECKOUT = "UpdateSubmodulesOnCheckout"
 DISABLE_HARDWARE_ACCELERATION = "DisableHardwareAcceleration"
 SHELL_TOOL = fork_tools.SHELL_TOOL
@@ -61,10 +60,6 @@ ENFORCED_DEFAULTS: dict[str, object] = {
     DISABLE_HARDWARE_ACCELERATION: True,
 }
 
-LAYOUT_SCALING_MIN = 100
-LAYOUT_SCALING_MAX = 300
-BASE_DPI = 96
-
 SETTINGS_NAME = "settings.json"
 BACKUP_DIR_NAME = "settings-backups"
 DEFAULT_KEEP = 3
@@ -75,7 +70,6 @@ BACKUP_MODE = 0o600
 
 _RESTORE_HINT = "close Fork and run 'fork-linux settings restore' to go back to a backup"
 _BACKUP = re.compile(r"settings\.json\.(\d{8}T\d{6}\.\d{6}Z)(?:-(\d{1,6}))?", re.ASCII)
-_DPI = re.compile(r"\d{1,4}", re.ASCII)
 
 
 def default_backup_dir(paths: Paths) -> Path:
@@ -239,10 +233,6 @@ def save(path: Path, data: Mapping[str, Any], *, backup_dir: Path, keep: int = D
     return saved
 
 
-def _clamp_scaling(percent: int) -> int:
-    return max(LAYOUT_SCALING_MIN, min(LAYOUT_SCALING_MAX, percent))
-
-
 def _theme_values(mode: str, theme: str | None) -> dict[str, object]:
     """``Theme`` / ``FollowSystemTheme`` for ``[display] theme`` and the desktop's theme."""
     if mode == "follow":
@@ -256,23 +246,6 @@ def _theme_values(mode: str, theme: str | None) -> dict[str, object]:
     if chosen == "light":
         return {THEME: THEME_LIGHT, FOLLOW_SYSTEM_THEME: False}
     return {}
-
-
-def legacy_scaling(dpi: str, scale: int | None) -> int | None:
-    """The ``LayoutScaling`` fork-linux before 0.1.0 wrote for ``[display] dpi`` (None: none).
-
-    Scaling is now Wine's ``LogPixels`` alone (the ``display_dpi`` step):
-    Fork's ``LayoutScaling`` on top of it scaled the UI twice (QA 1.4). The
-    ``fork_settings`` step resets a ``LayoutScaling`` that still holds this
-    value back to 100.
-    """
-    if dpi == "auto":
-        if isinstance(scale, int) and not isinstance(scale, bool) and scale > 0:
-            return _clamp_scaling(scale)
-        return None
-    if _DPI.fullmatch(dpi) and int(dpi) > 0:
-        return _clamp_scaling(round(int(dpi) / BASE_DPI * 100))
-    return None
 
 
 def _tool_replaceable(key: str, tool: Any) -> bool:
@@ -330,7 +303,6 @@ def desired(
     tools: Mapping[str, Any],
     home_win: str | None,
     current: Mapping[str, Any],
-    reset_scaling: int | None = None,
 ) -> dict[str, object]:
     """The settings fork-linux wants (dotted key -> value), given the current ``settings.json``.
 
@@ -343,9 +315,10 @@ def desired(
       in ``ExternalDiffTools`` / ``ExternalMergeTools`` only our own entry is added
       or removed, the user's entries stay;
     * ``home_win`` replaces the default repository source directory ``C:\\users\\<user>``
-      (or sets it when ``settings.json`` has none yet, so even the first session is right);
-    * ``reset_scaling``: a ``LayoutScaling`` holding this old value goes back to 100
-      (scaling is Wine's ``LogPixels`` alone now).
+      (or sets it when ``settings.json`` has none yet, so even the first session is right).
+
+    ``LayoutScaling`` is never touched: scaling is Wine's ``LogPixels`` alone
+    (the ``display_dpi`` step), and a value there is the user's own choice in Fork.
     """
     wanted: dict[str, object] = {}
     for key in config.getlist("fork", "enforce_settings"):
@@ -354,10 +327,6 @@ def desired(
         else:
             log.warning("[fork] enforce_settings: no Wine-safe default is known for %s; ignored", key)
     wanted.update(_theme_values(config.raw("display", "theme").strip().lower(), theme))
-    if reset_scaling is not None and reset_scaling != LAYOUT_SCALING_MIN and _same(
-        get(current, LAYOUT_SCALING), reset_scaling
-    ):
-        wanted[LAYOUT_SCALING] = LAYOUT_SCALING_MIN
     wanted.update(_tool_values(tools, current))
     if home_win is not None and _default_source_dirs(get(current, SOURCE_DIRECTORIES), user):
         wanted[SOURCE_DIRECTORIES] = [home_win]

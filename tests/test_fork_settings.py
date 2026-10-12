@@ -45,12 +45,8 @@ def _clock(monkeypatch: pytest.MonkeyPatch, *moments: datetime) -> None:
 def test_enforced_defaults_and_keys() -> None:
     assert fs.ENFORCED_DEFAULTS == {"UpdateSubmodulesOnCheckout": False, "DisableHardwareAcceleration": True}
     assert fs.SOURCE_DIRECTORIES == "RepositoryManager.SourceDirectories"
-    assert (fs.THEME, fs.FOLLOW_SYSTEM_THEME, fs.LAYOUT_SCALING, fs.SHELL_TOOL) == (
-        "Theme",
-        "FollowSystemTheme",
-        "LayoutScaling",
-        "ShellTool",
-    )
+    assert (fs.THEME, fs.FOLLOW_SYSTEM_THEME, fs.SHELL_TOOL) == ("Theme", "FollowSystemTheme", "ShellTool")
+    assert not hasattr(fs, "LAYOUT_SCALING")
 
 
 def test_default_backup_dir(layout: ForkLayout) -> None:
@@ -315,51 +311,12 @@ def test_desired_theme(tmp_path: Path, mode: str, theme: str | None, expected: d
     assert _desired(config, theme=theme) == expected
 
 
-@pytest.mark.parametrize(
-    ("dpi", "scale", "expected"),
-    [
-        ("auto", 125, 125),
-        ("auto", 1000, 300),
-        ("auto", 50, 100),
-        ("auto", None, None),
-        ("auto", 0, None),
-        ("auto", True, None),
-        ("120", None, 125),
-        ("144", 200, 150),
-        ("192", None, 200),
-        ("110", None, 115),
-        ("480", None, 300),
-        ("72", None, 100),
-        ("0", None, None),
-        ("abc", 125, None),
-        ("\u00b2", None, None),
-        ("12345", None, None),
-    ],
-)
-def test_legacy_scaling(dpi: str, scale: Any, expected: int | None) -> None:
-    assert fs.legacy_scaling(dpi, scale) == expected
-
-
-def test_desired_never_sets_layout_scaling_by_itself(tmp_path: Path) -> None:
-    config = _config(tmp_path, fork__enforce_settings="", display__theme="off", display__dpi="144")
-    assert _desired(config, current={"LayoutScaling": 100}) == {}
-
-
-@pytest.mark.parametrize(
-    ("current", "reset", "expected"),
-    [
-        ({"LayoutScaling": 150}, 150, {"LayoutScaling": 100}),
-        ({"LayoutScaling": 125}, 150, {}),
-        ({"LayoutScaling": 100}, 100, {}),
-        ({}, 150, {}),
-        ({"LayoutScaling": 150}, None, {}),
-    ],
-)
-def test_desired_resets_an_old_layout_scaling(
-    tmp_path: Path, current: dict[str, Any], reset: int | None, expected: dict[str, object]
-) -> None:
-    config = _config(tmp_path, fork__enforce_settings="", display__theme="off")
-    assert _desired(config, current=current, reset_scaling=reset) == expected
+@pytest.mark.parametrize("current", [{}, {"LayoutScaling": 100}, {"LayoutScaling": 125}, {"LayoutScaling": 150}])
+@pytest.mark.parametrize("dpi", ["auto", "120", "144"])
+def test_desired_never_touches_layout_scaling(tmp_path: Path, current: dict[str, Any], dpi: str) -> None:
+    """Scaling is Wine's LogPixels alone; a LayoutScaling there is the user's own choice in Fork."""
+    config = _config(tmp_path, fork__enforce_settings="", display__theme="off", display__dpi=dpi)
+    assert _desired(config, current=current) == {}
 
 
 TERMINAL = {"Type": "Custom", "ApplicationPath": "Z:\\opt\\fl\\fork-linux-terminal", "Arguments": ""}
