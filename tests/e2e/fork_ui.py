@@ -292,9 +292,10 @@ class ForkUI:
 
         Each one is confirmed by git; a double-click that lands while Fork still redraws the list after
         the previous one only selects the row, so it is repeated (at most :data:`STAGE_ATTEMPTS` times).
-        Before a repeat Local Changes is refreshed (F5), as a user would: Fork sometimes misses files
-        written right after an operation of its own (seen after Git LFS > Initialize) and shows an
-        empty list until the next refresh.
+        Fork 2.23.2 sometimes keeps Local Changes empty although its log says the status refresh found
+        the files (after Git LFS > Initialize on a loaded host, "Refresh '<repo>' status. Updated 2
+        files"); F5 and switching views do not bring them back, a new tab does. So before a repeat the
+        tab is closed and the repository opened again, as a user would.
         """
         for staged in range(1, count + 1):
             self._double_click_until_staged(repo, staged)
@@ -314,8 +315,13 @@ class ForkUI:
                 if attempt == STAGE_ATTEMPTS:
                     raise
                 self.screen.screenshot(f"stage-retry-{staged}-{attempt}")
-                self.refresh()
-                self.local_changes()
+                self.reopen_local_changes(repo)
+
+    def reopen_local_changes(self, repo: Path) -> None:
+        """Close the active tab, open ``repo`` again and show its Local Changes."""
+        self.keys("ctrl+w", settle=1.5)
+        self.open(repo)
+        self.local_changes()
 
     def commit_subject_and_commit(self) -> None:
         """Commit with the message Fork has filled in (a template, a merge message): Ctrl+Enter.
