@@ -185,6 +185,9 @@ def test_blame_window_opens_for_a_file(ui: ForkUI, installed: Any) -> None:
     (repo / "code.py").write_text("def hello():\n    return 2\n# end\n", encoding="utf-8")
     git(repo, "commit", "-qam", "return two", env=dated_env(5))
     ui.open(repo)
+    # Quick Launch's Blame once opened at the parent revision; HEAD is selected first so it is explicit.
+    ui.all_commits()
+    ui.select_commit(0)
     blame = _open_tool_window(ui, "Blame", "code.py", r"^code\.py - Blame$")
     time.sleep(2)
     installed.screen.screenshot("blame", blame)
