@@ -16,7 +16,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 |---|---|---|---|
 | Setup | 28 | 28 | 0 |
 | Launch | 17 | 16 | 0 |
-| Git operations through Fork's UI | 65 | 65 | 0 |
+| Git operations through Fork's UI | 66 | 66 | 0 |
 | OS integration | 29 | 28 | 0 |
 | Native-git bridge | 9 | 9 | 0 |
 | Doctor and repository fixes | 16 | 15 | 0 |
@@ -26,7 +26,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | Fork for Linux upgrades | 13 | 2 | 0 |
 | Desktop environments | 136 | 0 | 0 |
 | Non-Latin font fallback | 1 | 0 | 0 |
-| **Total** | 342 | 178 | 0 |
+| **Total** | 343 | 179 | 0 |
 
 ## Setup
 
@@ -149,7 +149,8 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | G-HOOK-BRIDGE | Native-git bridge: a failing hook that runs programs stops the commit | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_failing_pre_commit_hook_blocks_the_commit` |
 | G-SUBMODULE | Update a submodule (native-git bridge) | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_submodule_update_works` |
 | G-SSH-AGENT | ssh through the user's ssh-agent (native-git bridge) | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_fetch_over_ssh_with_the_agent` |
-| G-SSH-AGENT-BUNDLED | Bundled ssh cannot use the Linux ssh-agent: it asks for the passphrase instead (the git bridge uses the agent) | real-fork | this repository | `tests/e2e/test_git_ops_remote_ssh.py::test_bundled_ssh_cannot_use_the_agent` |
+| G-SSH-AGENT-BUNDLED | Bundled ssh with [ssh] agent_relay = off: no relay starts and it asks for the passphrase of a key that is in the Linux ssh-agent | real-fork | this repository | `tests/e2e/test_git_ops_remote_ssh.py::test_bundled_ssh_with_the_agent_relay_off_asks_for_the_passphrase` |
+| G-SSH-AGENT-RELAY | Bundled ssh uses the Linux ssh-agent through the launcher's relay (on by default): Fork's Fetch, Pull and Push over ssh never ask for the passphrase; doctor ssh.agent is ok; the msys socket file is removed after Fork closes | real-fork | this repository | `tests/e2e/test_git_ops_remote_ssh.py::test_bundled_ssh_uses_the_agent_through_the_relay` |
 | G-SSH-PASSPHRASE | ssh key with a passphrase asked by Fork (native-git bridge) | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_fetch_over_ssh_with_a_passphrase_prompt` |
 | G-SSH-PASSPHRASE-BUNDLED | A key with a passphrase is named by ssh sync and doctor; bundled ssh asks for it in Fork's prompt and fetches | real-fork | this repository | `tests/e2e/test_git_ops_remote_ssh.py::test_a_passphrase_key_is_named_and_bundled_ssh_asks_for_it` |
 

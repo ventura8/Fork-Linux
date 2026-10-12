@@ -1418,14 +1418,27 @@
   {
     "id": "G-SSH-AGENT-BUNDLED",
     "area": "git",
-    "title": "Bundled ssh cannot use the Linux ssh-agent: it asks for the passphrase instead (the git bridge uses the agent)",
+    "title": "Bundled ssh with [ssh] agent_relay = off: no relay starts and it asks for the passphrase of a key that is in the Linux ssh-agent",
     "tiers": [
       "real-fork"
     ],
     "provided_by": "this-branch",
     "pending_merge": false,
     "tests": [
-      "tests/e2e/test_git_ops_remote_ssh.py::test_bundled_ssh_cannot_use_the_agent"
+      "tests/e2e/test_git_ops_remote_ssh.py::test_bundled_ssh_with_the_agent_relay_off_asks_for_the_passphrase"
+    ]
+  },
+  {
+    "id": "G-SSH-AGENT-RELAY",
+    "area": "git",
+    "title": "Bundled ssh uses the Linux ssh-agent through the launcher's relay (on by default): Fork's Fetch, Pull and Push over ssh never ask for the passphrase; doctor ssh.agent is ok; the msys socket file is removed after Fork closes",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_git_ops_remote_ssh.py::test_bundled_ssh_uses_the_agent_through_the_relay"
     ]
   },
   {
