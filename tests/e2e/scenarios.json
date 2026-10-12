@@ -484,6 +484,19 @@
     ]
   },
   {
+    "id": "L-ERROR-DIALOG",
+    "area": "launch",
+    "title": "A launch without a terminal (menu entry, file manager) that fails shows its error and hint in a dialog and exits once the dialog is closed",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "fix/update-tests",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_launch.py::test_missing_path_is_a_usage_error"
+    ]
+  },
+  {
     "id": "L-FORK-LOG-HISTORY",
     "area": "launch",
     "title": "The previous session's fork.log is kept as fork-<time>.log",
@@ -1405,7 +1418,7 @@
   {
     "id": "G-SSH-AGENT-BUNDLED",
     "area": "git",
-    "title": "Bundled ssh cannot use the Linux ssh-agent (the git bridge is needed)",
+    "title": "Bundled ssh cannot use the Linux ssh-agent: it asks for the passphrase instead (the git bridge uses the agent)",
     "tiers": [
       "real-fork"
     ],
@@ -1431,14 +1444,14 @@
   {
     "id": "G-SSH-PASSPHRASE-BUNDLED",
     "area": "git",
-    "title": "A key with a passphrase is named by ssh sync and doctor; bundled ssh fails without asking",
+    "title": "A key with a passphrase is named by ssh sync and doctor; bundled ssh asks for it in Fork's prompt and fetches",
     "tiers": [
       "real-fork"
     ],
     "provided_by": "this-branch",
     "pending_merge": false,
     "tests": [
-      "tests/e2e/test_git_ops_remote_ssh.py::test_a_passphrase_key_is_named_and_bundled_ssh_cannot_ask"
+      "tests/e2e/test_git_ops_remote_ssh.py::test_a_passphrase_key_is_named_and_bundled_ssh_asks_for_it"
     ]
   },
   {

@@ -1496,7 +1496,7 @@ def check_ssh_config(ctx: DoctorCtx) -> Result:
 
 
 def check_ssh_passphrase(ctx: DoctorCtx) -> Result:
-    """Shared keys with a passphrase: Fork's bundled ssh cannot ask for it under Wine (the bridge's ssh can)."""
+    """Shared keys with a passphrase: Fork's bundled ssh asks for it every time, never through ssh-agent (info)."""
     why = _ssh_wanted(ctx)
     if why:
         return Result("info", why)
@@ -1508,7 +1508,7 @@ def check_ssh_passphrase(ctx: DoctorCtx) -> Result:
     names = ", ".join(keys)
     if _bridge_ready(ctx):
         return Result("ok", f"{names} need(s) a passphrase: the git bridge's Linux ssh asks for it")
-    return Result("warn", f"{names} need(s) a passphrase: {ssh_sync.PASSPHRASE_PROBLEM}", ssh_sync.PASSPHRASE_HINT)
+    return Result("info", f"{names} need(s) a passphrase: {ssh_sync.PASSPHRASE_PROBLEM}", ssh_sync.PASSPHRASE_HINT)
 
 
 def check_git_overlay(ctx: DoctorCtx) -> Result:

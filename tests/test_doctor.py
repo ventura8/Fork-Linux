@@ -1185,7 +1185,7 @@ def test_ssh_passphrase_check(monkeypatch: pytest.MonkeyPatch) -> None:
     status["passphrase_keys"] = ["id_rsa", "work/id_ed25519"]
     monkeypatch.setattr(doctor, "_bridge_ready", lambda _ctx: False)
     assert run(ctx, "ssh.passphrase") == Result(
-        "warn", f"id_rsa, work/id_ed25519 need(s) a passphrase: {ssh_sync.PASSPHRASE_PROBLEM}", ssh_sync.PASSPHRASE_HINT
+        "info", f"id_rsa, work/id_ed25519 need(s) a passphrase: {ssh_sync.PASSPHRASE_PROBLEM}", ssh_sync.PASSPHRASE_HINT
     )
     monkeypatch.setattr(doctor, "_bridge_ready", lambda _ctx: True)
     assert run(ctx, "ssh.passphrase") == Result(

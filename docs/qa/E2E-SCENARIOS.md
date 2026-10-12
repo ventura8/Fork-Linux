@@ -15,7 +15,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | Area | Scenarios | In this repository | Pending merge |
 |---|---|---|---|
 | Setup | 28 | 28 | 0 |
-| Launch | 16 | 16 | 0 |
+| Launch | 17 | 16 | 0 |
 | Git operations through Fork's UI | 65 | 65 | 0 |
 | OS integration | 28 | 27 | 0 |
 | Native-git bridge | 9 | 9 | 0 |
@@ -26,7 +26,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | Fork for Linux upgrades | 13 | 2 | 0 |
 | Desktop environments | 136 | 0 | 0 |
 | Non-Latin font fallback | 1 | 0 | 0 |
-| **Total** | 340 | 177 | 0 |
+| **Total** | 341 | 177 | 0 |
 
 ## Setup
 
@@ -73,6 +73,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | L-FILE-MANAGER | run --from-file-manager FILE opens the repository that contains the file | real-fork | this repository | `tests/e2e/test_real_launch.py::test_file_manager_file_opens_its_repository` |
 | L-OPEN | fork-linux open PATH opens a repository in the running Fork | real-fork | this repository | `tests/e2e/test_real_launch.py::test_open_command_adds_a_tab` |
 | L-BAD-PATH | A path that does not exist is a usage error (exit 2); Fork does not start | real-fork | this repository | `tests/e2e/test_real_launch.py::test_missing_path_is_a_usage_error` |
+| L-ERROR-DIALOG | A launch without a terminal (menu entry, file manager) that fails shows its error and hint in a dialog and exits once the dialog is closed | real-fork | `fix/update-tests` | `tests/e2e/test_real_launch.py::test_missing_path_is_a_usage_error` |
 | L-FORK-LOG-HISTORY | The previous session's fork.log is kept as fork-<time>.log | real-fork | this repository | `tests/e2e/test_real_launch.py::test_previous_fork_log_is_kept` |
 | L-DEBUG-LOGS | run --debug writes Wine's errors to a new wine-<time>.log; --wine-debug picks the channels | real-fork | this repository | `tests/e2e/test_real_launch.py::test_debug_launch_writes_a_wine_log` |
 | L-DRIVER-X11 | --x11 keeps Wine on the X display in a Wayland session | real-fork | this repository | `tests/e2e/test_real_launch.py::test_x11_driver` |
@@ -148,9 +149,9 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | G-HOOK-BRIDGE | Native-git bridge: a failing hook that runs programs stops the commit | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_failing_pre_commit_hook_blocks_the_commit` |
 | G-SUBMODULE | Update a submodule (native-git bridge) | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_submodule_update_works` |
 | G-SSH-AGENT | ssh through the user's ssh-agent (native-git bridge) | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_fetch_over_ssh_with_the_agent` |
-| G-SSH-AGENT-BUNDLED | Bundled ssh cannot use the Linux ssh-agent (the git bridge is needed) | real-fork | this repository | `tests/e2e/test_git_ops_remote_ssh.py::test_bundled_ssh_cannot_use_the_agent` |
+| G-SSH-AGENT-BUNDLED | Bundled ssh cannot use the Linux ssh-agent: it asks for the passphrase instead (the git bridge uses the agent) | real-fork | this repository | `tests/e2e/test_git_ops_remote_ssh.py::test_bundled_ssh_cannot_use_the_agent` |
 | G-SSH-PASSPHRASE | ssh key with a passphrase asked by Fork (native-git bridge) | real-fork | this repository | `tests/e2e/test_real_bridge.py::test_fetch_over_ssh_with_a_passphrase_prompt` |
-| G-SSH-PASSPHRASE-BUNDLED | A key with a passphrase is named by ssh sync and doctor; bundled ssh fails without asking | real-fork | this repository | `tests/e2e/test_git_ops_remote_ssh.py::test_a_passphrase_key_is_named_and_bundled_ssh_cannot_ask` |
+| G-SSH-PASSPHRASE-BUNDLED | A key with a passphrase is named by ssh sync and doctor; bundled ssh asks for it in Fork's prompt and fetches | real-fork | this repository | `tests/e2e/test_git_ops_remote_ssh.py::test_a_passphrase_key_is_named_and_bundled_ssh_asks_for_it` |
 
 ## OS integration
 

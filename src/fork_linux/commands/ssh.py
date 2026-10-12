@@ -97,7 +97,7 @@ def _print_sync(data: dict[str, Any], *, dry_run: bool) -> None:
 
 
 def _print_passphrase_keys(keys: list[str]) -> None:
-    """Name the shared keys that need a passphrase, which Fork's bundled ssh cannot ask for."""
+    """Name the shared keys that need a passphrase, which Fork's bundled ssh asks for every time (no ssh-agent)."""
     for name in keys:
         print(f"needs a passphrase: {name}")
     if keys:

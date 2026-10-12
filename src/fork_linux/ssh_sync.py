@@ -11,11 +11,11 @@ out with the reason. Files we manage are listed in a small manifest, so a key
 removed from ``~/.ssh`` disappears from the prefix too, and a key the user
 created inside Wine is never overwritten.
 
-Keys protected by a passphrase are shared too, but Fork's bundled ssh cannot use
-them under Wine: it never shows its passphrase prompt (msys ssh cannot start the
-askpass program) and cannot reach the Linux ssh-agent either. :func:`needs_passphrase`
-finds them, so ``ssh sync`` and ``doctor`` can point at the git bridge, whose Linux
-ssh asks through Fork's prompt and uses the agent.
+Keys protected by a passphrase are shared too. Under the pinned Wine, Fork's bundled
+(msys) ssh asks for the passphrase in Fork's own prompt at every fetch and push, but it
+cannot reach the Linux ssh-agent (a Unix socket). :func:`needs_passphrase` finds such
+keys, so ``ssh sync`` and ``doctor`` can point at the git bridge, whose Linux ssh uses
+the agent.
 """
 
 from __future__ import annotations
@@ -57,10 +57,8 @@ OPENSSH_MAGIC = b"openssh-key-v1\0"
 PEM_ENCRYPTED = ("Proc-Type: 4,ENCRYPTED", "-----BEGIN ENCRYPTED PRIVATE KEY-----")
 MAX_KEY_BYTES = 64 * 1024
 NOT_KEYS = frozenset({"known_hosts", "config"})
-PASSPHRASE_PROBLEM = "Fork's bundled ssh cannot ask for a key's passphrase under Wine, nor use ssh-agent"
-PASSPHRASE_HINT = (
-    "the git bridge ('fork-linux git-bridge enable') runs Linux ssh instead, which asks through Fork and uses the agent"
-)
+PASSPHRASE_PROBLEM = "Fork's bundled ssh asks for it at every fetch and push; it cannot use ssh-agent under Wine"
+PASSPHRASE_HINT = "the git bridge ('fork-linux git-bridge enable') runs Linux ssh instead, which uses your ssh-agent"
 
 _NO_SOCKETS = "connection sharing needs Unix sockets that Wine's ssh cannot use"
 # Directives commented out, with the reason shown in the generated file.
