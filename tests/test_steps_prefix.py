@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -145,10 +146,26 @@ def test_prefix_init_stops_a_prefix_that_stays_busy(xdg: Path) -> None:
 
 
 def test_prefix_init_failure(xdg: Path) -> None:
+    """A wineboot that fails twice fails the step (after one more boot on a stopped prefix)."""
     ctx = make_ctx()
     _fake(ctx, fail=("wineboot",))
     with pytest.raises(SetupFailed, match="wineboot exited with code 1"):
         prefix.run_prefix_init(ctx)
+    assert [call["argv"][1:] for call in ctx.runner.calls] == [["wineboot", "--init"], ["-k"], ["wineboot", "--init"]]
+
+
+def test_prefix_init_boots_once_more_after_a_crash(xdg: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Wine's preloader crashing while it creates the prefix (E2E, Kron4ek 11.0) costs one more boot."""
+    ctx = make_ctx()
+    fake = _fake(ctx)
+    fake.fail_once.add("wineboot")
+    with caplog.at_level(logging.WARNING, logger="fork_linux.steps.prefix"):
+        prefix.run_prefix_init(ctx)
+    assert [call["argv"][1:] for call in ctx.runner.calls] == [
+        ["wineboot", "--init"], ["-k"], ["wineboot", "--init"], ["-w"]
+    ]
+    assert "wineboot exited with code 1; stopping the prefix's processes and booting it once more" in caplog.text
+    assert prefix.verify_prefix_init(ctx)
 
 
 def test_prefix_verify_needs_win64_hives(xdg: Path) -> None:

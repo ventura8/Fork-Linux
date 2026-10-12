@@ -200,13 +200,20 @@ def run_prefix_init(ctx: Ctx) -> None:
     """``wineboot --init`` (Mono/Gecko off), then wait for the server to write the hives.
 
     A wineserver of the previously used Wine build is stopped first (:func:`stop_other_wineservers`).
+    A failed ``wineboot`` is tried once more after the prefix's processes were stopped: now and
+    then Wine's preloader crashes while it creates a prefix (E2E 2026-10-12, Kron4ek 11.0:
+    ``wine-preloader`` dumped core, "ShellExecuteEx failed"), and the second boot completes it.
     """
     env = ctx.wine_env(dll_overrides=BOOT_DLL_OVERRIDES)
     info = ctx.wine()
     stop_other_wineservers(ctx, info)
-    result = winecmd.run(
-        ctx.runner, env, info, ["wineboot", "--init"], timeout=WINEBOOT_TIMEOUT, log_file=ctx.log_file
-    )
+    argv = ["wineboot", "--init"]
+    result = winecmd.run(ctx.runner, env, info, argv, timeout=WINEBOOT_TIMEOUT, log_file=ctx.log_file)
+    if not result.ok:
+        log.warning("wineboot exited with code %d; stopping the prefix's processes and booting it once more",
+                    result.returncode)
+        winecmd.wineserver(ctx.runner, env, info, "-k")
+        result = winecmd.run(ctx.runner, env, info, argv, timeout=WINEBOOT_TIMEOUT, log_file=ctx.log_file)
     if not result.ok:
         raise SetupFailed(
             "prefix_init",

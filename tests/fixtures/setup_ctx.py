@@ -248,6 +248,9 @@ class FakeWine:
         if args[:1] == ["wineboot"]:
             if "wineboot" in self.fail:
                 return 1
+            if "wineboot" in self.fail_once:
+                self.fail_once.discard("wineboot")
+                return 1
             for name in ("system.reg", "user.reg"):
                 if not (self.prefix / name).exists():
                     add_values(self.prefix, name, "Software\\Wine", [])
