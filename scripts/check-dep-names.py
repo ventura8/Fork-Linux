@@ -13,8 +13,9 @@ distribution family. This script checks that every packaging recipe asks for exa
 * none of them depends on the distribution's ``wine`` package (AGENTS.md §4.9).
 
 With ``--available FAMILY`` (inside that distribution's image) it also asks the package
-manager whether each name exists, the Noto fonts included. Exit status 0 when consistent,
-1 otherwise.
+manager whether each name exists, the Noto fonts included; ``--refresh`` first updates the
+package manager's metadata (as root: the packaging cells run it so, in their build image,
+``scripts/ci-packaging-cell.sh``). Exit status 0 when consistent, 1 otherwise.
 """
 
 from __future__ import annotations
@@ -202,17 +203,39 @@ def unavailable(family: str) -> list[str]:
     return missing
 
 
+# Metadata refresh per family (``--refresh``): the images ship without package lists.
+REFRESH = {
+    "debian": ["apt-get", "update", "-qq"],
+    "fedora": ["dnf", "-q", "makecache"],
+    "suse": ["zypper", "-q", "--non-interactive", "refresh"],
+    "arch": ["pacman", "-Sy", "--noconfirm"],
+}
+
+
+def refresh(family: str) -> list[str]:
+    """Update the package manager's metadata; a problem line when that failed."""
+    result = subprocess.run(REFRESH[family], capture_output=True, text=True, check=False)
+    if result.returncode == 0:
+        return []
+    detail = (result.stderr or result.stdout).strip().splitlines()
+    return [f"{family}: {' '.join(REFRESH[family])} failed: {detail[-1] if detail else f'exit {result.returncode}'}"]
+
+
 def main(argv: list[str] | None = None) -> int:
     """Command-line entry point."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--available", choices=("debian", "fedora", "suse", "arch"))
+    parser.add_argument("--refresh", action="store_true", help="update the package metadata first (with --available)")
     args = parser.parse_args(argv)
+    if args.refresh and not args.available:
+        parser.error("--refresh needs --available FAMILY")
     found = problems()
     if args.available:
         tool = {"debian": "apt-cache", "fedora": "dnf", "suse": "zypper", "arch": "pacman"}[args.available]
         if shutil.which(tool) is None:
             parser.error(f"--available {args.available} needs {tool}")
-        found += unavailable(args.available)
+        refreshed = refresh(args.available) if args.refresh else []
+        found += refreshed or unavailable(args.available)
     for line in found:
         print(line, file=sys.stderr)
     if found:

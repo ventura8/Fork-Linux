@@ -228,6 +228,48 @@ def test_check_dep_names_asks_the_package_manager_for_the_noto_fonts(monkeypatch
     assert ("arch", "noto-fonts") in asked
 
 
+def test_check_dep_names_refreshes_the_metadata_first(monkeypatch: pytest.MonkeyPatch,
+                                                      capsys: pytest.CaptureFixture[str]) -> None:
+    module = _check_dep_names()
+    ran: list[list[str]] = []
+    answers = {"rc": 0, "err": ""}
+
+    def run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        ran.append(argv)
+        return subprocess.CompletedProcess(argv, answers["rc"], "", answers["err"])
+
+    monkeypatch.setattr(module.subprocess, "run", run)
+    monkeypatch.setattr(module.shutil, "which", lambda tool: f"/usr/bin/{tool}")
+    monkeypatch.setattr(module, "_manager_has", lambda family, name: True)
+    assert module.main(["--available", "arch", "--refresh"]) == 0
+    assert ran == [["pacman", "-Sy", "--noconfirm"]]
+    assert module.main(["--available", "debian"]) == 0
+    assert len(ran) == 1, "no refresh without --refresh"
+    answers.update(rc=100, err="W: something\nE: Could not resolve 'archive.ubuntu.com'\n")
+    asked: list[str] = []
+    monkeypatch.setattr(module, "_manager_has", lambda family, name: asked.append(name) or True)
+    assert module.main(["--available", "debian", "--refresh"]) == 1
+    assert ran[-1] == ["apt-get", "update", "-qq"]
+    assert "debian: apt-get update -qq failed: E: Could not resolve 'archive.ubuntu.com'" in capsys.readouterr().err
+    assert asked == [], "names are not checked against stale metadata"
+    answers.update(rc=7, err="")
+    assert module.refresh("suse") == ["suse: zypper -q --non-interactive refresh failed: exit 7"]
+    with pytest.raises(SystemExit):
+        module.main(["--refresh"])
+    assert "--refresh needs --available FAMILY" in capsys.readouterr().err
+
+
+def test_packaging_cells_check_dependency_names_with_the_package_manager() -> None:
+    """Every family's cell asks its package manager (fresh metadata) before it builds (CI-DEP-AVAILABLE)."""
+    cell = _text(ROOT / "scripts" / "ci-packaging-cell.sh")
+    for fmt, family in (("deb", "debian"), ("deb-jammy", "debian"), ("rpm-fedora", "fedora"),
+                        ("rpm-opensuse", "suse"), ("arch", "arch")):
+        block = cell[cell.index(f"\t{fmt})\n"):]
+        assert f"DEP_FAMILY={family}\n" in block[: block.index(";;")], fmt
+    assert 'run_in_image python3 -B scripts/check-dep-names.py --available "${DEP_FAMILY}" --refresh' in cell
+    assert cell.index("check-dep-names.py --available") < cell.index('run_in_image "${BUILD[@]}"')
+
+
 def test_app_id_is_used_consistently() -> None:
     assert (ROOT / "src" / "fork_linux" / "data" / "templates" / f"{APP_ID}.desktop.in").is_file()
     assert METAINFO.is_file()

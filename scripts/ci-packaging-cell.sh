@@ -39,25 +39,27 @@ FL_PREVIOUS_IN="${ART_IN}/previous"
 rm -rf "${PREV_DIR:?}"
 
 DOCKER_FLAGS=()
+# The distribution family whose package manager must know every dependency name (Noto included).
+DEP_FAMILY=""
 case "${FORMAT}" in
 	deb)
-		DOCKERFILE=docker/Dockerfile.ppa IMAGE=fork-linux-ci-ppa:26.04
+		DOCKERFILE=docker/Dockerfile.ppa IMAGE=fork-linux-ci-ppa:26.04 DEP_FAMILY=debian
 		BUILD=(./scripts/release-deb.sh)
 		;;
 	deb-jammy)
-		DOCKERFILE=docker/Dockerfile.ppa.jammy IMAGE=fork-linux-ci-ppa-jammy:22.04
+		DOCKERFILE=docker/Dockerfile.ppa.jammy IMAGE=fork-linux-ci-ppa-jammy:22.04 DEP_FAMILY=debian
 		BUILD=(./scripts/release-deb.sh)
 		;;
 	rpm-fedora)
-		DOCKERFILE=docker/Dockerfile.rpm.fedora IMAGE=fork-linux-ci-rpm-fedora:44
+		DOCKERFILE=docker/Dockerfile.rpm.fedora IMAGE=fork-linux-ci-rpm-fedora:44 DEP_FAMILY=fedora
 		BUILD=(./scripts/release-rpm.sh fedora)
 		;;
 	rpm-opensuse)
-		DOCKERFILE=docker/Dockerfile.rpm.opensuse IMAGE=fork-linux-ci-rpm-opensuse:16.0
+		DOCKERFILE=docker/Dockerfile.rpm.opensuse IMAGE=fork-linux-ci-rpm-opensuse:16.0 DEP_FAMILY=suse
 		BUILD=(./scripts/release-rpm.sh opensuse)
 		;;
 	arch)
-		DOCKERFILE=docker/Dockerfile.arch IMAGE=fork-linux-ci-arch-pkg:base-devel-20261004.0.606936
+		DOCKERFILE=docker/Dockerfile.arch IMAGE=fork-linux-ci-arch-pkg:base-devel-20261004.0.606936 DEP_FAMILY=arch
 		BUILD=(./scripts/release-arch.sh)
 		;;
 	tarball)
@@ -94,7 +96,13 @@ else
 			-v "${ROOT}:/src:rw" "${GIT_MOUNT[@]}" -w /src "${IMAGE}" "$@" || return
 		return 0
 	}
-	run_in_image "${BUILD[@]}" || status=$?
+	if [[ -n "${DEP_FAMILY}" ]]; then
+		# A dependency or Noto name the distribution renamed or dropped fails here, not at users' installs.
+		run_in_image python3 -B scripts/check-dep-names.py --available "${DEP_FAMILY}" --refresh || status=$?
+	fi
+	if ((status == 0)); then
+		run_in_image "${BUILD[@]}" || status=$?
+	fi
 	if ((status == 0)); then
 		./scripts/packaging-smoke-verify.sh "${FORMAT}" || status=$?
 	fi

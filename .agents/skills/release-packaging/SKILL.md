@@ -28,9 +28,10 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 - Another version (upgrade tests, N-1 = 0.9.9): `./scripts/build-version-variant.sh [--date D] 0.9.9 OUTDIR FORMAT...`
   inside the format's image (worktree read-only is fine; output to OUTDIR), or `--tree-only` for just the rewritten tree.
   The upgrade / downgrade scenarios it serves: `docs/qa/UPDATE-SCENARIOS.md` (A1, A2, A8, A9, A10, A11).
-- Dependency names come from `fork_linux.hostdeps`: `python3 scripts/check-dep-names.py [--available FAMILY]`
-  (run `--available` inside the family's pinned image, as root, after `apt-get update` / `zypper refresh` /
-  `pacman -Sy`). The Noto fonts (`hostdeps.NOTO_FONTS`, core + CJK) are weak dependencies wherever the format has
+- Dependency names come from `fork_linux.hostdeps`: `python3 scripts/check-dep-names.py [--available FAMILY [--refresh]]`
+  (`--available` inside the family's pinned image, as root; `--refresh` runs `apt-get update` / `dnf makecache` /
+  `zypper refresh` / `pacman -Sy` first). Every deb / rpm / arch cell of `scripts/ci-packaging-cell.sh` runs
+  `--available FAMILY --refresh` before it builds. The Noto fonts (`hostdeps.NOTO_FONTS`, core + CJK) are weak dependencies wherever the format has
   them: deb / rpm `Recommends`, Arch `optdepends`; snap, Flatpak, AppImage and the tarball have no such mechanism
   (doctor's `prefix.font_fallback` hint names the packages).
 - Snap needs `--privileged` + host cgroups (systemd in Docker); Flatpak needs `--privileged` and Flathub runtimes.
