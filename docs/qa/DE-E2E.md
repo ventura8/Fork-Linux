@@ -672,3 +672,14 @@ Fork's run.
    `tests/test_workflows.py`); `tests/test_e2e_de_recipes.py` keeps images, recipes, checkers and
    both CI matrices in step on its own.
 4. Run both tiers, record the result in the matrix above and in `docs/COMPATIBILITY.md`.
+
+## Final integration run (2026-10-12)
+
+On the merged v1.0.0 tree (Wine 11.18, the images with the Noto fonts): the integration tier
+passed on all 8 desktops (xfce 15, gnome 16, kde 20, kdewayland 19, cinnamon 17, mate 19, budgie 16,
+lxqt 19: 141 tests), and the real-Fork tier 9 of 9 on xfce, gnome, kde and cinnamon (mate,
+budgie, lxqt and kdewayland were not run in this pass). Two changes came out of it: the images
+install fonts-noto-core and fonts-noto-cjk (as the flavours do; without them doctor's
+`prefix.font_fallback` warned), and the hand-off check no longer expects Wine 11.18 to confine
+Fork (it gives Fork no NoNewPrivs and no extra seccomp filter).
+

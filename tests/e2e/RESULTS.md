@@ -627,3 +627,33 @@ checked `host_integration` before `prefix_init` ran: `doctor` warned "1 of 107 f
 redirects are missing" after every Wine change, until a later setup happened to notice. The step's
 inputs now include the Wine build, so a Wine change re-runs it after `prefix_init`
 (`tests/test_steps_integration.py::test_integration_inputs_follow_the_wine_build`).
+
+## Final integration of the v1.0.0 branches (2026-10-12)
+
+fix/integration with fix/font-fallback-472, fix/update-tests, fix/de-e2e, fix/e2e-coverage,
+fix/deps-runtime (Wine 11.18) and fix/deps-ci merged, every real-tier module run through
+`scripts/e2e-docker.sh` (seeded; the seed has Wine 11.0, so 11.18 was downloaded in each root):
+
+| Shard (one scratch root each) | Result |
+|---|---|
+| setup errors, real Fork, launch, integration, display, bridge, bridge remotes, doctor, snapshots (`fi-t1`) | 89 passed, fresh root, final tree (2820 s) |
+| git history, changes, branches, remotes, ssh remotes, advanced, local ops (`fi-t2`) | 46 passed, 2 failed in a fresh root; both passed when rerun on that prefix (`test_real_git_changes.py`, `test_real_git_remotes.py`: 15 passed) after the fix below |
+| setup variants, uninstall (`fi-t3`) | 17 passed |
+| `test_fork_update.py` (`FL_E2E_FORK_UPDATES=1`) | 13 passed (1134 s) |
+| `test_wine_app_upgrade.py` (`FL_E2E_APP_UPGRADE=1`, two bridge builds for A6, A4's build B = 11.0) | 7 passed (895 s) |
+| `test_wine_pin_upgrade.py` (A24, new) | 3 passed (460 s) |
+
+What the merged tree changed, found by these runs and fixed:
+
+- **Fork's bundled ssh asks for a key's passphrase under Wine 11.18** (it could not under 11.0):
+  Fork's own prompt appears and the fetch goes through; ssh-agent still cannot be reached.
+  `ssh sync`, `ssh status`, `doctor ssh.passphrase` (now info) and README say so.
+- **Fork runs without NoNewPrivs or an extra seccomp filter under 11.18**; the desktop tier's
+  hand-off check no longer assumes Fork is confined (the hand-off daemon and the terminal still
+  carry nothing more than the test process).
+- A launch without a terminal shows its error in a dialog (F21) and waits for it; after the user
+  declined the license question in a dialog, that second dialog is no longer shown.
+- Test-side: the error dialog is checked and closed by its button (L-ERROR-DIALOG); Open In File
+  Explorer goes through FileManager1 first; Consolas maps to Noto Sans Mono where Noto is
+  installed; B-DISABLE accepts the hand-off-only daemon; "Push all tags" is read the same way in
+  the dark theme; a retried commit replaces its description instead of appending it.
