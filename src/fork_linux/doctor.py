@@ -110,7 +110,9 @@ HOOK_LIMITATION = (
 )
 _WINESERVER = b"WINESERVER="
 
-# (needles that must all be present, alternatives of which one must be present, hint)
+# (needles that must all be present, alternatives of which one must be present, what, hint).
+# Each needle matches as a whole word: "SSL" must not match the bundled git's file list that Fork
+# writes to fork.log on its first start ("...\\auto\\Net\\SSLeay\\put_httpx3.al").
 LOG_SIGNATURES: tuple[tuple[tuple[str, ...], tuple[str, ...], str, str], ...] = (
     (
         ("0x88980406",),
@@ -1169,11 +1171,18 @@ def check_pending_update(ctx: DoctorCtx) -> Result:
     )
 
 
+def _has_word(text: str, needle: str) -> bool:
+    """True when ``needle`` occurs in ``text`` with no letter or digit right before or after it."""
+    return re.search(r"(?<![A-Za-z0-9])" + re.escape(needle) + r"(?![A-Za-z0-9])", text) is not None
+
+
 def scan_fork_log(text: str) -> list[tuple[str, str]]:
-    """``(what, hint)`` for every known crash signature in ``text``."""
+    """``(what, hint)`` for every known crash signature in ``text`` (needles match whole words)."""
     found = []
     for needles, alternatives, what, hint in LOG_SIGNATURES:
-        if all(needle in text for needle in needles) and (not alternatives or any(alt in text for alt in alternatives)):
+        if all(_has_word(text, needle) for needle in needles) and (
+            not alternatives or any(_has_word(text, alt) for alt in alternatives)
+        ):
             found.append((what, hint))
     return found
 

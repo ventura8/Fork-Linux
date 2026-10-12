@@ -1097,6 +1097,11 @@ def test_fork_pending_update(monkeypatch: pytest.MonkeyPatch) -> None:
             ["Windows notifications are unavailable under Wine (fork-dev/TrackerWin#2862)"],
         ),
         ("schannel: handshake failed\n", ["TLS (SSL/schannel) errors"]),
+        ("The SSL connection could not be established\n", ["TLS (SSL/schannel) errors"]),
+        # The bundled git's file list Fork writes on its first start (R2-02): not a TLS error.
+        (" 13% 4302 - usr\\lib\\perl5\\vendor_perl\\auto\\Net\\SSLeay\\put_httpx3.al\n", []),
+        ("libssl.so.3 loaded; MySSLHelper ok\n", []),
+        ("COMException 0x889804061\n", []),
     ],
 )
 def test_scan_fork_log(text: str, expected: list[str]) -> None:
