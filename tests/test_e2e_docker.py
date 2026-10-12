@@ -697,7 +697,8 @@ def test_ci_e2e_wine_fails_a_module_that_skipped_a_test(box: Box) -> None:
     assert failed.returncode == 4, "pytest's own failure status wins"
 
 
-VELOPACK_731 = "Failed: Velopack could not start the updated Fork: Apply error: Failed to start application (OS Error 731)"
+VELOPACK_731 = ("Failed: Velopack could not start the updated Fork: Apply error: "
+                "Failed to start application (OS Error 731)")
 
 
 def test_ci_e2e_wine_reruns_a_module_once_after_velopack_731(box: Box) -> None:

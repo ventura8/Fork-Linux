@@ -308,7 +308,9 @@ def _tree(prefix: Path) -> list[tuple[str, int]]:
     return sorted((str(path.relative_to(prefix)), path.stat().st_size) for path in prefix.rglob("*") if path.is_file())
 
 
-def test_10_install_sh_never_breaks_the_installed_fork_linux(session: dekit.Session, installed: dekit.Installed) -> None:
+def test_10_install_sh_never_breaks_the_installed_fork_linux(
+    session: dekit.Session, installed: dekit.Installed
+) -> None:
     """install.sh on top of the working install, with the official Fork set up: refused while a package
     manager owns fork-linux (A13: nothing written), and an upgrade interrupted after its trees were swapped
     (A14: ``ln`` fails) leaves ``fork-linux`` on PATH, which still starts Fork; the next install finishes.
