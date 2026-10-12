@@ -17,6 +17,7 @@ import pytest
 from fork_driver import fork_pids, make_repo, processes, wait_until, windows_path
 
 from fixtures import real_tier
+from fork_linux import APP_NAME
 
 if os.environ.get("FL_E2E_FORK") != "1":
     pytest.skip("requires FL_E2E_FORK=1 (the official Fork under Wine)", allow_module_level=True)
@@ -91,14 +92,35 @@ def test_open_command_adds_a_tab(closed: Any) -> None:
 
 
 def test_missing_path_is_a_usage_error(closed: Any) -> None:
-    """A path that does not exist is refused (exit 2) and no Fork starts.
+    """A path that does not exist is refused (exit 2) and no Fork starts: on stderr in a terminal, and from
+    the menu or a file manager (no terminal) also in a dialog, which the launch waits for.
 
-    Scenarios: L-BAD-PATH
+    Scenarios: L-BAD-PATH, L-ERROR-DIALOG
     """
     e2e = closed
-    result = e2e.cli("run", str(e2e.repos / "does-not-exist"), check=False, timeout=FAST_PATH_SECONDS)
+    missing = e2e.repos / "does-not-exist"
+    result = e2e.cli("run", "--no-gui", str(missing), check=False, timeout=FAST_PATH_SECONDS)
     assert result.returncode == 2
     assert "does-not-exist" in result.stderr
+    if shutil.which("zenity") is None:
+        pytest.skip("zenity (the error dialog) is not installed")
+    launch = e2e.fork.launch(missing)
+    try:
+        dialog = wait_until(
+            lambda: next((window for window in e2e.screen.any_windows("unofficial") if window.title == APP_NAME), None),
+            FAST_PATH_SECONDS, "the launch's error dialog",
+        )
+        e2e.screen.screenshot("bad-path-dialog")
+        assert launch.poll() is None, "the launch waits until the dialog is closed"
+        e2e.screen.xdotool("windowactivate", "--sync", dialog.id, check=True)
+        e2e.screen.key("Return")
+        assert launch.wait(timeout=FAST_PATH_SECONDS) == 2
+    finally:
+        if launch.poll() is None:
+            launch.kill()
+            launch.wait(timeout=10)
+    log = max((e2e.logs).glob("launch-*.log"), key=lambda path: path.stat().st_mtime)
+    assert "does-not-exist" in log.read_text(encoding="utf-8", errors="replace")
     time.sleep(2)
     assert not fork_pids(e2e.prefix)
 
@@ -211,12 +233,13 @@ def test_restart_replaces_a_fork_without_a_window(closed: Any) -> None:
 
 
 def test_no_setup_refuses_pending_steps(installed: Any) -> None:
-    """``run --no-setup`` with an incomplete setup exits 10 instead of setting up.
+    """``run --no-setup`` with an incomplete setup exits 10 instead of setting up (in a terminal: no
+    dialog, see test_missing_path_is_a_usage_error for a desktop launch's).
 
     Scenarios: L-NO-SETUP
     """
     fresh = installed.variant("no-setup")
-    result = fresh.cli("run", "--no-setup", check=False, timeout=60)
+    result = fresh.cli("run", "--no-gui", "--no-setup", check=False, timeout=60)
     assert result.returncode == 10, result.stderr
     assert not (fresh.home / ".local" / "share" / "fork-linux" / "runtimes").exists()
 

@@ -608,7 +608,8 @@ def test_enable_refuses_an_old_host_git(bridged: Any, installed: Any) -> None:
 
 
 def test_disable_goes_back_to_bundled_git(bridged: Any, installed: Any) -> None:
-    """``git-bridge disable``: the next Fork uses its bundled git again and no daemon starts.
+    """``git-bridge disable``: the next Fork uses its bundled git again and no git bridge daemon starts (without
+    a systemd user session, as here, only the launcher's hand-off daemon, ``--handoff-only``).
 
     Scenarios: B-DISABLE
     """
@@ -618,5 +619,5 @@ def test_disable_goes_back_to_bundled_git(bridged: Any, installed: Any) -> None:
     assert json.loads(installed.cli("git-bridge", "status", "--json").stdout)["enabled"] is False
     ui.fork.start(_repo(installed, "bridge-off"), extra=extra)
     assert SHIM_GIT not in ui.fork.fork_log()
-    assert not _daemons()
+    assert all("--handoff-only" in cmd for _pid, cmd in _daemons()), _daemons()
     ui.fork.close()

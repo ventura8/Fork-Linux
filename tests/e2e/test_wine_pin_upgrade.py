@@ -98,12 +98,14 @@ def test_01_setup_on_the_previous_pin_and_commit(pin: Any, pin_ui: ForkUI) -> No
     _override(pin).write_text(json.dumps(previous), encoding="utf-8")
     pin.cli(*pin.setup_args(), timeout=SETUP_TIMEOUT)
     assert _status(pin)["wine_build"] == OLD_ID
-    repo = make_repo(pin.repos / "demo", {"README.md": "# demo\n"})
+    # A .gitignore keeps Fork's "Consider adding a .gitignore" bar (which moves the file list) away.
+    repo = make_repo(pin.repos / "demo", {".gitignore": "*.tmp\n", "README.md": "# demo\n"})
     _commit_through_fork(pin, pin_ui, repo, "on-old.txt", "committed on the previous pin")
 
 
 def test_02_the_upgrade_moves_the_prefix_to_the_new_pin(pin: Any) -> None:
-    """The upgrade's packaged manifest takes over: only the Wine-dependent steps re-run; doctor is healthy.
+    """The upgrade's packaged manifest takes over: only the Wine-dependent steps re-run; doctor is healthy
+    (no failure, no warning about the installation).
 
     Scenarios: A24
     """
@@ -116,8 +118,9 @@ def test_02_the_upgrade_moves_the_prefix_to_the_new_pin(pin: Any) -> None:
     # The previous build stays on disk (config set wine.build switches back without a download).
     assert sorted(wine_provider.installed_builds(Paths.from_env(pin.env))) == sorted([NEW_ID, OLD_ID])
     doctor = json.loads(pin.cli("doctor", "--deep", "--json", check=False).stdout)
+    # The repo.* checks are about the user's repositories (the demo one has core.filemode = true).
     unhealthy = [(check["id"], check["status"], check["detail"]) for check in doctor["checks"]
-                 if check["status"] in ("fail", "warn")]
+                 if check["status"] in ("fail", "warn") and not check["id"].startswith("repo.")]
     assert unhealthy == []
 
 

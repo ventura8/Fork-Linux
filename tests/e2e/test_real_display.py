@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,7 @@ from fork_driver import fork_pids, make_repo, wait_until
 from fork_ui import ForkUI
 
 from fixtures import real_tier
+from fork_linux.steps import fonts as fonts_step
 
 if os.environ.get("FL_E2E_FORK") != "1":
     pytest.skip("requires FL_E2E_FORK=1 (the official Fork under Wine)", allow_module_level=True)
@@ -29,7 +31,6 @@ DIP_WIDTH = 820
 DIP_HEIGHT = 480
 SCALE_TOLERANCE = 0.03
 # The image's only monospace family, which setup maps Consolas (Fork's diff font) to.
-MONO_FONT = "dejavusansmono.ttf"
 
 
 def _repo(e2e: Any, name: str) -> Path:
@@ -75,6 +76,18 @@ def test_dpi_scales_fork_once(closed: Any, dpi: int) -> None:
         e2e.cli(*e2e.setup_args())
 
 
+def _mono_font() -> str:
+    """The font file (lower-case name) of the family setup maps Consolas to: the first of the
+    ``font_replacements`` step's monospace choices that fontconfig knows (Noto Sans Mono in the image)."""
+    families = subprocess.run(["fc-list", ":", "family"], capture_output=True, text=True, timeout=60,
+                              check=True).stdout.splitlines()
+    names = {name.strip() for line in families for name in line.split(",")}
+    family = next(choice for choice in fonts_step.MONO_CHOICES if choice in names)
+    found = subprocess.run(["fc-match", "-f", "%{file}", family], capture_output=True, text=True, timeout=60,
+                           check=True).stdout
+    return Path(found).name.lower()
+
+
 def _mapped_fonts(pid: int) -> set[str]:
     """The font files (lower-case names) process ``pid`` has mapped: the faces Wine really draws with."""
     lines = Path("/proc", str(pid), "maps").read_text().splitlines()
@@ -96,7 +109,8 @@ def test_interface_text_is_drawn_in_selawik(closed: Any) -> None:
     ui.local_changes()
     ui.click(ui.unstaged_row(0))
     pid = fork_pids(e2e.prefix)[0]
-    wait_until(lambda: MONO_FONT in _mapped_fonts(pid) or None, 30, f"{MONO_FONT} (Consolas' replacement) in the diff")
+    mono = _mono_font()
+    wait_until(lambda: mono in _mapped_fonts(pid) or None, 30, f"{mono} (Consolas' replacement) in the diff")
     names = _mapped_fonts(pid)
     e2e.screen.screenshot("font-diff", window)
     assert "selawk.ttf" in names, sorted(names)

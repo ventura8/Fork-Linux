@@ -127,7 +127,9 @@ def _opened_urls(log: Path) -> list[str]:
 
 
 def test_open_in_file_explorer_uses_the_linux_file_manager(desk: Any, installed: Any) -> None:
-    """Repository > Open In File Explorer (Ctrl+Alt+O) opens the folder in the Linux file manager.
+    """Repository > Open In File Explorer (Ctrl+Alt+O) opens the folder in the Linux file manager: through
+    FileManager1.ShowFolders on the session bus (the bus starts the file manager outside Wine's process tree),
+    else xdg-open.
 
     Scenarios: I-OPEN-IN-EXPLORER
     """
@@ -135,8 +137,13 @@ def test_open_in_file_explorer_uses_the_linux_file_manager(desk: Any, installed:
     repo = _repo(installed, "open-explorer")
     ui.open(repo)
     ui.keys("ctrl+alt+o", settle=2.0)
-    wait_until(lambda: any(args.rstrip("/") == str(repo) for args, _ in _calls(log, "xdg-open")), 60,
-               "xdg-open on the repository folder")
+    uri = f"file://{repo}"
+
+    def opened() -> bool:
+        shown = any("FileManager1.ShowFolders" in args and uri in args for args, _ in _calls(log, "gdbus"))
+        return shown or any(args.rstrip("/") == str(repo) for args, _ in _calls(log, "xdg-open"))
+
+    wait_until(opened, 60, "FileManager1.ShowFolders (or xdg-open) on the repository folder")
 
 
 def test_show_in_file_explorer_selects_the_file(desk: Any, installed: Any) -> None:
