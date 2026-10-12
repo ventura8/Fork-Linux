@@ -10,6 +10,8 @@
 # managed Wine runtime, winetricks' verbs and the official Fork installer at run time (or
 # copies them from a read-only local seed); nothing is baked into the image or cached, and
 # only text logs leave the container (no screenshots, no binaries).
+# fonts-noto-core / fonts-noto-cjk: as on the flavour's own install, so font_fallback maps the non-Latin
+# scripts and doctor (no warnings allowed in the real-Fork tier) has nothing to report.
 # Wine's host libraries come from the same table as `fork-linux doctor`
 # (fork_linux.hostdeps, Debian names), as in docker/Dockerfile.e2e.wine.
 FROM ubuntu:26.04
@@ -23,7 +25,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ca-certificates git python3 python3-pytest python3-gi curl procps file \
     xvfb xauth xdotool x11-utils x11-xserver-utils imagemagick \
     dbus-daemon dbus-bin dbus-x11 libglib2.0-bin \
-    cabextract unzip 7zip fontconfig zenity \
+    cabextract unzip 7zip fontconfig fonts-noto-core fonts-noto-cjk zenity \
     desktop-file-utils xdg-utils shared-mime-info \
     libfreetype6 libfontconfig1 libgnutls30t64 libx11-6 libxext6 libxrender1 libxi6 \
     libxrandr2 libxcursor1 libxcomposite1 libxinerama1 libxfixes3 libgl1 \
