@@ -215,3 +215,16 @@ def test_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.
     with pytest.raises(SystemExit) as exited:
         runpy.run_path(str(SCRIPT), run_name="__main__")
     assert exited.value.code == 1
+
+
+def test_placeholder_fork_exe_is_a_pe_without_an_icon(tmp_path: Path) -> None:
+    """desktop install finds no icon in the placeholder and keeps the neutral one, without a warning."""
+    from fork_linux import icon_extract, pe_resources
+
+    data = state_tool.placeholder_exe()
+    pe = pe_resources.PEFile(data)
+    assert (pe.machine, pe.is_pe32_plus, pe.subsystem) == (pe_resources.MACHINE_AMD64, True, 2)
+    assert pe.sections == [] and pe.best_icons() == [] and pe.version_info() == {}
+    exe = tmp_path / "Fork.exe"
+    exe.write_bytes(data)
+    assert icon_extract.extract_icons(exe, tmp_path / "icons", "app") == []

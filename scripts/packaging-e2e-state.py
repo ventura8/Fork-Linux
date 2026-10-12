@@ -12,9 +12,10 @@ run again (scenario A2 of docs/qa/UPDATE-SCENARIOS.md)?
   managed Wine runtime's ``.complete`` marker with stand-in ``wine`` / ``wineserver`` scripts
   that answer ``--version`` and record any other call in ``E2E_WINE_RAN`` (a failure: no Wine
   may run). ``STATUS_JSON`` is ``fork-linux status --json`` of the installed release, so the
-  paths are the program's own (``~/.var/app/<id>`` in the Flatpak). The placeholder has no icon:
-  the per-user installs (``install.sh``, ``AppImage --install-desktop``) run ``fork-linux desktop
-  install``, which then warns "cannot extract Fork's icon" and keeps the neutral icon.
+  paths are the program's own (``~/.var/app/<id>`` in the Flatpak). The placeholder
+  ``Fork.exe`` is a minimal PE32+ x86-64 image without resources (:func:`placeholder_exe`):
+  the per-user installs (``install.sh``, ``AppImage --install-desktop``) run ``fork-linux
+  desktop install``, which finds no icon in it and keeps the neutral icon without a warning.
 * ``record STATUS_JSON STEPS_JSON``: ``state.json`` with a marker for every step, taken from
   the installed release's own ``--list-steps --json`` (revision and inputs hash), as a
   completed setup records them.
@@ -39,6 +40,7 @@ import argparse
 import hashlib
 import json
 import os
+import struct
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -108,6 +110,22 @@ class Layout:
         return sorted(path for path in found if path.is_file())
 
 
+def placeholder_exe() -> bytes:
+    """A minimal, valid PE32+ x86-64 GUI image: headers only, no sections, no resources (no icon).
+
+    MZ header with ``e_lfanew`` = 0x40, the PE signature, a COFF header (machine 0x8664, no
+    sections, 240-byte optional header) and a PE32+ optional header (magic 0x20B, subsystem 2,
+    16 empty data directories). Nothing of Fork's.
+    """
+    dos = b"MZ" + bytes(0x3A) + struct.pack("<I", 0x40)
+    coff = struct.pack("<HHIIIHH", 0x8664, 0, 0, 0, 0, 240, 0x22)
+    optional = bytearray(240)
+    struct.pack_into("<H", optional, 0, 0x20B)
+    struct.pack_into("<H", optional, 68, 2)
+    struct.pack_into("<I", optional, 108, 16)
+    return dos + b"PE\0\0" + coff + bytes(optional)
+
+
 def _layout(status_json: Path) -> Layout:
     user = os.environ.get("USER", "")
     if not user:
@@ -123,7 +141,7 @@ def prepare(status_json: Path, manifest_json: Path) -> Layout:
     os.chmod(layout.prefix, 0o700)
     _write(layout.created_by, f"fork-linux {layout.writer}\n")
     fork_version = manifest["fork"]["default"]
-    _write(layout.fork_dir / "Fork.exe", b"MZ packaging E2E placeholder, not Fork.exe\n")
+    _write(layout.fork_dir / "Fork.exe", placeholder_exe())
     _write(layout.fork_dir / "sq.version", NUSPEC.format(version=fork_version))
     build_id = manifest["wine"]["default"]
     build = manifest["wine"]["builds"][build_id]
