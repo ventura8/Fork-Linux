@@ -43,7 +43,8 @@ def xdg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("XDG_CACHE_HOME", str(home / ".cache"))
     monkeypatch.setenv("XDG_STATE_HOME", str(home / ".local/state"))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(home / "run"))
-    for var in ("FORK_LINUX_PREFIX", "WINEPREFIX", "FLATPAK_ID", "SNAP", "APPIMAGE", "APPDIR"):
+    # SSH_AUTH_SOCK: the developer's own ssh-agent must not switch the launcher's ssh-agent relay on.
+    for var in ("FORK_LINUX_PREFIX", "WINEPREFIX", "FLATPAK_ID", "SNAP", "APPIMAGE", "APPDIR", "SSH_AUTH_SOCK"):
         monkeypatch.delenv(var, raising=False)
     return home
 

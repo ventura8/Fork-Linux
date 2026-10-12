@@ -144,6 +144,11 @@ SCHEMA: dict[str, dict[str, KeySpec]] = {
             kind="choice",
             choices=("link", "copy"),
         ),
+        "agent_relay": KeySpec(
+            "on",
+            "Let Fork's bundled ssh use your ssh-agent ($SSH_AUTH_SOCK) through a relay while Fork runs.",
+            kind="bool",
+        ),
     },
     "git": {
         "config_overlay": KeySpec(

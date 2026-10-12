@@ -32,6 +32,16 @@ module follows.
   so they never inherit Wine's ``NoNewPrivs`` and seccomp filter. Fork's
   environment gets only ``FL_BRIDGE_PORT`` / ``FL_BRIDGE_TOKEN`` (no
   ``FORKGITINSTANCE``: git stays Fork's bundled git).
+* The **ssh-agent relay** (:func:`agent_socket`, ``[ssh] agent_relay``): while
+  Fork's git is its bundled Git for Windows (no native-git bridge) and the
+  session has an ssh-agent (``$SSH_AUTH_SOCK``), the daemon (the git bridge's in
+  record mode, else the hand-off one, started for the relay even with a systemd
+  user manager) also gets ``--ssh-agent`` / ``--ssh-agent-file``: it writes an
+  msys socket file to ``C:\\fork-linux\\ssh-agent\\agent.sock`` and relays
+  Fork's bundled (msys) ssh to the agent (``bridge/unix/fl_agent_relay.h``).
+  Fork's ``SSH_AUTH_SOCK`` then names that file (:data:`AGENT_SOCK_WIN`); when
+  the daemon could not set the relay up it writes no file and Fork keeps the
+  host's value (its ssh then simply finds no agent).
 
 Enabling it records ``[git] bridge = on`` only (never touching Fork's
 ``settings.json``); ``[git] bridge_mode = record`` makes the shims forward to
@@ -104,6 +114,14 @@ LOG_ENV = "FL_BRIDGE_LOG"
 MODE_ENV = "FL_BRIDGE_MODE"
 BUNDLED_GIT_ENV = "FL_BRIDGE_BUNDLED_GIT"
 INSTANCE_ENV = "FORKGITINSTANCE"
+AGENT_ENV = "SSH_AUTH_SOCK"
+AGENT_SECTION = "ssh"
+AGENT_KEY = "agent_relay"
+# The msys socket file of the ssh-agent relay, under C:\fork-linux (Paths.fork_linux_win_dir),
+# and the value Fork's SSH_AUTH_SOCK gets (msys reads the Windows form, with forward slashes).
+AGENT_DIR = "ssh-agent"
+AGENT_FILE = "agent.sock"
+AGENT_SOCK_WIN = "C:/fork-linux/ssh-agent/agent.sock"
 PERSONA_ENVS = {"fl-winexec": WINEXEC_ENV, "fl-askpass": ASKPASS_ENV, "fl-ssh-askpass": SSH_ASKPASS_ENV}
 
 START_TIMEOUT = 5.0
@@ -280,6 +298,8 @@ class Daemon:
     proc: subprocess.Popen[bytes] | None = field(default=None, repr=False)
     # A --handoff-only daemon (start_handoff): desktop hand-offs, never git.
     handoff: bool = False
+    # The ssh-agent relay is up (the daemon wrote the msys socket file; env has SSH_AUTH_SOCK).
+    agent: bool = False
 
     def stop(self) -> None:
         """SIGTERM the daemon (SIGKILL after :data:`STOP_TIMEOUT`); used when the launch is abandoned."""
@@ -479,19 +499,25 @@ def _spawn(argv: list[str], env: Mapping[str, str], stderr: int) -> subprocess.P
     )
 
 
-def _launch(ctx: Any, helper: Path, wine_env: Mapping[str, str], options: list[str]) -> Daemon:
-    """Start ``helper --daemon`` with the token, lifetime and log options plus ``options``.
+def _launch(
+    ctx: Any, helper: Path, wine_env: Mapping[str, str], options: list[str], agent: Path | None = None
+) -> Daemon:
+    """Start ``helper --daemon`` with the token, lifetime and log options plus ``options``
+    (and the ssh-agent relay for the agent socket ``agent``, see :func:`agent_socket`).
 
     Returns the :class:`Daemon` with no Fork variables yet; :class:`_StartError` /
     ``OSError`` on failure (the daemon is stopped again).
     """
     paths: Paths = ctx.paths
     log_file = _new_log(paths, LOG_PREFIX, ".log")
+    socket_file = _agent_file(paths) if agent is not None else _drop_agent_file(paths)
     token_file, token = write_token(paths)
     try:
         argv = [str(helper), "--daemon", "--token-file", str(token_file), "--parent-pid", str(os.getpid())]
         fork_dir = ForkLayout(paths, ctx.user).win_local_dir
         argv += ["--watch-prefix", str(paths.prefix), "--watch-exe-dir", fork_dir, *options]
+        if socket_file is not None:
+            argv += ["--ssh-agent", str(agent), "--ssh-agent-file", str(socket_file)]
         argv += ["--log", str(log_file)]
         fd = os.open(log_file, _LOG_FLAGS, 0o600)
         try:
@@ -509,7 +535,11 @@ def _launch(ctx: Any, helper: Path, wine_env: Mapping[str, str], options: list[s
             stdout.close()
     finally:
         _drop_token_file(token_file)
-    return Daemon(proc.pid, port, {PORT_ENV: str(port), TOKEN_ENV: token}, log_file=log_file, proc=proc)
+    daemon = Daemon(proc.pid, port, {PORT_ENV: str(port), TOKEN_ENV: token}, log_file=log_file, proc=proc)
+    daemon.agent = socket_file is not None and _relay_up(socket_file)
+    if socket_file is not None and not daemon.agent:
+        log.warning("ssh-agent relay not started (see %s); Fork's ssh does not use your ssh-agent", log_file)
+    return daemon
 
 
 def _start(ctx: Any, *, debug: bool) -> Daemon:
@@ -520,8 +550,11 @@ def _start(ctx: Any, *, debug: bool) -> Daemon:
     personas = ensure_personas(paths, helper)
     wine_env = winecmd.build_env(paths, info, user=ctx.user, base_env=ctx.env)
     host = host_helper(paths)
-    daemon = _launch(ctx, helper, wine_env, [] if host is None else ["--host-helper", str(host)])
+    agent = agent_socket(ctx) if mode(ctx) == MODE_RECORD else None
+    daemon = _launch(ctx, helper, wine_env, [] if host is None else ["--host-helper", str(host)], agent)
     daemon.env = _fork_env(ctx, daemon.port, daemon.env[TOKEN_ENV], personas, info.wine)
+    if daemon.agent:
+        daemon.env[AGENT_ENV] = AGENT_SOCK_WIN
     if debug:
         daemon.env[LOG_ENV] = str(_new_log(paths, LOG_PREFIX + "calls-", ".jsonl"))
     return daemon
@@ -597,17 +630,20 @@ def handoff_missing() -> list[str]:
 
 
 def start_handoff(ctx: Any) -> Daemon | None:
-    """Start ``fl-bridge-helper --daemon --handoff-only`` when the desktop hand-off needs it.
+    """Start ``fl-bridge-helper --daemon --handoff-only`` when the desktop hand-off or the
+    ssh-agent relay needs it.
 
     Called by the launcher when :func:`start_daemon` started no git bridge
     daemon (which takes hand-offs too). Nothing is started when
-    :func:`handoff_route` finds another way out of Wine's process tree, or when
-    this installation lacks the helper or ``fork-linux-host``. A failure is
-    logged, never fatal: the hand-off then runs inside Wine's tree, as its log
-    line (``<logs>/handoff.log``) says.
+    :func:`handoff_route` finds another way out of Wine's process tree and
+    :func:`agent_socket` wants no relay, or when this installation lacks the
+    helper or ``fork-linux-host``. A failure is logged, never fatal: the
+    hand-off then runs inside Wine's tree, as its log line
+    (``<logs>/handoff.log``) says, and Fork's ssh finds no agent.
     """
     route = handoff_route(ctx.env)
-    if route:
+    agent = agent_socket(ctx)
+    if route and agent is None:
         log.debug("desktop hand-off through %s; no hand-off daemon", route)
         return None
     helper = helper_path()
@@ -619,12 +655,15 @@ def start_handoff(ctx: Any) -> Daemon | None:
         if host is None:
             raise _StartError(f"no {HOST_WRAPPER} in this installation")
         wine_env = winecmd.build_env(ctx.paths, ctx.wine(), user=ctx.user, base_env=ctx.env)
-        daemon = _launch(ctx, helper, wine_env, ["--handoff-only", "--host-helper", str(host)])
+        daemon = _launch(ctx, helper, wine_env, ["--handoff-only", "--host-helper", str(host)], agent)
     except (ForkLinuxError, OSError, subprocess.SubprocessError) as exc:
         log.warning("hand-off daemon not started (%s); desktop hand-offs run inside Wine's process tree", exc)
         return None
     daemon.handoff = True
-    log.info("hand-off daemon pid %d on 127.0.0.1:%d", daemon.pid, daemon.port)
+    if daemon.agent:
+        daemon.env[AGENT_ENV] = AGENT_SOCK_WIN
+    log.info("hand-off daemon pid %d on 127.0.0.1:%d (ssh-agent relay %s)", daemon.pid, daemon.port,
+             "on" if daemon.agent else "off")
     return daemon
 
 
@@ -639,6 +678,92 @@ def launch_env(ctx: Any, daemon: Daemon | None) -> dict[str, str]:
     return dict(daemon.env)
 
 
+# -- the ssh-agent relay -----------------------------------------------------------------------
+
+
+def agent_relay_enabled(ctx: Any) -> bool:
+    """``[ssh] agent_relay`` (an invalid value counts as off)."""
+    try:
+        return bool(ctx.config.getbool(AGENT_SECTION, AGENT_KEY))
+    except ForkLinuxError:
+        return False
+
+
+def host_agent(env: Mapping[str, str]) -> Path | None:
+    """The session's ssh-agent socket: ``$SSH_AUTH_SOCK`` when it is an absolute path to a socket."""
+    value = env.get(AGENT_ENV, "")
+    if not value.startswith("/"):
+        return None
+    try:
+        return Path(value) if stat.S_ISSOCK(os.stat(value).st_mode) else None
+    except OSError:
+        return None
+
+
+def agent_socket(ctx: Any) -> Path | None:
+    """The agent socket the relay should serve for this launch, or None.
+
+    None when ``[ssh] agent_relay`` is off, when the session has no ssh-agent
+    (:func:`host_agent`), or when Fork's git runs as native git through the bridge
+    (its Linux ssh reaches the agent itself; :func:`start_daemon` asks only in record
+    mode). Never starts anything.
+    """
+    if not agent_relay_enabled(ctx):
+        return None
+    return host_agent(ctx.env)
+
+
+def _agent_file(paths: Paths) -> Path:
+    """``C:\\fork-linux\\ssh-agent\\agent.sock`` on the Linux side, in a checked 0700 directory of ours.
+
+    A file a previous daemon left behind (it ended without its clean-up) is removed first, so
+    :func:`_relay_up` only ever sees the new daemon's file.
+    """
+    path = _private_dir(paths.fork_linux_win_dir / AGENT_DIR) / AGENT_FILE
+    if os.path.lexists(path):
+        path.unlink()
+    return path
+
+
+def _drop_agent_file(paths: Paths) -> None:
+    """No relay this time: remove a socket file an earlier daemon left behind (never through a link)."""
+    path = paths.fork_linux_win_dir / AGENT_DIR / AGENT_FILE
+    if os.path.lexists(path) and not os.path.islink(path.parent):
+        path.unlink()
+
+
+def _relay_up(socket_file: Path) -> bool:
+    """True when the daemon wrote the msys socket file (it does so before it reports its port)."""
+    try:
+        info = os.lstat(socket_file)
+    except OSError:
+        return False
+    return stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid()
+
+
+_RELAY_OFF = "ssh-agent relay off: "
+
+
+def relay_failure(logs_dir: Path) -> str | None:
+    """Why the newest daemon log's ssh-agent relay did not start (its ``ssh-agent relay off:`` line), or None."""
+    try:
+        names = sorted(
+            name
+            for name in os.listdir(logs_dir)
+            if name.startswith(LOG_PREFIX) and name.endswith(".log") and not name.startswith(LOG_PREFIX + "calls-")
+        )
+    except OSError:
+        return None
+    if not names:
+        return None
+    try:
+        text = (logs_dir / names[-1]).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    reasons = [line.split(_RELAY_OFF, 1)[1] for line in text.splitlines() if _RELAY_OFF in line]
+    return reasons[-1] if reasons else None
+
+
 def native_git(env: Mapping[str, str]) -> bool:
     """True when the bridge env sends Fork's git calls to native git (not record mode)."""
     return INSTANCE_ENV in env and env.get(MODE_ENV) != MODE_RECORD
@@ -651,7 +776,13 @@ def session_record(daemon: Daemon | None) -> dict[str, Any] | None:
     """What ``session.json`` (0600) keeps so a second launch can reuse the daemon."""
     if daemon is None:
         return None
-    return {"pid": daemon.pid, "port": daemon.port, "env": dict(daemon.env), "handoff": daemon.handoff}
+    return {
+        "pid": daemon.pid,
+        "port": daemon.port,
+        "env": dict(daemon.env),
+        "handoff": daemon.handoff,
+        "agent": daemon.agent,
+    }
 
 
 def daemon_alive(pid: Any, proc_root: Path = _PROC) -> bool:

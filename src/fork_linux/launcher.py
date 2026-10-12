@@ -14,9 +14,11 @@ turns into the Wine process running Fork, and its ``--watch-prefix`` keeps it
 alive while a process carries our prefix and its port, so it outlives Fork's
 self-update restart (spike S9) and stops a few seconds after Fork closes. The
 fast path reuses the running daemon recorded in ``session.json``. Without the
-bridge daemon, and without a systemd user manager, the same helper starts as a
+bridge daemon, and without a systemd user manager or with an ssh-agent to relay
+to Fork's bundled ssh (``[ssh] agent_relay``), the same helper starts as a
 hand-off-only daemon (:func:`bridge.start_handoff`) so that the terminals and
-applications Fork asks for start outside Wine's process tree.
+applications Fork asks for start outside Wine's process tree and Fork's ssh can
+use the agent.
 
 Wine's own output goes to ``<logs>/wine-last.log`` (or, with ``--debug``, a
 new ``wine-<UTC time>.log``; the newest :data:`DEBUG_LOGS_KEEP` are kept).
@@ -830,9 +832,10 @@ def run(
     window); 3. make sure setup is complete (``no_setup``:
     :class:`NotSetUpError` instead of running it); 4. start the git bridge
     daemon when it is on (Fork not running yet), else the hand-off-only daemon
-    when the desktop hand-off needs one (:func:`bridge.start_handoff`); 5. pre-launch hooks unless
-    ``no_hooks``; 6. record the session, send Wine's output to the log and
-    exec. When anything fails before the exec the daemon is stopped again.
+    when the desktop hand-off or the ssh-agent relay needs one
+    (:func:`bridge.start_handoff`); 5. pre-launch hooks unless ``no_hooks``;
+    6. record the session, send Wine's output to the log and exec. When anything
+    fails before the exec the daemon is stopped again.
     ``restart`` first ends a running Fork (:func:`stop_running_fork`).
     """
     targets = resolve_targets(raw_targets, Path(os.getcwd()), from_file_manager=from_file_manager)
@@ -849,7 +852,7 @@ def run(
     daemon = None if running else bridge.start_daemon(ctx, debug=debug)
     if daemon is None and not running:
         # No git bridge daemon (which would take the hand-offs): a hand-off-only one when the
-        # desktop hand-off has no other way out of Wine's process tree.
+        # desktop hand-off has no other way out of Wine's process tree or the ssh-agent relay needs it.
         daemon = bridge.start_handoff(ctx)
     try:
         if not no_hooks and not running:

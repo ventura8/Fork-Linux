@@ -12,10 +12,11 @@ removed from ``~/.ssh`` disappears from the prefix too, and a key the user
 created inside Wine is never overwritten.
 
 Keys protected by a passphrase are shared too. Under the pinned Wine, Fork's bundled
-(msys) ssh asks for the passphrase in Fork's own prompt at every fetch and push, but it
-cannot reach the Linux ssh-agent (a Unix socket). :func:`needs_passphrase` finds such
-keys, so ``ssh sync`` and ``doctor`` can point at the git bridge, whose Linux ssh uses
-the agent.
+(msys) ssh asks for the passphrase in Fork's own prompt at every fetch and push unless the
+key is loaded in the user's ssh-agent, which it reaches through the launcher's ssh-agent
+relay (``[ssh] agent_relay``, :mod:`fork_linux.bridge`). :func:`needs_passphrase` finds
+such keys, so ``ssh sync`` and ``doctor`` can point at ``ssh-add`` (and the git bridge,
+whose Linux ssh uses the agent too).
 """
 
 from __future__ import annotations
@@ -57,13 +58,16 @@ OPENSSH_MAGIC = b"openssh-key-v1\0"
 PEM_ENCRYPTED = ("Proc-Type: 4,ENCRYPTED", "-----BEGIN ENCRYPTED PRIVATE KEY-----")
 MAX_KEY_BYTES = 64 * 1024
 NOT_KEYS = frozenset({"known_hosts", "config"})
-PASSPHRASE_PROBLEM = "Fork's bundled ssh asks for it at every fetch and push; it cannot use ssh-agent under Wine"
-PASSPHRASE_HINT = "the git bridge ('fork-linux git-bridge enable') runs Linux ssh instead, which uses your ssh-agent"
+PASSPHRASE_PROBLEM = "Fork's bundled ssh asks for it at every fetch and push unless the key is in your ssh-agent"
+PASSPHRASE_HINT = (
+    "add it to your ssh-agent ('ssh-add'): fork-linux relays the agent to Fork's bundled ssh "
+    "([ssh] agent_relay = on); the git bridge ('fork-linux git-bridge enable') runs Linux ssh, which uses it too"
+)
 
 _NO_SOCKETS = "connection sharing needs Unix sockets that Wine's ssh cannot use"
 # Directives commented out, with the reason shown in the generated file.
 DROPPED = {
-    "identityagent": "the agent socket of the Linux session is not reachable from Wine",
+    "identityagent": "it names a Linux socket; Fork's ssh reaches $SSH_AUTH_SOCK's agent through fork-linux's relay",
     "usekeychain": "macOS only",
     "controlmaster": _NO_SOCKETS,
     "controlpath": _NO_SOCKETS,
