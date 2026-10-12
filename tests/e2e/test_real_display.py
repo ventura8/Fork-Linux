@@ -76,6 +76,28 @@ def test_dpi_scales_fork_once(closed: Any, dpi: int) -> None:
         e2e.cli(*e2e.setup_args())
 
 
+def test_a_layout_scaling_the_user_picked_is_kept(closed: Any) -> None:
+    """A ``LayoutScaling`` the user chose in Fork stays, even when it equals the desktop's scale: setup
+    after a ``[display] dpi`` change and the next launch leave it alone (Wine's DPI does the scaling).
+
+    Scenarios: I-SCALE-USER-KEPT
+    """
+    e2e = closed
+    e2e.cli("settings", "set", "LayoutScaling", "125")
+    e2e.cli("config", "set", "display.dpi", "120")
+    try:
+        e2e.cli(*e2e.setup_args())
+        assert e2e.fork.settings()["LayoutScaling"] == 125, "setup changed the user's LayoutScaling"
+        e2e.fork.start(_repo(e2e, "user-scale"))
+        e2e.fork.ensure_closed()
+        assert e2e.fork.settings()["LayoutScaling"] == 125, "a launch changed the user's LayoutScaling"
+    finally:
+        e2e.fork.ensure_closed()
+        e2e.cli("settings", "set", "LayoutScaling", "100")
+        e2e.cli("config", "unset", "display.dpi")
+        e2e.cli(*e2e.setup_args())
+
+
 def _mono_font() -> str:
     """The font file (lower-case name) of the family setup maps Consolas to: the first of the
     ``font_replacements`` step's monospace choices that fontconfig knows (Noto Sans Mono in the image)."""

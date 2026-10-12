@@ -17,7 +17,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | Setup | 28 | 28 | 0 |
 | Launch | 17 | 16 | 0 |
 | Git operations through Fork's UI | 65 | 65 | 0 |
-| OS integration | 28 | 27 | 0 |
+| OS integration | 29 | 28 | 0 |
 | Native-git bridge | 9 | 9 | 0 |
 | Doctor and repository fixes | 16 | 15 | 0 |
 | Uninstall | 8 | 8 | 0 |
@@ -26,7 +26,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | Fork for Linux upgrades | 13 | 2 | 0 |
 | Desktop environments | 136 | 0 | 0 |
 | Non-Latin font fallback | 1 | 0 | 0 |
-| **Total** | 341 | 177 | 0 |
+| **Total** | 342 | 178 | 0 |
 
 ## Setup
 
@@ -41,7 +41,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | S-OFFLINE-CACHE | --offline setup rebuilds a prefix from the download caches alone | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_reset_rebuilds_offline_and_resumes_after_an_interrupted_dotnet` |
 | S-OFFLINE-MISSING | --offline with an empty cache fails (exit 12) and names the missing download | real-fork | this repository | `tests/e2e/test_real_setup_errors.py::test_offline_with_an_empty_cache_names_the_file` |
 | S-INTEGRITY | A download whose sha256 does not match the manifest is deleted and nothing is installed (exit 13); the next run verifies it | real-fork | this repository | `tests/e2e/test_real_setup_errors.py::test_a_download_with_the_wrong_checksum_is_deleted` |
-| S-RESET | --reset warns about license activations, keeps the prefix on no, rebuilds it on yes | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_reset_answered_no_keeps_the_prefix`<br>`tests/e2e/test_real_setup_variants.py::test_reset_rebuilds_offline_and_resumes_after_an_interrupted_dotnet` |
+| S-RESET | --reset warns about license activations, keeps the prefix on no, rebuilds it on yes ending only Wine's processes (a shell or program started with our WINEPREFIX keeps running) | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_reset_answered_no_keeps_the_prefix`<br>`tests/e2e/test_real_setup_variants.py::test_reset_rebuilds_offline_and_resumes_after_an_interrupted_dotnet` |
 | S-WINE-SYSTEM | --wine system: the Wine found on PATH runs Fork | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_system_wine_provider` |
 | S-WINE-FLATPAK | --wine flatpak outside the Flatpak build is refused with a clear message — the provider itself needs the org.winehq.Wine BaseApp inside the Flatpak; its detection is unit-tested | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_flatpak_provider_outside_the_flatpak_is_refused` |
 | S-WINE-CUSTOM | --wine /path/to/wine (a custom Wine) runs Fork; --wine managed goes back | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_custom_wine_path_and_back` |
@@ -183,6 +183,7 @@ Fork under Wine, `scripts/e2e-docker.sh pytest tests/e2e`, CI `scripts/ci-e2e-wi
 | I-HIDPI-96 | 96 DPI: Fork scaled 1x, once | real-fork | this repository | `tests/e2e/test_real_display.py::test_dpi_scales_fork_once[96]` |
 | I-HIDPI-144 | 144 DPI: Fork scaled 1.5x, once | real-fork | this repository | `tests/e2e/test_real_display.py::test_dpi_scales_fork_once[144]` |
 | I-HIDPI-192 | 192 DPI: Fork scaled 2x, once | real-fork | this repository | `tests/e2e/test_real_display.py::test_dpi_scales_fork_once[192]` |
+| I-SCALE-USER-KEPT | A LayoutScaling the user picked in Fork is kept by setup and every launch, even when it equals the desktop's scale | real-fork | this repository | `tests/e2e/test_real_display.py::test_a_layout_scaling_the_user_picked_is_kept` |
 | I-FONT-SELAWIK | Fork's interface font is Selawik | real-fork | this repository | `tests/e2e/test_real_display.py::test_interface_text_is_drawn_in_selawik` |
 | I-HANDOFF-DAEMON | Without a systemd user session, the terminal and apps Fork opens start outside Wine's process tree through the launcher's hand-off daemon (FL_REQ_HANDOFF), never inheriting Wine's NoNewPrivs and seccomp filter | de | `fix/de-e2e` | `tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal` |
 

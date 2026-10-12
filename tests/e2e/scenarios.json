@@ -120,7 +120,7 @@
   {
     "id": "S-RESET",
     "area": "setup",
-    "title": "--reset warns about license activations, keeps the prefix on no, rebuilds it on yes",
+    "title": "--reset warns about license activations, keeps the prefix on no, rebuilds it on yes ending only Wine's processes (a shell or program started with our WINEPREFIX keeps running)",
     "tiers": [
       "real-fork"
     ],
@@ -1792,6 +1792,19 @@
     "pending_merge": false,
     "tests": [
       "tests/e2e/test_real_display.py::test_dpi_scales_fork_once[192]"
+    ]
+  },
+  {
+    "id": "I-SCALE-USER-KEPT",
+    "area": "integration",
+    "title": "A LayoutScaling the user picked in Fork is kept by setup and every launch, even when it equals the desktop's scale",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_display.py::test_a_layout_scaling_the_user_picked_is_kept"
     ]
   },
   {

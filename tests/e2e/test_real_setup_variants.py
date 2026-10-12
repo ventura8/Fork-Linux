@@ -161,12 +161,19 @@ def _setup_steps_running(e2e: Any) -> set[str]:
 
 
 def test_reset_rebuilds_offline_and_resumes_after_an_interrupted_dotnet(closed: Any) -> None:
-    """``--offline setup --reset`` rebuilds the prefix from the cache alone; interrupted in the .NET
-    step, the next run resumes there instead of starting over.
+    """``--offline setup --reset`` rebuilds the prefix from the cache alone, ending only Wine's processes
+    (a shell or program started with our ``WINEPREFIX`` keeps running); interrupted in the .NET step,
+    the next run resumes there instead of starting over.
 
     Scenarios: S-RESET, S-OFFLINE-CACHE, S-RESUME-DOTNET
     """
     e2e = closed
+    # A shell and a program the user started with our WINEPREFIX exported are not Wine's: the reset
+    # must not end them (only Wine's processes and winetricks are stopped before the prefix goes).
+    bystanders = [
+        subprocess.Popen(argv, env={**e2e.env, "WINEPREFIX": str(e2e.prefix)}, start_new_session=True)
+        for argv in (["bash", "-c", "sleep 3600"], ["sleep", "3600"])
+    ]
     terminal = _Terminal(e2e, ("--offline", "setup", "--reset", "--accept-fork-eula", "--no-gui",
                                "--fork-version", fork_version()))
     terminal.wait_for(b"[y/N]")
@@ -179,6 +186,12 @@ def test_reset_rebuilds_offline_and_resumes_after_an_interrupted_dotnet(closed: 
     assert terminal.process.returncode != 0, output
     assert "dotnet" not in _setup_steps_running(e2e)
     assert "wine_runtime" in _setup_steps_running(e2e)
+    try:
+        assert [process.poll() for process in bystanders] == [None, None], "the reset ended a non-Wine process"
+    finally:
+        for process in bystanders:
+            process.kill()
+            process.wait(timeout=30)
     resumed = e2e.cli("--offline", *e2e.setup_args(), "--json", timeout=SETUP_TIMEOUT)
     ran = json.loads(resumed.stdout)["ran"]
     assert "dotnet" in ran
