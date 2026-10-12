@@ -47,7 +47,7 @@ def test_winetricks_cache_is_reused_and_left_alone(closed: Any) -> None:
     """Setup reuses the installers of ~/.cache/winetricks (hard links into its own cache) and never changes
     that folder. With a seeded cache (``FL_E2E_WINETRICKS_CACHE``, e2e-docker.sh) the session's setup is
     checked; without one (CI's fresh downloads) the font installers setup downloaded become the user's own
-    winetricks cache and the fonts step runs again.
+    winetricks cache and the ``winver`` step runs winetricks again, which first takes what that cache has.
 
     Scenarios: S-WINETRICKS-CACHE
     """
@@ -67,8 +67,8 @@ def test_winetricks_cache_is_reused_and_left_alone(closed: Any) -> None:
         shutil.copy2(path, legacy / "corefonts" / path.name)
         path.unlink()
     before = _files(legacy)
-    report = json.loads(e2e.cli(*e2e.setup_args(), "--only", "fonts", "--force", "--json").stdout)
-    assert "fonts" in report["ran"]
+    report = json.loads(e2e.cli(*e2e.setup_args(), "--only", "winver", "--force", "--json").stdout)
+    assert "winver" in report["ran"]
     assert _files(legacy) == before, "~/.cache/winetricks was changed"
     for path in installers:
         assert os.path.samefile(path, legacy / "corefonts" / path.name), f"{path.name} was not reused"
