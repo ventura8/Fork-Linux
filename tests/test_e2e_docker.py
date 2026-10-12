@@ -78,7 +78,8 @@ if args[:1] == ["run"]:
     time.sleep(float(os.environ.get("FAKE_RUN_SLEEP", "0")))
     print(outputs.split("|||")[nth] if outputs else os.environ.get("FAKE_RUN_OUTPUT", ""))
     with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as log:
-        log.write(json.dumps({{"tool": "docker-end", "name": args[args.index("--name") + 1], "t": time.time()}}) + "\\n")
+        end = {{"tool": "docker-end", "name": args[args.index("--name") + 1], "t": time.time()}}
+        log.write(json.dumps(end) + "\\n")
     sys.exit(int(rcs.split(",")[nth] if rcs else os.environ.get("FAKE_RUN_RC", "0")))
 sys.exit(0)
 """
@@ -829,7 +830,8 @@ def test_ci_e2e_wine_keeps_a_template_cache_by_key(box: Box) -> None:
     assert len(box.docker_runs()) == 2
     assert _root(box.docker_runs()[0]) == f"{template}:/e2e:rw"
     box.log.unlink()
-    second = box.run("--jobs", "1", shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_TEMPLATE_CACHE=str(cache))
+    second = box.run(
+        "--jobs", "1", shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_TEMPLATE_CACHE=str(cache))
     assert second.returncode == 0, second.stdout + second.stderr
     assert f"reusing the template {template}" in second.stdout
     (run,) = [row for row in box.calls("docker") if row["args"][:1] == ["run"]]
@@ -908,7 +910,10 @@ def test_ci_e2e_wine_shares_the_modules_with_a_remote_machine(box: Box) -> None:
     command = ssh["args"][3]
     assert command.startswith("set -e; cd 'fork-linux-ci'; ")
     assert "git fetch -q /var/tmp/fork-linux-e2e/fl-remote-" in command
-    assert "FL_E2E_FORK_VERSION='2.23.2' ./scripts/ci-e2e-wine.sh --jobs 1 'tests/e2e/test_real_fork.py' '-x'" in command
+    assert (
+        "FL_E2E_FORK_VERSION='2.23.2' ./scripts/ci-e2e-wine.sh --jobs 1 "
+        "'tests/e2e/test_real_fork.py' '-x'"
+    ) in command
     # The longer module stays here (after its template), the other one ends sooner on the remote machine.
     runs = box.docker_runs()
     assert [argv[-1] for argv in runs] == ["test_01_setup_completes_and_resumes", "-x"]
@@ -954,7 +959,9 @@ def test_ci_e2e_wine_remote_ships_only_committed_work(box: Box) -> None:
 def _slots(*call: str, **env: str) -> str:
     script = f'. "{REPO}/scripts/lib-e2e-docker.sh"; {" ".join(call)}'
     environ = {key: value for key, value in os.environ.items() if key != "FL_E2E_SLOTS"} | env
-    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=True, env=environ).stdout.strip()
+    return subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, check=True, env=environ,
+    ).stdout.strip()
 
 
 @pytest.mark.parametrize(("cores", "mem_kb", "slots"), [
