@@ -5,6 +5,9 @@
 
 %global fl_version %{?fl_version}%{!?fl_version:0.0.0}
 %global app_id io.github.ventura8.ForkLinux
+# openSUSE's find-debuginfo collects none of the bridge helper's sources (debugsourcefiles.list
+# stays empty and rpmbuild warns), so no empty debugsource package; debuginfo stays.
+%undefine _debugsource_packages
 
 Name:           fork-linux
 Version:        %{fl_version}

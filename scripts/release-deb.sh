@@ -32,8 +32,28 @@ if [[ -n "${codename}" ]]; then
 	sed -i "1s/) [a-z]*;/) ${codename};/" "${WORK}/fork-linux-${VERSION}/debian/changelog"
 fi
 
-echo "==> dpkg-buildpackage (source + binary, unsigned) in ${WORK}"
-(cd "${WORK}/fork-linux-${VERSION}" && dpkg-buildpackage -us -uc)
+# lintian_policy: the newest Debian Policy this release's lintian knows (empty when unknown).
+lintian_policy() {
+	python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["releases"][0]["version"])' \
+		/usr/share/lintian/data/debian-policy/releases.json 2>/dev/null || true
+	return 0
+}
+
+# A release whose lintian knows only an older Debian Policy than debian/control declares
+# (jammy: 4.6.0.1) gets that one as Standards-Version in its private copy, as a backport to it
+# would declare; lintian would otherwise warn newer-standards-version.
+policy="$(lintian_policy)"
+declared="$(sed -n 's/^Standards-Version: *//p' debian/control)"
+if [[ -n "${policy}" ]] && dpkg --compare-versions "${declared}" gt "${policy}"; then
+	echo "==> Standards-Version ${declared} -> ${policy} (the newest policy this release's lintian knows)"
+	sed -i "s/^Standards-Version: .*/Standards-Version: ${policy}/" "${WORK}/fork-linux-${VERSION}/debian/control"
+fi
+
+# Only the .deb is collected (fl_collect_artifacts_glob below), never a -dbgsym package, so none
+# is built: jammy's lintian also misreads a PIE's debug file ("elf-error ... program interpreter").
+echo "==> dpkg-buildpackage (source + binary, unsigned, no dbgsym) in ${WORK}"
+(cd "${WORK}/fork-linux-${VERSION}" &&
+	DEB_BUILD_OPTIONS="${DEB_BUILD_OPTIONS:+${DEB_BUILD_OPTIONS} }noautodbgsym" dpkg-buildpackage -us -uc)
 
 echo "==> lintian (any E: tag fails the build; no overrides)"
 chmod -R a+rX "${WORK}"
