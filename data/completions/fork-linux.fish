@@ -141,7 +141,7 @@ complete -c fork-linux -n '__fish_seen_subcommand_from config; and not __fish_se
 complete -c fork-linux -n '__fish_seen_subcommand_from config; and not __fish_seen_subcommand_from get set unset list path edit' -a path -d 'print the location of config.ini'
 complete -c fork-linux -n '__fish_seen_subcommand_from config; and not __fish_seen_subcommand_from get set unset list path edit' -a edit -d 'open config.ini in your editor ($VISUAL, $EDITOR)'
 
-# fork [OPTIONS] [PATH...] / fork open PATH...: fork-linux's global options, then paths.
+# fork [OPTIONS] [PATH...] / fork open PATH...: fork-linux's global options and run's, then paths.
 complete -c fork -F
 complete -c fork -n '__fish_use_subcommand' -a open -d 'open repositories in Fork'
 complete -c fork -s h -l help -d 'show help and exit'
@@ -152,3 +152,11 @@ complete -c fork -l offline -d 'never use the network'
 complete -c fork -s v -l verbose -d 'more output (repeat for debug output)'
 complete -c fork -s q -l quiet -d 'less output'
 complete -c fork -l allow-root -d 'allow running as root (containers and CI only; or FORK_LINUX_ALLOW_ROOT=1)'
+complete -c fork -l debug -d 'log Wine errors and fixmes to a new wine-<time>.log (with -v: show them on the terminal)'
+complete -c fork -l wine-debug -r -d 'WINEDEBUG channels for this launch'
+complete -c fork -l x11 -d 'use Wine\'s X11 driver (XWayland)'
+complete -c fork -l wayland -d 'use Wine\'s experimental Wayland driver'
+complete -c fork -l no-setup -d 'fail (exit 10) instead of running pending setup steps'
+complete -c fork -l no-hooks -d 'skip the pre-launch snapshot, settings and ssh/git sync'
+complete -c fork -l restart -d 'end the running Fork first (when it shows no window or stopped responding)'
+complete -c fork -l from-file-manager -d 'a file opens the repository that contains it (used by file manager actions)'

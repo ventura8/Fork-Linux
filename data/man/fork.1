@@ -9,7 +9,7 @@ fork \- open repositories in Fork for Linux (unofficial)
 .br
 \fBfork\fR \fB\-\-help\fR | \fB\-\-version\fR
 .SH DESCRIPTION
-Open each PATH (a repository, or a file or folder inside one) in Fork. With no PATH, start Fork. This is a shortcut for 'fork\-linux run'; the first run sets everything up. Use \-\- before paths that start with '\-'.
+Open each PATH (a repository, or a file or folder inside one) in Fork. With no PATH, start Fork. This is a shortcut for 'fork\-linux run' and takes its options; the first run sets everything up. Use \-\- before paths that start with '\-'.
 .SH OPTIONS
 .TP
 \fB\-h\fR, \fB\-\-help\fR
@@ -35,6 +35,30 @@ less output
 .TP
 \fB\-\-allow\-root\fR
 allow running as root (containers and CI only; or FORK_LINUX_ALLOW_ROOT=1)
+.TP
+\fB\-\-debug\fR
+log Wine errors and fixmes to a new wine\-<time>.log (with \-v: show them on the terminal)
+.TP
+\fB\-\-wine\-debug\fR \fICHANNELS\fR
+WINEDEBUG channels for this launch
+.TP
+\fB\-\-x11\fR
+use Wine's X11 driver (XWayland)
+.TP
+\fB\-\-wayland\fR
+use Wine's experimental Wayland driver
+.TP
+\fB\-\-no\-setup\fR
+fail (exit 10) instead of running pending setup steps
+.TP
+\fB\-\-no\-hooks\fR
+skip the pre\-launch snapshot, settings and ssh/git sync
+.TP
+\fB\-\-restart\fR
+end the running Fork first (when it shows no window or stopped responding)
+.TP
+\fB\-\-from\-file\-manager\fR
+a file opens the repository that contains it (used by file manager actions)
 .SH EXIT STATUS
 The exit status of fork\-linux run; see fork\-linux(1).
 .SH CREDITS AND DISCLAIMER

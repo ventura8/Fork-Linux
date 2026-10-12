@@ -52,8 +52,10 @@ def test_credits_and_disclaimer(page: str) -> None:
 
 def test_fork_page_lists_the_shortcut_options() -> None:
     text = _plain(PAGES["fork"].read_text(encoding="utf-8"))
-    for flag in ("--prefix", "--offline", "--allow-root", "--help", "--version"):
+    for flag in ("--prefix", "--offline", "--allow-root", "--help", "--version", "--restart", "--wine-debug"):
         assert flag in text
+    for option in gen.fork_options(TREE):
+        assert all(flag in text for flag in option.flags), option.flags
     assert "--json" not in text
 
 

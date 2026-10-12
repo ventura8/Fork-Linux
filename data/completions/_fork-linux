@@ -214,7 +214,7 @@ _fork_linux_fork() {
   if [[ ${words[CURRENT-1]} == --prefix ]]; then
     _files -/
   elif [[ ${words[CURRENT]} == -* ]]; then
-    compadd -- -h --help -V --version --prefix --gui --no-gui --offline -v --verbose -q --quiet --allow-root
+    compadd -- -h --help -V --version --prefix --gui --no-gui --offline -v --verbose -q --quiet --allow-root --debug --wine-debug --x11 --wayland --no-setup --no-hooks --restart --from-file-manager
   else
     (( CURRENT == 2 )) && compadd -- open
     _files

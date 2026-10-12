@@ -41,6 +41,8 @@ def delegated(monkeypatch: pytest.MonkeyPatch) -> list[tuple[list[str], str | No
         (["-"], ["run", "--", "-"]),
         (["open", "--gui", "--", "open"], ["run", "--gui", "--", "open"]),
         (["./open"], ["run", "--", "./open"]),
+        (["--restart", "--wine-debug", "+relay", "repo"], ["run", "--restart", "--wine-debug", "+relay", "--", "repo"]),
+        (["open", "--wine-debug=-all", "--x11", "a"], ["run", "--wine-debug=-all", "--x11", "--", "a"]),
     ],
 )
 def test_delegates_to_run(
@@ -96,3 +98,20 @@ def test_without_a_run_command_the_real_cli_reports_usage(
     monkeypatch.setattr(commands, "COMMANDS", [name for name in commands.COMMANDS if name != "run"])
     assert fork_cli.main(["."]) == 2
     assert "run" in capsys.readouterr().err
+
+
+def _run_parser_options() -> list[tuple[list[str], bool]]:
+    """``(spellings, takes a value)`` of every option ``fork-linux run`` accepts (globals included)."""
+    parser = cli.build_parser()
+    subparsers = next(action for action in parser._actions if action.choices and "run" in action.choices)
+    run = subparsers.choices["run"]
+    return [(list(action.option_strings), action.nargs != 0) for action in run._actions if action.option_strings]
+
+
+def test_value_options_and_usage_follow_the_run_parser() -> None:
+    """fork forwards run's options: each one taking a value is known, and --help names every one."""
+    for flags, takes_value in _run_parser_options():
+        if takes_value:
+            assert set(flags) <= fork_cli._VALUE_OPTIONS, flags
+        if "--json" not in flags and "--help" not in flags:
+            assert any(flag in fork_cli.USAGE for flag in flags), flags

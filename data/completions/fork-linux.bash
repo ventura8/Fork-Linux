@@ -641,7 +641,7 @@ _fork_linux_fork() {
 	if [[ "$prev" == "--prefix" ]]; then
 		_fork_linux_dirs
 	elif [[ "$cur" == -* ]]; then
-		_fork_linux_words '-h --help -V --version --prefix --gui --no-gui --offline -v --verbose -q --quiet --allow-root'
+		_fork_linux_words '-h --help -V --version --prefix --gui --no-gui --offline -v --verbose -q --quiet --allow-root --debug --wine-debug --x11 --wayland --no-setup --no-hooks --restart --from-file-manager'
 	else
 		if ((COMP_CWORD == 1)); then
 			_fork_linux_words 'open'

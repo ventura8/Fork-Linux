@@ -2,8 +2,8 @@
 
 ``fork`` is a symlink to the ``fork-linux`` launcher; :func:`fork_linux.cli.main`
 recognises the program name and calls :func:`main`, which forwards to
-``fork-linux run``. Global options (``--prefix PATH``, ``--gui``/``--no-gui``,
-``--offline``, ``-v``, ``-q``, ``--allow-root``) may appear anywhere before
+``fork-linux run``. Options (the global ones and run's: ``--prefix PATH``,
+``--wine-debug CHANNELS``, ``--restart``, ...) may appear anywhere before
 ``--``; everything else is a path.
 """
 
@@ -16,7 +16,8 @@ from . import cli, credits
 from .errors import ExitCode
 
 OPEN = "open"
-_VALUE_OPTIONS = frozenset({"--prefix"})
+# Options whose value is the next argument (global and run options; tests/test_fork_cli.py keeps it in step).
+_VALUE_OPTIONS = frozenset({"--prefix", "--wine-debug"})
 
 USAGE = f"""\
 usage: fork [OPTIONS] [PATH...]
@@ -26,9 +27,11 @@ usage: fork [OPTIONS] [PATH...]
 Open each PATH (a repository, or a file or folder inside one) in Fork.
 With no PATH, start Fork. This is a shortcut for 'fork-linux run'.
 
-OPTIONS are fork-linux's global options: --prefix PATH, --gui, --no-gui,
---offline, -v/--verbose, -q/--quiet, --allow-root. Use -- before paths
-that start with '-'. See 'fork-linux --help' for everything else.
+OPTIONS are fork-linux's global options (--prefix PATH, --gui, --no-gui,
+--offline, -v/--verbose, -q/--quiet, --allow-root) and the options of
+'fork-linux run' (--debug, --wine-debug CHANNELS, --x11, --wayland,
+--no-setup, --no-hooks, --restart, --from-file-manager). Use -- before
+paths that start with '-'. See 'fork-linux --help' for everything else.
 
 {credits.short_footer()}"""
 

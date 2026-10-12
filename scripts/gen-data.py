@@ -195,6 +195,21 @@ def global_flags(tree: Node) -> list[str]:
     return [flag for option in tree.options for flag in option.flags if flag not in {"-h", "--help", "-V", "--version"}]
 
 
+def fork_options(tree: Node) -> list[Option]:
+    """What ``fork [PATH...]`` accepts and forwards to ``run``: the global options (not ``--json``), then run's."""
+    skip = {"--json", "-h", "--help", "-V", "--version"}
+    global_set = set(global_flags(tree)) | skip
+    run = next(node for node in walk(tree) if node.path == ("run",))
+    return [option for option in tree.options if not set(option.flags) & skip] + [
+        option for option in run.options if not set(option.flags) <= global_set
+    ]
+
+
+def fork_flags(tree: Node) -> list[str]:
+    """Every option spelling ``fork`` completes: help, version and :func:`fork_options`."""
+    return ["-h", "--help", "-V", "--version", *[flag for option in fork_options(tree) for flag in option.flags]]
+
+
 # --------------------------------------------------------------------------- desktop / metainfo
 
 
@@ -302,7 +317,7 @@ def render_bash(tree: Node) -> str:
             f"\t\t\t_fl_pos_words='{pos_choices}'\n"
             "\t\t\t;;"
         )
-    fork_opts = _sh_words(["-h", "--help", "-V", "--version", *[f for f in global_flags(tree) if f != "--json"]])
+    fork_opts = _sh_words(fork_flags(tree))
     body = "\n".join(node_cases)
     values = "\n".join(_bash_value_cases(tree))
     return f"""# bash completion for fork-linux and fork -*- shell-script -*-
@@ -469,7 +484,7 @@ def render_zsh(tree: Node) -> str:
         f"    {_zsh_quote(f'{key}|{flag}')}) {_zsh_value_body(option)} ;;"
         for key, option, flag in _value_flags(tree)
     ]
-    fork_opts = _sh_words(["-h", "--help", "-V", "--version", *[f for f in global_flags(tree) if f != "--json"]])
+    fork_opts = _sh_words(fork_flags(tree))
     nodes_body = "\n".join(node_cases)
     values_body = "\n".join(value_cases)
     return f"""#compdef fork-linux fork
@@ -616,18 +631,14 @@ def render_fish(tree: Node) -> str:
     lines.extend(
         [
             "",
-            "# fork [OPTIONS] [PATH...] / fork open PATH...: fork-linux's global options, then paths.",
+            "# fork [OPTIONS] [PATH...] / fork open PATH...: fork-linux's global options and run's, then paths.",
             "complete -c fork -F",
             "complete -c fork -n '__fish_use_subcommand' -a open -d 'open repositories in Fork'",
             "complete -c fork -s h -l help -d 'show help and exit'",
             "complete -c fork -s V -l version -d 'show the version and exit'",
         ]
     )
-    lines.extend(
-        _fish_option("fork", "", option)
-        for option in tree.options
-        if not set(option.flags) & {"--json", "-h", "--help", "-V", "--version"}
-    )
+    lines.extend(_fish_option("fork", "", option) for option in fork_options(tree))
     return "\n".join(lines) + "\n"
 
 
@@ -809,8 +820,8 @@ def render_man_fork(tree: Node) -> str:
         ".SH DESCRIPTION",
         roff(
             "Open each PATH (a repository, or a file or folder inside one) in Fork. With no PATH, "
-            "start Fork. This is a shortcut for 'fork-linux run'; the first run sets everything up. "
-            "Use -- before paths that start with '-'."
+            "start Fork. This is a shortcut for 'fork-linux run' and takes its options; the first run sets "
+            "everything up. Use -- before paths that start with '-'."
         ),
         ".SH OPTIONS",
         ".TP",
@@ -820,9 +831,7 @@ def render_man_fork(tree: Node) -> str:
         "\\fB\\-V\\fR, \\fB\\-\\-version\\fR",
         roff("Show the version and exit."),
     ]
-    for option in tree.options:
-        if set(option.flags) & {"--json", "-h", "--help", "-V", "--version"}:
-            continue
+    for option in fork_options(tree):
         lines += [".TP", _option_label(option), roff(option.help or "")]
     lines += [
         ".SH EXIT STATUS",

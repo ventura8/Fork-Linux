@@ -104,16 +104,17 @@ Downloads are cached in `~/.cache/fork-linux/` (winetricks' .NET and font downlo
 | Command | Purpose |
 |---|---|
 | `setup [--fork-version V \| --latest] [--allow-untested] [--wine managed\|system\|flatpak\|PATH] [--dotnet auto\|dotnet48\|dotnet472] [--accept-fork-eula] [--only STEP \| --from-step STEP] [--force] [--reset] [--no-launch] [--list-steps]` | Idempotent, resumable bootstrap |
-| `run [PATH …]`, `open PATH …`, `fork [PATH]` (`[--debug] [--wine-debug CHANNELS] [--x11 \| --wayland] [--no-setup] [--no-hooks] [--restart]`) | Launch Fork or open repositories |
+| `run [PATH …]`, `open PATH …`, `fork [PATH]` (`[--debug] [--wine-debug CHANNELS] [--x11 \| --wayland] [--no-setup] [--no-hooks] [--restart] [--from-file-manager]`) | Launch Fork or open repositories; `fork` takes the global options and these |
 | `update [--check \| --fork \| --wine] [--fork-version V \| --latest] [--allow-untested]` | Check for and apply Fork / Wine runtime updates |
 | `snapshot create [--reason R] \| list \| delete ID \| prune` | Manage snapshots of Fork's install |
 | `rollback [ID \| --to-version V] [--with-settings] [--no-pin]` | Restore a snapshot and pin that version |
-| `doctor [--fix] [--deep] [--network] [--check ID …]` | 47 health checks with fix hints |
+| `doctor [--fix] [--deep] [--network] [--check ID …]` | 50 health checks with fix hints |
 | `config get \| set \| unset \| list \| path \| edit` | Fork for Linux settings (`~/.config/fork-linux/config.ini`) |
-| `settings show \| get \| set \| unset \| apply-defaults \| backup \| restore [FILE] \| path` | Fork's own `settings.json` (edited only while Fork is closed) |
+| `settings show \| get KEY \| set [--string] KEY VALUE \| unset KEY \| apply-defaults \| backup \| restore [FILE] \| path` | Fork's own `settings.json` (edited only while Fork is closed) |
 | `desktop install [--file-managers LIST] [--no-menu] [--no-icons] [--cli-alias] \| remove \| status` | Menu entry, icon, file-manager actions |
 | `ssh sync [--dry-run] [--mode link\|copy] [--no-config] \| status` | Share your SSH keys and config with Fork |
-| `git-bridge enable \| disable \| status \| record on\|off` | Experimental native-git bridge (opt-in; `record` forwards to bundled git for debugging) |
+| `git-bridge enable [--build] \| disable \| status \| record on\|off` | Experimental native-git bridge (opt-in; `--build` builds the shims in a source checkout; `record` forwards to bundled git for debugging) |
+| `repo check [PATH …] \| fix [--yes] [--no-filemode] [--no-symlinks] PATH … \| undo PATH …` | Check a repository's settings for Fork under Wine, fix them on request, and undo exactly that fix |
 | `logs [--wine \| --fork \| --velopack \| --setup \| --all] [--follow \| --path \| --bundle]` | Show logs or create a redacted bug-report bundle |
 | `uninstall [--purge] [--keep-downloads] [--yes]` | Remove integrations; `--purge` also removes the prefix (with every other prefix in `~/.local/share/fork-linux/`), runtimes and caches (`--keep-downloads` keeps the downloaded Wine, Fork, .NET and fonts) |
 | `about` / `credits`, `version`, `status` | Credits, version, setup and Fork status |
