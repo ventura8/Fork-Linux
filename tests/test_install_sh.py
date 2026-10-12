@@ -432,6 +432,46 @@ def test_a14_failed_upgrade_keeps_the_previous_install(tmp_path: Path, home: Pat
     assert not list(dest.parent.glob("fork-linux.*"))
 
 
+def test_a14_upgrade_interrupted_after_the_swap_keeps_the_commands(tmp_path: Path, home: Path) -> None:
+    """An upgrade that dies while re-linking (here: ``ln`` fails) leaves ``fork-linux`` on PATH,
+    already starting the new tree, and the next install finishes the job."""
+    _skip_if_root()
+    quiet = ("--no-deps", "--no-desktop", "--from-tarball")
+    assert _run(INSTALL, home, *quiet, str(_local_tarball(tmp_path / "a", "9.8.6"))).returncode == 0
+    dest = home / ".local" / "opt" / "fork-linux"
+    command = home / ".local" / "bin" / "fork-linux"
+    fake_bin = tmp_path / "fake-bin"
+    _fake_tools(fake_bin, {"ln": "exit 1"})
+    failed = _run(INSTALL, home, *quiet, str(_local_tarball(tmp_path / "b", VERSION)),
+                  PATH=f"{fake_bin}:{_env(home)['PATH']}")
+    assert failed.returncode != 0
+    assert os.readlink(command) == str(dest / "bin" / "fork-linux")
+    version = subprocess.run([sys.executable, str(command), "--version"], capture_output=True, text=True,
+                             check=True, env=_env(home))
+    assert version.stdout.strip() == f"fork-linux {VERSION} (tarball)"
+    fixed = _run(INSTALL, home, *quiet, str(_local_tarball(tmp_path / "c", VERSION)))
+    assert fixed.returncode == 0, fixed.stderr
+    assert os.readlink(command) == str(dest / "bin" / "fork-linux")
+    assert not list(dest.parent.glob("fork-linux.*"))
+    assert not list(command.parent.glob("*.fl-new"))
+
+
+def test_a1_upgrade_drops_only_the_links_the_new_release_does_not_make(tmp_path: Path, home: Path) -> None:
+    _skip_if_root()
+    quiet = ("--no-deps", "--no-desktop", "--from-tarball")
+    assert _run(INSTALL, home, *quiet, str(_local_tarball(tmp_path / "a", "9.8.6"))).returncode == 0
+    dest = home / ".local" / "opt" / "fork-linux"
+    stale = home / ".local" / "bin" / "fork-old-alias"
+    stale.symlink_to(dest / "bin" / "fork-linux")
+    with (dest / "install-manifest.txt").open("a", encoding="utf-8") as manifest:
+        manifest.write(f"link\t{stale}\t{dest / 'bin' / 'fork-linux'}\n")
+    upgraded = _run(INSTALL, home, *quiet, str(_local_tarball(tmp_path / "b", VERSION)))
+    assert upgraded.returncode == 0, upgraded.stderr
+    assert not stale.is_symlink()
+    assert (home / ".local" / "bin" / "fork-linux").is_symlink()
+    assert (home / ".local" / "bin" / "fork").is_symlink()
+
+
 @pytest.mark.parametrize("leftover", ["fork-linux.new", "fork-linux.old"])
 def test_a14_refuses_a_staging_path_that_is_not_ours(tmp_path: Path, home: Path, leftover: str) -> None:
     _skip_if_root()

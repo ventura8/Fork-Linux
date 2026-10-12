@@ -192,7 +192,10 @@ EOF
 		die "${dest} exists but was not created by install.sh; move it away first"
 	fi
 	# The new tree is staged next to the old one and swapped in only once it is complete, so an
-	# interrupted upgrade (killed, disk full) leaves the previous install working.
+	# upgrade interrupted while copying (killed, disk full) leaves the previous install working.
+	# After the swap the old links already reach the new tree (they name ${dest}): each is replaced
+	# atomically, so `fork-linux` and `fork` never disappear from PATH, and only the old links the
+	# new release does not make again are removed. The retired tree is deleted last.
 	local staged="${dest}.new" retired="${dest}.old"
 	fl_clear_ours "${staged}" "${MARKER_NAME}"
 	fl_clear_ours "${retired}" "${MARKER_NAME}"
@@ -209,16 +212,20 @@ EOF
 		printf '%s\n' "${version}" >"${staged}/${MARKER_NAME}"
 	fi
 	run cp -a "${tree}/." "${staged}/"
+	local old_manifest=""
 	if [[ -f "${dest}/${MANIFEST_NAME}" ]]; then
 		say "upgrading the existing install in ${dest}"
-		fl_remove_manifest_files "${dest}/${MANIFEST_NAME}"
+		old_manifest="${dest}/${MANIFEST_NAME}"
 	fi
 	if [[ -e "${dest}" ]]; then
 		run mv "${dest}" "${retired}"
+		if [[ -n "${old_manifest}" ]] && ((!opt_dry)); then
+			old_manifest="${retired}/${MANIFEST_NAME}"
+		fi
 	fi
 	run mv "${staged}" "${dest}"
-	if [[ -e "${retired}" ]]; then
-		run rm -rf "${retired:?}"
+	if [[ -n "${old_manifest}" ]]; then
+		fl_remove_manifest_files "${old_manifest}" file
 	fi
 
 	local name
@@ -255,6 +262,12 @@ EOF
 	fi
 	if ((!opt_dry)); then
 		install -m 0644 "${manifest}" "${dest}/${MANIFEST_NAME}"
+	fi
+	if [[ -n "${old_manifest}" ]]; then
+		fl_remove_manifest_files "${old_manifest}" link "${manifest}"
+	fi
+	if [[ -e "${retired}" ]]; then
+		run rm -rf "${retired:?}"
 	fi
 
 	say "installed: $("${python}" -I "${dest}/bin/fork-linux" --version 2>/dev/null || echo "fork-linux ${version}")"
@@ -523,10 +536,12 @@ fl_link() {
 			warn "leaving ${link} alone: it is not a link install.sh made"
 			return 0
 		fi
-		run rm -f "${link}"
 	fi
 	run mkdir -p "$(dirname "${link}")"
-	run ln -s "${target}" "${link}"
+	# A new link next to it, renamed over the old one: the path never goes missing.
+	run rm -f "${link}.fl-new"
+	run ln -s "${target}" "${link}.fl-new"
+	run mv -Tf "${link}.fl-new" "${link}"
 	fl_record "${manifest}" link "${link}" "${target}"
 }
 
@@ -563,11 +578,16 @@ fl_clear_ours() {
 	fi
 }
 
-# fl_remove_manifest_files MANIFEST: remove what an earlier manifest recorded: links that still
-# point where we left them and files whose content is unchanged; anything else is reported and kept.
+# fl_remove_manifest_files MANIFEST KIND [KEEP]: remove the KIND entries (link or file) an earlier
+# manifest recorded: links that still point where we left them and files whose content is unchanged;
+# anything else is reported and kept. Paths the manifest KEEP records again are left alone.
 fl_remove_manifest_files() {
-	local manifest="$1" kind path extra
+	local manifest="$1" only="$2" keep="${3:-}" kind path extra
 	while IFS=$'\t' read -r kind path extra; do
+		[[ "${kind}" == "${only}" ]] || continue
+		if [[ -n "${keep}" && -f "${keep}" ]] && awk -F '\t' -v p="${path}" '$2 == p {found=1} END {exit !found}' "${keep}"; then
+			continue
+		fi
 		case "${kind}" in
 			link)
 				if [[ -L "${path}" && "$(readlink "${path}")" == "${extra}" ]]; then
