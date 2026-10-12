@@ -512,6 +512,23 @@ def _restore_data(paths: Paths, layout: ForkLayout, directory: Path, sizes: dict
         )
 
 
+def _copy_new(source: Path, target: Path) -> None:
+    """Copy ``source`` with its mode and times into a new file ``target``; neither path is followed if a link.
+
+    ``target`` lies in Fork's ``packages\\``, which any Windows program in the prefix can write
+    through ``Z:``: a link planted there would redirect the write outside the prefix, so the
+    file is created exclusively (``O_EXCL | O_NOFOLLOW``) after a leftover is removed.
+    """
+    if os.path.lexists(target):
+        target.unlink()
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
+    with open(os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC), "rb") as src, open(
+        os.open(target, flags, 0o600), "wb"
+    ) as dst:
+        shutil.copyfileobj(src, dst)
+    shutil.copystat(source, target, follow_symlinks=False)
+
+
 def _restore_package(layout: ForkLayout, directory: Path, sizes: dict[str, int], version: str) -> None:
     """Put the snapshot's full package of ``version`` back into ``packages\\`` when it is missing there."""
     target = layout.full_package(version)
@@ -520,7 +537,7 @@ def _restore_package(layout: ForkLayout, directory: Path, sizes: dict[str, int],
         return
     partial = target.with_name(f".{target.name}.fork-linux-new")
     try:
-        shutil.copy2(directory / rel, partial, follow_symlinks=False)
+        _copy_new(directory / rel, partial)
         if partial.stat().st_size != sizes[rel]:
             raise IntegrityFailed(
                 f"restoring {rel} into {layout.packages_dir} failed: the copy does not match the snapshot",

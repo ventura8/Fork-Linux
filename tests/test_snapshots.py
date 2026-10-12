@@ -510,15 +510,10 @@ def test_restore_package_copy_that_does_not_match(
     snap = snaps.create(paths, layout, method="copy")
     package.unlink()
 
-    real_copy = shutil.copy2
+    def short_copy(_src: Path, dst: Path) -> None:
+        Path(dst).write_bytes(b"P")
 
-    def short_copy(src: Path, dst: Path, **kwargs: Any) -> object:
-        if str(dst).endswith(".fork-linux-new"):
-            Path(dst).write_bytes(b"P")
-            return dst
-        return real_copy(src, dst, **kwargs)
-
-    monkeypatch.setattr(snaps.shutil, "copy2", short_copy)
+    monkeypatch.setattr(snaps, "_copy_new", short_copy)
     with pytest.raises(IntegrityFailed, match="does not match the snapshot"):
         snaps.restore(paths, layout, snap)
     assert sorted(p.name for p in layout.packages_dir.iterdir()) == []
@@ -530,17 +525,43 @@ def test_restore_package_copy_that_fails_early(
     snap = snaps.create(paths, layout, method="copy")
     layout.full_package("2.23.2").unlink()
 
-    real_copy = shutil.copy2
+    def no_space(_src: Path, _dst: Path) -> None:
+        raise OSError(28, "No space left on device")
 
-    def no_space(src: Path, dst: Path, **kwargs: Any) -> object:
-        if str(dst).endswith(".fork-linux-new"):
-            raise OSError(28, "No space left on device")
-        return real_copy(src, dst, **kwargs)
-
-    monkeypatch.setattr(snaps.shutil, "copy2", no_space)
+    monkeypatch.setattr(snaps, "_copy_new", no_space)
     with pytest.raises(OSError, match="No space"):
         snaps.restore(paths, layout, snap)
     assert sorted(p.name for p in layout.packages_dir.iterdir()) == []
+
+
+def test_restore_package_never_writes_through_a_planted_link(
+    paths: Paths, layout: ForkLayout, clock: _Clock, tmp_path: Path
+) -> None:
+    """A link at the temporary name (any Windows program can make one through Z:) is replaced, not followed."""
+    package = layout.full_package("2.23.2")
+    original = package.read_bytes()
+    snap = snaps.create(paths, layout, method="copy")
+    package.unlink()
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"not Fork's")
+    partial = package.with_name(f".{package.name}.fork-linux-new")
+    partial.symlink_to(outside)
+    snaps.restore(paths, layout, snap)
+    assert outside.read_bytes() == b"not Fork's"
+    assert package.read_bytes() == original and not package.is_symlink()
+    kept = Path(snap.path) / snaps.PACKAGES / package.name
+    assert package.stat().st_mtime_ns == kept.stat().st_mtime_ns
+    assert not os.path.lexists(partial)
+
+
+def test_copy_new_refuses_a_linked_source(tmp_path: Path) -> None:
+    real = tmp_path / "real"
+    real.write_bytes(b"x")
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    with pytest.raises(OSError):
+        snaps._copy_new(link, tmp_path / "copy")
+    assert not (tmp_path / "copy").exists()
 
 
 def test_restore_with_settings(paths: Paths, layout: ForkLayout, clock: _Clock) -> None:
