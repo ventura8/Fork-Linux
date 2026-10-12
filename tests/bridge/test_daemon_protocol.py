@@ -1245,10 +1245,14 @@ def test_log_has_one_line_per_session_and_no_secrets(
     text = d.log.read_text()
     lines = [ln for ln in text.splitlines() if " session " in ln]
     assert len(lines) == 3, text
-    assert "result=exit:7" in lines[0]
-    assert "argv0=sh" in lines[0]
-    assert f"result=spawn-error:{errno.ENOENT}" in lines[1]
-    assert "result=auth-failed:bad-mac" in lines[2]
+    # Each session is served by its own child process, which writes its line after it answered
+    # the client: under load the lines can land in any order, so each is found by its result.
+    by_result = {
+        result: [ln for ln in lines if result in ln]
+        for result in ("result=exit:7", f"result=spawn-error:{errno.ENOENT}", "result=auth-failed:bad-mac")
+    }
+    assert all(len(found) == 1 for found in by_result.values()), text
+    assert "argv0=sh" in by_result["result=exit:7"][0]
     assert "daemon start" in text
     assert "daemon exit reason=signal" in text
     assert d.token not in text
