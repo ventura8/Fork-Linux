@@ -148,9 +148,12 @@ def test_10_logs_bundle_is_redacted(e2e: Any) -> None:
     """
     fork_dir = e2e.fork.local_dir / "Fork"
     # Token-shaped test data is built here, never written out whole (scripts/secret-scan.py).
-    (fork_dir / "accounts.json").write_text('{"token": "%s"}' % ("gh" + "p_E2EACCOUNTSJSON" + "0" * 18), encoding="utf-8")
+    token = "gh" + "p_"
+    accounts = {"token": f"{token}E2EACCOUNTSJSON{'0' * 18}"}
+    (fork_dir / "accounts.json").write_text(json.dumps(accounts), encoding="utf-8")
+    leaked = f"https://user:supersecretpw@example.invalid/x.git {token}abcdefghijklmnopqrstuvwxyz0123456789"
     with open(fork_dir / "logs" / "fork.log", "a", encoding="utf-8") as handle:
-        handle.write("E2E https://user:supersecretpw@example.invalid/x.git gh" + "p_abcdefghijklmnopqrstuvwxyz0123456789\n")
+        handle.write(f"E2E {leaked}\n")
     e2e.cli("logs", "--bundle")
     bundles = sorted(e2e.root.glob("fork-linux-logs-*.tar.gz"))
     assert bundles
