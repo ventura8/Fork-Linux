@@ -417,7 +417,9 @@ class ForkUI:
         self.screen.key("ctrl+a")
         self.screen.type(subject)
         if description:
+            # Replace what is there: a retried commit (commit_and_wait) finds the first attempt's text.
             self.click(COMMIT_DESCRIPTION)
+            self.screen.key("ctrl+a")
             self.screen.type(description)
         self.screen.key("ctrl+Return", settle=1.5)
 
