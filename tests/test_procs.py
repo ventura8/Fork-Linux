@@ -236,3 +236,54 @@ def test_stop_prefix_gives_up_after_its_timeout(proc: Path, prefix: Path) -> Non
         procs.stop_prefix(prefix, proc_root=proc, kill=lambda _pid, _number: None, sleep=lambda _s: None,
                           clock=_Clock(10.0))
     assert procs.stop_prefix(prefix / "nothing-here", proc_root=proc) == []
+
+
+def _stat(proc: Path, pid: int, parent: int, comm: str = "bash") -> None:
+    directory = proc / str(pid)
+    directory.mkdir(exist_ok=True)
+    (directory / "stat").write_text(f"{pid} ({comm}) S {parent} {pid} {pid} 0 -1\n", encoding="utf-8")
+
+
+def test_stop_targets_spare_the_users_shell_and_our_ancestors(proc: Path, prefix: Path) -> None:
+    """A shell the user exported WINEPREFIX in runs 'fork-linux setup --reset': it is never signalled."""
+    env = {"WINEPREFIX": str(prefix)}
+    me = os.getpid()
+    # fork-linux runs under a shell (500), which a terminal emulator named like a Wine tool (501) started.
+    _stat(proc, me, 500)
+    _process(proc, 500, env=env, cmdline=["-bash"])
+    _stat(proc, 500, 501)
+    _process(proc, 501, env=env, cmdline=["wine-terminal"])
+    _stat(proc, 501, 1, comm="wine) S 1 (odd")
+    # Another shell and an editor of the user, then Wine's own processes and winetricks.
+    _process(proc, 510, env=env, cmdline=["/usr/bin/vim", "notes.txt"])
+    _process(proc, 520, env=env, cmdline=["C:\\windows\\system32\\explorer.exe", "/desktop"])
+    _process(proc, 521, env=env, cmdline=["/bin/sh", "/opt/runtimes/winetricks/x/winetricks", "dotnet48"])
+    named = _process(proc, 522, env=env, cmdline=[])
+    (named / "comm").write_text("Fork.exe\n", encoding="utf-8")
+    binary = _process(proc, 523, env=env, cmdline=None)
+    (binary / "exe").symlink_to("/opt/runtimes/wine/x/bin/wine64-preloader")
+    assert procs.stop_targets(prefix, proc_root=proc) == [520, 521, 522, 523]
+    sent: list[int] = []
+
+    def kill(pid: int, _number: int) -> None:
+        sent.append(pid)
+        (proc / str(pid) / "environ").unlink()
+
+    assert procs.stop_prefix(prefix, proc_root=proc, kill=kill, sleep=lambda _s: None) == [520, 521, 522, 523]
+    assert sorted(sent) == [520, 521, 522, 523]
+    assert procs.prefix_pids(prefix, proc_root=proc) == [500, 501, 510]
+
+
+@pytest.mark.parametrize("stat", ["", "1 (x)", "1 (x) S", "1 (x) S -", "garbage"])
+def test_parent_of_a_malformed_stat(proc: Path, stat: str) -> None:
+    (proc / "7").mkdir()
+    (proc / "7" / "stat").write_text(stat, encoding="utf-8")
+    assert procs._parent(proc, 7) is None
+    assert procs._parent(proc, 8) is None
+    assert procs._ancestors(proc, 7) == set()
+
+
+def test_ancestors_stop_at_a_loop(proc: Path) -> None:
+    _stat(proc, 11, 12)
+    _stat(proc, 12, 11)
+    assert procs._ancestors(proc, 11) == {11, 12}

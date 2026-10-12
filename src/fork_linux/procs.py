@@ -195,6 +195,53 @@ def running(names: Iterable[str], *, proc_root: Path = PROC) -> list[int]:
     return found
 
 
+def _parent(proc_root: Path, pid: int) -> int | None:
+    """The parent pid from ``/proc/<pid>/stat`` (``pid (comm) state ppid ...``), or None."""
+    stat = _read(proc_root / str(pid) / "stat")
+    if stat is None:
+        return None
+    fields = stat[stat.rfind(b")") + 1 :].split()
+    return int(fields[1]) if len(fields) > 1 and fields[1].isdigit() else None
+
+
+def _ancestors(proc_root: Path, pid: int) -> set[int]:
+    """The pids of ``pid``'s parent, its parent's parent, ... as far as ``/proc`` tells."""
+    found: set[int] = set()
+    parent = _parent(proc_root, pid)
+    while parent is not None and parent not in found:
+        found.add(parent)
+        parent = _parent(proc_root, parent)
+    return found
+
+
+def _wine_name(name: str) -> bool:
+    """True for wine, wineserver, the preloaders, winetricks or a Windows program (``*.exe``)."""
+    lower = name.lower()
+    return lower.startswith("wine") or lower.endswith(".exe")
+
+
+def _wine_side(proc_root: Path, pid: int) -> bool:
+    """True when ``pid`` is a Wine process or winetricks (program name, binary or first two arguments)."""
+    directory = proc_root / str(pid)
+    names = [os.fsdecode(_read(directory / "comm") or b"").strip()]
+    with contextlib.suppress(OSError):
+        names.append(os.path.basename(os.readlink(directory / "exe")))
+    names += [os.path.basename(os.fsdecode(arg)) for arg in (_read(directory / "cmdline") or b"").split(b"\0")[:2]]
+    return any(_wine_name(name) for name in names)
+
+
+def stop_targets(prefix: Path, *, proc_root: Path = PROC) -> list[int]:
+    """The processes :func:`stop_prefix` ends: Wine's and winetricks' in ``prefix``.
+
+    A shell the user exported ``WINEPREFIX`` in (and anything else that is not Wine) is never
+    one of them, and neither is fork-linux or any process it runs under.
+    """
+    mine = _ancestors(proc_root, os.getpid())
+    return [
+        pid for pid in prefix_pids(prefix, proc_root=proc_root) if pid not in mine and _wine_side(proc_root, pid)
+    ]
+
+
 def stop_prefix(
     prefix: Path,
     *,
@@ -203,7 +250,7 @@ def stop_prefix(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
 ) -> list[int]:
-    """End the current user's processes still running in ``prefix``; return the pids that were signalled.
+    """End the Wine processes still running in ``prefix`` (:func:`stop_targets`); return the pids signalled.
 
     For what an interrupted setup leaves behind (a winetricks script that keeps starting Wine
     programs): SIGTERM first, SIGKILL to what is left after :data:`STOP_GRACE` seconds. Raises
@@ -212,7 +259,7 @@ def stop_prefix(
     signalled: list[int] = []
     start = clock()
     while True:
-        pids = prefix_pids(prefix, proc_root=proc_root)
+        pids = stop_targets(prefix, proc_root=proc_root)
         if not pids:
             return signalled
         elapsed = clock() - start
