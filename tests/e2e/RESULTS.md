@@ -1,5 +1,67 @@
 # E2E results: official Fork 2.23.2 on the managed Wine runtime
 
+## 2026-10-12 (night): the full tier in under an hour (`fix/e2e-speed`)
+
+`scripts/ci-e2e-wine.sh` used to run the named modules one after the other, each in a fresh
+container doing the whole setup (Wine runtime, prefix, .NET 4.8, Fork: 5-9 minutes) before its
+tests. The sequential baseline of the same tree (`fix/integration`, the same night, same laptop):
+16 of the 22 modules took 222 minutes (setup included in each), about 5 hours for all 22.
+
+Now one container sets the main prefix up once (the template root: `test_real_fork.py`'s first
+test), every module that only needs that prefix starts from a copy of it (2.8 GB, copied in 2 s
+on ext4 from the page cache), the modules that set up prefixes of their own start from its
+download caches, and the modules run in parallel, longest first (`scripts/e2e-plan.py`,
+`tests/e2e/timings.json`); `test_real_setup_variants.py` runs as two sessions (its .NET 4.7.2
+prefix test beside the rest). A real-Fork container peaked at 1.04 GiB (`docker stats`, every 20 s).
+Wall-clock below is from the script's start (image check, bridge and variant builds included).
+
+| Run | Where | Jobs | Wall-clock | Result |
+|---|---|---|---|---|
+| `ci-e2e-wine.sh --all` (first plan: no parts) | laptop, 16 cores, 30 GB; two host slots held by other runs, load average 20-45 from another project | 6 (4 running, the slots) | **50.8 min** | 21 of 22 modules passed; `test_real_git_branches.py::test_interactive_rebase_squash_and_drop` failed, as on the sequential baseline (`fix/integration` `logs/e2e-wine/test_real_git_branches/pytest.log`, timed out waiting for the rebased history) |
+| `ci-e2e-wine.sh --all --remote nuc --remote-jobs 6` | laptop (5 modules, 7 jobs) + NUC (17 modules, 6 jobs), each its own template | 7 + 6 | **21.7 min** | 22 of 22 modules, 185 tests passed (git branches passed on the NUC) |
+| `ci-e2e-wine.sh --all` (final plan: setup variants in two parts) | laptop alone, 16 cores, 30 GB, no other runs (load average up to 15) | 8 | **29.1 min** (1747 s) | 22 of 22 modules (24 sessions), 185 tests passed, no rerun; peak container memory 0.98 GiB; 1163 s of the sessions' time was waiting for a slot (`test_real_git_branches.py` 416 s, `test_real_git_remotes.py` 266 s) |
+
+Per module (seconds of the run, the slot wait not counted; template modules exclude the setup):
+
+| Module | Sequential baseline (with setup) | Laptop, first plan | Laptop + NUC | Laptop, final plan |
+|---|---|---|---|---|
+| template (setup once) | - | 460 | 300 (laptop), 253 (NUC) | 335 |
+| `test_fork_update.py` | 1162 | 1689 | 1184 | 1291 |
+| `test_real_setup_variants.py` | (running) | 2111 | 752 + 499 (two parts) | 827 + 540 (two parts) |
+| `test_wine_app_upgrade.py` | (not yet) | 1313 | 909 | 1034 |
+| `test_wine_pin_upgrade.py` | (not yet) | 1668 (incl. waiting for downloads under load) | 455 | 613 |
+| `test_real_git_remotes.py` | 1313 | 1489 | 664 | 703 |
+| `test_real_integration.py` | 820 | 1422 | 513 | 563 |
+| `test_real_bridge.py` | 1250 | 1211 | 753 | 810 |
+| `test_real_git_branches.py` | 1301 | 823 | 485 | 504 |
+| `test_real_fork.py` | 669 | 639 | 385 | 478 |
+| `test_git_ops_remote_bridge.py` | 799 | 534 | 454 | 464 |
+| `test_git_ops_remote_ssh.py` | 983 | 486 | 222 | 231 |
+| `test_real_git_history.py` | 1204 | 565 | 439 | 460 |
+| `test_real_launch.py` | 616 | 591 | 292 | 320 |
+| `test_git_ops_local.py` | 615 | 440 | 273 | 292 |
+| `test_real_display.py` | 862 | 447 | 287 | 307 |
+| `test_real_git_advanced.py` | 746 | 297 | 270 | 228 |
+| `test_real_git_changes.py` | 586 | 244 | 268 | 234 |
+| `test_real_update_guards.py` | (not yet) | 257 | 143 | 152 |
+| `test_real_snapshots.py` | (not yet) | 136 | 85 | 103 |
+| `test_real_doctor.py` | 392 | 119 | 165 | 114 |
+| `test_real_uninstall.py` | (not yet) | 54 | 35 | 51 |
+| `test_real_setup_errors.py` | 3 | 483 (waited for a slot; 13 s of tests) | 3 | 6 |
+
+**CI** (`e2e-wine.yml`): five shards (`matrix.jobs: 2` on GitHub's 4-core, 16 GB runners), each
+building its own template in the job (nothing kept between runs, no seed). `tests/test_e2e_plan.py`
+estimates every shard from `tests/e2e/timings.json` (the loaded laptop's first run, so on the slow
+side: every module of the final laptop run took less) at about 28 minutes, plus the image build, the bridge builds and the downloads (about 10
+minutes): about 40 minutes of wall-clock, timeout 70. Five jobs instead of 22 also keeps the
+workflow, with its eight `e2e-de` jobs, under GitHub's 20 concurrent jobs. The floor of a shard is
+`test_fork_update.py` alone (Fork 2.23.1 updating itself: a module of one fixture chain, 21-28 min);
+more shards would not shorten the longest one.
+
+`test_git_ops_remote_ssh.py` (one failure on the sequential `fix/integration` run) and
+`test_real_git_branches.py` (one failure on the loaded first run) passed in both later runs, on the
+laptop and on the NUC.
+
 ## 2026-10-12: release round 1 (`fix/integration`, the v1.0.0 tree)
 
 **CI's runner, fresh downloads.** `scripts/ci-e2e-wine.sh` ran every module as e2e-wine.yml's jobs
