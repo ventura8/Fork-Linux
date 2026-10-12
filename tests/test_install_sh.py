@@ -344,6 +344,33 @@ def test_uninstall_points_a_dpkg_install_at_apt(tmp_path: Path, home: Path) -> N
     assert _snapshot(home) == before
 
 
+@pytest.mark.parametrize(
+    ("fakes", "needle"),
+    [
+        (
+            {"dpkg-query": "exit 1", "rpm": "exit 0"},
+            "fork-linux was installed with rpm: sudo dnf remove fork-linux (Fedora), "
+            "sudo zypper remove fork-linux (openSUSE), or sudo rpm -e fork-linux",
+        ),
+        (
+            {"dpkg-query": "exit 1", "rpm": "exit 1", "pacman": "exit 0"},
+            "fork-linux was installed with pacman: sudo pacman -R fork-linux",
+        ),
+    ],
+)
+def test_uninstall_points_rpm_and_pacman_installs_at_the_package_manager(
+    tmp_path: Path, home: Path, fakes: dict[str, str], needle: str
+) -> None:
+    _skip_if_root()
+    fake_bin = tmp_path / "fake-bin"
+    _fake_tools(fake_bin, fakes)
+    before = _snapshot(home)
+    result = _run(UNINSTALL, home, PATH=f"{fake_bin}:{_env(home)['PATH']}")
+    assert result.returncode != 0
+    assert needle in result.stderr
+    assert _snapshot(home) == before
+
+
 def test_uninstall_dry_run_keeps_everything(home: Path, release) -> None:
     _need_downloader()
     assert _run(INSTALL, home, "--no-deps", FORK_LINUX_RELEASES_URL=release.url("")).returncode == 0

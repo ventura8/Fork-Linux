@@ -97,9 +97,16 @@ EOF
 	dest="${prefix}/opt/${PACKAGE}"
 	manifest="${dest}/${MANIFEST_NAME}"
 	if [[ ! -f "${manifest}" || ! -f "${dest}/${MARKER_NAME}" ]]; then
+		# Same ownership probe as install.sh: a package install is not ours to remove.
 		if command -v dpkg-query >/dev/null 2>&1 &&
 			dpkg-query -W -f='${Status}' fork-linux 2>/dev/null | grep -q 'install ok installed'; then
 			die "fork-linux was installed with apt/dpkg: sudo apt remove fork-linux"
+		fi
+		if command -v rpm >/dev/null 2>&1 && rpm -q fork-linux >/dev/null 2>&1; then
+			die "fork-linux was installed with rpm: sudo dnf remove fork-linux (Fedora), sudo zypper remove fork-linux (openSUSE), or sudo rpm -e fork-linux"
+		fi
+		if command -v pacman >/dev/null 2>&1 && pacman -Q fork-linux >/dev/null 2>&1; then
+			die "fork-linux was installed with pacman: sudo pacman -R fork-linux"
 		fi
 		say "no install.sh install of fork-linux under ${prefix}; nothing to do"
 		return 0
