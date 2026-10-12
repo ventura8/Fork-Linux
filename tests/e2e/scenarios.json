@@ -2522,6 +2522,111 @@
     ]
   },
   {
+    "id": "F11",
+    "area": "fork-update",
+    "title": "Disk full or a dropped connection while update --fork downloads the installer",
+    "tiers": [
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/test_cmd_update.py::test_f11_interrupted_download_resumes_and_installs_nothing_partial",
+      "tests/test_cmd_update.py::test_f11_failed_install_names_the_snapshot",
+      "tests/test_download.py::test_resume_from_part_file",
+      "tests/test_download.py::test_truncated_body_is_resumed",
+      "tests/test_download.py::test_disk_errors_are_reported",
+      "tests/test_download.py::test_sha_mismatch_deletes_part",
+      "tests/test_snapshots.py::test_create_failure_leaves_nothing_behind",
+      "tests/test_snapshots.py::test_restore_rename_failure_puts_current_back",
+      "tests/test_fork_install.py::test_run_installer_failure_is_a_setup_failure"
+    ],
+    "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
+  },
+  {
+    "id": "F14",
+    "area": "fork-update",
+    "title": "Snapshot retention across failed and repeated updates ([snapshots] keep = 2)",
+    "tiers": [
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/test_cmd_update.py::test_f14_failed_update_keeps_the_rollback_target",
+      "tests/test_snapshots.py::test_prune_keeps_newest_and_protected",
+      "tests/test_snapshots.py::test_ensure_current",
+      "tests/test_cmd_snapshot.py::test_prune"
+    ],
+    "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
+  },
+  {
+    "id": "F15",
+    "area": "fork-update",
+    "title": "Snapshot and restore integrity",
+    "tiers": [
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/test_snapshots.py::test_create_hardlinks_current_and_copies_data",
+      "tests/test_snapshots.py::test_restore_detects_changed_and_missing_files",
+      "tests/test_snapshots.py::test_restore_detects_a_same_size_rewrite_of_a_hard_link",
+      "tests/test_snapshots.py::test_restore_refuses_foreign_snapshot_paths",
+      "tests/test_snapshots.py::test_restore_verifies_the_copy",
+      "tests/test_snapshots.py::test_restore_refuses_symlinked_current",
+      "tests/test_cmd_snapshot.py::test_rollback_saves_an_unsnapshotted_installed_version"
+    ],
+    "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
+  },
+  {
+    "id": "F16",
+    "area": "fork-update",
+    "title": "doctor fork.integrity after each kind of update",
+    "tiers": [
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/test_doctor.py::test_fork_integrity"
+    ],
+    "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
+  },
+  {
+    "id": "F17",
+    "area": "fork-update",
+    "title": "--latest when the JSON feed is unavailable but the legacy RELEASES feed answers",
+    "tiers": [
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/test_steps_fork.py::test_plan_latest_from_feed_then_legacy",
+      "tests/test_steps_fork.py::test_plan_latest_without_any_feed",
+      "tests/test_feeds.py::test_parse_fixture_legacy_feed"
+    ],
+    "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
+  },
+  {
+    "id": "F18",
+    "area": "fork-update",
+    "title": "Upstream watch finds a new Fork version",
+    "tiers": [
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/test_workflows.py::test_upstream_detects_a_newer_version",
+      "tests/test_workflows.py::test_upstream_add_version_records_size_and_sha",
+      "tests/test_workflows.py::test_upstream_watch_flow"
+    ],
+    "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
+  },
+  {
     "id": "F19",
     "area": "fork-update",
     "title": "Git bridge on, then update --fork: the new Fork's git goes through the bridge",
@@ -2546,6 +2651,21 @@
     "tests": [
       "tests/e2e/test_fork_update.py::test_f20_interrupted_apply_is_reinstalled_keeping_the_users_files"
     ]
+  },
+  {
+    "id": "F22",
+    "area": "fork-update",
+    "title": "Two users on one machine, each with Fork running",
+    "tiers": [
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/test_procs.py::test_other_users_processes_are_ignored",
+      "tests/test_paths.py::test_derived_locations"
+    ],
+    "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
   },
   {
     "id": "F23",
@@ -2663,6 +2783,23 @@
     ]
   },
   {
+    "id": "A7",
+    "area": "app-upgrade",
+    "title": "state.json of an older schema, or of a newer one (a downgrade)",
+    "tiers": [
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/test_app_upgrade.py::test_a7_launch_with_a_newer_state_schema_changes_nothing",
+      "tests/test_state.py::test_newer_schema_is_refused",
+      "tests/test_state.py::test_missing_steps_key_is_added",
+      "tests/test_cli.py::test_status_with_corrupt_state_exits_13"
+    ],
+    "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
+  },
+  {
     "id": "A8",
     "area": "app-upgrade",
     "title": "Downgrade N -> N-1 warns and keeps working",
@@ -2739,6 +2876,38 @@
     ]
   },
   {
+    "id": "A15",
+    "area": "app-upgrade",
+    "title": "config.ini written by another version (unknown or removed keys)",
+    "tiers": [
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/test_config.py::test_unknown_settings_are_reported_not_fatal",
+      "tests/test_config_edit.py::test_set_replaces_in_the_right_section_only",
+      "tests/test_config_edit.py::test_set_never_changes_other_values_or_duplicates_options"
+    ],
+    "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
+  },
+  {
+    "id": "A16",
+    "area": "app-upgrade",
+    "title": "Records written by other versions: snapshot meta.json, session.json, integrations.json",
+    "tiers": [
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/test_snapshots.py::test_list_skips_malformed_meta",
+      "tests/test_launch_flow.py::test_session_round_trip_and_bad_files",
+      "tests/test_desktop_integration.py::test_registry_ignores_bad_content"
+    ],
+    "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
+  },
+  {
     "id": "A17",
     "area": "app-upgrade",
     "title": "No maintainer scripts: installing, upgrading and removing a package never touches a home directory",
@@ -2758,6 +2927,87 @@
       "packaging:flatpak:assert_markers",
       "packaging:tarball:assert_markers"
     ]
+  },
+  {
+    "id": "A18",
+    "area": "app-upgrade",
+    "title": "Package versions order correctly for the package managers",
+    "tiers": [
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/test_packaging_release.py::test_ppa_versions",
+      "tests/test_packaging_release.py::test_a18_package_versions_sort_upwards"
+    ],
+    "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
+  },
+  {
+    "id": "A19",
+    "area": "app-upgrade",
+    "title": "Settings and files fork-linux finds in place are kept or replaced safely",
+    "tiers": [
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/test_fork_settings.py::test_desired_never_touches_layout_scaling",
+      "tests/test_steps_integration.py::test_shims_are_copied",
+      "tests/test_desktop_integration.py::test_thunar_entry_without_a_recorded_seed_keeps_the_file"
+    ],
+    "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
+  },
+  {
+    "id": "A21",
+    "area": "app-upgrade",
+    "title": "The version contract every package build relies on",
+    "tiers": [
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/test_packaging_release.py::test_debian_changelog_top_entry_is_version",
+      "tests/test_packaging_release.py::test_rpm_changelog_top_entry_is_version",
+      "tests/test_packaging_release.py::test_metainfo_newest_release_is_version",
+      "tests/test_packaging_release.py::test_release_notes_exist_for_version",
+      "tests/test_version_variant.py::test_variant_tree_passes_the_release_gate"
+    ],
+    "notes": "unit-only in this registry by design; every packaging cell also builds a version variant (docs/qa/UPDATE-SCENARIOS.md, tier P)"
+  },
+  {
+    "id": "A22",
+    "area": "app-upgrade",
+    "title": "A package-manager upgrade during a long first setup (N-1 still running, N's files on disk)",
+    "tiers": [
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/test_app_upgrade.py::test_a22_step_failing_on_new_modules_is_resumed_by_the_new_release",
+      "tests/test_bootstrap.py::test_run_steps_resumes_at_the_failed_step"
+    ],
+    "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
+  },
+  {
+    "id": "A23",
+    "area": "app-upgrade",
+    "title": "A valid user manifest override (~/.config/fork-linux/manifest.local.json) across an upgrade",
+    "tiers": [
+      "unit"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/test_manifest.py::test_a23_override_changes_lists_what_the_override_replaces",
+      "tests/test_manifest.py::test_changed_paths",
+      "tests/test_manifest.py::test_override_adds_versions_and_sets_default",
+      "tests/test_doctor.py::test_a23_env_manifest_reports_an_override_that_keeps_old_pins"
+    ],
+    "notes": "unit-only by design (internal update mechanics, maintainer decision 2026-10-12); details in docs/qa/UPDATE-SCENARIOS.md"
   },
   {
     "id": "A24",

@@ -150,10 +150,13 @@ def test_the_registry_must_be_a_readable_list(tmp_path: Path) -> None:
         (_scenario(tests=["x", "x"]), "S-ONE: tests must be unique strings"),
         (_scenario(tests=[3]), "S-ONE: tests must be unique strings"),
         (_scenario(tiers=["real-fork", "moon"]),
-         "S-ONE: tiers must be among real-fork, e2e-wine-docker, de, packaging"),
+         "S-ONE: tiers must be among real-fork, e2e-wine-docker, de, packaging, unit"),
         (_scenario(tiers=["packaging"]), "S-ONE: tiers ['packaging'] do not match its tests (expected ['real-fork'])"),
-        (_scenario(tests=["tests/test_unit.py::test_one"]),
-         "S-ONE: tests/test_unit.py::test_one: not an end-to-end test (tests/e2e*, tests/bridge or "
+        (_scenario(tests=["tests/test_unit.py::test_one"], tiers=["unit"]),
+         "S-ONE: tests/test_unit.py::test_one: a unit test; only the update scenarios (F1, A1, ...) may be "
+         "unit-only by design"),
+        (_scenario(tests=["src/test_unit.py::test_one"]),
+         "S-ONE: src/test_unit.py::test_one: not a test reference (tests/...::test_x or "
          "packaging:<cell>:<function>)"),
         (_scenario(provided_by="fix/elsewhere"),
          "S-ONE: provided_by must be one of this-branch, fix/update-tests, fix/de-e2e, fix/font-fallback-472"),
@@ -162,6 +165,24 @@ def test_the_registry_must_be_a_readable_list(tmp_path: Path) -> None:
 )
 def test_schema_problems(tmp_path: Path, entry: Any, problem: str) -> None:
     assert problem in gsd.validate(_tree(tmp_path, [entry]))
+
+
+def test_internal_update_scenarios_may_be_unit_only(tmp_path: Path) -> None:
+    """Maintainer decision 2026-10-12: internal update scenarios are unit-only by design, listed as such."""
+    files = {
+        "tests/test_unit.py": "def test_one():\n    pass\n",
+        "tests/e2e/test_real_y.py": 'def test_two():\n    """Two.\n\n    Scenarios: A13\n    """\n',
+    }
+    unit = _scenario("F14", area="fork-update", tiers=["unit"], tests=["tests/test_unit.py::test_one"],
+                     notes="unit-only by design")
+    mixed = _scenario("A13", area="app-upgrade", tiers=["real-fork", "unit"],
+                      tests=["tests/e2e/test_real_y.py::test_two", "tests/test_unit.py::test_one"])
+    assert gsd.validate(_tree(tmp_path, [_scenario(), unit, mixed], files)) == []
+    wrong = _scenario("F14", area="fork-update", tiers=["real-fork"], tests=["tests/test_unit.py::test_one"])
+    assert gsd.validate(_tree(tmp_path, [_scenario(), wrong, mixed], files)) == [
+        "F14: tiers ['real-fork'] do not match its tests (expected ['unit'])"
+    ]
+    assert "**unit** = unit tests only, by design" in gsd.render([_scenario(), unit])
 
 
 def test_update_scenario_ids_are_short(tmp_path: Path) -> None:
@@ -476,7 +497,7 @@ class TestGroup:
 
 def test_malformed_references_and_missing_scripts(tmp_path: Path) -> None:
     root = _tree(tmp_path, [_scenario(), _scenario("S-TWO", tests=["garbage"])])
-    assert ("S-TWO: garbage: not an end-to-end test (tests/e2e*, tests/bridge or packaging:<cell>:<function>)"
+    assert ("S-TWO: garbage: not a test reference (tests/...::test_x or packaging:<cell>:<function>)"
             in gsd.validate(root))
     tree = gsd.read_tree(root)
     assert gsd.resolve("garbage", tree) == "not a pytest node id or packaging:<cell>:<function>"

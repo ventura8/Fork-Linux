@@ -52,7 +52,9 @@ PACKAGING_E2E = Path("scripts/packaging-e2e-install.sh")
 
 THIS_BRANCH = "this-branch"
 PROVIDERS = (THIS_BRANCH, "fix/update-tests", "fix/de-e2e", "fix/font-fallback-472")
-TIERS = ("real-fork", "e2e-wine-docker", "de", "packaging")
+# "unit": a scenario that is unit-only by design (internal update mechanics: integrity, pruning, ...;
+# maintainer decision 2026-10-12), listed so the registry names every update scenario.
+TIERS = ("real-fork", "e2e-wine-docker", "de", "packaging", "unit")
 # Id namespace -> area; the order is the catalog's.
 AREAS = {
     "S": "setup",
@@ -83,6 +85,8 @@ AREA_TITLES = {
     "font-fallback": "Non-Latin font fallback",
 }
 ID_RE = re.compile(r"^(?:(?P<ns>[A-Z]{1,2})-[A-Z0-9]+(?:-[A-Z0-9]+)*|(?P<num>[FA])[0-9]{1,2})$")
+# The update scenarios of docs/qa/UPDATE-SCENARIOS.md: the only ones a unit test may cover.
+UPDATE_ID_RE = re.compile(r"^[FA][0-9]{1,2}$")
 NODE_RE = re.compile(
     r"^(?P<path>tests/[A-Za-z0-9_/]+\.py)::(?P<func>[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)?)"
     r"(?:\[(?P<param>[^\]]+)\])?$"
@@ -152,7 +156,7 @@ def tier_of(reference: str) -> str | None:
         return "real-fork"
     if path.startswith("tests/bridge/"):
         return "e2e-wine-docker"
-    return None
+    return "unit"
 
 
 # -- reading the test tree -----------------------------------------------------------------------
@@ -405,7 +409,9 @@ def _list_problems(entry: Mapping[str, Any]) -> list[str]:
     derived = [tier_of(test) for test in tests]
     for test, tier in zip(tests, derived, strict=True):
         if tier is None:
-            problems.append(f"{test}: not an end-to-end test (tests/e2e*, tests/bridge or packaging:<cell>:<function>)")
+            problems.append(f"{test}: not a test reference (tests/...::test_x or packaging:<cell>:<function>)")
+        elif tier == "unit" and not UPDATE_ID_RE.match(entry["id"]):
+            problems.append(f"{test}: a unit test; only the update scenarios (F1, A1, ...) may be unit-only by design")
     expected = sorted({tier for tier in derived if tier is not None}, key=TIERS.index)
     if None not in derived and list(tiers) != expected:
         problems.append(f"tiers {tiers} do not match its tests (expected {expected})")
@@ -563,7 +569,8 @@ def render(entries: list[Mapping[str, Any]]) -> str:
         "**e2e-wine-docker** = `tests/bridge` with `FL_REAL_WINE=1` (`FL_CI_STAGE=bridge",
         "./scripts/ci-docker.sh`); **de** = `tests/e2e_de` (one container per desktop);",
         "**packaging** = a function of `scripts/packaging-e2e-install.sh` in a packaging cell",
-        "(`packaging:<format>:<function>`).",
+        "(`packaging:<format>:<function>`); **unit** = unit tests only, by design (internal update",
+        "mechanics such as integrity checks and pruning; `docs/qa/UPDATE-SCENARIOS.md` has the details).",
         "",
         "| Area | Scenarios | In this repository | Pending merge |",
         "|---|---|---|---|",
