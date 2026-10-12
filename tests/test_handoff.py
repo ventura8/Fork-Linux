@@ -178,6 +178,9 @@ def test_request_handshake_failures(daemons: Any) -> None:
         conn.sendall(_frame(handoff.SPAWN_ERR, bytes(4)))
 
     def resets(conn: socket.socket, daemon: FakeDaemon) -> None:
+        # Reset only after the hello arrived: a reset that beats connect() would fail the
+        # connect itself ("cannot connect"), test_request_nobody_listening's case.
+        _read_frame(conn)
         conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
 
     _fails(daemons, no_challenge, "did not answer the hello")
