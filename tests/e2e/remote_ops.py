@@ -17,7 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from fork_driver import Window, commit_file, git, make_repo, remotes_dir, wait_until
+from fork_driver import DriverError, Window, commit_file, git, make_repo, remotes_dir, wait_until
 from fork_ui import ForkUI
 from git_servers import HttpGitServer
 
@@ -74,10 +74,25 @@ def push_theirs(seed: Path) -> str:
 # -- Fork's remote dialogs ------------------------------------------------------------------------------
 
 
+# How long an accepted dialog may stay before Return is pressed once more.
+ACCEPT_SECONDS = 10.0
+
+
 def accept(ui: ForkUI, title: str) -> Window:
-    """Wait for Fork's dialog ``title`` and accept it as it is (Return)."""
+    """Wait for Fork's dialog ``title`` and accept it as it is (Return), then wait until it closes.
+
+    A Return the X server lost (the flaky-UI-spot decision: logged retries, never root-caused) leaves
+    the dialog open: after :data:`ACCEPT_SECONDS` it is pressed once more, with a screenshot named
+    ``<title>-return-retry`` that marks the retry.
+    """
     window = ui.wait_dialog(title)
     ui.screen.key("Return", settle=1.0)
+    try:
+        ui.screen.wait_gone(window, timeout=ACCEPT_SECONDS)
+    except DriverError:
+        ui.screen.screenshot(f"{title.lower()}-return-retry")
+        ui.screen.key("Return", settle=1.0)
+        ui.screen.wait_gone(window, timeout=60)
     return window
 
 
