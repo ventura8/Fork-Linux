@@ -445,9 +445,21 @@ GIT_COMMON="$(git -C "${ROOT}" rev-parse --path-format=absolute --git-common-dir
 if [[ -n "${GIT_COMMON}" && "${GIT_COMMON}" != "${ROOT}/"* ]]; then
 	GIT_MOUNT=(-v "${GIT_COMMON}:${GIT_COMMON}:ro")
 fi
+# The invoking user's uid has no passwd entry in most images (GitHub's runner is 1001; Fedora's
+# image has no 1000 either), and some tools refuse to run without one (Fedora's ssh-keygen: "No
+# user exists for uid 1000"). Give the container the image's own passwd plus one line for us.
+# Its home is /nonexistent, never HOME (/tmp/fl-home): the e2e scripts refuse scratch roots in it.
+PASSWD_FILE="$(mktemp "${TMPDIR:-/tmp}/fl-ci-passwd.XXXXXX")"
+trap 'rm -f "${PASSWD_FILE:?}"' EXIT
+docker run --rm --entrypoint cat "${IMAGE}" /etc/passwd >"${PASSWD_FILE}"
+if ! awk -F: -v uid="$(id -u)" '$3 == uid {found=1} END {exit !found}' "${PASSWD_FILE}"; then
+	printf 'fl-ci:x:%s:%s:fork-linux CI:/nonexistent:/usr/sbin/nologin\n' "$(id -u)" "$(id -g)" >>"${PASSWD_FILE}"
+fi
+chmod 0644 "${PASSWD_FILE}"
 echo "==> docker run ${IMAGE} (stage=${FL_CI_STAGE}, build dir ${BUILD_DIR}, workdir ${WORKDIR})"
 docker run --rm \
 	--user "$(id -u):$(id -g)" \
+	-v "${PASSWD_FILE}:/etc/passwd:ro" \
 	-e HOME=/tmp/fl-home \
 	-e "FL_CI_STAGE=${FL_CI_STAGE}" \
 	-e "FL_CI_CELL=${FL_CI_CELL}" \
