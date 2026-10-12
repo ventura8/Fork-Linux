@@ -23,10 +23,11 @@ fl_render_pkgbuild "${VERSION}" "${TARBALL}" "${SHA256}" "fork-linux-${VERSION}"
 run_as_builder() {
 	if [[ "$(id -u)" == 0 ]]; then
 		chown -R builder:builder "${WORK}"
-		runuser -u builder -- env HOME="${WORK}/home" "$@"
+		runuser -u builder -- env HOME="${WORK}/home" "$@" || return
 	else
-		env HOME="${WORK}/home" "$@"
+		env HOME="${WORK}/home" "$@" || return
 	fi
+	return 0
 }
 
 mkdir -p "${WORK}/home"

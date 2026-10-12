@@ -25,6 +25,7 @@ mapfile -t GIT_MOUNT < <(fl_git_mount_args)
 
 cleanup() {
 	docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true
+	return 0
 }
 trap cleanup EXIT
 

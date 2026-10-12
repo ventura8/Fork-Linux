@@ -91,7 +91,8 @@ else
 	docker build -f "${DOCKERFILE}" -t "${IMAGE}" docker
 	run_in_image() {
 		docker run --rm "${DOCKER_FLAGS[@]}" -e "FL_ARTIFACTS_DIR=${ART_IN}" \
-			-v "${ROOT}:/src:rw" "${GIT_MOUNT[@]}" -w /src "${IMAGE}" "$@"
+			-v "${ROOT}:/src:rw" "${GIT_MOUNT[@]}" -w /src "${IMAGE}" "$@" || return
+		return 0
 	}
 	run_in_image "${BUILD[@]}" || status=$?
 	if ((status == 0)); then

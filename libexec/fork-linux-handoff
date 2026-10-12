@@ -62,7 +62,8 @@ in_systemd_unit() {
 			set -- "--setenv=$name=$value" "$@"
 		fi
 	done
-	systemd-run --user --quiet --collect --no-block --property=KillMode=process "$@" >/dev/null 2>&1
+	systemd-run --user --quiet --collect --no-block --property=KillMode=process "$@" >/dev/null 2>&1 || return
+	return 0
 }
 
 if [ "${FORK_LINUX_HANDOFF:-auto}" = direct ]; then

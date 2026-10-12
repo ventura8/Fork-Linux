@@ -85,7 +85,8 @@ inside() {
     echo "==> note: --no-wine: bridge/win gets no coverage data"
   fi
   echo "==> ${OUT}"
-  python3 scripts/gcov-sonar.py --root "${ROOT}" --out "${OUT}" --exclude bridge/tests/ --exclude bridge/win/tests/ "${gcov[@]}"
+  python3 scripts/gcov-sonar.py --root "${ROOT}" --out "${OUT}" --exclude bridge/tests/ --exclude bridge/win/tests/ "${gcov[@]}" || return
+  return 0
 }
 
 if ((NO_DOCKER)); then

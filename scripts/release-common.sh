@@ -27,29 +27,34 @@ FL_ARTIFACTS_DIR="${FL_ARTIFACTS_DIR:-${FL_REPO_ROOT}/artifacts}"
 export FL_PORTABLE_PYTHON="/usr/bin/env -S python3"
 
 fl_read_version() {
-	python3 "${FL_REPO_ROOT}/scripts/read-version.py"
+	python3 "${FL_REPO_ROOT}/scripts/read-version.py" || return
+	return 0
 }
 
 fl_app_id() {
-	python3 "${FL_REPO_ROOT}/scripts/gen-data.py" name APP_ID
+	python3 "${FL_REPO_ROOT}/scripts/gen-data.py" name APP_ID || return
+	return 0
 }
 
 fl_prepare_artifacts_dir() {
-	mkdir -p "${FL_ARTIFACTS_DIR}"
+	mkdir -p "${FL_ARTIFACTS_DIR}" || return
+	return 0
 }
 
 fl_meson_setup() {
 	local build_dir="$1"
 	shift
 	rm -rf "${build_dir}"
-	meson setup "${build_dir}" "${FL_REPO_ROOT}" --buildtype=release -Dbridge=enabled "$@"
+	meson setup "${build_dir}" "${FL_REPO_ROOT}" --buildtype=release -Dbridge=enabled "$@" || return
+	return 0
 }
 
 fl_meson_install() {
 	local build_dir="$1" destdir="$2"
 	meson compile -C "${build_dir}"
 	meson test -C "${build_dir}" --print-errorlogs
-	DESTDIR="${destdir}" meson install -C "${build_dir}" --no-rebuild
+	DESTDIR="${destdir}" meson install -C "${build_dir}" --no-rebuild || return
+	return 0
 }
 
 fl_install_static_helper() {
@@ -64,7 +69,8 @@ fl_install_static_helper() {
 		echo "error: ${target} is missing" >&2
 		return 1
 	}
-	install -m 0755 "${static}" "${target}"
+	install -m 0755 "${static}" "${target}" || return
+	return 0
 }
 
 # The source tree as git sees it: tracked files plus untracked-but-not-ignored ones (so
@@ -84,6 +90,7 @@ fl_source_files() {
 		(cd "${FL_REPO_ROOT}" && find . \( -path ./.git -o -name __pycache__ \) -prune -o \
 			\( -type f -o -type l \) -not -name '*.pyc' -printf '%P\0')
 	fi
+	return 0
 }
 
 # fl_copy_source_tree DEST: copy the tree as git sees it (fl_source_files) into the existing
@@ -99,7 +106,8 @@ fl_copy_source_tree() {
 		echo "error: could not copy the source tree" >&2
 		return 1
 	fi
-	rm -f "${list}"
+	rm -f "${list}" || return
+	return 0
 }
 
 # fl_git_mount_args: docker run arguments (one per line) that mount a linked worktree's git
@@ -112,6 +120,7 @@ fl_git_mount_args() {
 	if [[ -n "${common}" && "${common}" != "${FL_REPO_ROOT}/"* ]]; then
 		printf '%s\n' -v "${common}:${common}:ro"
 	fi
+	return 0
 }
 
 fl_create_source_tarball() {
@@ -131,7 +140,8 @@ fl_create_source_tarball() {
 	fi
 	rm -rf "${stage}"
 	chmod 0644 "${tmp}"
-	mv "${tmp}" "${dest}"
+	mv "${tmp}" "${dest}" || return
+	return 0
 }
 
 fl_collect_artifacts_glob() {
@@ -150,13 +160,14 @@ fl_collect_artifacts_glob() {
 		echo "error: no artifacts matched: $*" >&2
 		return 1
 	fi
+	return 0
 }
 
 # Offset of the squashfs appended to a type-2 AppImage (e_shoff + e_shnum * e_shentsize),
 # read from the ELF header so the AppImage is never executed.
 fl_appimage_squashfs_offset() {
 	local appimage="$1"
-	python3 - "${appimage}" <<'EOF'
+	python3 - "${appimage}" <<'EOF' || return
 import struct
 import sys
 
@@ -166,6 +177,7 @@ with open(sys.argv[1], "rb") as handle:
 e_shentsize, e_shnum = struct.unpack_from("<HH", header, 0x3A)
 print(e_shoff + e_shentsize * e_shnum)
 EOF
+	return 0
 }
 
 fl_render_pkgbuild() {
@@ -174,7 +186,8 @@ fl_render_pkgbuild() {
 		-e "s|@SOURCE@|${source}|g" \
 		-e "s|@SHA256@|${sha256}|g" \
 		-e "s|@SRCDIR@|${srcdir}|g" \
-		"${FL_REPO_ROOT}/packaging/arch/PKGBUILD.in"
+		"${FL_REPO_ROOT}/packaging/arch/PKGBUILD.in" || return
+	return 0
 }
 
 # .SRCINFO from the PKGBUILD's own arrays (sourced in a subshell, like makepkg does);
@@ -200,5 +213,6 @@ fl_render_srcinfo() {
 		printf '\tsource = %s\n' "${source[@]}"
 		printf '\tsha256sums = %s\n' "${sha256sums[@]}"
 		printf '\npkgname = %s\n' "${pkgname}"
-	)
+	) || return
+	return 0
 }

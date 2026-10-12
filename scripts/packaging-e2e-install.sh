@@ -97,6 +97,7 @@ setup_tester() {
 	if [[ "${FORMAT}" == snap ]]; then
 		setup_tester_session
 	fi
+	return 0
 }
 
 # snapd (2.7x, Ubuntu 26.04) tracks every snap process in a systemd scope and refuses users
@@ -113,6 +114,7 @@ setup_tester_session() {
 	[[ -S "/run/user/${uid}/bus" ]] || fail "no systemd user session bus for ${TESTER}"
 	TESTER_RUNTIME="/run/user/${uid}"
 	TESTER_SESSION_ENV=("DBUS_SESSION_BUS_ADDRESS=unix:path=${TESTER_RUNTIME}/bus")
+	return 0
 }
 
 as_tester() {
@@ -121,18 +123,21 @@ as_tester() {
 		PATH="${TESTER_HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/snap/bin" \
 		XDG_RUNTIME_DIR="${TESTER_RUNTIME}" "${TESTER_SESSION_ENV[@]}" \
 		APPIMAGE_EXTRACT_AND_RUN=1 NO_CLEANUP=1 \
-		"$@"
+		"$@" || return
+	return 0
 }
 
 assert_markers() {
 	[[ "$(cat "${MARKER}" 2>/dev/null)" == "${MARK_VALUE}" ]] || fail "${MARKER} was changed or removed"
 	[[ "$(cat "${SENTINEL}" 2>/dev/null)" == "${MARK_VALUE}" ]] || fail "${SENTINEL} was changed or removed (~/.wine must never be touched)"
+	return 0
 }
 
 # ---------------------------------------------------------------------- the next launch (A2)
 
 state_tool() {
-	as_tester python3 -I "${STATE_TOOL}" "$@"
+	as_tester python3 -I "${STATE_TOOL}" "$@" || return
+	return 0
 }
 
 # seed_setup_state CMD...: a completed setup as the release just installed (N-1) records it.
@@ -145,6 +150,7 @@ seed_setup_state() {
 	SEED_VERSION="${REL_VERSION}"
 	SEED_DIGEST="$(state_tool digest "${STAGE}/status.json")" || fail "reading the simulated setup failed"
 	SEED_MARKERS="$(state_tool markers "${STAGE}/status.json")" || fail "reading the setup markers failed"
+	return 0
 }
 
 # assert_seeded: the simulated setup is unchanged and no Wine ran.
@@ -154,6 +160,7 @@ assert_seeded() {
 	now="$(state_tool digest "${STAGE}/status.json")" || fail "the simulated setup in ${TESTER_HOME} is broken"
 	[[ "${now}" == "${SEED_DIGEST}" ]] || fail "the simulated setup in ${TESTER_HOME} was changed (${SEED_DIGEST} -> ${now})"
 	echo "ok  simulated setup unchanged, no Wine ran"
+	return 0
 }
 
 # assert_remove_cleared: the remove cleared exactly the markers of REMOVE_FORGETS (then the
@@ -169,7 +176,8 @@ assert_remove_cleared() {
 		SEED_DIGEST="$(state_tool digest "${STAGE}/status.json")" || fail "reading the simulated setup failed"
 		echo "ok  the remove cleared the ${cleared} markers (the next launch restores them)"
 	fi
-	assert_seeded
+	assert_seeded || return
+	return 0
 }
 
 # check_next_launch CMD...: what the installed release's next launch would re-run (plus the
@@ -186,7 +194,8 @@ check_next_launch() {
 		fail "fork-linux setup --list-steps --json failed"
 	fi
 	state_tool check "${STAGE}/steps.json" "${changed}" || fail "the next launch of ${REL_VERSION} would re-run the wrong steps"
-	assert_seeded
+	assert_seeded || return
+	return 0
 }
 
 # check_menu_command DESKTOP: the menu entry's command (Exec without its file arguments) runs this release.
@@ -214,13 +223,14 @@ EOF
 	out="$(as_tester "${argv[@]}" --version)" || fail "the menu entry's command '${argv[*]}' failed"
 	[[ "${out}" == *"${REL_VERSION}"* ]] || fail "the menu entry's command '${argv[*]}' printed '${out}', expected ${REL_VERSION}"
 	echo "ok  menu entry starts fork-linux ${REL_VERSION} (${argv[*]})"
+	return 0
 }
 
 # ---------------------------------------------------------------------- binary checks
 
 check_binaries() {
 	local root="$1" helper_kind="$2"
-	python3 - "${root}/lib/fork-linux" "${helper_kind}" <<'EOF'
+	python3 - "${root}/lib/fork-linux" "${helper_kind}" <<'EOF' || return
 import struct
 import sys
 from pathlib import Path
@@ -262,6 +272,7 @@ if kind not in allowed:
     raise SystemExit(f"{helper}: ELF type {kind}, expected {'ET_EXEC' if helper_kind == 'static' else 'ET_EXEC or ET_DYN'}")
 print(f"ok  fl-bridge-helper: ELF x86-64 {'ET_EXEC' if kind == 2 else 'ET_DYN (PIE)'}")
 EOF
+	return 0
 }
 
 check_doctor_json() {
@@ -271,7 +282,7 @@ check_doctor_json() {
 		cat "${STAGE}/doctor.err" >&2
 		fail "doctor --offline --json exited ${rc} (expected 0 or 17 = checks failed)"
 	fi
-	python3 - "${out}" <<'EOF'
+	python3 - "${out}" <<'EOF' || return
 import json
 import sys
 
@@ -282,6 +293,7 @@ if not isinstance(checks, list) or not checks:
     raise SystemExit("doctor --json has no checks")
 print(f"ok  doctor --offline --json: {len(checks)} checks")
 EOF
+	return 0
 }
 
 # assert_installed ROOT HELPER_KIND DESKTOP_FILE CMD... (CMD runs fork-linux as tester)
@@ -313,7 +325,8 @@ assert_installed() {
 	echo "ok  metainfo, man pages, completions"
 	assert_markers
 	echo "ok  E2E_MARKER and ~/.wine/E2E_SENTINEL intact"
-	check_next_launch "${cmd[@]}"
+	check_next_launch "${cmd[@]}" || return
+	return 0
 }
 
 # assert_removed ROOT...: no ROOT/bin/fork-linux is left (file or link).
@@ -327,19 +340,22 @@ assert_removed() {
 	assert_markers
 	assert_remove_cleared
 	echo "ok  removed; markers intact"
+	return 0
 }
 
 artifact() {
 	local pattern="$1" match
 	match="$(compgen -G "${REL_ART}/${pattern}" | head -n 1 || true)"
 	[[ -n "${match}" ]] || fail "no artifact ${REL_ART}/${pattern}"
-	readlink -f "${match}"
+	readlink -f "${match}" || return
+	return 0
 }
 
 # use_release DIR VERSION: the artifacts the install functions take and the version the asserts expect.
 use_release() {
 	REL_ART="$1"
 	REL_VERSION="$2"
+	return 0
 }
 
 # ---------------------------------------------------------------------- formats
@@ -356,7 +372,8 @@ upgrade_from_previous() {
 	echo "==> E2E upgrade N-1 -> N (${FORMAT} ${PREV_VERSION} -> ${VERSION})"
 	use_release "${ART}" "${VERSION}"
 	"${install_fn}"
-	"${assert_fn}"
+	"${assert_fn}" || return
+	return 0
 }
 
 # downgrade_to_previous INSTALL ASSERT: back from N to N-1 and up to N again (scenario A8).
@@ -369,7 +386,8 @@ downgrade_to_previous() {
 	echo "==> E2E upgrade N-1 -> N again (${FORMAT})"
 	use_release "${ART}" "${VERSION}"
 	"${install_fn}"
-	"${assert_fn}"
+	"${assert_fn}" || return
+	return 0
 }
 
 # cycle INSTALL REMOVE ASSERT ROOT...: the E2E cycle; ROOTs are checked after the remove.
@@ -389,7 +407,8 @@ cycle() {
 	assert_removed "$@"
 	echo "==> E2E reinstall (${FORMAT})"
 	"${install_fn}"
-	"${assert_fn}"
+	"${assert_fn}" || return
+	return 0
 }
 
 # Hard rule 9: run as root, fork-linux refuses (exit 19 = UNSUPPORTED_ENV) before it creates or
@@ -414,6 +433,7 @@ check_root_refused() {
 		fail "running as root changed /usr/share/fork-linux: $(diff <(echo "${before}") <(find /usr/share/fork-linux | sort))"
 	rm -rf -- "${home:?}"
 	echo "ok  refused as root (exit 19); --allow-root runs"
+	return 0
 }
 
 system_assert() {
@@ -422,9 +442,10 @@ system_assert() {
 	local out
 	out="$(as_tester fork --version)" || fail "fork --version failed"
 	[[ "${out}" == *"${REL_VERSION}"* ]] || fail "fork --version printed '${out}'"
-	check_root_refused
+	check_root_refused || return
+	return 0
 }
-dyn_assert() { system_assert dyn; }
+dyn_assert() { system_assert dyn || return; return 0; }
 
 # installed_version: the version the package manager has installed (empty when none).
 installed_version() {
@@ -439,10 +460,14 @@ installed_version() {
 		rpm-fedora | rpm-opensuse)
 			# rpm -q prints "package ... is not installed" on stdout: ask for the version only when it is.
 			if rpm -q fork-linux >/dev/null 2>&1; then
-				rpm -q --qf '%{VERSION}' fork-linux
+				rpm -q --qf '%{VERSION}' fork-linux || return
 			fi
 			;;
+		*)
+			fail "installed_version: no package manager query for ${FORMAT}"
+			;;
 	esac
+	return 0
 }
 
 deb_install() {
@@ -456,8 +481,9 @@ deb_install() {
 		# A newer .deb upgrades; --allow-downgrades lets the downgrade step go back to N-1.
 		apt-get install -y --allow-downgrades "${STAGE}/$(basename "${deb}")"
 	fi
+	return 0
 }
-deb_remove() { apt-get purge -y fork-linux; }
+deb_remove() { apt-get purge -y fork-linux || return; return 0; }
 
 fedora_install() {
 	local rpm installed
@@ -472,8 +498,9 @@ fedora_install() {
 	else
 		dnf upgrade -y --nogpgcheck "${rpm}"
 	fi
+	return 0
 }
-fedora_remove() { dnf remove -y fork-linux; }
+fedora_remove() { dnf remove -y fork-linux || return; return 0; }
 
 opensuse_install() {
 	local rpm installed
@@ -486,16 +513,18 @@ opensuse_install() {
 	else
 		zypper --non-interactive --no-gpg-checks install --allow-unsigned-rpm "${rpm}"
 	fi
+	return 0
 }
-opensuse_remove() { zypper --non-interactive remove fork-linux; }
+opensuse_remove() { zypper --non-interactive remove fork-linux || return; return 0; }
 
 arch_install() {
 	local pkg
 	pkg="$(artifact "fork-linux-${REL_VERSION}-*-x86_64.pkg.tar.zst")"
 	pacman -Sy --noconfirm
-	pacman -U --noconfirm "${pkg}"
+	pacman -U --noconfirm "${pkg}" || return
+	return 0
 }
-arch_remove() { pacman -Rns --noconfirm fork-linux; }
+arch_remove() { pacman -Rns --noconfirm fork-linux || return; return 0; }
 
 tarball_install() {
 	local tarball
@@ -505,9 +534,10 @@ tarball_install() {
 	cp install.sh uninstall.sh "${STAGE}/"
 	chmod -R a+rX "${STAGE}"
 	# --yes: the dependency step runs; without sudo it only reports what is missing.
-	as_tester bash "${STAGE}/install.sh" --from-tarball "${STAGE}/$(basename "${tarball}")" --yes
+	as_tester bash "${STAGE}/install.sh" --from-tarball "${STAGE}/$(basename "${tarball}")" --yes || return
+	return 0
 }
-tarball_remove() { as_tester bash "${STAGE}/uninstall.sh"; }
+tarball_remove() { as_tester bash "${STAGE}/uninstall.sh" || return; return 0; }
 tarball_assert() {
 	assert_installed "${TESTER_HOME}/.local/opt/fork-linux" static \
 		"${TESTER_HOME}/.local/share/applications/${APP_ID}.desktop" "${TESTER_HOME}/.local/bin/fork-linux"
@@ -515,6 +545,7 @@ tarball_assert() {
 	out="$(as_tester "${TESTER_HOME}/.local/bin/fork" --version)" || fail "fork --version failed"
 	[[ "${out}" == *"${REL_VERSION}"* ]] || fail "fork --version printed '${out}'"
 	[[ -f "${TESTER_HOME}/.local/share/man/man1/fork-linux.1" ]] || fail "per-user man page missing"
+	return 0
 }
 
 APPIMAGE_ROOT="${STAGE}/appimage-root"
@@ -528,19 +559,21 @@ appimage_install() {
 	# The file checks look inside the image (never executed for this): its squashfs payload.
 	rm -rf "${APPIMAGE_ROOT}"
 	offset="$(fl_appimage_squashfs_offset "${image}")"
-	unsquashfs -q -o "${offset}" -d "${APPIMAGE_ROOT}" "${image}" >/dev/null
+	unsquashfs -q -o "${offset}" -d "${APPIMAGE_ROOT}" "${image}" >/dev/null || return
+	return 0
 }
 appimage_remove() {
 	as_tester env APPIMAGE="${TESTER_HOME}/Applications/fork-linux.AppImage" \
 		"${TESTER_HOME}/Applications/fork-linux.AppImage" --remove-desktop
 	rm -f "${TESTER_HOME}/Applications/fork-linux.AppImage"
-	rm -rf "${APPIMAGE_ROOT}"
+	rm -rf "${APPIMAGE_ROOT}" || return
+	return 0
 }
 # The update information AppImageUpdate reads (ELF section .upd_info): the GitHub releases zsync.
 APPIMAGE_UPDATE_INFO="gh-releases-zsync|ventura8|Fork-Linux|latest|fork-linux-*-x86_64.AppImage.zsync"
 check_appimage_update_info() {
 	local image="$1"
-	python3 - "${image}" "${APPIMAGE_UPDATE_INFO}" <<'EOF'
+	python3 - "${image}" "${APPIMAGE_UPDATE_INFO}" <<'EOF' || return
 import struct
 import sys
 
@@ -568,6 +601,7 @@ for index in range(shnum):
 else:
     raise SystemExit("the AppImage has no .upd_info section")
 EOF
+	return 0
 }
 
 appimage_assert() {
@@ -588,6 +622,7 @@ appimage_assert() {
 	local out
 	out="$(as_tester "${TESTER_HOME}/.local/bin/fork" --version)" || fail "fork --version (link to the AppImage) failed"
 	[[ "${out}" == *"${REL_VERSION}"* ]] || fail "fork --version printed '${out}'"
+	return 0
 }
 
 # appimage_moved: (N installed over N-1, every marker recorded) the AppImage file is moved and
@@ -628,7 +663,8 @@ appimage_moved() {
 	assert_seeded
 	NEXT_ALSO=""
 	# The cycle goes on with a fresh install at the usual place, which points everything back there.
-	as_tester rm -f "${moved}"
+	as_tester rm -f "${moved}" || return
+	return 0
 }
 
 FLATPAK_ROOT="/var/lib/flatpak/app/${APP_ID}/current/active/files"
@@ -636,35 +672,40 @@ flatpak_install() {
 	local bundle
 	bundle="$(artifact "${APP_ID}-${REL_VERSION}-x86_64.flatpak")"
 	flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-	flatpak install --system -y --noninteractive --reinstall "${bundle}"
+	flatpak install --system -y --noninteractive --reinstall "${bundle}" || return
+	return 0
 }
-flatpak_remove() { flatpak uninstall --system -y --noninteractive "${APP_ID}"; }
+flatpak_remove() { flatpak uninstall --system -y --noninteractive "${APP_ID}" || return; return 0; }
 flatpak_assert() {
 	assert_installed "${FLATPAK_ROOT}" dyn "/var/lib/flatpak/exports/share/applications/${APP_ID}.desktop" \
 		flatpak run "${APP_ID}"
 	local out
 	out="$(as_tester flatpak run --command=fork "${APP_ID}" --version)" || fail "flatpak fork --version failed"
 	[[ "${out}" == *"${REL_VERSION}"* ]] || fail "fork --version printed '${out}'"
+	return 0
 }
 
 SNAP_ROOT="/snap/fork-linux/current/usr"
 snap_install() {
 	local snap_file
 	snap_file="$(artifact "fork-linux_${REL_VERSION}_amd64.snap")"
-	snap install --dangerous --classic "${snap_file}"
+	snap install --dangerous --classic "${snap_file}" || return
+	return 0
 }
-snap_remove() { snap remove --purge fork-linux; }
+snap_remove() { snap remove --purge fork-linux || return; return 0; }
 snap_assert() {
 	assert_installed "${SNAP_ROOT}" static /var/lib/snapd/desktop/applications/fork-linux_fork-linux.desktop \
 		/snap/bin/fork-linux
 	local out
 	out="$(as_tester /snap/bin/fork-linux.fork --version)" || fail "fork-linux.fork --version failed"
 	[[ "${out}" == *"${REL_VERSION}"* ]] || fail "fork --version printed '${out}'"
+	return 0
 }
 
 # snap_revision: the revision of fork-linux snapd runs now ("x1", "x2"... for local snaps).
 snap_revision() {
-	snap list fork-linux | awk '$1 == "fork-linux" { print $3 }'
+	snap list fork-linux | awk '$1 == "fork-linux" { print $3 }' || return
+	return 0
 }
 
 # snap_revert: a refresh the user takes back (scenario A10). N is installed (the cycle ended
@@ -693,7 +734,8 @@ snap_revert() {
 	snap_assert
 	snap revert --revision "${n_rev}" fork-linux
 	use_release "${ART}" "${VERSION}"
-	snap_assert
+	snap_assert || return
+	return 0
 }
 
 # Container base images drop documentation at install time (dpkg path-exclude, dnf
@@ -710,6 +752,7 @@ enable_docs() {
 	if [[ -f /etc/pacman.conf ]]; then
 		sed -i '/^NoExtract/d' /etc/pacman.conf
 	fi
+	return 0
 }
 
 enable_docs

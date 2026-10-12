@@ -27,6 +27,7 @@ expect() {
 		echo "error: ${FORMAT}: no artifact matches ${ART}/${pattern}" >&2
 		exit 1
 	fi
+	return 0
 }
 
 reject() {
@@ -37,6 +38,7 @@ reject() {
 			exit 1
 		fi
 	done
+	return 0
 }
 
 case "${FORMAT}" in

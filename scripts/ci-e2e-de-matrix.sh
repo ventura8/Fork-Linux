@@ -18,6 +18,7 @@ LOG_DIR="${ROOT}/logs/e2e-de"
 
 usage() {
 	sed -n '8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+	return 0
 }
 
 FORK_ARGS=()

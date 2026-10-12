@@ -36,12 +36,14 @@ build_tarball() {
 	tar -C "${stage}" --sort=name --owner=0 --group=0 --numeric-owner \
 		--mtime="@${SOURCE_DATE_EPOCH:-0}" -czf "${out}" "${root}"
 	rm -rf "${work}"
-	ls -la "${out}"
+	ls -la "${out}" || return
+	return 0
 }
 
 build_appimage() {
 	echo "==> AppImage"
-	APPIMAGETOOL="${APPIMAGETOOL:-/usr/local/bin/appimagetool}" packaging/appimage/build-appimage.sh
+	APPIMAGETOOL="${APPIMAGETOOL:-/usr/local/bin/appimagetool}" packaging/appimage/build-appimage.sh || return
+	return 0
 }
 
 build_flatpak() {
@@ -60,7 +62,8 @@ build_flatpak() {
 		--state-dir="${work}/state" --repo="${work}/repo" "${work}/build" "${work}/${app_id}.yml"
 	flatpak build-bundle "${work}/repo" "${bundle}" "${app_id}"
 	rm -rf "${work}"
-	ls -la "${bundle}"
+	ls -la "${bundle}" || return
+	return 0
 }
 
 build_snap() {
@@ -79,7 +82,8 @@ build_snap() {
 	)
 	mv -f "packaging/snap/${snap}" "${FL_ARTIFACTS_DIR}/${snap}"
 	rm -f "${tarball}"
-	ls -la "${FL_ARTIFACTS_DIR}/${snap}"
+	ls -la "${FL_ARTIFACTS_DIR}/${snap}" || return
+	return 0
 }
 
 case "${MODE}" in

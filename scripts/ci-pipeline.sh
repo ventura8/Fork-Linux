@@ -20,7 +20,8 @@ stage() {
 	local name="$1"
 	shift
 	echo "==> pipeline: stage ${name} ($(date -u +%H:%M:%SZ))"
-	"$@" 2>&1 | tee "logs/ci-${name}.log"
+	"$@" 2>&1 | tee "logs/ci-${name}.log" || return
+	return 0
 }
 
 stage lint env FL_CI_STAGE=lint ./scripts/ci-docker.sh

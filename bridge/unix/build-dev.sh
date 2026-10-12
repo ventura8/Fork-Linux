@@ -71,7 +71,8 @@ with open(sys.argv[1], "rb") as fh:
     head = fh.read(18)
 assert head[:4] == b"\x7fELF", "not an ELF file"
 print({2: "ET_EXEC", 3: "ET_DYN"}.get(struct.unpack("<H", head[16:18])[0], "other"))
-' "${file}"
+' "${file}" || return
+	return 0
 }
 
 mkdir -p "${OUT}"

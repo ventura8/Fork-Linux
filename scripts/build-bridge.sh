@@ -32,6 +32,7 @@ die() {
 
 usage() {
   sed -n '6,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  return 0
 }
 
 OUT_DIR=""
@@ -84,7 +85,8 @@ build_in() {
     meson setup "${dir}" --buildtype=release -Dbridge=enabled -Dtests=true > /dev/null
   fi
   meson compile -C "${dir}"
-  meson test -C "${dir}" --suite bridge-unit --print-errorlogs
+  meson test -C "${dir}" --suite bridge-unit --print-errorlogs || return
+  return 0
 }
 
 # The toolchain part: runs inside the container (or directly with --no-docker).
@@ -127,6 +129,7 @@ inside() {
     ((bad == 0)) || die "the build is not reproducible"
     echo "reproducible: OK"
   fi
+  return 0
 }
 
 if ((INSIDE)); then

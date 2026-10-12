@@ -37,6 +37,7 @@ RESERVED_NAMES=(seed locks)
 
 usage() {
 	sed -n '6p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+	return 0
 }
 
 usage_error() {
@@ -90,34 +91,21 @@ if [[ -z "${NAME}" ]]; then
 	NAME="de-${DESKTOP}"
 	((FORK == 0)) || NAME="${NAME}-fork"
 fi
-[[ "${NAME}" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$ ]] || usage_error "invalid --name '${NAME}' (letters, digits, . _ -)"
-for reserved in "${RESERVED_NAMES[@]}"; do
-	[[ "${NAME}" != "${reserved}" ]] || usage_error "--name ${NAME} is reserved"
-done
-
-command -v docker >/dev/null 2>&1 || fl_e2e_die "docker not found"
-command -v flock >/dev/null 2>&1 || fl_e2e_die "flock not found (util-linux)"
+NAME_PROBLEM="$(fl_e2e_name_problem "${NAME}" "${RESERVED_NAMES[@]}")"
+[[ -z "${NAME_PROBLEM}" ]] || usage_error "${NAME_PROBLEM}"
+fl_e2e_require_tools
 
 # --- paths ---------------------------------------------------------------------------------------
 SRC_DIR="$(fl_e2e_check_ro_dir "${ROOT}" "worktree")" || exit $?
-GIT_COMMON="$(git -C "${ROOT}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
-if [[ -n "${GIT_COMMON}" ]]; then
-	GIT_COMMON="$(fl_e2e_check_ro_dir "${GIT_COMMON}" "git common dir")" || exit $?
-	[[ "${GIT_COMMON}" != "${SRC_DIR}/"* ]] || GIT_COMMON=""
-fi
+GIT_COMMON="$(fl_e2e_git_common "${ROOT}" "${SRC_DIR}")" || exit $?
 BASE="$(fl_e2e_base)"
 SCRATCH="$(fl_e2e_check_dir "${FL_E2E_SCRATCH:-${BASE}/${NAME}}" "scratch root")" || exit $?
 LOCK_DIR="$(fl_e2e_check_dir "${FL_E2E_LOCK_DIR:-${BASE}/locks}" "lock directory")" || exit $?
 SEED=""
 if ((FORK)); then
-	SEED="${FL_E2E_SEED_DIR:-${BASE}/seed}"
-	if [[ -e "${SEED}" ]]; then
-		SEED="$(fl_e2e_check_dir "${SEED}" "seed directory")" || exit $?
-		[[ -d "${SEED}" ]] || fl_e2e_refuse "seed '${SEED}' is not a directory"
-	else
-		echo "==> no seed at ${SEED}: the container downloads Wine, winetricks and Fork itself"
-		SEED=""
-	fi
+	SEED="$(fl_e2e_seed_dir "${BASE}")" || exit $?
+	[[ -n "${SEED}" ]] ||
+		echo "==> no seed at ${FL_E2E_SEED_DIR:-${BASE}/seed}: the container downloads Wine, winetricks and Fork itself"
 fi
 TARBALL_SOURCE=""
 if [[ -n "${FL_E2E_DE_TARBALL:-}" ]]; then
@@ -140,6 +128,7 @@ CONTAINER="fl-e2e-${NAME}"
 BUILDER="fl-e2e-${NAME}-tarball"
 cleanup() {
 	docker rm -f "${CONTAINER}" "${BUILDER}" >/dev/null 2>&1 8>&- 9>&- || true
+	return 0
 }
 trap cleanup EXIT
 cleanup

@@ -50,6 +50,7 @@ series_release() {
 		resolute) echo 26.04 ;;
 		*) return 1 ;;
 	esac
+	return 0
 }
 
 SIGN_ARGS=(-us -uc)

@@ -111,6 +111,52 @@ fl_e2e_check_ro_dir() {
 	return 0
 }
 
+# fl_e2e_name_problem NAME RESERVED...: print why NAME cannot name a run (nothing when it can).
+fl_e2e_name_problem() {
+	local name="$1" reserved
+	shift
+	if [[ ! "${name}" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$ ]]; then
+		printf '%s\n' "invalid --name '${name}' (letters, digits, . _ -)"
+		return 0
+	fi
+	for reserved in "$@"; do
+		if [[ "${name}" == "${reserved}" ]]; then
+			printf '%s\n' "--name ${name} is reserved"
+			return 0
+		fi
+	done
+	return 0
+}
+
+# fl_e2e_require_tools: docker and flock (util-linux) must be on PATH.
+fl_e2e_require_tools() {
+	command -v docker >/dev/null 2>&1 || fl_e2e_die "docker not found"
+	command -v flock >/dev/null 2>&1 || fl_e2e_die "flock not found (util-linux)"
+	return 0
+}
+
+# fl_e2e_git_common ROOT SRC_DIR: print the resolved git common dir of the worktree ROOT when it
+# lies outside SRC_DIR (a linked worktree; mounted read-only too), nothing otherwise.
+fl_e2e_git_common() {
+	local root="$1" src="$2" common
+	common="$(git -C "${root}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+	[[ -n "${common}" ]] || return 0
+	common="$(fl_e2e_check_ro_dir "${common}" "git common dir")" || exit $?
+	[[ "${common}" == "${src}/"* ]] || printf '%s\n' "${common}"
+	return 0
+}
+
+# fl_e2e_seed_dir BASE: print the checked seed directory (FL_E2E_SEED_DIR or BASE/seed), nothing
+# when there is none; a seed that is not a directory is refused.
+fl_e2e_seed_dir() {
+	local seed="${FL_E2E_SEED_DIR:-$1/seed}"
+	[[ -e "${seed}" ]] || return 0
+	seed="$(fl_e2e_check_dir "${seed}" "seed directory")" || exit $?
+	[[ -d "${seed}" ]] || fl_e2e_refuse "seed '${seed}' is not a directory"
+	printf '%s\n' "${seed}"
+	return 0
+}
+
 # fl_e2e_own_dir DIR WHAT: create DIR (0700) when missing; refuse a symlink, a non-directory or
 # a directory owned by someone else.
 fl_e2e_own_dir() {

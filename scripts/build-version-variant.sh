@@ -40,6 +40,7 @@ release_command() {
 		tarball | appimage | flatpak | snap) echo "./scripts/release-portable.sh $1" ;;
 		*) return 1 ;;
 	esac
+	return 0
 }
 
 TREE_ONLY=0

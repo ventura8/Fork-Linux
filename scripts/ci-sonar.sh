@@ -57,6 +57,7 @@ load_token() {
 		echo "       'export SONAR_TOKEN=...' or write it to ${ROOT}/.sonar-token" >&2
 		exit 2
 	fi
+	return 0
 }
 
 # An expired or revoked token otherwise surfaces deep inside the scanner as a
@@ -98,6 +99,7 @@ ensure_coverage() {
 		echo "==> note: ${COVERAGE_XML#"${ROOT}"/} is missing — analysing without Python coverage."
 		echo "    Run FL_SONAR_COVERAGE=1 $0 first."
 	fi
+	return 0
 }
 
 run_scanner() {
@@ -132,7 +134,8 @@ run_scanner() {
 		--volume "${ROOT}:${ROOT}" \
 		--volume "${common_dir}:${common_dir}:ro" \
 		--workdir "${ROOT}" \
-		"${SCANNER_IMAGE}"
+		"${SCANNER_IMAGE}" || return
+	return 0
 }
 
 load_token
