@@ -46,10 +46,30 @@ def test_python_versions_cover_supported_range() -> None:
 def test_no_unscoped_issue_ignores() -> None:
     props = _properties()
     ids = [i for i in props.get("sonar.issue.ignore.multicriteria", "").split(",") if i]
+    assert ids, "CI scripts need scoped multicriteria ignores (S2083/S8707/S6350)"
     for ident in ids:
         assert props[f"sonar.issue.ignore.multicriteria.{ident}.ruleKey"]
         resource = props[f"sonar.issue.ignore.multicriteria.{ident}.resourceKey"]
         assert resource not in ("**", "**/*"), f"{ident} is not scoped to a path"
+        assert resource.startswith("**/scripts/"), f"{ident} must stay under scripts/"
+
+
+def test_security_taint_ignores_cover_the_ci_scripts() -> None:
+    """Sonar does not treat commonpath guards as S2083 sanitizers; keep one ignore per rule+path."""
+    props = _properties()
+    pairs = {
+        (
+            props[f"sonar.issue.ignore.multicriteria.{ident}.ruleKey"],
+            props[f"sonar.issue.ignore.multicriteria.{ident}.resourceKey"],
+        )
+        for ident in props.get("sonar.issue.ignore.multicriteria", "").split(",")
+        if ident
+    }
+    assert ("pythonsecurity:S2083", "**/scripts/gen-scenarios-doc.py") in pairs
+    assert ("pythonsecurity:S2083", "**/scripts/packaging-e2e-state.py") in pairs
+    assert ("pythonsecurity:S8707", "**/scripts/packaging-e2e-state.py") in pairs
+    assert ("pythonsecurity:S8707", "**/scripts/e2e-plan.py") in pairs
+    assert ("pythonsecurity:S6350", "**/scripts/gen-scenarios-doc.py") in pairs
 
 
 def test_scanner_image_is_pinned_and_token_never_in_argv() -> None:

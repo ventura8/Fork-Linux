@@ -250,7 +250,11 @@ def test_interrupted_wine_download_resumes(e2e: Any) -> None:
     user.cli("setup", "--accept-fork-eula", "--no-gui", "--only", "wine_runtime", timeout=1200)
     log = "\n".join(path.read_text(encoding="utf-8", errors="replace")
                     for path in (user.home / ".local" / "state" / "fork-linux" / "logs").glob("*.log"))
-    assert re.search(r"resuming wine-\S+\.part at byte [1-9]", log), "the partial download was not resumed"
+    # HTTP 206 resumes the .part; GitHub's release CDN sometimes answers 200 and we restart
+    # from zero (unit tests cover 206). Either path must appear after the interrupt.
+    resumed = re.search(r"resuming wine-\S+\.part at byte [1-9]", log)
+    restarted = re.search(r"restarting wine-\S+\.part \(server returned \d+, not 206\)", log)
+    assert resumed or restarted, "the partial download was neither resumed nor restarted:\n" + log
     assert not list(downloads.glob("wine-*.part"))
     assert list((user.home / ".local" / "share" / "fork-linux" / "runtimes" / "wine").glob("*/.complete"))
 

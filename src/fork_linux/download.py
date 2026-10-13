@@ -309,11 +309,16 @@ def _transfer(
     if size is not None and offset == size and offset:
         return _Transfer(_hash_file(part).hexdigest(), True)
 
+    had_partial = offset > 0
     response = _open_response(opener, url, part, offset, timeout)
     with response:
+        status = response.status
         offset, total, hasher = _body_start(response, part, offset)
         if offset:
             log.info("resuming %s at byte %d", part.name, offset)
+        elif had_partial:
+            # GitHub's release CDN sometimes answers 200 to a ranged request.
+            log.info("restarting %s (server returned %s, not 206)", part.name, status)
         _check_announced(url, part, total, size, max_size)
         expected = total if total is not None else size
         with _open_part(part, append=offset > 0) as out:

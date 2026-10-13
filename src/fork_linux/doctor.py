@@ -1517,7 +1517,8 @@ def check_ssh_passphrase(ctx: DoctorCtx) -> Result:
     names = ", ".join(keys)
     if _bridge_ready(ctx):
         return Result("ok", f"{names} need(s) a passphrase: the git bridge's Linux ssh asks for it")
-    return Result("info", f"{names} need(s) a passphrase: {ssh_sync.PASSPHRASE_PROBLEM}", ssh_sync.PASSPHRASE_HINT)
+    return Result("info", f"{names} need(s) a passphrase: {ssh_sync.ENCRYPTED_KEY_PROBLEM}",
+                  ssh_sync.ENCRYPTED_KEY_HINT)
 
 
 AGENT_OFF_HINT = "'fork-linux config set ssh.agent_relay on' lets Fork's bundled ssh use your ssh-agent"

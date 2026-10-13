@@ -136,11 +136,15 @@ def test_resume_from_part_file(
     assert "resuming f.bin.part at byte 1000" in caplog.text
 
 
-def test_server_ignoring_range_restarts_from_zero(http_server: FakeHTTPServer, tmp_path: Path) -> None:
+def test_server_ignoring_range_restarts_from_zero(
+    http_server: FakeHTTPServer, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     http_server.add("/f.bin", BODY, ranges=False)
     (tmp_path / "f.bin.part").write_bytes(b"Z" * 1000)
-    assert get(http_server, "/f.bin", tmp_path, sha256=BODY_SHA).read_bytes() == BODY
+    with caplog.at_level(logging.INFO, logger="fork_linux.download"):
+        assert get(http_server, "/f.bin", tmp_path, sha256=BODY_SHA).read_bytes() == BODY
     assert len(http_server.requests) == 1
+    assert "restarting f.bin.part (server returned 200, not 206)" in caplog.text
 
 
 def test_range_not_satisfiable_discards_part_and_retries(http_server: FakeHTTPServer, tmp_path: Path) -> None:

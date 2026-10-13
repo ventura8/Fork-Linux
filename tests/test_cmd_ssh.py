@@ -135,7 +135,7 @@ def test_sync_and_status_name_keys_that_need_a_passphrase(
     )
     out = run_cli(capsys, "ssh", "sync")[1]
     assert "needs a passphrase: id_ed25519\n" in out
-    assert f"note: {ssh_sync.PASSPHRASE_PROBLEM}; {ssh_sync.PASSPHRASE_HINT}\n" in out
+    assert f"note: {ssh_sync.ENCRYPTED_KEY_PROBLEM}; {ssh_sync.ENCRYPTED_KEY_HINT}\n" in out
     assert run_json(capsys, "ssh", "sync", "--dry-run")["passphrase_keys"] == ["id_ed25519"]
     status = run_cli(capsys, "ssh", "status")[1]
     assert "needs a passphrase: id_ed25519\n" in status

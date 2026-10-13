@@ -101,7 +101,7 @@ def _print_passphrase_keys(keys: list[str]) -> None:
     for name in keys:
         print(f"needs a passphrase: {name}")
     if keys:
-        print(f"note: {ssh_sync.PASSPHRASE_PROBLEM}; {ssh_sync.PASSPHRASE_HINT}")
+        print(f"note: {ssh_sync.ENCRYPTED_KEY_PROBLEM}; {ssh_sync.ENCRYPTED_KEY_HINT}")
 
 
 def _nothing(dry_run: bool, unchanged: int) -> str:
