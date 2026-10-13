@@ -181,6 +181,14 @@ def test_ci_docker_gives_the_invoking_user_a_passwd_entry() -> None:
     assert "trap 'rm -f \"${PASSWD_FILE:?}\"' EXIT" in text
 
 
+def test_ci_c_coverage_gives_the_invoking_user_a_passwd_entry() -> None:
+    """The nested bridge image has no GHA runner uid; ssh-keygen needs a passwd line."""
+    text = _text(ROOT / "scripts" / "ci-c-coverage.sh")
+    assert 'docker run --rm --entrypoint cat "${IMAGE}" /etc/passwd >"${PASSWD_FILE}"' in text
+    assert '--volume "${PASSWD_FILE}:/etc/passwd:ro"' in text
+    assert "trap 'rm -f \"${PASSWD_FILE:?}\"' EXIT" in text
+
+
 def test_ci_images_bind_mount_instead_of_copying_the_tree() -> None:
     for path in DOCKERFILES:
         assert not re.search(r"^COPY \. ", _text(path), re.MULTILINE), f"{path.name} copies the whole tree"

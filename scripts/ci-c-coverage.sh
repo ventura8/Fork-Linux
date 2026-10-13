@@ -107,8 +107,18 @@ args=(--no-docker)
 ((WINE)) || args+=(--no-wine)
 # Same absolute path inside as outside: the .gcda paths are compiled in, and Wine
 # reaches them through its Z: drive. Unprivileged (never run Wine as root), own HOME.
+# The invoking uid often has no passwd entry in the image (GHA runners use 1001); tools
+# such as ssh-keygen refuse to run without one (ci-docker.sh uses the same pattern).
+PASSWD_FILE="$(mktemp "${TMPDIR:-/tmp}/fl-ci-passwd.XXXXXX")"
+trap 'rm -f "${PASSWD_FILE:?}"' EXIT
+docker run --rm --entrypoint cat "${IMAGE}" /etc/passwd >"${PASSWD_FILE}"
+if ! awk -F: -v uid="$(id -u)" '$3 == uid {found=1} END {exit !found}' "${PASSWD_FILE}"; then
+  printf 'fl-ci:x:%s:%s:fork-linux CI:/nonexistent:/usr/sbin/nologin\n' "$(id -u)" "$(id -g)" >>"${PASSWD_FILE}"
+fi
+chmod 0644 "${PASSWD_FILE}"
 docker run --rm \
   --user "$(id -u):$(id -g)" \
+  --volume "${PASSWD_FILE}:/etc/passwd:ro" \
   --env HOME=/tmp/h \
   --env PYTHONDONTWRITEBYTECODE=1 \
   --volume "${ROOT}:${ROOT}" \

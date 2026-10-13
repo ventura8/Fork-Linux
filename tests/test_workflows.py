@@ -294,6 +294,10 @@ def test_e2e_wine_shards_cover_every_real_tier_module_once() -> None:
     assert "fail-fast: false" in E2E
     # The whole workflow stays under the hour (tests/test_e2e_plan.py estimates each shard).
     assert "timeout-minutes: 70" in _job(E2E, "e2e")
+    # Template + two live copies need ~8 GiB; reclaim toolcaches before the Wine tier.
+    assert E2E.count("- name: Free disk space") == 2  # e2e shards and e2e-de
+    assert "/usr/share/dotnet" in E2E and "/usr/local/lib/android" in E2E
+    assert E2E.index("- name: Free disk space") < E2E.index("./scripts/build-bridge.sh")
     # No template or seed is ever kept between runs.
     assert "FL_E2E_TEMPLATE_CACHE" not in E2E and "FL_E2E_SEED" not in E2E
     # Weekly, on demand and on pull requests from the release branches.

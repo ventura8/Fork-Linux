@@ -16,8 +16,11 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
 - Pip pins are exact `==`; tools come from pinned images (`rhysd/actionlint:1.7.12`, `hadolint/hadolint:v2.15.1`).
 - The coverage stage runs `scripts/ci-c-coverage.sh` and then `scripts/check-coverage.py` (every file >= 90%) on the
   host side; `FL_CI_C_COVERAGE=0` skips both (check.yml runs them as steps of the coverage job).
-- Stage / cell containers run as the invoking uid; `ci-docker.sh` mounts the image's `/etc/passwd` plus a line for that
-  uid (`fl-ci`, home `/nonexistent`) read-only, since Fedora's ssh-keygen refuses a uid without one.
+- Stage / cell containers run as the invoking uid; `ci-docker.sh` and `ci-c-coverage.sh` mount the image's `/etc/passwd`
+  plus a line for that uid (`fl-ci`, home `/nonexistent`) read-only, since ssh-keygen refuses a uid without one
+  (Fedora compat cells and GHA runners at uid 1001).
+- `e2e-wine.yml` frees runner toolcaches (`/usr/share/dotnet`, Android SDK, …) before the bridge build and the real
+  tier so a ~2.8 GiB template plus `matrix.jobs: 2` live copies fit on the runner.
 - Caching: `FL_CI_DOCKER_CACHE=gha|local|none`, `FL_CI_FORCE_BUILD=1`, `FL_CI_PARALLEL_BUILD=1` in the matrix.
 - Real-Fork image `fork-linux-ci-e2e-wine:26.04` (`docker/Dockerfile.e2e.wine`): CI via `scripts/ci-e2e-wine.sh` (e2e-wine.yml: five shards, each
   one template root and its modules two at a time, every module in a root of its own; a module that failed with Velopack's "Failed to start application (OS Error 731)" is re-run once
