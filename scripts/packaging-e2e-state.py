@@ -82,15 +82,16 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 def _write(path: Path, data: str | bytes, mode: int = 0o644, *, under: Path) -> None:
     """Write ``path`` only when it resolves under ``under`` (Sonar S2083)."""
-    base = under.resolve()
-    target = path.expanduser().resolve()
-    if not target.is_relative_to(base):
+    base = os.path.realpath(under)
+    target = os.path.realpath(path.expanduser())
+    if os.path.commonpath([base, target]) != base:
         raise E2EFailure(f"{path}: refuses to write outside {base}")
-    target.parent.mkdir(parents=True, exist_ok=True)
+    out = Path(target)
+    out.parent.mkdir(parents=True, exist_ok=True)
     if isinstance(data, str):
         data = data.encode("utf-8")
-    target.write_bytes(data)
-    os.chmod(target, mode)
+    out.write_bytes(data)
+    os.chmod(out, mode)
 
 
 class Layout:

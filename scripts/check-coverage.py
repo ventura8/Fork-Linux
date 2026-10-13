@@ -48,7 +48,10 @@ ROOT = Path(__file__).resolve().parent.parent
 LANGUAGES = {".py": "python", ".c": "c", ".h": "c"}
 REQUIRED_SUFFIXES = (".py", ".c")
 # Path-list keys in sonar-project.properties that must never carry absolute ``file:`` patterns.
-SONAR_PATH_KEYS = ("sonar.inclusions", "sonar.exclusions", "sonar.coverage.exclusions")
+SONAR_INCLUSIONS = "sonar.inclusions"
+SONAR_EXCLUSIONS = "sonar.exclusions"
+SONAR_COVERAGE_EXCLUSIONS = "sonar.coverage.exclusions"
+SONAR_PATH_KEYS = (SONAR_INCLUSIONS, SONAR_EXCLUSIONS, SONAR_COVERAGE_EXCLUSIONS)
 
 PYTHON_REPORTS = "sonar.python.coverage.reportPaths"
 GENERIC_REPORTS = "sonar.coverageReportPaths"
@@ -215,9 +218,9 @@ class Scope:
                 raise InputError(f"{key}: absolute 'file:' patterns are not supported")
         return cls(
             sources=[posixpath.normpath(item) for item in split_list(props.get("sonar.sources", "."))],
-            inclusions=patterns("sonar.inclusions"),
-            exclusions=patterns("sonar.exclusions"),
-            coverage_exclusions=patterns("sonar.coverage.exclusions"),
+            inclusions=patterns(SONAR_INCLUSIONS),
+            exclusions=patterns(SONAR_EXCLUSIONS),
+            coverage_exclusions=patterns(SONAR_COVERAGE_EXCLUSIONS),
             python_reports=split_list(props.get(PYTHON_REPORTS, "")),
             generic_reports=split_list(props.get(GENERIC_REPORTS, "")),
         )
@@ -233,11 +236,11 @@ class Scope:
         if not self.in_sources(path):
             return "outside sonar.sources"
         if self.inclusions and not matches_any(path, self.inclusions):
-            return "not in sonar.inclusions"
+            return f"not in {SONAR_INCLUSIONS}"
         if matches_any(path, self.exclusions):
-            return "sonar.exclusions"
+            return SONAR_EXCLUSIONS
         if matches_any(path, self.coverage_exclusions):
-            return "sonar.coverage.exclusions"
+            return SONAR_COVERAGE_EXCLUSIONS
         return None
 
 

@@ -47,6 +47,12 @@ if args[:2] == ["image", "inspect"]:
         sys.exit(1)
     print(os.environ.get("FAKE_IMAGE_DIGEST", ""))
     sys.exit(0)
+# fl_e2e_passwd_args: image passwd probe (not a pytest session; do not consume FAKE_RUN_*).
+if args[:1] == ["run"] and args[-2:] == ["cat", "/etc/passwd"]:
+    print("root:x:0:0:root:/root:/bin/bash")
+    if os.environ.get("FAKE_PASSWD_KNOWS_UID") == "1":
+        print(f"user:x:{{os.getuid()}}:{{os.getgid()}}:u:/e2e/home:/bin/bash")
+    sys.exit(0)
 if args[:1] == ["run"]:
     for i, arg in enumerate(args):
         if arg in ("--volume", "-v") and args[i + 1].split(":")[1:2] == ["/e2e"]:
@@ -70,9 +76,12 @@ if args[:1] == ["run"]:
             if not os.path.lexists(link):
                 os.symlink("/etc/hostname", link)
     print("fake container output")
-    # FAKE_RUN_OUTPUTS / FAKE_RUN_RCS: one value per docker run, in order ("|||" / "," separated).
+    # FAKE_RUN_OUTPUTS / FAKE_RUN_RCS: one value per pytest docker run (passwd probes excluded).
     with open(os.environ["FAKE_LOG"], encoding="utf-8") as log:
-        nth = sum(1 for line in log if json.loads(line).get("args", [None])[:1] == ["run"]) - 1
+        nth = sum(
+            1 for line in log
+            if (a := json.loads(line).get("args", [None]))[:1] == ["run"] and a[-2:] != ["cat", "/etc/passwd"]
+        ) - 1
     outputs = os.environ.get("FAKE_RUN_OUTPUTS")
     rcs = os.environ.get("FAKE_RUN_RCS")
     time.sleep(float(os.environ.get("FAKE_RUN_SLEEP", "0")))
@@ -177,7 +186,11 @@ class Box:
         return [row for row in rows if tool is None or row["tool"] == tool]
 
     def docker_runs(self) -> list[list[str]]:
-        return [row["args"] for row in self.calls("docker") if row["args"][:1] == ["run"]]
+        """Pytest (or shell) container runs; the passwd probe of ``fl_e2e_passwd_args`` is excluded."""
+        return [
+            row["args"] for row in self.calls("docker")
+            if row["args"][:1] == ["run"] and row["args"][-2:] != ["cat", "/etc/passwd"]
+        ]
 
 
 @pytest.fixture
@@ -222,6 +235,7 @@ def test_pytest_mode_mounts_env_and_logs(box: Box) -> None:
             f"{box.git_common}:{box.git_common}:ro",
             f"{box.scratch}:/e2e:rw",
             f"{box.seed}:/seed:ro",
+            f"{box.scratch}/passwd:/etc/passwd:ro",
         ]
     )
     named = subprocess.run(["id", "-un"], capture_output=True, text=True, check=False)
@@ -664,7 +678,10 @@ def test_ci_e2e_wine_runs_each_module_of_a_shard_in_a_scratch_root_of_its_own(bo
         ["--tree-only", "0.9.1"], ["--out", builds[2].split()[1]], ["--tree-only", "0.9.2"],
         ["--out", builds[4].split()[1]],
     ]
-    rows = [row for row in box.calls("docker") if row["args"][:1] == ["run"]]
+    rows = [
+        row for row in box.calls("docker")
+        if row["args"][:1] == ["run"] and row["args"][-2:] != ["cat", "/etc/passwd"]
+    ]
     full = [row["args"] for row in rows]
     assert full[0][-3:] == TEMPLATE_TEST
     assert [argv[-2:] for argv in full[1:]] == [[f"tests/e2e/{module}", "-x"] for module in PLANNED]
@@ -720,7 +737,10 @@ def test_ci_e2e_wine_runs_the_modules_in_parallel(box: Box) -> None:
     result = box.run("--all", "--jobs", "3", script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FAKE_RUN_SLEEP="1")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "4 modules, 3 at a time" in result.stdout
-    rows = [row for row in box.calls("docker") if row["args"][:1] == ["run"]]
+    rows = [
+        row for row in box.calls("docker")
+        if row["args"][:1] == ["run"] and row["args"][-2:] != ["cat", "/etc/passwd"]
+    ]
     ends = {row["name"]: row["t"] for row in box.calls("docker-end")}
     spans = {_opts(row["args"], "--name")[0].rsplit("-", 1)[-1]: (row["t"], ends[_opts(row["args"], "--name")[0]], row)
              for row in rows}
@@ -752,7 +772,10 @@ def test_ci_e2e_wine_runs_a_long_module_in_parts(box: Box) -> None:
                      TMPDIR=str(tmpdir))
     assert result.returncode == 0, result.stdout + result.stderr
     path = "tests/e2e/test_real_setup_variants.py"
-    rows = [row for row in box.calls("docker") if row["args"][:1] == ["run"]]
+    rows = [
+        row for row in box.calls("docker")
+        if row["args"][:1] == ["run"] and row["args"][-2:] != ["cat", "/etc/passwd"]
+    ]
     assert [row["args"][-2:] for row in rows[1:]] == [
         ["--basetemp=/e2e/pytest", f"{path}::test_dotnet472_prefix_runs_fork"],
         [path, f"--deselect={path}::test_dotnet472_prefix_runs_fork"],
@@ -775,7 +798,10 @@ def test_ci_e2e_wine_without_a_template(box: Box) -> None:
     shard = ["tests/e2e/test_real_bridge.py", "tests/e2e/test_real_fork.py"]
     off = box.run("--jobs", "1", *shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_TEMPLATE="0")
     assert off.returncode == 0, off.stdout + off.stderr
-    rows = [row for row in box.calls("docker") if row["args"][:1] == ["run"]]
+    rows = [
+        row for row in box.calls("docker")
+        if row["args"][:1] == ["run"] and row["args"][-2:] != ["cat", "/etc/passwd"]
+    ]
     assert [row["args"][-1] for row in rows] == shard
     assert [row["seen"] for row in rows] == [[], []]
     assert [_env(row["args"], "FL_E2E_REUSE") for row in rows] == ["0", "0"]
@@ -785,7 +811,10 @@ def test_ci_e2e_wine_without_a_template(box: Box) -> None:
     assert failed.returncode == 4, failed.stdout + failed.stderr
     assert "==> e2e-wine: template exit 4" in failed.stdout
     assert "setup failed" in failed.stdout
-    rows = [row for row in box.calls("docker") if row["args"][:1] == ["run"]]
+    rows = [
+        row for row in box.calls("docker")
+        if row["args"][:1] == ["run"] and row["args"][-2:] != ["cat", "/etc/passwd"]
+    ]
     assert [row["args"][-1] for row in rows] == ["test_01_setup_completes_and_resumes", *shard]
     assert [row["seen"] for row in rows[1:]] == [[], []]
     assert "tests/e2e/test_real_bridge.py exit 0" in failed.stdout
@@ -834,7 +863,10 @@ def test_ci_e2e_wine_keeps_a_template_cache_by_key(box: Box) -> None:
         "--jobs", "1", shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_TEMPLATE_CACHE=str(cache))
     assert second.returncode == 0, second.stdout + second.stderr
     assert f"reusing the template {template}" in second.stdout
-    (run,) = [row for row in box.calls("docker") if row["args"][:1] == ["run"]]
+    (run,) = [
+        row for row in box.calls("docker")
+        if row["args"][:1] == ["run"] and row["args"][-2:] != ["cat", "/etc/passwd"]
+    ]
     assert PREFIX_FILE in run["seen"]
     box.log.unlink()
     (box.wt / "src" / "fork_linux" / "setup.py").write_text("v2\n", encoding="utf-8")

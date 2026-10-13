@@ -215,6 +215,8 @@ USER_NAME="$(fl_e2e_user)"
 SLOT_WAIT=0
 RUN="$(new_scratch)"
 TEMPLATE=""
+# GHA uid 1001 has no passwd entry in the image; ssh-keygen and pwd.getpwuid need one.
+mapfile -t PASSWD_ARGS < <(fl_e2e_passwd_args "${IMAGE}" "${RUN}/passwd" "${USER_NAME}")
 
 # seed_root SCRATCH SEED: the root a session starts from: a copy of the template (SEED=template),
 # the template's download caches only (SEED=fresh) or nothing (SEED=none).
@@ -268,6 +270,7 @@ in_container() {
 		-e FL_E2E_BRIDGE_BUILDS="${builds_env}" \
 		-e PYTHONDONTWRITEBYTECODE=1 \
 		"${mounts[@]}" \
+		"${PASSWD_ARGS[@]}" \
 		-w /src \
 		"${IMAGE}" \
 		python3 -m pytest -v -rs --durations=0 --durations-min=5 -p no:cacheprovider --basetemp=/e2e/pytest "$@" \

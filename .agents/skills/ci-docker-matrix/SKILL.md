@@ -21,7 +21,8 @@ Canonical rules: [AGENTS.md](../../../AGENTS.md).
   (Fedora compat cells and GHA runners at uid 1001).
 - `e2e-wine.yml` frees runner toolcaches (`/usr/share/dotnet`, Android SDK, …) and sets `TMPDIR=/var/tmp`
   (not the 8 GiB `/tmp` tmpfs) before the bridge build and the real tier so a ~2.8 GiB template plus
-  `matrix.jobs: 2` live copies fit on the runner.
+  `matrix.jobs: 2` live copies fit on the runner. `ci-e2e-wine.sh` / `e2e-docker.sh` mount a passwd
+  entry for the invoking uid (`fl_e2e_passwd_args`) so ssh-keygen and `pwd.getpwuid` work on GHA.
 - Caching: `FL_CI_DOCKER_CACHE=gha|local|none`, `FL_CI_FORCE_BUILD=1`, `FL_CI_PARALLEL_BUILD=1` in the matrix.
 - Real-Fork image `fork-linux-ci-e2e-wine:26.04` (`docker/Dockerfile.e2e.wine`): CI via `scripts/ci-e2e-wine.sh` (e2e-wine.yml: five shards, each
   one template root and its modules two at a time, every module in a root of its own; a module that failed with Velopack's "Failed to start application (OS Error 731)" is re-run once

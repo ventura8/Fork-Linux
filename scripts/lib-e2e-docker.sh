@@ -37,6 +37,23 @@ fl_e2e_user() {
 	return 0
 }
 
+# fl_e2e_passwd_args IMAGE PASSWD_FILE USER_NAME: write PASSWD_FILE from the image's /etc/passwd
+# plus a line for this uid when the image does not know it (GHA runners are uid 1001; ssh-keygen
+# and pwd.getpwuid refuse otherwise). Prints one docker --volume arg, or nothing when the image
+# already has us.
+fl_e2e_passwd_args() {
+	local image="$1" dest="$2" user="$3" uid
+	uid="$(id -u)"
+	# Close the slot lock fds (8/9): this probe must never hold a host-wide E2E slot open.
+	docker run --rm --user "${uid}:$(id -g)" "${image}" cat /etc/passwd >"${dest}" 8>&- 9>&- \
+		|| fl_e2e_die "cannot read /etc/passwd of ${image}"
+	if ! cut -d: -f3 "${dest}" | grep -qx -- "${uid}"; then
+		printf '%s:x:%s:%s:fork-linux E2E:/e2e/home:/bin/bash\n' "${user}" "${uid}" "$(id -g)" >>"${dest}"
+		printf -- '--volume\n%s:/etc/passwd:ro\n' "${dest}"
+	fi
+	return 0
+}
+
 # fl_e2e_refuse MESSAGE: a safety refusal (exit status 2).
 fl_e2e_refuse() {
 	echo "${FL_E2E_PROG:-e2e-docker}: refusing: $*" >&2

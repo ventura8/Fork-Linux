@@ -178,6 +178,8 @@ if ((PTRACE)); then
 	args+=(--cap-add SYS_PTRACE)
 fi
 USER_NAME="$(fl_e2e_user)"
+mapfile -t PASSWD_ARGS < <(fl_e2e_passwd_args "${IMAGE}" "${SCRATCH}/passwd" "${USER_NAME}")
+args+=("${PASSWD_ARGS[@]}")
 args+=(--env HOME=/e2e/home --env "USER=${USER_NAME}" --env "LOGNAME=${USER_NAME}"
 	--env PYTHONDONTWRITEBYTECODE=1 --env FL_E2E_FORK=1 --env FL_E2E_ROOT=/e2e/root)
 if [[ -n "${SEED}" ]]; then

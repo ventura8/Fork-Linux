@@ -292,6 +292,8 @@ def test_e2e_wine_shards_cover_every_real_tier_module_once() -> None:
     assert './scripts/ci-e2e-wine.sh --jobs "${JOBS}" "${tests[@]}"' in E2E
     assert "JOBS: ${{ matrix.jobs }}" in E2E
     assert "fail-fast: false" in E2E
+    assert "fl_e2e_passwd_args" in E2E_SCRIPT
+    assert '"${PASSWD_ARGS[@]}"' in E2E_SCRIPT
     # The whole workflow stays under the hour (tests/test_e2e_plan.py estimates each shard).
     assert "timeout-minutes: 70" in _job(E2E, "e2e")
     # Template + two live copies need ~8 GiB; reclaim toolcaches before the Wine tier.

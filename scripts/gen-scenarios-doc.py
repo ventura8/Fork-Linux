@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import subprocess
 import sys
@@ -48,16 +49,17 @@ ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = Path("tests/e2e/scenarios.json")
 CATALOG = Path("docs/qa/E2E-SCENARIOS.md")
 PACKAGING_MATRIX = Path("scripts/ci-packaging-matrix.sh")
+PACKAGING_E2E = Path("scripts/packaging-e2e-install.sh")
 
 
 def _under(root: Path, relative: Path | str) -> Path:
     """Resolve ``root / relative`` and refuse any path that escapes ``root`` (Sonar S2083)."""
-    base = root.resolve()
-    path = (base / relative).resolve()
-    if not path.is_relative_to(base):
+    base = os.path.realpath(root)
+    path = os.path.realpath(os.path.join(base, str(relative)))
+    if os.path.commonpath([base, path]) != base:
         raise ValueError(f"{relative} escapes {base}")
-    return path
-PACKAGING_E2E = Path("scripts/packaging-e2e-install.sh")
+    return Path(path)
+
 
 THIS_BRANCH = "this-branch"
 PROVIDERS = (THIS_BRANCH, "fix/update-tests", "fix/de-e2e", "fix/font-fallback-472")

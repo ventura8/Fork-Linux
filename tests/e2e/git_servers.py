@@ -152,7 +152,11 @@ class SshServer:
     def __init__(self, base: Path) -> None:
         self.base = base
         self.port = free_port()
-        self.user = pwd.getpwuid(os.getuid()).pw_name
+        try:
+            self.user = pwd.getpwuid(os.getuid()).pw_name
+        except KeyError:
+            # The E2E image may not know GHA's uid until the runner mounts a passwd file.
+            self.user = os.environ.get("USER") or f"uid{os.getuid()}"
         self.process: subprocess.Popen[bytes] | None = None
 
     def start(self, authorized_keys: Path) -> None:
