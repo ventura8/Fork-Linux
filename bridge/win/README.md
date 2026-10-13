@@ -2,16 +2,17 @@
 
 Fork for Linux (unofficial) runs the official Fork for Windows under Wine. The **git bridge**
 is an opt-in, experimental way to let Fork use the host's native `/usr/bin/git` instead of
-its bundled Git for Windows. This directory holds the two small Windows programs (PE32+
-x86-64, GUI subsystem, MinGW-w64) that live inside the Wine prefix:
+its bundled Git for Windows. This directory holds the Windows programs (PE32+ x86-64,
+MinGW-w64) that live inside the Wine prefix:
 
 | File | Purpose |
 |---|---|
 | `fl_win.h`, `fl_win.c` | Shared Win32 helpers: UTF-16 ↔ UTF-8, `wine_get_unix_file_name` / `wine_get_dos_file_name` (via `GetProcAddress(kernel32)`), Winsock connect and framed I/O, `BCryptGenRandom` nonces, the mutual HMAC handshake, the stdin pump thread, the relay loop, exit handling, the JSON-line call log. |
 | `fl_shim.c` | `fl-shim.exe`, installed under the names `git.exe`, `bash.exe` and `sh.exe`. |
-| `fl_launch.c` | `fl-launch.exe <verb> [args]`: opens host tools (terminal, file manager, diff/merge tools, editor) through the daemon. |
+| `fl_launch.c` | `fl-launch.exe <verb> [args]`: opens host tools (terminal, file manager, diff/merge tools, editor, file pickers) through the daemon. |
+| `fl_filedlg.c`, `fl_filedlg.def` | `fl-filedlg.dll`: InprocServer32 for FileOpenDialog / FileSaveDialog; `Show` runs `fl-launch.exe pick-*` so Fork gets zenity/kdialog (`[integration] system_file_dialogs`). |
 | `res/app.manifest` | asInvoker, UTF-8 active code page, long-path aware, Windows 7–11 `supportedOS`. |
-| `res/fl_shim.rc`, `res/fl_launch.rc` | Manifest + `VERSIONINFO` (ProductName "Fork for Linux (unofficial) bridge", CompanyName "Fork-Linux project (unofficial)", LegalCopyright "MIT"). The version comes from a generated `fl_version.h` (see Build). |
+| `res/fl_shim.rc`, `res/fl_launch.rc`, `res/fl_filedlg.rc` | Manifest + `VERSIONINFO` (ProductName "Fork for Linux (unofficial) bridge", CompanyName "Fork-Linux project (unofficial)", LegalCopyright "MIT"). The version comes from a generated `fl_version.h` (see Build). |
 | `build-dev.sh` | Developer build into `build-bridge/dev/` inside `fork-linux-ci-bridge:26.04`. |
 | `tests/fl_testdrv.c` | **Test only, never installed**: `fl-testdrv.exe` spawns a program the way Fork's .NET `Process.Start` does, for the Wine tier (`tests/bridge/test_shims_wine.py`). |
 
@@ -32,6 +33,7 @@ C:\fork-linux\gitInstance\bin\sh.exe           fl-shim.exe (persona sh)
 C:\fork-linux\gitInstance\usr\bin\bash.exe     fl-shim.exe (persona bash)
 C:\fork-linux\gitInstance\usr\bin\sh.exe       fl-shim.exe (persona sh)
 C:\fork-linux\bin\fl-launch.exe
+C:\fork-linux\bin\fl-filedlg.dll
 ```
 
 When the bridge is enabled the launcher exports `FORKGITINSTANCE=C:\fork-linux\gitInstance`.

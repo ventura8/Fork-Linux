@@ -187,6 +187,12 @@ SCHEMA: dict[str, dict[str, KeySpec]] = {
         "open_files_natively": KeySpec(
             "true", "Open files and folders from Fork with your Linux applications instead of Wine's.", kind="bool"
         ),
+        "system_file_dialogs": KeySpec(
+            "true",
+            "Use the Linux file picker (zenity / kdialog) for Fork's Open / Save / folder dialogs "
+            "instead of Wine's.",
+            kind="bool",
+        ),
     },
     "snapshots": {
         "keep": KeySpec(

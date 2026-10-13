@@ -2,15 +2,17 @@
 
 Fork (through ``fl-launch.exe`` and the bridge) asks for a terminal in a
 repository, to reveal a file in the file manager, to open a file or web link,
-or to run a diff / merge tool. Arguments may be Windows paths (``C:\\…``,
-``Z:\\…``), which are mapped back through the prefix's drive letters
-(``$WINEPREFIX``). Tools run with the user's environment minus Wine's
-variables and sandbox injections, through ``flatpak-spawn --host`` inside
-Flatpak.
+to run a diff / merge tool, or to show a Linux file/folder picker
+(``pick-dir`` / ``pick-file`` / ``save-file``, used by ``fl-filedlg.dll``).
+Arguments may be Windows paths (``C:\\…``, ``Z:\\…``), which are mapped back
+through the prefix's drive letters (``$WINEPREFIX``). Tools run with the
+user's environment minus Wine's variables and sandbox injections, through
+``flatpak-spawn --host`` inside Flatpak.
 
 Exit status: the tool's own status (``diff``, ``merge``, ``edit`` wait for
 it), 0 once a detached tool started (``terminal``, ``open``, ``open-url``,
-``reveal``), 127 when no suitable tool is installed, 2 for bad arguments.
+``reveal``), 0 with one absolute path on stdout for pickers, 1 when the user
+cancels a picker, 127 when no suitable tool is installed, 2 for bad arguments.
 
 ``fork-linux-host --handoff VERB ARG`` is the desktop hand-off from inside
 Wine's process tree (``libexec/fork-linux-handoff``, :mod:`fork_linux.handoff`):
@@ -30,7 +32,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote_to_bytes, urlsplit
 
-from . import sandbox
+from . import file_picker, sandbox
 from .config import Config
 from .errors import ForkLinuxError, NotSetUpError, UsageError
 from .pathmap import PathMap
@@ -62,10 +64,15 @@ verbs:
   diff LEFT RIGHT                  compare two files (waits)
   merge BASE LOCAL REMOTE MERGED   three-way merge into MERGED (waits)
   edit PATH [LINE]                 open PATH in its default editor (waits)
+  pick-dir [START]                 choose a folder (prints the path; cancel: 1)
+  pick-file [START]                choose an existing file (prints the path; cancel: 1)
+  save-file [START [NAME]]         choose a save path (prints the path; cancel: 1)
 
 terminal: $FORK_LINUX_TERMINAL or [integration] terminal (a command, {{dir}} is
 replaced by the directory), else the desktop's preferred terminal (Cinnamon, Budgie),
 xdg-terminal-exec, $TERMINAL, then known terminals.
+
+pickers: zenity, else kdialog (kdialog first on KDE/LXQt).
 """
 
 # Placeholders filled by :func:`fill`.
@@ -434,6 +441,43 @@ class Host:
         finally:
             os.unlink(values["base"])
 
+    # --- file / folder pickers ------------------------------------------------
+
+    def _pick(self, kind: str, start: str = "", name: str = "") -> int:
+        """Run a Linux picker; print the absolute path and return 0 (cancel: 1)."""
+        folder = self.path(start) if start else ""
+
+        def run(argv: Sequence[str], env: Mapping[str, str]) -> Any:
+            return self.runner.run(
+                sandbox.host_argv(list(argv), self.kind),
+                env=dict(env),
+                timeout=file_picker.PICK_TIMEOUT,
+            )
+
+        chosen = file_picker.pick(
+            kind,
+            folder,
+            name,
+            env=self.tool_env,
+            runner=self.runner,
+            which=self.which,
+            run=run,
+        )
+        print(chosen)
+        return 0
+
+    def pick_dir(self, start: str = "") -> int:
+        """Choose a folder; print its absolute path."""
+        return self._pick("dir", start)
+
+    def pick_file(self, start: str = "") -> int:
+        """Choose an existing file; print its absolute path."""
+        return self._pick("file", start)
+
+    def save_file(self, start: str = "", name: str = "") -> int:
+        """Choose a save path; print the absolute path (``name`` is a suggested file name)."""
+        return self._pick("save", start, name)
+
 
 def _split(text: str) -> list[str]:
     """Shell-like word splitting; unbalanced quotes fall back to whitespace."""
@@ -452,6 +496,9 @@ VERBS: dict[str, tuple[str, tuple[int, ...]]] = {
     "diff": ("diff", (2,)),
     "merge": ("merge", (4,)),
     "edit": ("edit", (1, 2)),
+    "pick-dir": ("pick_dir", (0, 1)),
+    "pick-file": ("pick_file", (0, 1)),
+    "save-file": ("save_file", (0, 1, 2)),
 }
 
 
@@ -482,6 +529,11 @@ def main(argv: Sequence[str] | None = None, *, host: Host | None = None) -> int:
     except ToolNotFound as exc:
         _error(exc.message, exc.hint)
         return EXIT_NOT_FOUND
+    except file_picker.PickNotFound as exc:
+        _error(exc.message, exc.hint)
+        return EXIT_NOT_FOUND
+    except file_picker.PickCancelled:
+        return file_picker.EXIT_CANCELLED
     except UsageError as exc:
         _error(exc.message, exc.hint)
         return EXIT_USAGE

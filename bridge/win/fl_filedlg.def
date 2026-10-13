@@ -1,0 +1,4 @@
+LIBRARY fl-filedlg
+EXPORTS
+    DllCanUnloadNow PRIVATE
+    DllGetClassObject PRIVATE

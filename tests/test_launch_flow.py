@@ -1073,10 +1073,24 @@ def test_run_with_systemd_starts_no_handoff_daemon(
     ctx: bootstrap.Ctx, flow: dict[str, Any], bridged: bridge_kit.Kit, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ctx.config.set("git", "bridge", "off")
+    ctx.config.set("integration", "system_file_dialogs", "false")
     monkeypatch.setattr(bridge, "systemd_user_manager", lambda env: True)
     launcher.run(flow["app"], [], execvpe=flow["exec"])
     assert bridged.starts() == []
     assert "FL_BRIDGE_PORT" not in flow["exec"].calls[0][2]
+
+
+def test_run_with_systemd_starts_handoff_daemon_for_file_dialogs(
+    ctx: bootstrap.Ctx, flow: dict[str, Any], bridged: bridge_kit.Kit, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """System file dialogs need fl-launch over the daemon even when systemd can hand off terminals."""
+    ctx.config.set("git", "bridge", "off")
+    ctx.config.set("integration", "system_file_dialogs", "true")
+    monkeypatch.setattr(bridge, "systemd_user_manager", lambda env: True)
+    launcher.run(flow["app"], [], execvpe=flow["exec"])
+    (start,) = bridged.starts()
+    assert "--handoff-only" in start["argv"]
+    assert "FL_BRIDGE_PORT" in flow["exec"].calls[0][2]
 
 
 def test_fast_path_reuses_the_running_daemon(

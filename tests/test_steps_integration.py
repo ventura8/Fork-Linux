@@ -41,12 +41,15 @@ def test_shims_are_copied(xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyP
     shims.mkdir()
     (shims / "fl-launch.exe").write_bytes(b"MZ launch")
     (shims / "fl-shim.exe").write_bytes(b"MZ shim")
+    (shims / "fl-filedlg.dll").write_bytes(b"MZ dlg")
     (shims / "fl-testdriver.exe").write_bytes(b"MZ test only")
     (shims / "readme.txt").write_text("not a shim")
     monkeypatch.setenv(resources.SHIMS_ENV, str(shims))
     ctx = make_ctx()
-    assert [path.name for path in integration.shim_sources()] == ["fl-launch.exe", "fl-shim.exe"]
-    assert set(integration.shims_inputs(ctx)["shims"]) == {"fl-launch.exe", "fl-shim.exe"}
+    assert [path.name for path in integration.shim_sources()] == [
+        "fl-filedlg.dll", "fl-launch.exe", "fl-shim.exe",
+    ]
+    assert set(integration.shims_inputs(ctx)["shims"]) == {"fl-filedlg.dll", "fl-launch.exe", "fl-shim.exe"}
     assert not integration.verify_shims(ctx)
     root = ctx.paths.fork_linux_win_dir
     # Rev 1 left a copy of fl-shim.exe in bin\; it goes away.
@@ -54,6 +57,7 @@ def test_shims_are_copied(xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyP
     (root / "bin" / "fl-shim.exe").write_bytes(b"MZ old")
     integration.run_shims(ctx)
     assert (root / "bin" / "fl-launch.exe").read_bytes() == b"MZ launch"
+    assert (root / "bin" / "fl-filedlg.dll").read_bytes() == b"MZ dlg"
     assert not (root / "bin" / "fl-shim.exe").exists()
     assert not (root / "bin" / "fl-testdriver.exe").exists()
     for rel in ("cmd/git.exe", "bin/git.exe", "mingw64/bin/git.exe", "bin/bash.exe", "bin/sh.exe",

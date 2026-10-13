@@ -263,6 +263,14 @@ class E2E:
         os.chmod(self.run_dir, 0o700)
         for directory in (self.shots, self.logs, self.repos):
             directory.mkdir(parents=True, exist_ok=True)
+        # Existing E2E file-dialog cases drive Wine's dialogs with xdotool. The product
+        # default is on; dedicated scenarios turn this back on with a stub picker.
+        config = self.home / ".config" / "fork-linux" / "config.ini"
+        if not config.is_file():
+            config.write_text(
+                "[integration]\nsystem_file_dialogs = false\n",
+                encoding="utf-8",
+            )
 
     @property
     def prefix(self) -> Path:

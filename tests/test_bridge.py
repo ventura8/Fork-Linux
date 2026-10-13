@@ -584,6 +584,7 @@ def test_start_handoff_not_needed_or_not_possible(
     kit: bridge_kit.Kit, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     ctx = _ctx(kit)
+    ctx.config.set("integration", "system_file_dialogs", "false")
     caplog.set_level("DEBUG", logger="fork_linux.bridge")
     _systemd_socket(Path(ctx.env["XDG_RUNTIME_DIR"]))
     monkeypatch.setattr(bridge.shutil, "which", lambda name, path=None: "/usr/bin/systemd-run")
@@ -597,6 +598,18 @@ def test_start_handoff_not_needed_or_not_possible(
     assert bridge.start_handoff(ctx) is None
     assert "no fl-bridge-helper in this installation" in caplog.text
     assert kit.starts() == []
+
+
+def test_start_handoff_for_system_file_dialogs(kit: bridge_kit.Kit, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With systemd available, system file dialogs still need a host-helper daemon."""
+    ctx = _ctx(kit)
+    ctx.config.set("integration", "system_file_dialogs", "true")
+    _systemd_socket(Path(ctx.env["XDG_RUNTIME_DIR"]))
+    monkeypatch.setattr(bridge.shutil, "which", lambda name, path=None: "/usr/bin/systemd-run")
+    daemon = bridge.start_handoff(ctx)
+    assert daemon is not None and daemon.handoff
+    assert "--handoff-only" in kit.starts()[0]["argv"]
+    daemon.stop()
 
 
 def test_start_handoff_failure_is_only_logged(kit: bridge_kit.Kit, caplog: pytest.LogCaptureFixture) -> None:

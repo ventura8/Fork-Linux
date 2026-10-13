@@ -53,7 +53,10 @@ def _host(
     popen: _Popen | None = None,
 ) -> tuple[hh.Host, RecordingRunner, _Popen]:
     names = {name for name, _args in hh.TERMINALS} | {name for name, _d, _m in hh.DIFF_TOOLS}
-    names |= {"xdg-terminal-exec", "gdbus", "dbus-send", "xdg-open", "my-term", "weird-term", "gsettings"}
+    names |= {
+        "xdg-terminal-exec", "gdbus", "dbus-send", "xdg-open", "my-term", "weird-term", "gsettings",
+        "zenity", "kdialog",
+    }
     which = {name: (f"/usr/bin/{name}" if name in installed else None) for name in names}
     runner = RecordingRunner(responses=responses or {}, which_map=which)
     spawner = popen or _Popen()
@@ -654,6 +657,26 @@ def test_main_open_url(tmp_path: Path) -> None:
     assert hh.main(["open-url", "https://git-fork.com/buy"], host=host) == 0
     assert popen.argvs == [["xdg-open", "https://git-fork.com/buy"]]
     assert hh.main(["open-url"], host=host) == hh.EXIT_USAGE
+
+
+def test_main_pick_dir_prints_path(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    chosen = tmp_path / "repo"
+    chosen.mkdir()
+    host, runner, _popen = _host(installed=("zenity",), responses={"zenity": str(chosen) + "\n"})
+    assert hh.main(["pick-dir", str(tmp_path)], host=host) == 0
+    assert capsys.readouterr().out.strip() == str(chosen)
+    assert runner.argvs[0][0] == "zenity"
+    assert "--directory" in runner.argvs[0]
+
+
+def test_main_pick_file_cancel(tmp_path: Path) -> None:
+    host, _runner, _popen = _host(installed=("zenity",), responses={"zenity": 1})
+    assert hh.main(["pick-file", str(tmp_path)], host=host) == 1
+
+
+def test_main_pick_missing_picker(tmp_path: Path) -> None:
+    host, _runner, _popen = _host()
+    assert hh.main(["pick-dir"], host=host) == hh.EXIT_NOT_FOUND
 
 
 def test_main_handoff_goes_to_the_daemon_else_runs_here(

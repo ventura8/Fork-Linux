@@ -59,7 +59,8 @@ case "${FORMAT}" in
 		expect "fork-linux-${VERSION}-x86_64.tar.gz"
 		tar -tzf "${ART}/fork-linux-${VERSION}-x86_64.tar.gz" >"${ART}/.tarball-list"
 		for f in bin/fork-linux bin/fork lib/fork-linux/fl-bridge-helper lib/fork-linux/win64/fl-shim.exe \
-			lib/fork-linux/win64/fl-launch.exe share/fork-linux/fork_linux/_build.py \
+			lib/fork-linux/win64/fl-launch.exe lib/fork-linux/win64/fl-filedlg.dll \
+			share/fork-linux/fork_linux/_build.py \
 			"share/applications/${APP_ID}.desktop" "share/metainfo/${APP_ID}.metainfo.xml"; do
 			grep -qx "fork-linux-${VERSION}/${f}" "${ART}/.tarball-list" || {
 				echo "error: tarball lacks fork-linux-${VERSION}/${f}" >&2

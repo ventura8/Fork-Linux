@@ -1,0 +1,38 @@
+/*
+ * fl_filedlg.rc - VERSIONINFO for fl-filedlg.dll (Fork for Linux (unofficial)).
+ */
+#include <windows.h>
+#include "fl_version.h"
+
+#if !defined(FL_VERSION_MAJOR) || !defined(FL_VERSION_MINOR) || !defined(FL_VERSION_PATCH) || !defined(FL_VERSION_STR)
+#error "fl_version.h must define FL_VERSION_MAJOR, FL_VERSION_MINOR, FL_VERSION_PATCH and FL_VERSION_STR"
+#endif
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION FL_VERSION_MAJOR, FL_VERSION_MINOR, FL_VERSION_PATCH, 0
+PRODUCTVERSION FL_VERSION_MAJOR, FL_VERSION_MINOR, FL_VERSION_PATCH, 0
+FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+FILEFLAGS 0x0L
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_DLL
+FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "Fork-Linux project (unofficial)"
+            VALUE "FileDescription", "Fork for Linux (unofficial) system file dialogs"
+            VALUE "FileVersion", FL_VERSION_STR
+            VALUE "InternalName", "fl-filedlg"
+            VALUE "LegalCopyright", "MIT"
+            VALUE "OriginalFilename", "fl-filedlg.dll"
+            VALUE "ProductName", "Fork for Linux (unofficial) bridge"
+            VALUE "ProductVersion", FL_VERSION_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END
