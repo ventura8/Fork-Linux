@@ -48,6 +48,15 @@ ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = Path("tests/e2e/scenarios.json")
 CATALOG = Path("docs/qa/E2E-SCENARIOS.md")
 PACKAGING_MATRIX = Path("scripts/ci-packaging-matrix.sh")
+
+
+def _under(root: Path, relative: Path | str) -> Path:
+    """Resolve ``root / relative`` and refuse any path that escapes ``root`` (Sonar S2083)."""
+    base = root.resolve()
+    path = (base / relative).resolve()
+    if not path.is_relative_to(base):
+        raise ValueError(f"{relative} escapes {base}")
+    return path
 PACKAGING_E2E = Path("scripts/packaging-e2e-install.sh")
 
 THIS_BRANCH = "this-branch"
@@ -770,7 +779,7 @@ def declare(root: Path, branch: str) -> list[str]:
     """
     plan = _pending_declarations(load(root), read_tree(root), branch)
     for path, wanted in plan.items():
-        file = root / path
+        file = _under(root, path)
         file.write_text(declare_in_source(file.read_text(encoding="utf-8"), wanted), encoding="utf-8")
     return sorted(plan)
 
@@ -783,7 +792,9 @@ def clear_pending(root: Path, branch: str) -> int:
         if entry.get("pending_merge") and entry.get("provided_by") == branch:
             entry["pending_merge"] = False
             cleared += 1
-    (root / REGISTRY).write_text(json.dumps(entries, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    _under(root, REGISTRY).write_text(
+        json.dumps(entries, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     return cleared
 
 

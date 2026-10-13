@@ -298,6 +298,8 @@ def test_e2e_wine_shards_cover_every_real_tier_module_once() -> None:
     assert E2E.count("- name: Free disk space") == 2  # e2e shards and e2e-de
     assert "/usr/share/dotnet" in E2E and "/usr/local/lib/android" in E2E
     assert E2E.index("- name: Free disk space") < E2E.index("./scripts/build-bridge.sh")
+    # Scratch roots must not use GHA's 8 GiB /tmp tmpfs (template alone is ~2.8 GiB).
+    assert "TMPDIR: /var/tmp" in _job(E2E, "e2e")
     # No template or seed is ever kept between runs.
     assert "FL_E2E_TEMPLATE_CACHE" not in E2E and "FL_E2E_SEED" not in E2E
     # Weekly, on demand and on pull requests from the release branches.

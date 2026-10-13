@@ -341,7 +341,12 @@ def test_10_install_sh_never_breaks_the_installed_fork_linux(
     assert version.stdout.startswith("fork-linux "), version.stdout
     forkui.launch(session, _repos(session) / ACTIVE)
     forkui.wait_main_window(session)
-    assert len(forkui.fork_pids(forkui.prefix(session))) == 1
+    # Velopack can briefly leave a second Fork.exe while it hands over; wait for one.
+    dekit.wait_for(
+        lambda: (pids if len(pids := forkui.fork_pids(forkui.prefix(session))) == 1 else None),
+        30,
+        "a single Fork.exe after launch",
+    )
     forkui.close_fork(session)
     session.run(install, timeout=300)
     assert not list(installed.prefix.parent.glob("fork-linux.*")), "no staged or retired tree is left"

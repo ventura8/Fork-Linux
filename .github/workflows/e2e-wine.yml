@@ -36,6 +36,10 @@ jobs:
        startsWith(github.head_ref, 'feature/v'))
     runs-on: ubuntu-26.04
     timeout-minutes: 70
+    # Scratch roots (template ~2.8 GiB plus live copies) must live on the root disk. GHA's
+    # default TMPDIR is /tmp (tmpfs, ~8 GiB), which fills as soon as the template is copied.
+    env:
+      TMPDIR: /var/tmp
     # A few shards of tests/e2e, balanced on tests/e2e/timings.json (tests/test_e2e_plan.py estimates
     # each and keeps it well under the hour; every module is in exactly one shard,
     # tests/test_workflows.py). A runner (4 cores, 16 GB) runs two real-Fork containers at once.

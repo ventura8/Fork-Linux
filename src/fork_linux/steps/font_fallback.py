@@ -90,7 +90,9 @@ FORBIDDEN = ("<!DOCTYPE", "<!ENTITY")
 
 # -- which Linux fonts serve which script ----------------------------------------------------------
 
-SANS = ("Noto Sans", "DejaVu Sans", "Liberation Sans")
+DEJAVU = "DejaVu Sans"
+LIBERATION = "Liberation Sans"
+SANS = ("Noto Sans", DEJAVU, LIBERATION)
 CJK_JP = ("Noto Sans CJK JP", "Noto Sans JP", "Source Han Sans JP", "Source Han Sans")
 CJK_KR = ("Noto Sans CJK KR", "Noto Sans KR", "Source Han Sans KR", "NanumGothic")
 CJK_SC = ("Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "Source Han Sans CN", "WenQuanYi Micro Hei")
@@ -123,12 +125,12 @@ class Script:
 SCRIPTS: tuple[Script, ...] = (
     Script("Greek", "0370-03FF, 1F00-1FFF", SANS),
     Script("Cyrillic", "0400-052F, 1C80-1C8F, 2DE0-2DFF, A640-A69F", SANS),
-    Script("Armenian", "0530-058F, FB13-FB17", ("Noto Sans Armenian", "DejaVu Sans")),
-    Script("Hebrew", "0590-05FF, FB1D-FB4F", ("Noto Sans Hebrew", "DejaVu Sans", "Liberation Sans")),
+    Script("Armenian", "0530-058F, FB13-FB17", ("Noto Sans Armenian", DEJAVU)),
+    Script("Hebrew", "0590-05FF, FB1D-FB4F", ("Noto Sans Hebrew", DEJAVU, LIBERATION)),
     Script(
         "Arabic",
         "0600-06FF, 0750-077F, 0870-08FF, FB50-FDFF, FE70-FEFF",
-        ("Noto Sans Arabic", "Noto Naskh Arabic", "DejaVu Sans"),
+        ("Noto Sans Arabic", "Noto Naskh Arabic", DEJAVU),
     ),
     Script("Devanagari", "0900-097F, A8E0-A8FF", ("Noto Sans Devanagari",)),
     Script("Bengali", "0980-09FF", ("Noto Sans Bengali",)),
@@ -144,7 +146,7 @@ SCRIPTS: tuple[Script, ...] = (
     Script("Lao", "0E80-0EFF", ("Noto Sans Lao",)),
     Script("Tibetan", "0F00-0FFF", ("Noto Serif Tibetan", "Noto Sans Tibetan")),
     Script("Myanmar", "1000-109F, A9E0-A9FF, AA60-AA7F", ("Noto Sans Myanmar",)),
-    Script("Georgian", "10A0-10FF, 1C90-1CBF, 2D00-2D2F", ("Noto Sans Georgian", "DejaVu Sans")),
+    Script("Georgian", "10A0-10FF, 1C90-1CBF, 2D00-2D2F", ("Noto Sans Georgian", DEJAVU)),
     Script("Ethiopic", "1200-139F, 2D80-2DDF, AB00-AB2F", ("Noto Sans Ethiopic",)),
     Script("Khmer", "1780-17FF, 19E0-19FF", ("Noto Sans Khmer",)),
     Script(HANGUL, HANGUL_RANGES, CJK_KR + CJK_JP + CJK_SC + CJK_TC + CJK_HK + CJK_LAST),

@@ -47,6 +47,8 @@ ROOT = Path(__file__).resolve().parent.parent
 # have no executable lines).
 LANGUAGES = {".py": "python", ".c": "c", ".h": "c"}
 REQUIRED_SUFFIXES = (".py", ".c")
+# Path-list keys in sonar-project.properties that must never carry absolute ``file:`` patterns.
+SONAR_PATH_KEYS = ("sonar.inclusions", "sonar.exclusions", "sonar.coverage.exclusions")
 
 PYTHON_REPORTS = "sonar.python.coverage.reportPaths"
 GENERIC_REPORTS = "sonar.coverageReportPaths"
@@ -208,7 +210,7 @@ class Scope:
         def patterns(key: str) -> list[re.Pattern[str]]:
             return [wildcard_regex(item) for item in split_list(props.get(key, ""))]
 
-        for key in ("sonar.inclusions", "sonar.exclusions", "sonar.coverage.exclusions"):
+        for key in SONAR_PATH_KEYS:
             if any(item.startswith("file:") for item in split_list(props.get(key, ""))):
                 raise InputError(f"{key}: absolute 'file:' patterns are not supported")
         return cls(

@@ -180,7 +180,12 @@ def test_a_runtime_without_staging_says_so(xdg: Path, tmp_path: Path, monkeypatc
     custom = tmp_path / "manifest.json"
     custom.write_text(json.dumps(manifest), encoding="utf-8")
     status = tmp_path / "status.json"
-    status.write_text(json.dumps({"prefix": str(tmp_path / "p" / "prefix"), "state_file": "s", "fork_linux": "1"}))
+    prefix = tmp_path / "p" / "prefix"
+    status.write_text(json.dumps({
+        "prefix": str(prefix),
+        "state_file": str(prefix / ".fork-linux" / "state.json"),
+        "fork_linux": "1",
+    }))
     layout = state_tool.prepare(status, custom)
     wine = layout.runtime(manifest["wine"]["default"]) / "bin" / "wine"
     assert f'echo "wine-{build["version"]}"' in wine.read_text(encoding="utf-8")
@@ -188,7 +193,12 @@ def test_a_runtime_without_staging_says_so(xdg: Path, tmp_path: Path, monkeypatc
 
 def test_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     status = tmp_path / "status.json"
-    status.write_text(json.dumps({"prefix": str(tmp_path / "data" / "prefix"), "state_file": "s", "fork_linux": "1"}))
+    prefix = tmp_path / "data" / "prefix"
+    status.write_text(json.dumps({
+        "prefix": str(prefix),
+        "state_file": str(prefix / ".fork-linux" / "state.json"),
+        "fork_linux": "1",
+    }))
     monkeypatch.delenv("USER", raising=False)
     code, _out, err = _tool(capsys, "digest", status)
     assert code == 1

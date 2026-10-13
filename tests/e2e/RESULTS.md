@@ -61,7 +61,8 @@ Per module (seconds of the run, the slot wait not counted; template modules excl
 | `test_real_setup_errors.py` | 3 | 483 (waited for a slot; 13 s of tests) | 3 | 6 |
 
 **CI** (`e2e-wine.yml`): five shards (`matrix.jobs: 2` on GitHub's 4-core, 16 GB runners), each
-freeing runner toolcaches first then building its own template in the job (nothing kept between
+freeing runner toolcaches first, setting `TMPDIR=/var/tmp` (GHA's `/tmp` is an 8 GiB tmpfs;
+the template alone is ~2.8 GiB), then building its own template in the job (nothing kept between
 runs, no seed). `tests/test_e2e_plan.py`
 estimates every shard from `tests/e2e/timings.json` (the loaded laptop's first run, so on the slow
 side: every module of the final laptop run took less) at about 28 minutes, plus the image build, the bridge builds and the downloads (about 10

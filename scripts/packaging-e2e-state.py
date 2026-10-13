@@ -80,22 +80,29 @@ def _load_json(path: Path) -> dict[str, Any]:
     return data
 
 
-def _write(path: Path, data: str | bytes, mode: int = 0o644) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+def _write(path: Path, data: str | bytes, mode: int = 0o644, *, under: Path) -> None:
+    """Write ``path`` only when it resolves under ``under`` (Sonar S2083)."""
+    base = under.resolve()
+    target = path.expanduser().resolve()
+    if not target.is_relative_to(base):
+        raise E2EFailure(f"{path}: refuses to write outside {base}")
+    target.parent.mkdir(parents=True, exist_ok=True)
     if isinstance(data, str):
         data = data.encode("utf-8")
-    path.write_bytes(data)
-    os.chmod(path, mode)
+    target.write_bytes(data)
+    os.chmod(target, mode)
 
 
 class Layout:
     """Where the simulated setup lives, from ``fork-linux status --json`` and the manifest."""
 
     def __init__(self, status: dict[str, Any], user: str) -> None:
-        self.prefix = Path(status["prefix"])
-        self.state_file = Path(status["state_file"])
+        self.prefix = Path(status["prefix"]).expanduser().resolve()
+        self.state_file = Path(status["state_file"]).expanduser().resolve()
         self.writer = str(status["fork_linux"])
         self.data_dir = self.prefix.parent
+        if not self.state_file.is_relative_to(self.data_dir):
+            raise E2EFailure(f"{self.state_file}: state file is outside {self.data_dir}")
         self.fork_dir = self.prefix / "drive_c" / "users" / user / "AppData" / "Local" / "Fork" / "current"
         self.created_by = self.prefix / ".fork-linux" / "created-by"
         self.wine_ran = self.data_dir / WINE_RAN
@@ -139,18 +146,18 @@ def prepare(status_json: Path, manifest_json: Path) -> Layout:
     manifest = _load_json(manifest_json)
     layout.prefix.mkdir(parents=True, exist_ok=True)
     os.chmod(layout.prefix, 0o700)
-    _write(layout.created_by, f"fork-linux {layout.writer}\n")
+    _write(layout.created_by, f"fork-linux {layout.writer}\n", under=layout.data_dir)
     fork_version = manifest["fork"]["default"]
-    _write(layout.fork_dir / "Fork.exe", placeholder_exe())
-    _write(layout.fork_dir / "sq.version", NUSPEC.format(version=fork_version))
+    _write(layout.fork_dir / "Fork.exe", placeholder_exe(), under=layout.data_dir)
+    _write(layout.fork_dir / "sq.version", NUSPEC.format(version=fork_version), under=layout.data_dir)
     build_id = manifest["wine"]["default"]
     build = manifest["wine"]["builds"][build_id]
     root = layout.runtime(build_id)
     flavor = " (Staging)" if build.get("flavor") == "staging" else ""
     stub = STUB.format(version=build["version"], flavor=flavor, ran=layout.wine_ran)
     for name in ("wine", "wineserver"):
-        _write(root / "bin" / name, stub, mode=0o755)
-    _write(root / ".complete", build["sha256"] + "\n")
+        _write(root / "bin" / name, stub, mode=0o755, under=layout.data_dir)
+    _write(root / ".complete", build["sha256"] + "\n", under=layout.data_dir)
     return layout
 
 
@@ -186,7 +193,12 @@ def record(status_json: Path, steps_json: Path) -> Layout:
         "consent": {"fork_eula": now, "method": "packaging-e2e"},
         "written_by": layout.writer,
     }
-    _write(layout.state_file, json.dumps(state, indent=2, sort_keys=True) + "\n", mode=0o600)
+    _write(
+        layout.state_file,
+        json.dumps(state, indent=2, sort_keys=True) + "\n",
+        mode=0o600,
+        under=layout.data_dir,
+    )
     return layout
 
 
