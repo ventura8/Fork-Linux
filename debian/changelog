@@ -1,3 +1,12 @@
+fork-linux (1.0.1) resolute; urgency=medium
+
+  * System file dialogs: Fork's Open / Save / folder pickers use zenity or
+    kdialog by default ([integration] system_file_dialogs), via fl-filedlg.dll
+    and fl-launch pick-*.
+  * Not affiliated with Fork's developers; buy Fork at https://git-fork.com/buy.
+
+ -- Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com>  Tue, 13 Oct 2026 14:31:20 +0000
+
 fork-linux (1.0.0) resolute; urgency=medium
 
   * First public release of Fork for Linux (unofficial), an unofficial Wine
