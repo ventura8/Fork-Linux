@@ -1,0 +1,139 @@
+# Fork for Linux (unofficial) — setup, build, extend, debug
+
+Canonical rules: [AGENTS.md](../AGENTS.md). Component details: [architecture/README.md](architecture/README.md).
+
+## 1. Run from a checkout
+
+```sh
+python3 bin/fork-linux.in --version        # the launcher finds src/ in a checkout
+python3 -m pytest -q                       # unit + contract tests (no network, no Wine, no real home)
+```
+
+Python 3.10+, standard library only; pytest (+ pytest-cov) is the only test dependency.
+
+## 2. Build and install with meson
+
+```sh
+meson setup build --prefix="$HOME/.local" -Dbridge=auto
+meson compile -C build
+meson test -C build                        # data checks (+ bridge unit tests with -Dtests=true)
+DESTDIR=/tmp/stage meson install -C build  # inspect the layout
+```
+
+Options (`meson.options`): `bridge` (feature; MinGW-w64 shims), `bridge_prebuilt_dir`
+(install shims built elsewhere when MinGW is missing), `tests`, `python` (launcher shebang;
+portable builds use `/usr/bin/env -S python3`), `flavor` (baked into `fork_linux/_build.py`),
+`fork_alias` (the `fork` symlink), `desktop`, `file_manager_actions` (system-wide "Open in
+Fork"; off by default because `fork-linux desktop install` adds per-user ones).
+
+Installed layout: `bin/fork-linux` + `bin/fork`, `share/fork-linux/fork_linux/`,
+`lib/fork-linux/` (host helpers, `fl-bridge-helper` + personas, `win64/*.exe`),
+`share/applications`, `share/metainfo`, `share/icons/hicolor`, `share/man/man1`,
+bash / zsh / fish completions.
+
+### Generated data (single sources)
+
+`scripts/gen-data.py` renders, from the Python package:
+
+| Output | Source |
+|---|---|
+| system `.desktop` | `src/fork_linux/data/templates/io.github.ventura8.ForkLinux.desktop.in` via `desktop_integration` (identical to the per-user entry for `fork-linux` on `PATH`) |
+| metainfo | `data/io.github.ventura8.ForkLinux.metainfo.xml.in` + `credits.render_metainfo_paragraphs()` |
+| file-manager actions | the per-user templates |
+| `data/completions/*`, `data/man/*.1` | the argparse parser (committed; `scripts/gen-data.py write` regenerates, `check` fails on drift) |
+
+After changing a command or option: `python3 scripts/gen-data.py write`.
+
+## 3. The CI gate (Docker)
+
+```sh
+FL_CI_STAGE=lint ./scripts/ci-docker.sh        # every linter (see AGENTS.md §4.8)
+FL_CI_STAGE=coverage ./scripts/ci-docker.sh    # pytest gates + ASan/UBSan unit tests + C coverage + per-file gate (scripts/check-coverage.py)
+FL_CI_STAGE=bridge ./scripts/ci-docker.sh      # MinGW/musl, reproducibility, FL_REAL_WINE=1 tier
+FL_CI_STAGE=compat FL_CI_CELL=jammy ./scripts/ci-docker.sh
+./scripts/ci-matrix.sh                         # 7 compat cells in parallel
+./scripts/ci-packaging-cell.sh deb             # one packaging cell: build + smoke + live E2E
+./scripts/ci-packaging-matrix.sh               # 9 cells in parallel
+./scripts/ci-pipeline.sh                       # everything, fail-fast, tee'd under logs/
+./scripts/ci-e2e-wine.sh --all                 # CI's real tier, every module (both update tiers too), in parallel from a template root
+./scripts/ci-e2e-wine.sh --jobs 2 tests/e2e/test_real_doctor.py tests/e2e/test_real_launch.py  # some modules, two at a time
+./scripts/ci-e2e-wine.sh --all --remote nuc --remote-jobs 5  # share the modules with a second machine over ssh (its clone ~/fork-linux-ci; committed work only)
+./scripts/ci-e2e-wine.sh                       # the whole tier in one session and one root (upstream-watch.yml)
+```
+
+### Real Fork / Wine locally: containers only
+
+Real-Fork and Wine work never runs on the host (AGENTS.md hard rule 18: on 2026-10-10 a home
+directory was deleted while real-Fork tests ran on the host). With `FL_E2E_FORK=1` or
+`FL_REAL_WINE=1` outside a container pytest stops at once (status 2), and `scripts/qa/*`,
+`scripts/spike/*`, `ci-docker.sh --inside` and `ci-c-coverage.sh --no-docker` refuse. Use:
+
+```sh
+scripts/e2e-docker.sh --name e2e pytest tests/e2e              # the real tier, seeded
+scripts/e2e-docker.sh --name e2e --keep pytest tests/e2e -k 03 # reuse the previous prefix
+FL_E2E_FORK_UPDATES=1 scripts/e2e-docker.sh --name upd-fork pytest tests/e2e/test_fork_update.py  # Fork updates (run scripts/build-bridge.sh first)
+FL_E2E_APP_UPGRADE=1 scripts/e2e-docker.sh --name upd-app pytest tests/e2e/test_wine_app_upgrade.py  # app upgrades
+scripts/e2e-docker.sh --name look --keep shell -- bash         # xdotool / import on DISPLAY=:99
+scripts/e2e-docker.sh --name trace --ptrace shell -- strace -f -o /e2e/t.txt python3 -m fork_linux doctor
+```
+
+The container sees only this worktree (read-only), the git common dir (read-only), the scratch
+root `/var/tmp/fork-linux-e2e/<NAME>` (`/e2e`, 0700; `FL_E2E_SCRATCH` overrides, never under
+`$HOME`) and the seed `/var/tmp/fork-linux-e2e/seed` (`/seed`, read-only: `wine-*.tar.xz`,
+`Fork-*.exe`, `winetricks-*`, `selawik-*.zip`, `winetricks/` cache; `FL_E2E_SEED_DIR` overrides).
+Logs land in `logs/e2e-docker/<NAME>/`; screenshots stay in `<scratch>/root/shots/` (Fork's logo:
+never commit them). At most `FL_E2E_SLOTS` (default: one per two cores and per 2 GiB of available memory, `fl_e2e_default_slots`) such containers run at once on the host.
+Runbook: [`.agents/skills/e2e-docker/SKILL.md`](../.agents/skills/e2e-docker/SKILL.md).
+
+Desktop E2E tier (fork-linux from the release tarball inside a real desktop session in a
+container; also containers only): `./scripts/ci-e2e-de.sh xfce` (integration, no Wine),
+`./scripts/ci-e2e-de.sh xfce --fork` (real Fork under the desktop's window manager),
+`./scripts/ci-e2e-de-matrix.sh [--fork]` (every desktop). See [docs/qa/DE-E2E.md](qa/DE-E2E.md).
+
+The real tier covers every user-facing scenario listed in
+[`docs/qa/E2E-SCENARIOS.md`](qa/E2E-SCENARIOS.md), generated from the registry
+`tests/e2e/scenarios.json`: a new feature or fix adds its scenario there and a test in
+`tests/e2e/test_*.py` that names it on a `Scenarios:` docstring line, then
+`python3 scripts/gen-scenarios-doc.py write`. The bridge scenarios need `scripts/build-bridge.sh` first.
+CI checks the registry on every pull request (check.yml, `gen-scenarios-doc.py validate` and `check`,
+even when the lint stage failed) next to the per-file coverage gate (`scripts/check-coverage.py`), and
+runs the real tier in `e2e-wine.yml` weekly, on demand and on pull requests from release branches
+(`feature/vX.Y.Z`): five parallel shards (balanced on `tests/e2e/timings.json`), each building one
+template root (the main prefix, set up once) and running its modules two at a time, longest first,
+each in a container and a root of its own copied from the template, under an hour. Locally
+`./scripts/ci-e2e-wine.sh --all` runs the whole tier the same way, `--jobs` (default: the host-wide
+slots) at a time; the full tier with both update tiers took 29 minutes on a 16-core, 30 GB laptop
+(8 jobs) and 22 minutes shared with a second machine (`--remote`, `tests/e2e/RESULTS.md`). `FL_E2E_TEMPLATE_CACHE=/var/tmp/fork-linux-e2e/templates` keeps the
+template across local runs (keyed by `scripts/e2e-plan.py key`: image, Fork version, setup code), so
+re-running one module skips the setup; CI never keeps one.
+
+Read every `logs/ci-packaging/<format>.log` after a packaging run (exit 0 is not enough).
+
+## 4. Packaging
+
+| Format | Build | Image |
+|---|---|---|
+| deb / deb-jammy | `scripts/release-deb.sh` (dpkg-buildpackage + lintian `--fail-on error`) | `Dockerfile.ppa{,.jammy}` |
+| PPA | `scripts/ppa-docker.sh --dry-run` (unsigned `1.0.0+ppa1~ubuntuNN.NN.1` source packages) | `Dockerfile.ppa` |
+| rpm | `scripts/release-rpm.sh fedora|opensuse` (rpmlint, any E/W fails) | `Dockerfile.rpm.*` |
+| Arch | `scripts/release-arch.sh` (makepkg; `.SRCINFO` checked against makepkg); AUR: `scripts/aur-render.sh` | `Dockerfile.arch` |
+| tarball / AppImage / Flatpak | `scripts/release-portable.sh tarball|appimage|flatpak` | `Dockerfile.release` |
+| snap | `scripts/ci-snap-build.sh` (systemd container) | `Dockerfile.snap` |
+
+`install.sh` / `uninstall.sh` install the tarball per user (`~/.local/opt/fork-linux`, links
+in `~/.local/bin`) or `--system` (`/usr/local`), verify `SHA256SUMS`, record a manifest and
+remove exactly what they recorded.
+
+## 5. Releasing
+
+Bump `VERSION`, add a `debian/changelog` entry, the RPM specs' `%changelog` entry and a metainfo `<release>`, write
+`docs/releases/vX.Y.Z.md` + `vX.Y.Z_github_description.md`, then
+`./scripts/release-verify-tag-version.sh vX.Y.Z`. Pushing the tag (maintainer only) runs
+`.github/workflows/release.yml`; `workflow_dispatch` with `dry_run` builds everything without
+publishing.
+
+## 6. Debugging
+
+- `fork-linux doctor [--json] [--deep]`, `fork-linux logs [--bundle]`, `fork-linux run --debug`.
+- Packaging E2E failures: the cell log names the failed assert (`E2E FAIL (<format>): ...`).
+- Docker images are cached by Dockerfile digest; `FL_CI_FORCE_BUILD=1` rebuilds.

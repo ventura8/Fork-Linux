@@ -1,0 +1,352 @@
+"""Tests for fork_linux.display: session type, desktop scale probes and the derived DPI."""
+
+from __future__ import annotations
+
+import json
+import socket
+import sys
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from fork_linux import display, theme
+from fork_linux.errors import ForkLinuxError
+from fork_linux.procrun import Completed, RecordingRunner, Runner
+
+FAKES_BIN = Path(__file__).resolve().parent / "fakes" / "bin"
+TOOLS = ("gsettings", "xrdb", "kreadconfig6", "kreadconfig5", "xfconf-query")
+GNOME_SCALE = ("gsettings", "get", "org.gnome.desktop.interface", "scaling-factor")
+GNOME_TEXT = ("gsettings", "get", "org.gnome.desktop.interface", "text-scaling-factor")
+XRDB = ("xrdb", "-query")
+KDE6 = ("kreadconfig6", "--file", "kcmfonts", "--group", "General", "--key", "forceFontDPI")
+KDE5 = ("kreadconfig5", "--file", "kcmfonts", "--group", "General", "--key", "forceFontDPI")
+XFCE = ("xfconf-query", "-c", "xsettings", "-p", "/Xft/DPI")
+XFCE_FACTOR = ("xfconf-query", "-c", "xsettings", "-p", "/Gdk/WindowScalingFactor")
+XFCE_SESSION = {"XDG_CURRENT_DESKTOP": "XFCE", **{"DBUS_SESSION_BUS_ADDRESS": "tcp:host=127.0.0.1,port=9"}}
+# A session bus address (never connected to: the tools are fakes).
+BUS = {"DBUS_SESSION_BUS_ADDRESS": "tcp:host=127.0.0.1,port=9"}
+
+
+def _runner(outputs: dict[tuple[str, ...], Any], installed: tuple[str, ...] | None = None) -> RecordingRunner:
+    """A runner answering ``outputs`` per argv; tools not in ``installed`` are absent from PATH."""
+    present = {argv[0] for argv in outputs} if installed is None else set(installed)
+
+    def respond(argv: list[str]) -> Any:
+        answer = outputs.get(tuple(argv), Completed(argv, 1, "", "no such key\n"))
+        return answer(argv) if callable(answer) else answer
+
+    return RecordingRunner(respond, {tool: f"/usr/bin/{tool}" if tool in present else None for tool in TOOLS})
+
+
+@pytest.fixture
+def isolated_path(tmp_path: Path, fake_bin: Path) -> str:
+    """A PATH holding only our fakes and python3, so no host desktop tool can run."""
+    bin_dir = tmp_path / "isolated-bin"
+    bin_dir.mkdir()
+    for fake in FAKES_BIN.iterdir():
+        (bin_dir / fake.name).symlink_to(fake)
+    (bin_dir / "python3").symlink_to(sys.executable)
+    return str(bin_dir)
+
+
+# --------------------------------------------------------------------------- session type
+
+
+@pytest.mark.parametrize(
+    ("env", "expected"),
+    [
+        ({"XDG_SESSION_TYPE": "wayland", "DISPLAY": ":0"}, "wayland"),
+        ({"XDG_SESSION_TYPE": "X11"}, "x11"),
+        ({"XDG_SESSION_TYPE": "tty", "WAYLAND_DISPLAY": "wayland-0"}, "wayland"),
+        ({"WAYLAND_DISPLAY": "wayland-0", "DISPLAY": ":0"}, "wayland"),
+        ({"DISPLAY": ":1"}, "x11"),
+        ({"XDG_SESSION_TYPE": "tty"}, "tty"),
+        ({}, "tty"),
+    ],
+)
+def test_session_type(env: dict[str, str], expected: str) -> None:
+    assert display.session_type(env) == expected
+
+
+# --------------------------------------------------------------------------- scale sources
+
+
+@pytest.mark.parametrize(
+    ("env", "expected"),
+    [
+        ({"GDK_SCALE": "2"}, 200),
+        ({"GDK_DPI_SCALE": "1.25"}, 125),
+        ({"GDK_SCALE": "2", "GDK_DPI_SCALE": "1.5"}, 300),
+        ({"GDK_SCALE": "3", "GDK_DPI_SCALE": "1.5"}, 300),
+        ({"GDK_SCALE": "0", "QT_SCALE_FACTOR": "1.5"}, 150),
+        ({"GDK_SCALE": "abc", "QT_SCALE_FACTOR": "1.75"}, 175),
+        ({"QT_SCALE_FACTOR": "0.5"}, 100),
+        ({"GDK_DPI_SCALE": "1.1"}, 100),
+        ({"GDK_DPI_SCALE": "1.13"}, 125),
+    ],
+)
+def test_scale_from_environment(env: dict[str, str], expected: int) -> None:
+    runner = _runner({})
+    assert display.scale_percent(env, runner) == expected
+    assert runner.calls == []
+
+
+def test_scale_from_gnome_integer_scaling() -> None:
+    runner = _runner({GNOME_SCALE: "uint32 2\n", GNOME_TEXT: "1.0\n"})
+    assert display.scale_percent({}, runner) == 200
+
+
+def test_scale_from_gnome_text_scaling() -> None:
+    runner = _runner({GNOME_SCALE: "uint32 0\n", GNOME_TEXT: "1.25\n"})
+    assert display.scale_percent({}, runner) == 125
+
+
+def test_gnome_defaults_fall_through_to_xrdb() -> None:
+    runner = _runner({GNOME_SCALE: "uint32 0\n", GNOME_TEXT: "1.0\n", XRDB: "Xft.antialias:\t1\nXft.dpi:\t144\n"})
+    assert display.scale_percent({}, runner) == 150
+    assert [argv[0] for argv in runner.argvs] == ["gsettings", "gsettings", "xrdb"]
+
+
+def test_xrdb_without_dpi_falls_through_to_kde() -> None:
+    runner = _runner({XRDB: "Xft.antialias:\t1\n", KDE6: "120\n"})
+    assert display.scale_percent({}, runner) == 125
+
+
+def test_kde_falls_back_to_kreadconfig5() -> None:
+    runner = _runner({KDE6: "0\n", KDE5: "192\n"})
+    assert display.scale_percent({}, runner) == 200
+
+
+def test_kde_unset_falls_through_to_xfce() -> None:
+    runner = _runner({KDE6: "\n", KDE5: "\n", XFCE: "120\n"})
+    assert display.scale_percent(BUS, runner) == 125
+
+
+def test_xfce_unset_means_default() -> None:
+    assert display.scale_percent(BUS, _runner({XFCE: "-1\n"})) == 100
+
+
+@pytest.mark.parametrize(
+    ("outputs", "expected"),
+    [
+        # Settings > Appearance > Window Scaling 2x: xfsettingsd keeps Xft.dpi at 96.
+        ({XFCE_FACTOR: "2\n", XFCE: "96\n", XRDB: "Xft.dpi:\t96\n"}, 200),
+        # Custom DPI 144 with 1x windows.
+        ({XFCE_FACTOR: "1\n", XFCE: "144\n", XRDB: "Xft.dpi:\t144\n"}, 150),
+        # No custom DPI: the published Xft.dpi (the X server's) is the base of the window scaling.
+        ({XFCE_FACTOR: "2\n", XFCE: "-1\n", XRDB: "Xft.dpi:\t120\n"}, 250),
+        ({XFCE_FACTOR: "2\n", XRDB: "Xft.antialias:\t1\n"}, 200),
+        # Nothing set on XFCE's side: the generic chain (xrdb) answers.
+        ({XFCE: "-1\n", XRDB: "Xft.dpi:\t192\n"}, 200),
+    ],
+    ids=["window-scaling-2", "custom-dpi-144", "scaling-on-server-dpi", "scaling-without-xft-dpi", "unset"],
+)
+def test_xfce_asks_its_own_settings_before_xrdb(outputs: dict[tuple[str, ...], str], expected: int) -> None:
+    runner = _runner(outputs)
+    assert display.scale_percent(XFCE_SESSION, runner) == expected
+    assert runner.argvs[0] == list(XFCE_FACTOR)
+
+
+CINNAMON_SESSION = {"XDG_CURRENT_DESKTOP": "X-Cinnamon"}
+
+
+@pytest.mark.parametrize(
+    ("outputs", "expected"),
+    [
+        # Display > User interface scale 2 with Fonts > Text scaling factor 1.25: csd-xsettings
+        # publishes 96 x 2 x 1.25; csd-settings-remap copies only the text factor to GNOME's keys.
+        ({GNOME_SCALE: "uint32 0\n", GNOME_TEXT: "1.25\n", XRDB: "Xft.dpi:\t240\n"}, 250),
+        ({GNOME_SCALE: "uint32 0\n", GNOME_TEXT: "1.0\n", XRDB: "Xft.dpi:\t192\n"}, 200),
+        # No Xft.dpi (no X resource database): GNOME's keys are still asked.
+        ({GNOME_SCALE: "uint32 0\n", GNOME_TEXT: "1.5\n", XRDB: "Xft.antialias:\t1\n"}, 150),
+    ],
+    ids=["ui-scale-2-text-1.25", "ui-scale-2", "no-xft-dpi"],
+)
+def test_cinnamon_asks_xft_dpi_before_gnome_keys(outputs: dict[tuple[str, ...], str], expected: int) -> None:
+    runner = _runner(outputs)
+    assert display.scale_percent(CINNAMON_SESSION, runner) == expected
+    assert runner.argvs[0] == list(XRDB)
+
+
+GNOME_SESSION = {"XDG_CURRENT_DESKTOP": "ubuntu:GNOME"}
+
+
+@pytest.mark.parametrize(
+    ("outputs", "expected"),
+    [
+        # Settings > Displays > Scale 200 % (mutter's monitor configuration) and Large Text:
+        # gsd-xsettings publishes Xft.dpi 96 x 2 x 1.25; scaling-factor stays 0 (automatic).
+        ({XRDB: "Xft.dpi:\t240\n", GNOME_SCALE: "uint32 0\n", GNOME_TEXT: "1.25\n"}, 250),
+        ({XRDB: "Xft.dpi:\t192\n", GNOME_SCALE: "uint32 0\n", GNOME_TEXT: "1.0\n"}, 200),
+        # A scaling-factor left in dconf that the published Xft.dpi does not show.
+        ({XRDB: "Xft.dpi:\t96\n", GNOME_SCALE: "uint32 2\n", GNOME_TEXT: "1.0\n"}, 100),
+    ],
+    ids=["display-200-large-text", "display-200", "stale-scaling-factor"],
+)
+def test_gnome_asks_xft_dpi_before_its_gsettings(outputs: dict[tuple[str, ...], str], expected: int) -> None:
+    runner = _runner(outputs)
+    assert display.scale_percent(GNOME_SESSION, runner) == expected
+    assert runner.argvs == [list(XRDB)]
+
+
+def test_gnome_without_xft_dpi_falls_back_to_its_gsettings() -> None:
+    runner = _runner({XRDB: "Xft.antialias:\t1\n", GNOME_SCALE: "uint32 2\n", GNOME_TEXT: "1.25\n"})
+    assert display.scale_percent(GNOME_SESSION, runner) == 250
+    assert [argv[0] for argv in runner.argvs] == ["xrdb", "gsettings", "gsettings"]
+
+
+def test_xfce_probe_is_last_on_other_desktops() -> None:
+    runner = _runner({XFCE_FACTOR: "2\n", XFCE: "96\n", XRDB: "Xft.dpi:\t96\n"})
+    assert display.scale_percent({**BUS, "XDG_CURRENT_DESKTOP": "GNOME"}, runner) == 100
+    assert XFCE_FACTOR not in [tuple(argv) for argv in runner.argvs]
+
+
+@pytest.mark.parametrize(
+    ("env", "expected"),
+    [
+        ({"XDG_CURRENT_DESKTOP": "XFCE"}, "xfce"),
+        ({"DESKTOP_SESSION": "xubuntu"}, "xfce"),
+        ({"XDG_CURRENT_DESKTOP": "ubuntu:GNOME"}, "gnome"),
+        ({"XDG_CURRENT_DESKTOP": "KDE"}, "kde"),
+        ({}, "unknown"),
+    ],
+)
+def test_desktop(env: dict[str, str], expected: str) -> None:
+    assert display.desktop(env) == expected
+
+
+def test_no_tools_means_default_and_nothing_runs() -> None:
+    runner = _runner({}, installed=())
+    assert display.scale_percent({}, runner) == 100
+    assert display.detect_dpi({}, runner) == 96
+    assert runner.calls == []
+
+
+def test_failing_and_hanging_probes_are_ignored() -> None:
+    def hang(argv: list[str]) -> Completed:
+        raise ForkLinuxError("command timed out after 2s")
+
+    runner = _runner({GNOME_SCALE: hang, GNOME_TEXT: Completed([], 1, "2.0", ""), XRDB: "Xft.dpi: 120\n"})
+    assert display.scale_percent({}, runner) == 125
+
+
+def test_probe_uses_env_path_and_cleans_env() -> None:
+    seen: list[tuple[str, str | None]] = []
+
+    class Recorder(RecordingRunner):
+        def which(self, name: str, path: str | None = None) -> str | None:
+            seen.append((name, path))
+            return "/usr/bin/" + name
+
+    runner = Recorder({"xrdb": "Xft.dpi: 96\n"})
+    env = {"PATH": "/opt/bin", "LD_LIBRARY_PATH": "/snap/lib", "DISPLAY": ":0"}
+    assert display.probe(runner, env, ["xrdb", "-query"]) == "Xft.dpi: 96"
+    assert seen == [("xrdb", "/opt/bin")]
+    assert runner.calls[0]["env"] == {"PATH": "/opt/bin", "DISPLAY": ":0"}
+    assert runner.calls[0]["timeout"] == display.PROBE_TIMEOUT
+
+
+@pytest.mark.parametrize(
+    ("percent", "expected"),
+    [(50, 100), (112.4, 100), (112.5, 125), (137.5, 150), (162, 150), (250, 250), (299, 300), (1000, 300)],
+)
+def test_normalize(percent: float, expected: int) -> None:
+    assert display.normalize(percent) == expected
+
+
+@pytest.mark.parametrize(
+    ("scale", "dpi"), [("1", 96), ("1.25", 120), ("1.5", 144), ("1.75", 168), ("2", 192), ("3", 288)]
+)
+def test_detect_dpi(scale: str, dpi: int) -> None:
+    assert display.detect_dpi({"QT_SCALE_FACTOR": scale}, _runner({})) == dpi
+
+
+# --------------------------------------------------------------------------- with the fake tools
+
+
+def test_scale_with_fake_gsettings(isolated_path: str, fake_bin: Path) -> None:
+    env = {
+        "PATH": isolated_path,
+        "FL_FAKE_LOG": str(fake_bin),
+        "FL_FAKE_GSETTINGS": json.dumps({"org.gnome.desktop.interface text-scaling-factor": "1.5"}),
+    }
+    assert display.scale_percent(env, Runner()) == 150
+    logged = [json.loads(line)["argv"] for line in fake_bin.read_text(encoding="utf-8").splitlines()]
+    assert logged == [list(GNOME_SCALE), list(GNOME_TEXT)]
+
+
+def test_scale_with_fake_xrdb_kde_and_xfce(isolated_path: str, fake_bin: Path) -> None:
+    base = {"PATH": isolated_path, "FL_FAKE_LOG": str(fake_bin)}
+    assert display.scale_percent({**base, "FL_FAKE_XRDB": "Xft.dpi:\t120\n"}, Runner()) == 125
+    kde = {**base, "FL_FAKE_KREADCONFIG": json.dumps({"kcmfonts/General/forceFontDPI": "144"})}
+    assert display.scale_percent(kde, Runner()) == 150
+    xfce = {**base, **BUS, "FL_FAKE_XFCONF": json.dumps({"xsettings:/Xft/DPI": "192"})}
+    assert display.detect_dpi(xfce, Runner()) == 192
+    scaled = {
+        **base, **XFCE_SESSION, "FL_FAKE_XRDB": "Xft.dpi:\t96\n",
+        "FL_FAKE_XFCONF": json.dumps({"xsettings:/Gdk/WindowScalingFactor": "2", "xsettings:/Xft/DPI": "96"}),
+    }
+    assert display.scale_percent(scaled, Runner()) == 200
+    assert display.scale_percent(base, Runner()) == 100
+
+
+# --------------------------------------------------------------------------- D-Bus and launch latency
+
+
+def _socket(path: Path) -> Path:
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(path))
+    server.close()  # the socket file stays: enough for a stat
+    return path
+
+
+def test_session_bus_available(tmp_path: Path) -> None:
+    bus = _socket(tmp_path / "bus")
+    assert display.session_bus_available({"DBUS_SESSION_BUS_ADDRESS": f"unix:path={bus},guid=1"})
+    assert display.session_bus_available({"DBUS_SESSION_BUS_ADDRESS": "unix:abstract=/tmp/dbus-x"})
+    gone = f"unix:path={tmp_path / 'gone'}"
+    assert not display.session_bus_available({"DBUS_SESSION_BUS_ADDRESS": gone})
+    assert display.session_bus_available({"DBUS_SESSION_BUS_ADDRESS": f"{gone};unix:path={bus}"})
+    (tmp_path / "file").write_text("")
+    assert not display.session_bus_available({"DBUS_SESSION_BUS_ADDRESS": f"unix:path={tmp_path / 'file'}"})
+    assert display.session_bus_available({"XDG_RUNTIME_DIR": str(tmp_path)})
+    assert not display.session_bus_available({"XDG_RUNTIME_DIR": str(tmp_path / "none")})
+    assert not display.session_bus_available({"XDG_RUNTIME_DIR": "relative"})
+    assert not display.session_bus_available({})
+
+
+def test_bus_probes_are_skipped_without_a_session_bus() -> None:
+    runner = _runner({XFCE: "192\n"})
+    assert display.probe(runner, {}, list(XFCE)) == ""
+    assert display.probe(runner, {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/nonexistent/bus"}, list(XFCE)) == ""
+    assert runner.calls == []
+    assert display.probe(runner, BUS, list(XFCE)) == "192"
+
+
+def test_probe_timeout_is_capped() -> None:
+    runner = _runner({XRDB: "Xft.dpi: 96\n"})
+    display.probe(runner, {}, list(XRDB), timeout=60)
+    assert runner.calls[0]["timeout"] == display.PROBE_TIMEOUT
+
+
+@pytest.mark.parametrize("env", [{}, BUS], ids=["no-bus", "bus"])
+def test_launch_path_probes_fail_fast(env: dict[str, str], tmp_path: Path) -> None:
+    """Every desktop probe a launch runs (scale + theme) has a timeout of at most 2 s.
+
+    Every probe hangs here until its timeout: the total is bounded by the probe
+    count times the cap, and no D-Bus tool runs without a session bus.
+    """
+
+    def hang(argv: list[str]) -> Completed:
+        raise ForkLinuxError(f"{argv[0]} timed out")
+
+    tools = {tool: f"/usr/bin/{tool}" for tool in (*TOOLS, "dconf")}
+    runner = RecordingRunner(hang, tools)
+    full = {**env, "XDG_CURRENT_DESKTOP": "XFCE"}
+    assert display.scale_percent(full, runner) == 100
+    assert theme.detect(full, runner, tmp_path) is None
+    assert runner.calls
+    assert all(call["timeout"] <= 2.0 for call in runner.calls)
+    asked_bus = any(argv[0] in display.BUS_TOOLS for argv in runner.argvs)
+    assert asked_bus == bool(env)

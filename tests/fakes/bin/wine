@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Fake ``wine`` for tests (owned by the wine task).
+
+Logs {"argv", "env"} to $FL_FAKE_LOG and simulates:
+
+* ``--version``: prints $FL_FAKE_WINE_VERSION (default ``wine-11.0 (Staging)``);
+* ``wineboot ...``: creates a minimal prefix in $WINEPREFIX (hives, drive_c,
+  the user profile, dosdevices c: and z:);
+* ``regedit /S C:\\...``: reads the UTF-16 .reg file through the prefix's C:
+  drive and appends its text to $WINEPREFIX/fake-regedit.log (exit 1 if missing);
+* anything else: exits 0.
+
+$FL_FAKE_WINE_RC (non-zero) makes every call fail without effects.
+$FL_FAKE_WINE_SCRIPT names a Python file run (runpy) with ``sys.argv`` set
+before the built-in effects, so other tests can add their own effects.
+"""
+
+import json
+import os
+import runpy
+import sys
+from pathlib import Path
+
+LOGGED_PREFIXES = ("WINE", "W_", "FL_", "GIT_CONFIG", "FORK")
+LOGGED_NAMES = ("HOME", "USER", "DISPLAY", "PATH")
+HIVE = "WINE REGISTRY Version 2\n;; All keys relative to {root}\n\n#arch=win64\n"
+
+
+def log_call() -> None:
+    path = os.environ.get("FL_FAKE_LOG")
+    if not path:
+        return
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if (key.startswith(LOGGED_PREFIXES) or key in LOGGED_NAMES) and key != "FL_FAKE_LOG"
+    }
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"argv": [Path(sys.argv[0]).name, *sys.argv[1:]], "env": env}) + "\n")
+
+
+def prefix() -> Path:
+    value = os.environ.get("WINEPREFIX")
+    if not value:
+        sys.exit("fake wine: WINEPREFIX is not set")
+    return Path(value)
+
+
+def user() -> str:
+    home = os.environ.get("WINEHOME", "")
+    return home.rsplit("\\", 1)[-1] if home else os.environ.get("USER", "user")
+
+
+def wineboot() -> int:
+    root = prefix()
+    for sub in ("drive_c/windows/system32", f"drive_c/users/{user()}/AppData/Local", "dosdevices"):
+        (root / sub).mkdir(parents=True, exist_ok=True)
+    for name, hive_root in (("system.reg", "\\\\Machine"), ("user.reg", "\\\\User\\\\S-1-5-21-0-0-0-1000"),
+                            ("userdef.reg", "\\\\User\\\\.Default")):
+        hive = root / name
+        if not hive.exists():
+            hive.write_text(HIVE.format(root=hive_root), encoding="utf-8")
+    for drive, target in (("c:", "../drive_c"), ("z:", "/")):
+        link = root / "dosdevices" / drive
+        if not os.path.lexists(link):
+            link.symlink_to(target)
+    return 0
+
+
+def regedit(args: list) -> int:
+    paths = [arg for arg in args if not arg.startswith("/")]
+    if not paths or paths[0][:3].upper() != "C:\\":
+        print("fake regedit: expected a C:\\ path", file=sys.stderr)
+        return 1
+    reg = prefix() / "drive_c" / paths[0][3:].replace("\\", "/")
+    try:
+        text = reg.read_bytes().decode("utf-16")
+    except OSError as exc:
+        print(f"regedit: Unable to open the registry file '{paths[0]}': {exc}", file=sys.stderr)
+        return 1
+    with open(prefix() / "fake-regedit.log", "a", encoding="utf-8") as handle:
+        handle.write(text.lstrip("\ufeff"))
+    return 0
+
+
+def main() -> int:
+    log_call()
+    args = sys.argv[1:]
+    code = int(os.environ.get("FL_FAKE_WINE_RC", "0") or "0")
+    if code:
+        print("fake wine: simulated failure", file=sys.stderr)
+        return code
+    script = os.environ.get("FL_FAKE_WINE_SCRIPT")
+    if script:
+        runpy.run_path(script, run_name="__fake_wine__")
+    if args[:1] == ["--version"]:
+        print(os.environ.get("FL_FAKE_WINE_VERSION", "wine-11.0 (Staging)"))
+        return 0
+    if args[:1] == ["wineboot"]:
+        return wineboot()
+    if args[:1] == ["regedit"]:
+        return regedit(args[1:])
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

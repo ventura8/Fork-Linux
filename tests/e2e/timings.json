@@ -1,0 +1,75 @@
+{
+  "setup": 458,
+  "measured": "2026-10-12, ci-e2e-wine.sh --all (6 jobs, two host slots held by other runs, load average 20-45): pytest's own seconds per module, the main setup excluded for template modules (they start from the template); setup is the template build",
+  "modules": {
+    "test_fork_update.py": {
+      "seconds": 1685
+    },
+    "test_git_ops_local.py": {
+      "seconds": 296
+    },
+    "test_git_ops_remote_bridge.py": {
+      "seconds": 496
+    },
+    "test_git_ops_remote_ssh.py": {
+      "seconds": 261
+    },
+    "test_real_bridge.py": {
+      "seconds": 852
+    },
+    "test_real_display.py": {
+      "seconds": 324
+    },
+    "test_real_doctor.py": {
+      "seconds": 116
+    },
+    "test_real_fork.py": {
+      "seconds": 626
+    },
+    "test_real_git_advanced.py": {
+      "seconds": 248
+    },
+    "test_real_git_branches.py": {
+      "seconds": 598
+    },
+    "test_real_git_changes.py": {
+      "seconds": 241
+    },
+    "test_real_git_history.py": {
+      "seconds": 485
+    },
+    "test_real_git_remotes.py": {
+      "seconds": 813
+    },
+    "test_real_integration.py": {
+      "seconds": 671
+    },
+    "test_real_launch.py": {
+      "seconds": 397
+    },
+    "test_real_setup_errors.py": {
+      "seconds": 13
+    },
+    "test_real_setup_variants.py": {
+      "seconds": 2080,
+      "parts": {
+        "dotnet472": 1130
+      }
+    },
+    "test_real_snapshots.py": {
+      "seconds": 93
+    },
+    "test_real_uninstall.py": {
+      "seconds": 44
+    },
+    "test_real_update_guards.py": {
+      "seconds": 155
+    },
+    "test_wine_app_upgrade.py": {
+      "seconds": 1309
+    },
+    "test_wine_pin_upgrade.py": {
+      "seconds": 1021
+    }
+  }
+}

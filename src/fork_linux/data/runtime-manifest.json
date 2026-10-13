@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "revision": "2026.10.3",
+  "bootstrap_revision": 1,
+  "wine": {
+    "_comment": "Default: the newest Kron4ek staging WoW64 build Fork runs on, E2E-tested on 2026-10-11 in a fresh prefix and in a prefix Kron4ek 11.0 staging created (tests/e2e/RESULTS.md). Kron4ek 11.19 staging is not taken: Fork 2.23.2 (and 2.23.1) exits at start on it with System.IO.FileLoadException 0x80131047 'The given assembly name or codebase was invalid', fresh or upgraded prefix, any locale; a bisection over 11.0..11.19 found 11.18 the newest good build. 11.0 stays listed so 'fork-linux config set wine.build kron4ek-11.0-staging-wow64' goes back to it.",
+    "default": "kron4ek-11.18-staging-wow64",
+    "min_system_version": "9.0",
+    "builds": {
+      "kron4ek-11.18-staging-wow64": {
+        "version": "11.18",
+        "flavor": "staging",
+        "arch": "x86_64",
+        "wow64": true,
+        "url": "https://github.com/Kron4ek/Wine-Builds/releases/download/11.18/wine-11.18-staging-amd64-wow64.tar.xz",
+        "sha256": "15f312effe798838d4877a37126509618b3f98759744b37aeda0c6f55875d99a",
+        "size": 101346404,
+        "strip_components": 1,
+        "min_glibc": "2.27",
+        "status": "known-good"
+      },
+      "kron4ek-11.0-staging-wow64": {
+        "version": "11.0",
+        "flavor": "staging",
+        "arch": "x86_64",
+        "wow64": true,
+        "url": "https://github.com/Kron4ek/Wine-Builds/releases/download/11.0/wine-11.0-staging-amd64-wow64.tar.xz",
+        "sha256": "e6538a417dd2e7f738ad77addf74bfd9e45c9d970653674f93bde2df29055f2f",
+        "size": 74975524,
+        "strip_components": 1,
+        "min_glibc": "2.27",
+        "status": "known-good"
+      }
+    }
+  },
+  "winetricks": {
+    "version": "20260125",
+    "url": "https://raw.githubusercontent.com/Winetricks/winetricks/20260125/src/winetricks",
+    "sha256": "431f82fc74000e6c864409f1d8fb495d696c03928808e3e8acffc45179312a7b",
+    "size": 830687
+  },
+  "dotnet": {
+    "verbs": ["dotnet48", "dotnet472"],
+    "min_release": 461808
+  },
+  "ui_font": {
+    "_comment": "Selawik: Microsoft's SIL OFL 1.1 fallback for Segoe UI with matching metrics; Fork's interface font under Wine (spike S10).",
+    "family": "Selawik",
+    "version": "1.01",
+    "license": "OFL-1.1",
+    "url": "https://github.com/microsoft/Selawik/releases/download/1.01/Selawik_Release.zip",
+    "sha256": "3f62c51e05e3b5a1e6241cf92a371f0be2ea1183aa87b30718bbd40832a8d423",
+    "size": 530652,
+    "faces": {
+      "selawk.ttf": "Selawik",
+      "selawkb.ttf": "Selawik Bold",
+      "selawkl.ttf": "Selawik Light",
+      "selawksb.ttf": "Selawik Semibold",
+      "selawksl.ttf": "Selawik Semilight"
+    }
+  },
+  "fork": {
+    "default": "2.23.2",
+    "installer_url_template": "https://cdn.fork.dev/win/Fork-{version}.exe",
+    "feed_url": "https://git-fork.com/update/win/releases.win.json",
+    "legacy_feed_url": "https://git-fork.com/update/win/RELEASES",
+    "allowed_hosts": ["cdn.fork.dev", "git-fork.com", "fork.dev"],
+    "requires": {
+      "dotnet_framework": "4.7.2"
+    },
+    "versions": {
+      "2.23.2": {
+        "size": 76278256,
+        "sha256": "fee9b2bf84aca6297d7b7e10b29a09c624ac16a82486f2c04136f5ebaf8f079e",
+        "full_nupkg_sha256": "B70E7BE92B73BAEAB9FEE700AD352AE9E261DAFCDED0D10E5C94133F639B1C1F",
+        "status": "known-good",
+        "tested_with": ["kron4ek-11.18-staging-wow64", "kron4ek-11.0-staging-wow64"]
+      }
+    },
+    "known_bad": {}
+  }
+}

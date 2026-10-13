@@ -1,0 +1,258 @@
+"""Contract tests for docker/ (AGENTS.md §4.8): pinned bases, explicit image tags, one Dockerfile
+per stage / cell, and scripts that use exactly the tags the Dockerfiles declare."""
+
+from __future__ import annotations
+
+import re
+import subprocess
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+DOCKER = ROOT / "docker"
+DOCKERFILES = sorted(DOCKER.glob("Dockerfile*"))
+BASES = {
+    "ubuntu:26.04",
+    "ubuntu:24.04",
+    "ubuntu:22.04",
+    "debian:13.7",
+    "fedora:44",
+    "opensuse/leap:16.0",
+}
+TOOL_IMAGES = {"rhysd/actionlint:1.7.12", "hadolint/hadolint:v2.15.1"}
+ARCH_BASE = re.compile(r"archlinux:base(?:-devel)?-\d{8}\.0\.\d+")
+EXPECTED = {
+    # stages
+    "Dockerfile.ci.lint": "fork-linux-ci-lint:26.04",
+    "Dockerfile.ci.coverage": "fork-linux-ci-coverage:26.04",
+    "Dockerfile.ci.bridge": "fork-linux-ci-bridge:26.04",
+    # compat cells
+    "Dockerfile.ci": "fork-linux-ci-resolute:26.04",
+    "Dockerfile.ci.jammy": "fork-linux-ci-jammy:22.04",
+    "Dockerfile.ci.noble": "fork-linux-ci-noble:24.04",
+    "Dockerfile.ci.debian13": "fork-linux-ci-debian13:13.7",
+    "Dockerfile.ci.fedora44": "fork-linux-ci-fedora44:44",
+    "Dockerfile.ci.leap16": "fork-linux-ci-leap16:16.0",
+    "Dockerfile.ci.arch": "fork-linux-ci-arch:base-20261004.0.606936",
+    # packaging + E2E
+    "Dockerfile.ppa": "fork-linux-ci-ppa:26.04",
+    "Dockerfile.ppa.jammy": "fork-linux-ci-ppa-jammy:22.04",
+    "Dockerfile.rpm.fedora": "fork-linux-ci-rpm-fedora:44",
+    "Dockerfile.rpm.opensuse": "fork-linux-ci-rpm-opensuse:16.0",
+    "Dockerfile.arch": "fork-linux-ci-arch-pkg:base-devel-20261004.0.606936",
+    "Dockerfile.release": "fork-linux-ci-release:26.04",
+    "Dockerfile.snap": "fork-linux-ci-snap:26.04",
+    "Dockerfile.e2e.wine": "fork-linux-ci-e2e-wine:26.04",
+    # desktop E2E tier (scripts/ci-e2e-de.sh), one image per desktop
+    "Dockerfile.e2e.de.xfce": "fork-linux-e2e-de-xfce:26.04",
+    "Dockerfile.e2e.de.mate": "fork-linux-e2e-de-mate:26.04",
+    "Dockerfile.e2e.de.budgie": "fork-linux-e2e-de-budgie:26.04",
+    "Dockerfile.e2e.de.lxqt": "fork-linux-e2e-de-lxqt:26.04",
+    "Dockerfile.e2e.de.kde": "fork-linux-e2e-de-kde:26.04",
+    "Dockerfile.e2e.de.kdewayland": "fork-linux-e2e-de-kdewayland:26.04",
+    "Dockerfile.e2e.de.gnome": "fork-linux-e2e-de-gnome:26.04",
+    "Dockerfile.e2e.de.cinnamon": "fork-linux-e2e-de-cinnamon:26.04",
+}
+SCRIPTS = [
+    "scripts/ci-docker.sh",
+    "scripts/ci-packaging-cell.sh",
+    "scripts/ci-packaging-matrix.sh",
+    "scripts/ci-snap-build.sh",
+    "scripts/ci-e2e-wine.sh",
+    "scripts/lib-e2e-docker.sh",
+    "scripts/e2e-docker.sh",
+    "scripts/build-bridge.sh",
+    "scripts/ci-e2e-de.sh",
+]
+
+
+def _text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _froms(text: str) -> list[str]:
+    return re.findall(r"^FROM\s+(\S+)", text, re.MULTILINE)
+
+
+def _image_tag(text: str) -> str:
+    match = re.search(r"^# Image tag: (\S+)$", text, re.MULTILINE)
+    assert match is not None, "missing '# Image tag:' header"
+    return match.group(1)
+
+
+def test_every_expected_dockerfile_exists_and_nothing_else() -> None:
+    assert sorted(path.name for path in DOCKERFILES) == sorted(EXPECTED)
+
+
+@pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.name)
+def test_buildkit_frontend_is_pinned(path: Path) -> None:
+    assert _text(path).splitlines()[0] == "# syntax=docker/dockerfile:1.28.0"
+
+
+@pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.name)
+def test_bases_are_pinned(path: Path) -> None:
+    froms = _froms(_text(path))
+    assert froms
+    for image in froms:
+        assert "latest" not in image
+        assert "@sha256" not in image
+        assert image in BASES | TOOL_IMAGES or ARCH_BASE.fullmatch(image), f"{path.name}: unpinned base {image}"
+    assert froms[-1] not in TOOL_IMAGES, "the final stage must be a distribution base"
+
+
+@pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.name)
+def test_image_tag_suffix_equals_the_base_tag(path: Path) -> None:
+    text = _text(path)
+    tag = _image_tag(text)
+    assert tag == EXPECTED[path.name]
+    name, suffix = tag.rsplit(":", 1)
+    if path.name.startswith("Dockerfile.e2e.de."):
+        assert name == "fork-linux-e2e-de-" + path.name.rsplit(".", 1)[1]
+    else:
+        assert name.startswith("fork-linux-ci-")
+    assert suffix == _froms(text)[-1].rsplit(":", 1)[1]
+
+
+@pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.name)
+def test_no_unpinned_installers(path: Path) -> None:
+    text = _text(path)
+    code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    assert not re.search(r"curl[^\n|]*\|\s*(?:ba)?sh", code)
+    pip_blocks = re.findall(r"pip3 install --break-system-packages \\\n((?:\s+\S+(?: \\)?\n)+)", text)
+    for block in pip_blocks:
+        for item in block.split():
+            if item != "\\":
+                assert "==" in item, f"{path.name}: pip package {item} is not pinned with =="
+
+
+def test_no_dockerfiles_outside_docker_dir() -> None:
+    listed = subprocess.run(
+        ["git", "-c", f"safe.directory={ROOT}", "-C", str(ROOT), "ls-files", "-co", "--exclude-standard"],
+        capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+    stray = [rel for rel in listed if Path(rel).name.startswith("Dockerfile") and not rel.startswith("docker/")]
+    assert stray == []
+
+
+def test_scripts_use_the_declared_tags() -> None:
+    # Desktop images are found by ci-e2e-de.sh from their Dockerfile's header (next test).
+    declared = {tag for tag in EXPECTED.values() if not tag.startswith("fork-linux-e2e-de-")}
+    for rel in SCRIPTS:
+        for tag in re.findall(r"fork-linux-ci-[\w.-]+:[\w.-]+", _text(ROOT / rel)):
+            assert tag in declared, f"{rel} uses {tag}, which no Dockerfile declares"
+    used = {tag for rel in SCRIPTS for tag in re.findall(r"fork-linux-ci-[\w.-]+:[\w.-]+", _text(ROOT / rel))}
+    assert declared - {"fork-linux-ci-e2e-wine:26.04"} <= used | {"fork-linux-ci-e2e-wine:26.04"}
+    assert "fork-linux-ci-e2e-wine:26.04" in used
+
+
+def test_desktop_images_are_built_by_the_desktop_runner() -> None:
+    """scripts/ci-e2e-de.sh builds each docker/Dockerfile.e2e.de.<desktop> under the tag it declares."""
+    text = _text(ROOT / "scripts" / "ci-e2e-de.sh")
+    assert 'DOCKERFILE="docker/Dockerfile.e2e.de.${DESKTOP}"' in text
+    assert 'IMAGE="$(fl_e2e_image_tag "${SRC_DIR}" "${DOCKERFILE}")"' in text
+    assert 'fl_e2e_build_image "${SRC_DIR}" "${IMAGE}" "${DOCKERFILE}"' in text
+    assert '"${SRC_DIR}:/src:ro"' in text
+    library = _text(ROOT / "scripts" / "lib-e2e-docker.sh")
+    assert "sed -n 's/^# Image tag:" in library
+    assert 'BUILDX_BUILDER="${BUILDX_BUILDER:-default}" DOCKER_BUILDKIT=1 docker build' in library
+
+
+def test_ci_docker_maps_every_stage_and_cell() -> None:
+    text = _text(ROOT / "scripts" / "ci-docker.sh")
+    for stage, dockerfile in (
+        ("lint", "Dockerfile.ci.lint"),
+        ("coverage", "Dockerfile.ci.coverage"),
+        ("bridge", "Dockerfile.ci.bridge"),
+    ):
+        assert re.search(rf"{stage}\)\n\s+DOCKERFILE=\"docker/{re.escape(dockerfile)}\"", text)
+    for cell in ("jammy", "noble", "resolute", "debian13", "fedora44", "leap16", "arch"):
+        assert re.search(rf"^\s+{cell}\) DOCKERFILE=\"docker/Dockerfile\.ci(?:\.\w+)?\"", text, re.MULTILINE)
+    assert "--cache-from \"type=gha" in text
+    assert "DOCKER_BUILDKIT=1" in text
+    assert '-v "${ROOT}:${WORKDIR}:rw"' in text
+
+
+def test_ci_docker_gives_the_invoking_user_a_passwd_entry() -> None:
+    """Fedora's ssh-keygen refuses a uid without a passwd entry (the fedora44 compat cell)."""
+    text = _text(ROOT / "scripts" / "ci-docker.sh")
+    assert 'docker run --rm --entrypoint cat "${IMAGE}" /etc/passwd >"${PASSWD_FILE}"' in text
+    assert '-v "${PASSWD_FILE}:/etc/passwd:ro"' in text
+    assert "trap 'rm -f \"${PASSWD_FILE:?}\"' EXIT" in text
+
+
+def test_ci_c_coverage_gives_the_invoking_user_a_passwd_entry() -> None:
+    """The nested bridge image has no GHA runner uid; ssh-keygen needs a passwd line."""
+    text = _text(ROOT / "scripts" / "ci-c-coverage.sh")
+    assert 'docker run --rm --entrypoint cat "${IMAGE}" /etc/passwd >"${PASSWD_FILE}"' in text
+    assert '--volume "${PASSWD_FILE}:/etc/passwd:ro"' in text
+    assert "trap 'rm -f \"${PASSWD_FILE:?}\"' EXIT" in text
+
+
+def test_ci_images_bind_mount_instead_of_copying_the_tree() -> None:
+    for path in DOCKERFILES:
+        assert not re.search(r"^COPY \. ", _text(path), re.MULTILINE), f"{path.name} copies the whole tree"
+
+
+def test_lint_stage_runs_every_linter() -> None:
+    text = _text(ROOT / "scripts" / "ci-docker.sh")
+    lint = text[text.index("\t\tlint)\n\t\t\tmeson_build") :]
+    lint = lint[: lint.index(";;")]
+    for step in (
+        "meson_build --werror",
+        "--suite data",
+        "run_clang_tidy",
+        "run_cppcheck",
+        "run_py_compile",
+        "run_ruff",
+        "run_no_suppressions",
+        "run_secret_scan",
+        "run_gen_data_check",
+        "run_shellcheck",
+        "run_actionlint",
+        "run_yamllint",
+        "run_hadolint",
+        "run_xmllint",
+        "run_completion_syntax",
+    ):
+        assert step in lint, f"the lint stage does not run {step}"
+    for tool in ("ruff==", "yamllint==", "clang-tidy", "cppcheck", "shellcheck", "libxml2-utils", "zsh", "fish"):
+        assert tool in _text(DOCKER / "Dockerfile.ci.lint")
+    assert "shellcheck -x" in text
+    assert "bash -n data/completions" in text
+    assert "zsh -n" in text
+
+
+def test_coverage_stage_gates() -> None:
+    text = _text(ROOT / "scripts" / "ci-docker.sh")
+    assert "--fail-under=90" in text
+    assert "--fail-under=100" in text
+    assert "--cov-branch" in text
+    critical = re.search(r"local -a critical=\((.*?)\)", text, re.DOTALL)
+    assert critical is not None
+    modules = critical.group(1).split()
+    assert modules == [
+        "download", "manifest", "feeds", "fsutil", "locking", "state", "config_edit", "registry", "pathmap",
+        "fork_settings", "snapshots", "bootstrap", "pe_resources", "imaging", "ssh_sync", "gitconfig", "errors",
+    ]
+    assert "artifacts/coverage/coverage.xml" in text
+    assert "-Db_sanitize=address,undefined" in text
+    assert "scripts/ci-c-coverage.sh" in text
+
+
+def test_clang_tidy_config_errors_on_every_enabled_check() -> None:
+    config = _text(ROOT / ".clang-tidy")
+    assert "WarningsAsErrors: '*'" in config
+    checks = re.search(r"Checks: >-\n((?:  .*\n)+)", config)
+    assert checks is not None
+    entries = [entry.strip().rstrip(",") for entry in checks.group(1).splitlines()]
+    assert entries[0] == "-*"
+    assert all(not entry.startswith("-") for entry in entries[1:]), "individual checks must not be disabled"
+    assert "cert-env33-c" in entries
+
+
+def test_e2e_image_has_the_fonts_font_fallback_maps() -> None:
+    """Without Noto, prefix.font_fallback warns and the E2E doctor step (no warnings) fails."""
+    text = (DOCKER / "Dockerfile.e2e.wine").read_text(encoding="utf-8")
+    packages = text.split("apt-get install", 1)[1].split()
+    assert {"fonts-noto-core", "fonts-noto-cjk"} <= set(packages)

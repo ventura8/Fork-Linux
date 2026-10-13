@@ -1,0 +1,75 @@
+#!/bin/sh
+# fork-linux-handoff — run "fork-linux-host VERB ARG" outside Wine's process tree.
+#
+# Programs Wine starts inherit the staging runtime's seccomp filter and
+# NoNewPrivs=1, which breaks setuid launchers (Snap's snap-confine), makes
+# terminals start with a crippled session and aborts GTK 3 programs that load
+# images through glycin (Tilix, Nemo). So the helper is started by a process
+# outside Wine's tree, the first of:
+#
+#   1. systemd: a transient systemd user unit, a child of the user's service
+#      manager (NoNewPrivs=0). The session variables the helper and the tools
+#      need are passed along; KillMode=process keeps a detached tool (the
+#      terminal) alive after the helper exits.
+#   2. daemon: without a systemd user manager, "fork-linux-host --handoff"
+#      asks the daemon the launcher started before Wine (FL_BRIDGE_PORT /
+#      FL_BRIDGE_TOKEN in Fork's environment: the git bridge's daemon or a
+#      hand-off-only one) to run the helper; the request carries the verb and
+#      its argument only. When no daemon answers, it runs the verb itself,
+#      inside Wine's tree, and says so in <logs>/handoff.log.
+#
+# FORK_LINUX_HANDOFF=direct skips both and runs the helper here (diagnosis).
+#
+# Usage: fork-linux-handoff terminal|reveal|open|open-url ARG
+# ARG may be a Windows path (Z:\..., C:\...); the helper maps it through
+# $WINEPREFIX, which Wine sets for the programs it starts.
+set -u
+
+[ $# -eq 2 ] && [ -n "$2" ] || { echo "usage: fork-linux-handoff terminal|reveal|open|open-url ARG" >&2; exit 2; }
+case $1 in
+	terminal | reveal | open | open-url) ;;
+	*) echo "fork-linux-handoff: unknown verb: $1" >&2; exit 2 ;;
+esac
+verb=$1
+target=$2
+
+here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || exit 127
+# From an AppImage, $here is a mount that ends with this AppImage instance, before the
+# systemd unit below starts: the stable launcher fork-linux wrote is used instead.
+if [ -n "${FORK_LINUX_HELPER_DIR:-}" ] && [ -x "$FORK_LINUX_HELPER_DIR/fork-linux-host" ]; then
+	set -- "$FORK_LINUX_HELPER_DIR/fork-linux-host"
+elif [ -x "$here/fork-linux-host" ]; then
+	set -- "$here/fork-linux-host"
+elif [ -f "$here/fork-linux-host.in" ]; then
+	# A source checkout: the template is plain Python apart from its first line.
+	set -- "${FORK_LINUX_PYTHON:-python3}" -I "$here/fork-linux-host.in"
+else
+	echo "fork-linux-handoff: fork-linux-host is not installed next to $0" >&2
+	exit 127
+fi
+
+# Wine's own variables must not reach the tools (WINEPREFIX stays: the helper maps paths with it).
+unset WINELOADER WINESERVER WINEDEBUG WINEDLLOVERRIDES WINEDLLPATH WINEHOME LD_PRELOAD
+
+# Run the command in "$@" in a transient systemd user unit; non-zero when there is no user manager.
+in_systemd_unit() {
+	set -- -- "$@"
+	for name in WINEPREFIX DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS HOME PATH LANG \
+		XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_CURRENT_DESKTOP XDG_SESSION_TYPE \
+		FORK_LINUX_TERMINAL FORK_LINUX_LIBDIR FORK_LINUX_PYTHON TERMINAL; do
+		value=$(printenv "$name") || value=
+		if [ -n "$value" ]; then
+			set -- "--setenv=$name=$value" "$@"
+		fi
+	done
+	systemd-run --user --quiet --collect --no-block --property=KillMode=process "$@" >/dev/null 2>&1 || return
+	return 0
+}
+
+if [ "${FORK_LINUX_HANDOFF:-auto}" = direct ]; then
+	exec "$@" "$verb" "$target"
+fi
+if command -v systemd-run >/dev/null 2>&1 && in_systemd_unit "$@" "$verb" "$target"; then
+	exit 0
+fi
+exec "$@" --handoff "$verb" "$target"

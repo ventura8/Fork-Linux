@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""Fake ``wineserver`` for tests (owned by the wine task).
+
+Logs {"argv", "env"} to $FL_FAKE_LOG; ``-w`` and ``-k`` exit with
+$FL_FAKE_WINESERVER_RC (default 0); anything else exits 2.
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+
+def log_call() -> None:
+    path = os.environ.get("FL_FAKE_LOG")
+    if not path:
+        return
+    env = {key: value for key, value in os.environ.items() if key.startswith("WINE")}
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"argv": [Path(sys.argv[0]).name, *sys.argv[1:]], "env": env}) + "\n")
+
+
+def main() -> int:
+    log_call()
+    if sys.argv[1:] not in (["-w"], ["-k"]):
+        print("fake wineserver: expected -w or -k", file=sys.stderr)
+        return 2
+    return int(os.environ.get("FL_FAKE_WINESERVER_RC", "0") or "0")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

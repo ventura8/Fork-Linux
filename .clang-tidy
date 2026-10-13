@@ -1,0 +1,58 @@
+# clang-tidy configuration for the C bridge (bridge/), run by the lint stage
+# (scripts/ci-docker.sh run_clang_tidy): bridge/common + bridge/unix against the meson
+# compile database, bridge/win with a MinGW-w64 target. Every enabled check is an error.
+#
+# The list starts from nothing ("-*" drops clang-tidy's implicit defaults) and then names
+# what is checked; no individual check is disabled and nothing is suppressed in the code
+# (AGENTS.md §4.2, hard rule 14): the static analyzer's core / dead-code / Unix API /
+# nullability / va_list checks, and the bugprone / cert / portability / performance checks
+# that catch real defects: system() and shell strings (cert-env33-c), signal-handler safety,
+# sizeof and macro mistakes, misused return values. The analyzer's security.* package is not
+# in the list yet: its insecureAPI family asks for Annex K functions (memcpy_s) that glibc
+# does not ship, and its ArrayBound findings in bridge/win are tracked for the bridge owner.
+Checks: >-
+  -*,
+  clang-analyzer-core.*,
+  clang-analyzer-deadcode.*,
+  clang-analyzer-unix.*,
+  clang-analyzer-nullability.*,
+  clang-analyzer-valist.*,
+  bugprone-assert-side-effect,
+  bugprone-bool-pointer-implicit-conversion,
+  bugprone-incorrect-roundings,
+  bugprone-infinite-loop,
+  bugprone-integer-division,
+  bugprone-macro-parentheses,
+  bugprone-macro-repeated-side-effects,
+  bugprone-misplaced-operator-in-strlen-in-alloc,
+  bugprone-misplaced-pointer-arithmetic-in-alloc,
+  bugprone-misplaced-widening-cast,
+  bugprone-posix-return,
+  bugprone-redundant-branch-condition,
+  bugprone-signal-handler,
+  bugprone-signed-char-misuse,
+  bugprone-sizeof-expression,
+  bugprone-spuriously-wake-up-functions,
+  bugprone-suspicious-enum-usage,
+  bugprone-suspicious-include,
+  bugprone-suspicious-memory-comparison,
+  bugprone-suspicious-memset-usage,
+  bugprone-suspicious-missing-comma,
+  bugprone-suspicious-realloc-usage,
+  bugprone-suspicious-semicolon,
+  bugprone-suspicious-string-compare,
+  bugprone-terminating-continue,
+  bugprone-too-small-loop-variable,
+  bugprone-unused-return-value,
+  cert-env33-c,
+  cert-err34-c,
+  cert-flp30-c,
+  cert-msc30-c,
+  cert-msc32-c,
+  cert-sig30-c,
+  cert-str34-c,
+  portability-*,
+  performance-type-promotion-in-math-fn
+WarningsAsErrors: '*'
+HeaderFilterRegex: 'bridge/.*'
+FormatStyle: none

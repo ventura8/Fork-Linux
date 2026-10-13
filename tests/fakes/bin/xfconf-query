@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""Fake ``xfconf-query`` for tests (owned by the wine task).
+
+Logs {"argv", "env"} to $FL_FAKE_LOG. ``-c CHANNEL -p PROPERTY`` prints the
+value of "CHANNEL:PROPERTY" in the JSON object $FL_FAKE_XFCONF; a missing
+property fails like the real tool.
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+
+def log_call() -> None:
+    path = os.environ.get("FL_FAKE_LOG")
+    if not path:
+        return
+    env = {key: value for key, value in os.environ.items() if key.startswith(("XDG_", "DBUS_"))}
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"argv": [Path(sys.argv[0]).name, *sys.argv[1:]], "env": env}) + "\n")
+
+
+def option(args: list, name: str) -> str:
+    return args[args.index(name) + 1] if name in args[:-1] else ""
+
+
+def main() -> int:
+    log_call()
+    args = sys.argv[1:]
+    channel, prop = option(args, "-c"), option(args, "-p")
+    values = json.loads(os.environ.get("FL_FAKE_XFCONF", "{}") or "{}")
+    key = f"{channel}:{prop}"
+    if key not in values:
+        print(f'Property "{prop}" does not exist on channel "{channel}".', file=sys.stderr)
+        return 1
+    print(values[key])
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""Fake ``winetricks`` for tests (owned by the wine task).
+
+Logs {"argv", "env"} to $FL_FAKE_LOG. ``--version`` prints ``20260125``;
+otherwise every non-option argument is a verb appended to
+$WINEPREFIX/winetricks.log, as the real script does after installing it.
+$FL_FAKE_WINETRICKS_RC (non-zero) fails without effects.
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+
+def log_call() -> None:
+    path = os.environ.get("FL_FAKE_LOG")
+    if not path:
+        return
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key.startswith(("WINE", "W_")) or key in ("XDG_CACHE_HOME", "HOME")
+    }
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"argv": [Path(sys.argv[0]).name, *sys.argv[1:]], "env": env}) + "\n")
+
+
+def main() -> int:
+    log_call()
+    args = sys.argv[1:]
+    if args == ["--version"]:
+        print("20260125")
+        return 0
+    code = int(os.environ.get("FL_FAKE_WINETRICKS_RC", "0") or "0")
+    if code:
+        print("fake winetricks: simulated failure", file=sys.stderr)
+        return code
+    prefix = os.environ.get("WINEPREFIX")
+    if not prefix or not os.path.isdir(prefix):
+        print("fake winetricks: WINEPREFIX is not a directory", file=sys.stderr)
+        return 1
+    verbs = [arg for arg in args if not arg.startswith("-")]
+    with open(os.path.join(prefix, "winetricks.log"), "a", encoding="utf-8") as handle:
+        for verb in verbs:
+            handle.write(verb + "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

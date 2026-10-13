@@ -1,0 +1,15 @@
+<action>
+	<icon>@APP_ID@</icon>
+	<name>@LABEL@</name>
+	<unique-id>@UNIQUE_ID@</unique-id>
+	<command>@COMMAND@ open --from-file-manager %f</command>
+	<description>@TOOLTIP@</description>
+	<patterns>*</patterns>
+	<startup-notify/>
+	<directories/>
+	<audio-files/>
+	<image-files/>
+	<other-files/>
+	<text-files/>
+	<video-files/>
+</action>

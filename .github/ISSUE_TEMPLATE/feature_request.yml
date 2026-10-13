@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest an improvement to the Linux wrapper (setup, integration, packaging, bridge).
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This tracker covers the **unofficial Linux wrapper**. Feature requests for **Fork itself**
+        (its UI, git features) belong in Fork's trackers:
+        https://github.com/fork-dev/TrackerWin (Windows) or https://github.com/fork-dev/Tracker (Mac).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should it work? CLI flags, desktop behaviour, packaging channel, ...
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: guardrails
+    attributes:
+      label: Guardrails
+      description: The project never patches or redistributes Fork (see AGENTS.md §1).
+      options:
+        - label: This request does not require modifying, patching or redistributing Fork's binaries or artwork.
+          required: true

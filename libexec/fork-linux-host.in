@@ -1,0 +1,53 @@
+#!@PYTHON@ -I
+"""fork-linux-host: Fork for Linux (unofficial) host helper.
+
+Runs Linux desktop tools (terminal, file manager, default applications,
+diff/merge tools) on behalf of Fork; see ``fork_linux.host_helper``.
+
+Relocatable like ``bin/fork-linux``: installed as
+``<root>/lib/fork-linux/fork-linux-host``, it finds the ``fork_linux``
+package in ``<root>/share/fork-linux``; ``FORK_LINUX_LIBDIR`` overrides the
+package location. Only when no installed package exists is a source checkout
+(``<repo>/libexec`` next to ``<repo>/src/fork_linux`` and ``VERSION`` or
+``meson.build``) used, so a stray ``src/fork_linux`` can never shadow the
+installed package. Runs in isolated mode (``-I``): PYTHONPATH, the user site
+directory and the current directory are never searched.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+
+def _package_dir(here: Path) -> str:
+    """The directory holding this installation's ``fork_linux`` package."""
+    libdir = os.environ.get("FORK_LINUX_LIBDIR", "")
+    if libdir:
+        return libdir
+    installed = here.parent.parent.parent / "share" / "fork-linux"
+    if (installed / "fork_linux").is_dir():
+        return str(installed)
+    repo = here.parent.parent
+    is_checkout = (repo / "VERSION").is_file() or (repo / "meson.build").is_file()
+    if is_checkout and (repo / "src" / "fork_linux").is_dir():
+        return str(repo / "src")
+    return str(installed)
+
+
+def _setup_path() -> None:
+    """Put the fork_linux package of this installation first on ``sys.path``."""
+    sys.path.insert(0, _package_dir(Path(__file__).resolve()))
+
+
+def _main() -> int:
+    """Run the host helper with this process's arguments."""
+    _setup_path()
+    from fork_linux.host_helper import main
+
+    return main(sys.argv[1:])
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

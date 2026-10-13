@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""Fake meld for tests, owned by the integration task (the Meld diff/merge tool).
+
+Appends {"argv", "env", "cwd"} as one JSON line to $FL_FAKE_LOG and exits
+with $FL_FAKE_MELD_RC (default 0).
+Effect: with --output=FILE, writes a merge result to FILE.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+ENV_KEYS = ("DISPLAY", "WAYLAND_DISPLAY", "HOME", "LD_LIBRARY_PATH", "WINEPREFIX", "WINEDEBUG", "WINESERVER")
+RC_VAR = "FL_FAKE_MELD_RC"
+
+
+def log(**extra: object) -> None:
+    """Record this call in $FL_FAKE_LOG."""
+    path = os.environ.get("FL_FAKE_LOG")
+    if not path:
+        return
+    record = {
+        "argv": [Path(sys.argv[0]).name, *sys.argv[1:]],
+        "env": {key: os.environ[key] for key in ENV_KEYS if key in os.environ},
+        "cwd": os.getcwd(),
+        **extra,
+    }
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record) + "\n")
+
+
+def main() -> int:
+    log()
+    for arg in sys.argv[1:]:
+        if arg.startswith("--output="):
+            Path(arg[len("--output="):]).write_text("merged by fake meld\n", encoding="utf-8")
+    return int(os.environ.get(RC_VAR, "0"))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

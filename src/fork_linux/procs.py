@@ -1,0 +1,282 @@
+"""Find Fork (and any other Wine process) running in our prefix by scanning ``/proc``.
+
+Only processes of the current user are considered. A process belongs to a
+prefix when its environment has ``WINEPREFIX`` equal to the prefix (both
+resolved); Fork itself is recognised by ``fork.exe`` in its command line
+(Wine shows the Windows path there), excluding Velopack's ``Update.exe``.
+That updater (``...\\Fork\\Update.exe``) is tracked on its own: during
+"Restart and Update" it replaces ``current\\`` between the old Fork's exit and
+the new one's start (spike S9), so Fork counts as busy (:func:`require_closed`)
+and the launcher waits for it (:func:`wait_for_updater`).
+Entries that vanish or cannot be read while scanning are skipped.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import os
+import signal
+import time
+from collections.abc import Callable, Iterable
+from pathlib import Path
+
+from .errors import ForkLinuxError, ForkRunning
+
+PROC = Path("/proc")
+# stop_prefix: SIGTERM first, SIGKILL after STOP_GRACE seconds, give up after STOP_TIMEOUT.
+STOP_GRACE = 5.0
+STOP_TIMEOUT = 30.0
+STOP_POLL = 0.2
+# /proc/<pid>/environ and cmdline are bounded by ARG_MAX in practice; never read more.
+MAX_BYTES = 4 * 1024 * 1024
+# The kernel keeps the first 15 bytes of a program name in /proc/<pid>/comm.
+COMM_LENGTH = 15
+_WINEPREFIX = b"WINEPREFIX="
+
+
+def _read(path: Path) -> bytes | None:
+    """The contents of a /proc file, or None when it cannot be read."""
+    try:
+        with open(path, "rb") as handle:
+            return handle.read(MAX_BYTES)
+    except OSError:
+        return None
+
+
+def _wineprefix(environ: bytes) -> str | None:
+    """``WINEPREFIX`` from a NUL-separated environment block, or None."""
+    for item in environ.split(b"\0"):
+        if item.startswith(_WINEPREFIX):
+            return os.fsdecode(item[len(_WINEPREFIX):])
+    return None
+
+
+def _own_pids(proc_root: Path) -> list[int]:
+    """Numeric /proc entries owned by the current user, except this process."""
+    uid = os.getuid()
+    me = os.getpid()
+    try:
+        entries = list(os.scandir(proc_root))
+    except OSError:
+        return []
+    pids = []
+    for entry in entries:
+        if not (entry.name.isascii() and entry.name.isdigit()) or int(entry.name) == me:
+            continue
+        try:
+            owner = entry.stat(follow_symlinks=False).st_uid
+        except OSError:
+            continue
+        if owner == uid:
+            pids.append(int(entry.name))
+    return sorted(pids)
+
+
+def _in_prefix(proc_root: Path, pid: int, prefix: str) -> bool:
+    """True if process ``pid`` runs with ``WINEPREFIX`` resolving to ``prefix``."""
+    environ = _read(proc_root / str(pid) / "environ")
+    if environ is None:
+        return False
+    value = _wineprefix(environ)
+    if value is None or not os.path.isabs(value):
+        return False
+    return os.path.realpath(value) == prefix
+
+
+def prefix_pids(prefix: Path, *, proc_root: Path = PROC) -> list[int]:
+    """PIDs of the current user's processes running with ``WINEPREFIX=<prefix>``."""
+    wanted = os.path.realpath(prefix)
+    return [pid for pid in _own_pids(proc_root) if _in_prefix(proc_root, pid, wanted)]
+
+
+def _is_fork(cmdline: bytes) -> bool:
+    """True for a command line naming ``fork.exe`` but not Velopack's ``Update.exe``."""
+    text = os.fsdecode(cmdline.replace(b"\0", b" ")).lower()
+    return "fork.exe" in text and "update.exe" not in text
+
+
+def _is_updater(cmdline: bytes) -> bool:
+    """True for Velopack's ``Update.exe`` from Fork's install directory (any argument of the command line)."""
+    for arg in cmdline.split(b"\0"):
+        text = os.fsdecode(arg).lower().replace("/", "\\")
+        if text.endswith("\\fork\\update.exe"):
+            return True
+    return False
+
+
+def _matching(prefix: Path, proc_root: Path, wanted: Callable[[bytes], bool]) -> list[int]:
+    """PIDs in ``prefix`` whose command line ``wanted`` accepts."""
+    found = []
+    for pid in prefix_pids(prefix, proc_root=proc_root):
+        cmdline = _read(proc_root / str(pid) / "cmdline")
+        if cmdline is not None and wanted(cmdline):
+            found.append(pid)
+    return found
+
+
+def fork_pids(prefix: Path, *, proc_root: Path = PROC) -> list[int]:
+    """PIDs of Fork processes running in ``prefix``."""
+    return _matching(prefix, proc_root, _is_fork)
+
+
+def updater_pids(prefix: Path, *, proc_root: Path = PROC) -> list[int]:
+    """PIDs of Velopack's ``Update.exe`` (Fork updating itself) in ``prefix``."""
+    return _matching(prefix, proc_root, _is_updater)
+
+
+def wineserver_exes(prefix: Path, *, proc_root: Path = PROC) -> list[Path]:
+    """The binaries of the wineservers serving ``prefix`` (``/proc/<pid>/exe``), each listed once."""
+    found: list[Path] = []
+    for pid in prefix_pids(prefix, proc_root=proc_root):
+        try:
+            exe = Path(os.readlink(proc_root / str(pid) / "exe"))
+        except OSError:
+            continue
+        if exe.name.startswith("wineserver") and exe not in found:
+            found.append(exe)
+    return found
+
+
+def fork_running(prefix: Path, *, proc_root: Path = PROC) -> bool:
+    """True if Fork runs in ``prefix``."""
+    return bool(fork_pids(prefix, proc_root=proc_root))
+
+
+def wait_for_updater(
+    prefix: Path,
+    *,
+    timeout: float,
+    proc_root: Path = PROC,
+    poll: float = 0.5,
+    sleep: Callable[[float], None] | None = None,
+    clock: Callable[[], float] | None = None,
+) -> bool:
+    """Wait until no ``Update.exe`` runs in ``prefix``; False when it still runs after ``timeout`` seconds."""
+    pause = sleep or time.sleep
+    now = clock or time.monotonic
+    deadline = now() + timeout
+    while updater_pids(prefix, proc_root=proc_root):
+        if now() >= deadline:
+            return False
+        pause(poll)
+    return True
+
+
+def require_closed(prefix: Path, *, proc_root: Path = PROC) -> None:
+    """Raise :class:`ForkRunning` if Fork runs in ``prefix``, or Velopack is replacing it."""
+    pids = fork_pids(prefix, proc_root=proc_root)
+    if pids:
+        listed = ", ".join(str(pid) for pid in pids)
+        raise ForkRunning(
+            f"Fork is running in {prefix} (pid {listed})",
+            hint="close Fork first, then run the command again",
+        )
+    updating = updater_pids(prefix, proc_root=proc_root)
+    if updating:
+        listed = ", ".join(str(pid) for pid in updating)
+        raise ForkRunning(
+            f"Fork is updating itself in {prefix} (Velopack's Update.exe, pid {listed})",
+            hint="wait until Fork has restarted, close it, then run the command again",
+        )
+
+
+def running(names: Iterable[str], *, proc_root: Path = PROC) -> list[int]:
+    """PIDs of the current user's processes whose program name (``comm``) is one of ``names``.
+
+    Names compare case-insensitively (``Thunar`` and ``thunar``) and as the kernel
+    stores them, cut to :data:`COMM_LENGTH` bytes.
+    """
+    wanted = {name.lower()[:COMM_LENGTH] for name in names}
+    found = []
+    for pid in _own_pids(proc_root):
+        comm = _read(proc_root / str(pid) / "comm")
+        if comm is not None and os.fsdecode(comm).strip().lower() in wanted:
+            found.append(pid)
+    return found
+
+
+def _parent(proc_root: Path, pid: int) -> int | None:
+    """The parent pid from ``/proc/<pid>/stat`` (``pid (comm) state ppid ...``), or None."""
+    stat = _read(proc_root / str(pid) / "stat")
+    if stat is None:
+        return None
+    fields = stat[stat.rfind(b")") + 1 :].split()
+    return int(fields[1]) if len(fields) > 1 and fields[1].isdigit() else None
+
+
+def _ancestors(proc_root: Path, pid: int) -> set[int]:
+    """The pids of ``pid``'s parent, its parent's parent, ... as far as ``/proc`` tells."""
+    found: set[int] = set()
+    parent = _parent(proc_root, pid)
+    while parent is not None and parent not in found:
+        found.add(parent)
+        parent = _parent(proc_root, parent)
+    return found
+
+
+def _wine_name(name: str) -> bool:
+    """True for wine, wineserver, the preloaders, winetricks or a Windows program (``*.exe``)."""
+    lower = name.lower()
+    return lower.startswith("wine") or lower.endswith(".exe")
+
+
+def _wine_side(proc_root: Path, pid: int) -> bool:
+    """True when ``pid`` is a Wine process or winetricks (program name, binary or first two arguments)."""
+    directory = proc_root / str(pid)
+    names = [os.fsdecode(_read(directory / "comm") or b"").strip()]
+    with contextlib.suppress(OSError):
+        names.append(os.path.basename(os.readlink(directory / "exe")))
+    names += [os.path.basename(os.fsdecode(arg)) for arg in (_read(directory / "cmdline") or b"").split(b"\0")[:2]]
+    return any(_wine_name(name) for name in names)
+
+
+def stop_targets(prefix: Path, *, proc_root: Path = PROC) -> list[int]:
+    """The processes :func:`stop_prefix` ends: Wine's and winetricks' in ``prefix``.
+
+    A shell the user exported ``WINEPREFIX`` in (and anything else that is not Wine) is never
+    one of them, and neither is fork-linux or any process it runs under.
+    """
+    mine = _ancestors(proc_root, os.getpid())
+    return [
+        pid for pid in prefix_pids(prefix, proc_root=proc_root) if pid not in mine and _wine_side(proc_root, pid)
+    ]
+
+
+def stop_prefix(
+    prefix: Path,
+    *,
+    proc_root: Path = PROC,
+    kill: Callable[[int, int], None] = os.kill,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> list[int]:
+    """End the Wine processes still running in ``prefix`` (:func:`stop_targets`); return the pids signalled.
+
+    For what an interrupted setup leaves behind (a winetricks script that keeps starting Wine
+    programs): SIGTERM first, SIGKILL to what is left after :data:`STOP_GRACE` seconds. Raises
+    :class:`ForkLinuxError` when something still runs after :data:`STOP_TIMEOUT` seconds.
+    """
+    signalled: list[int] = []
+    start = clock()
+    while True:
+        pids = stop_targets(prefix, proc_root=proc_root)
+        if not pids:
+            return signalled
+        elapsed = clock() - start
+        if elapsed > STOP_TIMEOUT:
+            raise ForkLinuxError(
+                f"processes still run in {prefix}: {', '.join(map(str, pids))}",
+                hint="end them (for example with your system monitor), then run 'fork-linux setup' again",
+            )
+        number = signal.SIGKILL if elapsed > STOP_GRACE else signal.SIGTERM
+        for pid in pids:
+            _signal(kill, pid, number)
+            if pid not in signalled:
+                signalled.append(pid)
+        sleep(STOP_POLL)
+
+
+def _signal(kill: Callable[[int, int], None], pid: int, number: int) -> None:
+    """Send ``number`` to ``pid``; a process that is already gone is fine."""
+    with contextlib.suppress(ProcessLookupError):
+        kill(pid, number)

@@ -1,0 +1,55 @@
+WINE REGISTRY Version 2
+;; All keys relative to REGISTRY\\Machine
+
+#arch=win64
+
+[Software\\Classes\\Folder\\shell\\explore\\command] 1791520885
+#time=1dd57a871561bac
+@="C:\\windows\\explorer.exe /n,/e,\"%1\""
+
+[Software\\Classes\\Folder\\shell\\open\\command] 1791520885
+#time=1dd57a871561bac
+@="C:\\windows\\explorer.exe /n,\"%1\""
+
+[Software\\Classes\\txtfile\\shell\\open\\command] 1791520885
+#time=1dd57a871561bac
+@=str(2):"%SystemRoot%\\system32\\notepad.exe %1"
+
+[Software\\Classes\\Wow6432Node\\AppId] 1791520884
+#time=1dd57a870b73366
+#link
+"SymbolicLinkValue"=hex(6):5c,00,52,00,65,00,67,00,69,00,73,00,74,00,72,00,79,\
+  00,5c,00,4d,00,61,00,63,00,68,00,69,00,6e,00,65,00,5c,00,53,00,6f,00,66,00,\
+  74,00,77,00,61,00,72,00,65,00,5c,00,43,00,6c,00,61,00,73,00,73,00,65,00,73,\
+  00,5c,00,41,00,70,00,70,00,49,00,64,00
+
+[Software\\Microsoft\\ASP.NET\\4.0.30319.0] 1791521001
+#time=1dd57a8b653a1ca
+"AssemblyVersion"="4.0.0.0"
+"DllFullPath"="C:\\windows\\Microsoft.NET\\Framework64\\v4.0.30319\\aspnet_isapi.dll"
+"LastInstallTime"=hex(b):4e,88,53,b6,a8,57,dd,01
+
+[Software\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full] 1791520998
+#time=1dd57a8b46ca118
+"Install"=dword:00000001
+"InstallPath"="C:\\windows\\Microsoft.NET\\Framework64\\v4.0.30319\\"
+"MSI"=dword:00000001
+"Release"=dword:00080eb1
+"Servicing"=dword:00000000
+"TargetVersion"="4.0.0"
+"Version"="4.8.04084"
+
+[Software\\Microsoft\\Windows NT\\CurrentVersion] 1791520885
+#time=1dd57a87157acb0
+"CurrentBuild"="19045"
+"CurrentBuildNumber"="19045"
+"CurrentVersion"="6.3"
+"ProductName"="Windows 10 Pro"
+
+[Software\\Microsoft\\Windows NT\\CurrentVersion\\FontLink\\SystemLink] 1791520885
+#time=1dd57a87157acb0
+"Lucida Sans Unicode"=str(7):"MSGOTHIC.TTC,MS UI Gothic\0MINGLIU.TTC,PMingLiU\0SIMSUN.TTC,SimSun\0"
+"Tahoma"=str(7):"MSGOTHIC.TTC,MS UI Gothic\0MINGLIU.TTC,PMingLiU\0"
+
+[Software\\Wine\\Drives] 1791520885
+#time=1dd57a87157acb0

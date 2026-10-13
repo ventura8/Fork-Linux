@@ -1,0 +1,224 @@
+---
+name: Build & Check
+
+# push fires for main only: a same-repo PR branch is covered by its pull_request run, and
+# firing both would double every run (the concurrency groups differ). Use workflow_dispatch
+# for a branch without a PR.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel stale runs when the same PR or branch gets a new push.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Every job starts at once (no needs: gates, AGENTS.md §4.8): lint + coverage + bridge +
+# 7 compat cells + 8 desktop integration cells + 9 packaging cells. ./scripts/ci-pipeline.sh
+# runs the same scripts locally.
+jobs:
+  lint:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4.4.1
+
+      # buildx's GHA cache backend needs ACTIONS_RESULTS_URL / ACTIONS_RUNTIME_TOKEN exported.
+      - name: Expose GitHub Actions cache runtime vars
+        uses: crazy-max/ghaction-github-runtime@v4.0.0
+
+      - name: Lint in Docker (ubuntu:26.04)
+        env:
+          FL_CI_DOCKER_CACHE: gha
+          FL_CI_STAGE: lint
+        run: ./scripts/ci-docker.sh
+
+      # Every user-facing scenario has a real-tier test (or a pending branch that brings one),
+      # and docs/qa/E2E-SCENARIOS.md matches tests/e2e/scenarios.json (AGENTS.md §4.5). It runs
+      # even when the lint stage failed, so a pull request always gets its verdict.
+      - name: Scenario registry gate (scripts/gen-scenarios-doc.py)
+        if: ${{ !cancelled() }}
+        run: |
+          python3 scripts/gen-scenarios-doc.py validate
+          python3 scripts/gen-scenarios-doc.py check
+
+  coverage:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+        with:
+          # Full history: SonarQube Cloud (scanned below in this job) attributes new code to
+          # commits and needs more than a shallow clone.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4.4.1
+
+      - name: Expose GitHub Actions cache runtime vars
+        uses: crazy-max/ghaction-github-runtime@v4.0.0
+
+      - name: Coverage in Docker (ubuntu:26.04)
+        env:
+          FL_CI_DOCKER_CACHE: gha
+          FL_CI_STAGE: coverage
+          # The C coverage report and the per-file gate are steps of their own below
+          # (ci-docker.sh runs both locally).
+          FL_CI_C_COVERAGE: "0"
+        run: ./scripts/ci-docker.sh
+
+      # Native unit tests, daemon protocol tests and the Wine tier against -Db_coverage=true
+      # builds (shims included) -> artifacts/coverage/c-coverage.xml, before the scan.
+      - name: C coverage (scripts/ci-c-coverage.sh)
+        run: ./scripts/ci-c-coverage.sh
+
+      # SonarQube's per-file view of both reports: every file >= 90% (Python 100% line and
+      # branch), exclusions read from sonar-project.properties. Runs on fork PRs too.
+      - name: Per-file coverage gate (scripts/check-coverage.py)
+        run: python3 scripts/check-coverage.py --min 90 --min-python-line 100 --min-python-branch 100
+
+      # The Docker stages run as the runner's uid, but reclaim the tree anyway before the scan
+      # action walks it (it fails on any unreadable path).
+      - name: Reclaim the workspace
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        run: sudo chown -R "$(id -u):$(id -g)" "${GITHUB_WORKSPACE}"
+
+      # Fail with a message that names the problem when the token expired or was revoked.
+      - name: Check SonarQube Cloud token
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: ./scripts/ci-sonar.sh --check-token
+
+      # A step of the coverage job (not its own job): it uploads the reports written above,
+      # and check.yml has no job dependencies. Skipped on fork PRs (no secret).
+      - name: SonarQube Cloud scan
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: SonarSource/sonarqube-scan-action@v8.3.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  bridge:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4.4.1
+
+      - name: Expose GitHub Actions cache runtime vars
+        uses: crazy-max/ghaction-github-runtime@v4.0.0
+
+      - name: Bridge (MinGW + musl, reproducibility, Wine tier)
+        env:
+          FL_CI_DOCKER_CACHE: gha
+          FL_CI_STAGE: bridge
+        run: ./scripts/ci-docker.sh
+
+  compat:
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        cell: [jammy, noble, resolute, debian13, fedora44, leap16, arch]
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4.4.1
+
+      - name: Expose GitHub Actions cache runtime vars
+        uses: crazy-max/ghaction-github-runtime@v4.0.0
+
+      - name: Compat ${{ matrix.cell }}
+        env:
+          FL_CI_DOCKER_CACHE: gha
+          FL_CI_STAGE: compat
+          FL_CI_CELL: ${{ matrix.cell }}
+        run: ./scripts/ci-docker.sh
+
+  # The desktop E2E tier's integration cells (docs/qa/DE-E2E.md): fork-linux installed from the
+  # release tarball inside a real desktop session per image, checked through that desktop's own
+  # menu library, file manager, settings, terminal and default applications. No Wine and no
+  # Fork download (the real-Fork tier per desktop is in e2e-wine.yml); logs only, no screenshots.
+  e2e-de:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        desktop: [xfce, gnome, kde, kdewayland, cinnamon, mate, budgie, lxqt]
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4.4.1
+
+      - name: Expose GitHub Actions cache runtime vars
+        uses: crazy-max/ghaction-github-runtime@v4.0.0
+
+      - name: Desktop integration tier ${{ matrix.desktop }}
+        env:
+          FL_CI_DOCKER_CACHE: gha
+        run: ./scripts/ci-e2e-de.sh "${{ matrix.desktop }}"
+
+      - name: Keep the logs (text only)
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: e2e-de-${{ matrix.desktop }}-logs
+          path: logs/e2e-de/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # Build + smoke verify + live install E2E per format, the same scripts/ci-packaging-cell.sh
+  # as ./scripts/ci-pipeline.sh. Never on fork PRs (privileged Docker, snapd, flatpak).
+  packaging:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        format: [deb, deb-jammy, rpm-fedora, rpm-opensuse, arch, snap, appimage, flatpak, tarball]
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Packaging cell ${{ matrix.format }} (build + smoke + E2E)
+        run: ./scripts/ci-packaging-cell.sh "${{ matrix.format }}"
+
+      - name: Keep the cell's artifacts
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: packaging-${{ matrix.format }}
+          path: |
+            artifacts/*
+            !artifacts/.flatpak-work
+            !artifacts/previous
+          if-no-files-found: error
+          retention-days: 7
