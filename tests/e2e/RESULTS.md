@@ -1,5 +1,16 @@
 # E2E results: official Fork 2.23.2 on the managed Wine runtime
 
+## 2026-10-13: v1.0.0 release proof (`fix/integration` `9fa7d53`)
+
+| Gate | Result |
+|---|---|
+| lint / coverage / bridge / compat ×7 (incl. fedora44) | OK on the laptop |
+| packaging ×9 (N-1→N) | OK on the NUC (`scripts/ci-packaging-matrix.sh`) |
+| `ci-e2e-wine.sh --all --jobs 1 --remote nuc --remote-jobs 8` | **OK in 2201 s (36.7 min)**; every module exit 0 (`logs/ci-e2e-wine-all-j1.log`). `test_wine_pin_upgrade.py` failed once (255 s) and passed on the Velopack OS Error 731 one-shot re-run (502 s). |
+| DE matrix ×8 (integration + `--fork`) | OK on the NUC: every desktop 10/10 on the real-Fork tier |
+
+An earlier laptop+NUC attempt with higher local `--jobs` failed local .NET installs under concurrent `winetricks` (Wine status 67 / NDP46 "Cancel"); serialising the laptop side (`--jobs 1`) and keeping heavy modules on the NUC avoids that. The five CI shards remain independent jobs and do not share a host.
+
 ## 2026-10-12 (night): the full tier in under an hour (`fix/e2e-speed`)
 
 `scripts/ci-e2e-wine.sh` used to run the named modules one after the other, each in a fresh
