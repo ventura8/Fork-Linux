@@ -38,7 +38,7 @@ CONTRACT = {
         "bridge": "off",
         "bridge_mode": "bridge",
     },
-    "integration": {"terminal": "auto", "open_files_natively": "true"},
+    "integration": {"terminal": "auto", "open_files_natively": "true", "system_file_dialogs": "true"},
     "snapshots": {"keep": "2", "method": "auto"},
     "ui": {"progress": "auto"},
 }

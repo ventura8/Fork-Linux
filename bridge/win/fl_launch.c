@@ -8,6 +8,8 @@
  *                              (FL_REQ_HOST_HELPER | FL_REQ_DETACH)
  *   diff | merge | edit | run  wait for the host tool and return its exit status
  *                              (FL_REQ_HOST_HELPER)
+ *   pick-dir | pick-file | save-file
+ *                              Linux file/folder picker; path on stdout (cancel: 1)
  *
  * Windows-absolute arguments ("C:\x", "Z:/x", "\\?\...", "file://C:/...") are
  * translated to Unix paths; everything else is passed on unchanged. Transport and
@@ -43,6 +45,9 @@ static const struct verb verbs[] = {
     { "merge", FL_REQ_HOST_HELPER },
     { "edit", FL_REQ_HOST_HELPER },
     { "run", FL_REQ_HOST_HELPER },
+    { "pick-dir", FL_REQ_HOST_HELPER },
+    { "pick-file", FL_REQ_HOST_HELPER },
+    { "save-file", FL_REQ_HOST_HELPER },
 };
 
 struct call {
@@ -91,7 +96,8 @@ static void log_hook(void *ud, UINT code)
 
 static void usage(void)
 {
-    flw_msg("usage: fl-launch.exe terminal|open|reveal|diff|merge|edit|run [args...]");
+    flw_msg("usage: fl-launch.exe terminal|open|reveal|diff|merge|edit|run|"
+            "pick-dir|pick-file|save-file [args...]");
 }
 
 int wmain(int argc, wchar_t **wargv); /* -municode entry point */

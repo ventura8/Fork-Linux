@@ -12,7 +12,7 @@
 # runs it as root, to check that it refuses. Asserts:
 #   * fork-linux --version and fork --version print the version just installed
 #   * fork-linux doctor --offline --json works with no Wine present (JSON, exit 0 or 17)
-#   * the shims (win64/fl-shim.exe, fl-launch.exe) are PE32+ x86-64
+#   * the shims (win64/fl-shim.exe, fl-launch.exe, fl-filedlg.dll) are PE32+ x86-64
 #   * fl-bridge-helper is an x86-64 ELF: ET_EXEC (static musl) for the portable channels
 #     (tarball, AppImage, snap); the distro packages and the Flatpak ship the glibc PIE
 #     build (bridge/README.md "Install layout"), so ET_DYN is accepted there
@@ -263,7 +263,7 @@ def elf_type(path: Path) -> int:
     return e_type
 
 
-for name in ("fl-shim.exe", "fl-launch.exe"):
+for name in ("fl-shim.exe", "fl-launch.exe", "fl-filedlg.dll"):
     pe32plus_x64(libdir / "win64" / name)
 helper = libdir / "fl-bridge-helper"
 kind = elf_type(helper)

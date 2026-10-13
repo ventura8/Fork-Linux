@@ -1317,6 +1317,31 @@ def check_integration(ctx: DoctorCtx) -> Result:
     return Result("ok" if explorer else "info", "; ".join(parts))
 
 
+def check_system_file_dialogs(ctx: DoctorCtx) -> Result:
+    """Fork's Open / Save / folder dialogs use the Linux picker when configured."""
+    if not bridge.system_file_dialogs_enabled(ctx):
+        return Result(
+            "info",
+            "system file dialogs are off ([integration] system_file_dialogs)",
+            "'fork-linux config set integration.system_file_dialogs on' uses zenity/kdialog",
+        )
+    if not _has_prefix(ctx):
+        return _skip(NO_PREFIX)
+    if not bridge.filedlg_installed(ctx.paths):
+        return Result(
+            "warn",
+            f"{bridge.FILEDLG} is not installed in the prefix",
+            _RUN_FIX,
+        )
+    expected = integration_step.file_dialog_expected(ctx.boot)
+    if not expected:
+        return Result("warn", "system file dialogs are on but the CLSID registrations are missing", _RUN_FIX)
+    found = prefix_step.reg_values(ctx.boot, [(key, name) for key, name, _value in expected])
+    if any(have != value for (_key, _name, value), have in zip(expected, found, strict=True)):
+        return Result("warn", "FileOpenDialog / FileSaveDialog are not registered to fl-filedlg.dll", _RUN_FIX)
+    return Result("ok", "FileOpenDialog / FileSaveDialog use the Linux file picker")
+
+
 # -- repositories ----------------------------------------------------------------------------------
 
 BRIDGE_HINT = (
@@ -1938,6 +1963,13 @@ CHECKS: list[Check] = [
     Check("prefix.appdefaults", "Fork.exe Windows version", "prefix", check_appdefaults, fix_steps=("registry",)),
     Check("prefix.menubuilder", "Wine menu entries", "prefix", check_menubuilder, fixer=fix_menubuilder),
     Check("prefix.dpi", "DPI", "prefix", check_dpi, fix_steps=("display_dpi",)),
+    Check(
+        "prefix.system_file_dialogs",
+        "System file dialogs",
+        "prefix",
+        check_system_file_dialogs,
+        fix_steps=("host_shims", "host_integration"),
+    ),
     Check(
         "prefix.integration", "File manager and open redirects", "prefix", check_integration,
         fix_steps=("host_integration",),

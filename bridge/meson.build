@@ -202,11 +202,42 @@ if fl_have_mingw
   endforeach
   fl_shim_exe = fl_pe_targets['fl_shim']
   fl_launch_exe = fl_pe_targets['fl_launch']
+
+  # fl-filedlg.dll: IFileDialog COM proxy -> fl-launch pick-* (system file dialogs).
+  fl_filedlg_res = custom_target(
+    'fl_filedlg_res',
+    input: 'win/res/fl_filedlg.rc',
+    output: 'fl_filedlg_res.o',
+    depend_files: [fl_version_h],
+    command: [
+      fl_windres, '--input-format=rc', '--output-format=coff',
+      '-I', meson.current_build_dir(), '-I', fl_win_dir / 'res',
+      '-i', '@INPUT@', '-o', '@OUTPUT@',
+    ],
+  )
+  fl_filedlg_dll = custom_target(
+    'fl-filedlg.dll',
+    input: [files('win/fl_filedlg.c'), fl_filedlg_res],
+    output: 'fl-filedlg.dll',
+    depend_files: files('win/fl_filedlg.def'),
+    command: [
+      fl_mingw, fl_pe_cflags, fl_pe_cov_cflags,
+      '-shared', '-municode',
+      '-I' + fl_win_dir,
+      '-o', '@OUTPUT@', '@INPUT@',
+      fl_win_dir / 'fl_filedlg.def',
+      fl_pe_ldflags, '-lole32', '-lshell32', '-luuid', '-lshlwapi',
+    ],
+    build_by_default: true,
+    install: true,
+    install_dir: fl_bridge_windir,
+    install_mode: 'rw-r--r--',
+  )
 elif get_option('bridge').disabled()
-  message('bridge=disabled: the Windows shims (fl-shim.exe, fl-launch.exe) are not built')
+  message('bridge=disabled: the Windows shims (fl-shim.exe, fl-launch.exe, fl-filedlg.dll) are not built')
 else
   message('x86_64-w64-mingw32-gcc / -windres not found: skipping the Windows shims '
-    + '(fl-shim.exe, fl-launch.exe); build them with scripts/build-bridge.sh')
+    + '(fl-shim.exe, fl-launch.exe, fl-filedlg.dll); build them with scripts/build-bridge.sh')
 endif
 
 if get_option('tests')

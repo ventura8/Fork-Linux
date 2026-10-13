@@ -112,12 +112,25 @@ def open_expected() -> list[tuple[str, str, object]]:
     return expected
 
 
+def file_dialog_expected(ctx: Ctx) -> list[tuple[str, str, object]]:
+    """CLSID InprocServer32 entries that route IFileDialog to ``fl-filedlg.dll`` (when enabled)."""
+    if not bridge.system_file_dialogs_enabled(ctx) or not bridge.filedlg_installed(ctx.paths):
+        return []
+    expected: list[tuple[str, str, object]] = []
+    for clsid in bridge.FILE_DIALOG_CLSID:
+        key = rf"HKCU\Software\Classes\CLSID\{clsid}\InprocServer32"
+        expected.append((key, "", bridge.FILEDLG_WIN))
+        expected.append((key, "ThreadingModel", "Apartment"))
+    return expected
+
+
 def integration_expected(ctx: Ctx) -> list[tuple[str, str, object]]:
     """Every registry value the ``host_integration`` step sets."""
     expected = open_expected()
     explorer = fork_tools.script_win(fork_tools.EXPLORER_SCRIPT, _pathmap(ctx))
     if explorer is not None:
         expected += [(rf"{APP_PATHS_KEY}\{name}", "", explorer) for name in EXPLORER_NAMES]
+    expected += file_dialog_expected(ctx)
     return expected
 
 
@@ -146,6 +159,8 @@ def integration_inputs(ctx: Ctx) -> dict[str, Any]:
         "registry": [list(item) for item in integration_expected(ctx)],
         "home": str(ctx.host_home),
         "wine": runtime.wine_inputs(ctx),
+        "system_file_dialogs": bridge.system_file_dialogs_enabled(ctx),
+        "filedlg": bridge.filedlg_installed(ctx.paths),
     }
 
 
@@ -155,11 +170,15 @@ def run_integration(ctx: Ctx) -> None:
     The drive lets users type ``H:\\src\\app`` in Wine's file dialogs, which do
     not accept Linux paths. An ``h:`` the user mapped elsewhere is left alone;
     Fork keeps seeing repositories under ``Z:`` (:class:`~fork_linux.pathmap.PathMap`
-    never uses ``H:`` for Linux-to-Windows conversion).
+    never uses ``H:`` for Linux-to-Windows conversion). When system file dialogs
+    are off, any previous ``fl-filedlg.dll`` CLSID registrations are removed.
     """
     batch = RegBatch()
     for key, name, value in integration_expected(ctx):
         batch.set_sz(key, name, str(value))
+    if not file_dialog_expected(ctx):
+        for clsid in bridge.FILE_DIALOG_CLSID:
+            batch.delete_key(rf"HKCU\Software\Classes\CLSID\{clsid}")
     prefix_steps.import_batch(ctx, batch, "host-integration")
     drive = home_drive(ctx)
     if not os.path.lexists(drive) and ctx.host_home.is_dir():
@@ -168,6 +187,11 @@ def run_integration(ctx: Ctx) -> None:
 
 def verify_integration(ctx: Ctx) -> bool:
     """The registry values are in place and ``h:`` exists (ours or the user's)."""
+    if not file_dialog_expected(ctx):
+        for clsid in bridge.FILE_DIALOG_CLSID:
+            key = rf"HKCU\Software\Classes\CLSID\{clsid}\InprocServer32"
+            if prefix_steps.reg_matches(ctx, [(key, "", bridge.FILEDLG_WIN)]):
+                return False
     return prefix_steps.reg_matches(ctx, integration_expected(ctx)) and (
         os.path.lexists(home_drive(ctx)) or not ctx.host_home.is_dir()
     )
@@ -301,7 +325,7 @@ HOST_SHIMS = Step(
 HOST_INTEGRATION = Step(
     id="host_integration",
     title="Connecting Fork to your file manager and apps",
-    rev=1,
+    rev=2,
     weight=1,
     run=run_integration,
     verify=verify_integration,

@@ -57,7 +57,7 @@ def seeded(xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: p
     isolate(monkeypatch)
     shims = tmp_path / "shims"
     shims.mkdir()
-    for name in ("fl-shim.exe", "fl-launch.exe"):
+    for name in ("fl-shim.exe", "fl-launch.exe", "fl-filedlg.dll"):
         (shims / name).write_bytes(b"MZ shim 0.9.9 " + name.encode())
     monkeypatch.setenv("FORK_LINUX_SHIMS_DIR", str(shims))
     work = tmp_path / "work"

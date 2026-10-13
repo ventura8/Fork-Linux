@@ -11,8 +11,8 @@
 #                MinGW-w64, meson and ninja)
 #
 # Outputs (meson build dir build-bridge/): bridge/fl-shim.exe, bridge/fl-launch.exe,
-# bridge/fl-bridge-helper, bridge/fl-bridge-helper-static (musl), and the test-only
-# bridge/tests/fl-testdriver.exe + fl-testdrv.exe for the Wine tier
+# bridge/fl-filedlg.dll, bridge/fl-bridge-helper, bridge/fl-bridge-helper-static (musl),
+# and the test-only bridge/tests/fl-testdriver.exe + fl-testdrv.exe for the Wine tier
 # (FL_REAL_WINE=1 python3 -m pytest tests/bridge/wine). The version comes from VERSION
 # through the top-level meson.build. SOURCE_DATE_EPOCH defaults to the last commit time.
 set -euo pipefail
@@ -21,7 +21,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${HERE}/.." && pwd)"
 IMAGE="${FL_BRIDGE_IMAGE:-fork-linux-ci-bridge:26.04}"
 BUILD="build-bridge"
-OUTPUTS=(bridge/fl-shim.exe bridge/fl-launch.exe bridge/fl-bridge-helper)
+OUTPUTS=(bridge/fl-shim.exe bridge/fl-launch.exe bridge/fl-filedlg.dll bridge/fl-bridge-helper)
 REPRO_OUTPUTS=("${OUTPUTS[@]}" bridge/fl-bridge-helper-static bridge/tests/fl-testdriver.exe
   bridge/tests/fl-testdrv.exe)
 

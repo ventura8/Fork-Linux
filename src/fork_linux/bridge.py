@@ -2,10 +2,10 @@
 
 The bridge lets Fork run the host's ``git`` (and Linux terminals and diff /
 merge tools) instead of its bundled Git for Windows. Its pieces are the MinGW
-shims ``fl-shim.exe`` / ``fl-launch.exe`` (copied into ``C:\\fork-linux\\`` by
-the ``host_shims`` setup step, :data:`SHIM_LAYOUT`) and the native
-``fl-bridge-helper`` daemon; ``bridge/README.md`` is the specification this
-module follows.
+shims ``fl-shim.exe`` / ``fl-launch.exe`` / ``fl-filedlg.dll`` (copied into
+``C:\\fork-linux\\`` by the ``host_shims`` setup step, :data:`SHIM_LAYOUT`) and
+the native ``fl-bridge-helper`` daemon; ``bridge/README.md`` is the specification
+this module follows.
 
 * :func:`check` / :func:`status` / :func:`host_actions_active` only look:
   they read the configuration, the files and the (cached) host git version,
@@ -25,12 +25,12 @@ module follows.
   :func:`session_env` let a second ``fork`` while Fork runs reuse the running
   daemon instead of starting another.
 * :func:`start_handoff` starts the same daemon as a hand-off starter only
-  (``--handoff-only``) when the git bridge daemon did not start and there is
-  no systemd user manager: ``libexec/fork-linux-handoff`` (run by Wine, inside
-  its process tree) then asks it to start terminals and default applications
-  outside that tree (``fork-linux-host --handoff``, :mod:`fork_linux.handoff`),
-  so they never inherit Wine's ``NoNewPrivs`` and seccomp filter. Fork's
-  environment gets only ``FL_BRIDGE_PORT`` / ``FL_BRIDGE_TOKEN`` (no
+  (``--handoff-only``) when the git bridge daemon did not start and a hand-off
+  daemon is needed: no systemd user manager, the ssh-agent relay is on, or
+  ``[integration] system_file_dialogs`` is on (``fl-filedlg.dll`` talks to
+  ``fl-launch.exe`` over the daemon). ``libexec/fork-linux-handoff`` then asks
+  it to start terminals and default applications outside Wine's tree.
+  Fork's environment gets only ``FL_BRIDGE_PORT`` / ``FL_BRIDGE_TOKEN`` (no
   ``FORKGITINSTANCE``: git stays Fork's bundled git).
 * The **ssh-agent relay** (:func:`agent_socket`, ``[ssh] agent_relay``): while
   Fork's git is its bundled Git for Windows (no native-git bridge) and the
@@ -42,6 +42,9 @@ module follows.
   Fork's ``SSH_AUTH_SOCK`` then names that file (:data:`AGENT_SOCK_WIN`); when
   the daemon could not set the relay up it writes no file and Fork keeps the
   host's value (its ssh then simply finds no agent).
+* **System file dialogs** (:func:`system_file_dialogs_enabled`, default on):
+  ``fl-filedlg.dll`` is registered for the FileOpenDialog / FileSaveDialog
+  CLSIDs so Fork's pickers become zenity/kdialog via ``fl-launch.exe pick-*``.
 
 Enabling it records ``[git] bridge = on`` only (never touching Fork's
 ``settings.json``); ``[git] bridge_mode = record`` makes the shims forward to
@@ -81,7 +84,10 @@ MODE_BRIDGE = "bridge"
 MODE_RECORD = "record"
 SHIM = "fl-shim.exe"
 LAUNCH = "fl-launch.exe"
+FILEDLG = "fl-filedlg.dll"
 SHIM_EXES = (SHIM, LAUNCH)
+# Built PE artifacts copied into the prefix (exes for the bridge; DLL for system file dialogs).
+SHIM_ARTIFACTS = (SHIM, LAUNCH, FILEDLG)
 HELPER = resources.BRIDGE_HELPER
 _GIT_EXE = "git.exe"
 _PROC = Path("/proc")
@@ -99,6 +105,7 @@ SHIM_LAYOUT: tuple[tuple[tuple[str, ...], str], ...] = (
     (("gitInstance", "usr", "bin", "bash.exe"), SHIM),
     (("gitInstance", "usr", "bin", "sh.exe"), SHIM),
     (("bin", LAUNCH), LAUNCH),
+    (("bin", FILEDLG), FILEDLG),
 )
 # Fork passes `rebase --update-refs` (2.38); 2.40 is the oldest release tested here, 2.50 matches
 # the Git for Windows Fork 2.23.2 bundles.
@@ -162,11 +169,11 @@ def helper_path() -> Path:
 
 
 def shim_sources() -> dict[str, Path]:
-    """``{name: path}`` of the built shims (:data:`SHIM_EXES`) this installation ships."""
+    """``{name: path}`` of built PE artifacts (:data:`SHIM_ARTIFACTS`) this installation ships."""
     shims = resources.shims_dir()
     if shims is None:
         return {}
-    return {name: shims / name for name in SHIM_EXES if (shims / name).is_file()}
+    return {name: shims / name for name in SHIM_ARTIFACTS if (shims / name).is_file()}
 
 
 def _missing() -> tuple[Path | None, Path, list[str]]:
@@ -180,11 +187,32 @@ def _missing() -> tuple[Path | None, Path, list[str]]:
 
 
 def shim_targets(paths: Paths) -> list[tuple[Path, Path]]:
-    """``(installed copy, source)`` for every :data:`SHIM_LAYOUT` entry whose shim is built."""
+    """``(installed copy, source)`` for every :data:`SHIM_LAYOUT` entry whose artifact is built."""
     sources = shim_sources()
     return [
         (paths.fork_linux_win_dir.joinpath(*rel), sources[name]) for rel, name in SHIM_LAYOUT if name in sources
     ]
+
+
+FILEDLG_WIN = "C:\\fork-linux\\bin\\fl-filedlg.dll"
+FILE_OPEN_CLSID = "{DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7}"
+FILE_SAVE_CLSID = "{C0B4E2F3-BA21-4773-8DBA-335EC946EB8B}"
+FILE_DIALOG_CLSID = (FILE_OPEN_CLSID, FILE_SAVE_CLSID)
+SYSTEM_FILE_DIALOGS_SECTION = "integration"
+SYSTEM_FILE_DIALOGS_KEY = "system_file_dialogs"
+
+
+def system_file_dialogs_enabled(ctx: Any) -> bool:
+    """``[integration] system_file_dialogs`` (default on; invalid values count as on)."""
+    try:
+        return bool(ctx.config.getbool(SYSTEM_FILE_DIALOGS_SECTION, SYSTEM_FILE_DIALOGS_KEY))
+    except ForkLinuxError:
+        return True
+
+
+def filedlg_installed(paths: Paths) -> bool:
+    """``C:\\fork-linux\\bin\\fl-filedlg.dll`` is present in the prefix."""
+    return (paths.fork_linux_win_dir / "bin" / FILEDLG).is_file()
 
 
 def shims_problems(paths: Paths) -> list[str]:
@@ -630,20 +658,21 @@ def handoff_missing() -> list[str]:
 
 
 def start_handoff(ctx: Any) -> Daemon | None:
-    """Start ``fl-bridge-helper --daemon --handoff-only`` when the desktop hand-off or the
-    ssh-agent relay needs it.
+    """Start ``fl-bridge-helper --daemon --handoff-only`` when the desktop hand-off, the
+    ssh-agent relay, or system file dialogs need it.
 
     Called by the launcher when :func:`start_daemon` started no git bridge
     daemon (which takes hand-offs too). Nothing is started when
-    :func:`handoff_route` finds another way out of Wine's process tree and
-    :func:`agent_socket` wants no relay, or when this installation lacks the
-    helper or ``fork-linux-host``. A failure is logged, never fatal: the
-    hand-off then runs inside Wine's tree, as its log line
-    (``<logs>/handoff.log``) says, and Fork's ssh finds no agent.
+    :func:`handoff_route` finds another way out of Wine's process tree,
+    :func:`agent_socket` wants no relay, system file dialogs are off, or when
+    this installation lacks the helper or ``fork-linux-host``. A failure is
+    logged, never fatal: the hand-off then runs inside Wine's tree, as its log
+    line (``<logs>/handoff.log``) says, and Fork's ssh finds no agent.
     """
     route = handoff_route(ctx.env)
     agent = agent_socket(ctx)
-    if route and agent is None:
+    need_pickers = system_file_dialogs_enabled(ctx)
+    if route and agent is None and not need_pickers:
         log.debug("desktop hand-off through %s; no hand-off daemon", route)
         return None
     helper = helper_path()

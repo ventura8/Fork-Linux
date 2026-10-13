@@ -112,5 +112,9 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/%{app_id}.metain
 %{_datadir}/fish/vendor_completions.d/fork.fish
 
 %changelog
+* Tue Oct 13 2026 Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com> - 1.0.1-1
+- System file dialogs (zenity/kdialog) for Fork Open/Save by default.
+- Not affiliated; buy Fork at https://git-fork.com/buy.
+
 * Fri Oct 09 2026 Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com> - 1.0.0-1
 - First public release
