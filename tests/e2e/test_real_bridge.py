@@ -141,7 +141,7 @@ def test_enable_starts_the_daemon_and_fork_uses_linux_git(bridged: Any, installe
                "the commit")
     commits = [call for call in _shim_calls(installed) if "commit" in call.get("argv", [])]
     assert commits, commits[-3:]
-    assert all((call['mode'] == 'bridge' for call in commits)), commits[-3:]
+    assert all(call['mode'] == 'bridge' for call in commits), commits[-3:]
 
 
 def test_commits_through_fork_keep_exec_bits_and_symlinks(bridged: Any, installed: Any) -> None:

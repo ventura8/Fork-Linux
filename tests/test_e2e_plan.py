@@ -197,7 +197,7 @@ def test_every_module_has_a_timing() -> None:
     timings = plan_mod.load_timings()
     assert sorted(timings.modules) == MODULES
     assert timings.setup > 0
-    assert all((value > 0 for value in timings.modules.values()))
+    assert all(value > 0 for value in timings.modules.values())
     for module, parts in timings.parts.items():
         assert sorted(parts) == sorted(plan_mod.PARTS[module])
         assert sum(parts.values()) < timings.modules[module]
