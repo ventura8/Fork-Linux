@@ -212,6 +212,83 @@ def test_home_drive_in_a_file_dialog(desk: Any, installed: Any) -> None:
     assert git(repo, "rev-parse", "HEAD")[:7] in patch.read_text(encoding="utf-8", errors="replace")
 
 
+def test_system_file_dialogs_use_the_linux_picker(installed: Any) -> None:
+    """With ``[integration] system_file_dialogs`` on, File > Init New Repository opens zenity
+    (not Wine's ``Select repository`` dialog) and creates the repository at the path zenity returns.
+
+    Scenarios: I-SYSTEM-FILE-DIALOGS
+    """
+    target = installed.home / "linux-picker-init"
+    target.mkdir(exist_ok=True)
+    picker_log = installed.root / "system-file-dialogs.log"
+    if picker_log.is_file():
+        picker_log.unlink()
+    stubs, _desk_log = _stub_dir(installed)
+    zenity = stubs / "zenity"
+    zenity.write_text(
+        "#!/bin/sh\n"
+        f'printf "zenity\\t%s\\n" "$*" >>"{picker_log}"\n'
+        'case " $* " in\n'
+        f'*" --file-selection "*) printf "%s\\n" "{target}"; exit 0 ;;\n'
+        "esac\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    zenity.chmod(0o755)
+    config = installed.home / ".config" / "fork-linux" / "config.ini"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    text = config.read_text(encoding="utf-8") if config.is_file() else ""
+    if "system_file_dialogs" in text:
+        text = re.sub(
+            r"(?im)^(\s*system_file_dialogs\s*=\s*).*$",
+            r"\1true",
+            text,
+        )
+    else:
+        text = (text.rstrip() + "\n\n[integration]\nsystem_file_dialogs = true\n") if text.strip() else (
+            "[integration]\nsystem_file_dialogs = true\n"
+        )
+    config.write_text(text, encoding="utf-8")
+    installed.fork.ensure_closed()
+    installed.cli("setup", "--only", "host_shims", "--only", "host_integration", "--accept-fork-eula", "--no-gui")
+    report = json.loads(
+        installed.cli("doctor", "--check", "prefix.system_file_dialogs", "--json").stdout
+    )
+    check = next(item for item in report["checks"] if item["id"] == "prefix.system_file_dialogs")
+    assert check["status"] == "ok", check
+    extra = {
+        "PATH": f"{stubs}:{installed.env['PATH']}",
+        "FORK_LINUX_TERMINAL": f"{stubs / 'e2e-terminal'} {{dir}}",
+        "FORK_LINUX_HANDOFF": "direct",
+    }
+    installed.fork.forget_tabs()
+    ui = ForkUI(installed.fork)
+    ui.fork.start(make_repo(installed.repos / "picker-anchor", {".gitignore": "*.tmp\n"}), extra=extra)
+    try:
+        ui.keys("ctrl+shift+n", settle=2.0)
+        wait_until(
+            lambda: picker_log.is_file() and "--file-selection" in picker_log.read_text(encoding="utf-8"),
+            60,
+            "zenity --file-selection (Linux picker)",
+        )
+        logged = picker_log.read_text(encoding="utf-8")
+        assert "--directory" in logged, logged
+        assert ui.screen.find(title="Select repository") is None
+        wait_until(lambda: (target / ".git" / "HEAD").is_file(), 60, f"repository at {target}")
+    finally:
+        installed.fork.ensure_closed()
+        # Leave dialogs off for the other E2E cases that drive Wine's pickers with xdotool.
+        config.write_text(
+            re.sub(
+                r"(?im)^(\s*system_file_dialogs\s*=\s*).*$",
+                r"\1false",
+                config.read_text(encoding="utf-8"),
+            ),
+            encoding="utf-8",
+        )
+        installed.cli("setup", "--only", "host_integration", "--accept-fork-eula", "--no-gui")
+
+
 def test_copy_path_reaches_the_linux_clipboard(desk: Any, installed: Any) -> None:
     """A file's Copy Full Path puts the path Fork sees (``Z:\\...``) on the Linux clipboard; Copy Path the path
     inside the repository.

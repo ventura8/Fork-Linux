@@ -825,14 +825,15 @@ static void test_serve_handoff(void)
     n = serve_once(&req, sink, sizeof(sink));
     CHECK(spawn_errno(sink, n) == EINVAL);
 
-    /* --handoff-only: hand-offs still run, everything else is refused */
+    /* --handoff-only: hand-offs and HOST_HELPER (file pickers) run; plain programs are refused */
     g_handoff_only = 1;
     req.argv = handoff;
     n = serve_once(&req, sink, sizeof(sink));
     CHECK(n > HDR_LEN && sink[0] == FL_F_SPAWN_OK);
     req.flags = FL_REQ_HOST_HELPER | FL_REQ_DETACH;
+    req.argv = handoff;
     n = serve_once(&req, sink, sizeof(sink));
-    CHECK(spawn_errno(sink, n) == EPERM);
+    CHECK(n > HDR_LEN && sink[0] == FL_F_SPAWN_OK);
     req.flags = 0;
     req.argc = 1;
     req.argv = program;

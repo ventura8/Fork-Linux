@@ -112,14 +112,29 @@ def open_expected() -> list[tuple[str, str, object]]:
     return expected
 
 
+# Wine registers FileOpenDialog / FileSaveDialog under HKLM → comdlg32.dll (wine.inf).
+# HKCU alone does not win for CoCreateInstance here, so we overwrite the same HKLM keys.
+COMDLG32_WIN = r"C:\windows\system32\comdlg32.dll"
+
+
 def file_dialog_expected(ctx: Ctx) -> list[tuple[str, str, object]]:
     """CLSID InprocServer32 entries that route IFileDialog to ``fl-filedlg.dll`` (when enabled)."""
     if not bridge.system_file_dialogs_enabled(ctx) or not bridge.filedlg_installed(ctx.paths):
         return []
     expected: list[tuple[str, str, object]] = []
     for clsid in bridge.FILE_DIALOG_CLSID:
-        key = rf"HKCU\Software\Classes\CLSID\{clsid}\InprocServer32"
+        key = rf"{CLASSES_KEY}\CLSID\{clsid}\InprocServer32"
         expected.append((key, "", bridge.FILEDLG_WIN))
+        expected.append((key, "ThreadingModel", "Apartment"))
+    return expected
+
+
+def file_dialog_restore() -> list[tuple[str, str, object]]:
+    """Wine's default InprocServer32 values (comdlg32) after system file dialogs are turned off."""
+    expected: list[tuple[str, str, object]] = []
+    for clsid in bridge.FILE_DIALOG_CLSID:
+        key = rf"{CLASSES_KEY}\CLSID\{clsid}\InprocServer32"
+        expected.append((key, "", COMDLG32_WIN))
         expected.append((key, "ThreadingModel", "Apartment"))
     return expected
 
@@ -170,13 +185,18 @@ def run_integration(ctx: Ctx) -> None:
     The drive lets users type ``H:\\src\\app`` in Wine's file dialogs, which do
     not accept Linux paths. An ``h:`` the user mapped elsewhere is left alone;
     Fork keeps seeing repositories under ``Z:`` (:class:`~fork_linux.pathmap.PathMap`
-    never uses ``H:`` for Linux-to-Windows conversion). When system file dialogs
-    are off, any previous ``fl-filedlg.dll`` CLSID registrations are removed.
+    never uses ``H:`` for Linux-to-Windows conversion). System file dialogs
+    overwrite Wine's HKLM FileOpenDialog / FileSaveDialog InprocServer32 entries
+    (``comdlg32.dll``); turning them off restores those defaults and drops any
+    leftover HKCU CLSID keys from rev ≤2.
     """
     batch = RegBatch()
     for key, name, value in integration_expected(ctx):
         batch.set_sz(key, name, str(value))
     if not file_dialog_expected(ctx):
+        for key, name, value in file_dialog_restore():
+            batch.set_sz(key, name, str(value))
+        # Rev ≤2 wrote the same CLSIDs under HKCU; drop those leftovers.
         for clsid in bridge.FILE_DIALOG_CLSID:
             batch.delete_key(rf"HKCU\Software\Classes\CLSID\{clsid}")
     prefix_steps.import_batch(ctx, batch, "host-integration")
@@ -188,6 +208,8 @@ def run_integration(ctx: Ctx) -> None:
 def verify_integration(ctx: Ctx) -> bool:
     """The registry values are in place and ``h:`` exists (ours or the user's)."""
     if not file_dialog_expected(ctx):
+        if not prefix_steps.reg_matches(ctx, file_dialog_restore()):
+            return False
         for clsid in bridge.FILE_DIALOG_CLSID:
             key = rf"HKCU\Software\Classes\CLSID\{clsid}\InprocServer32"
             if prefix_steps.reg_matches(ctx, [(key, "", bridge.FILEDLG_WIN)]):
@@ -325,7 +347,7 @@ HOST_SHIMS = Step(
 HOST_INTEGRATION = Step(
     id="host_integration",
     title="Connecting Fork to your file manager and apps",
-    rev=2,
+    rev=3,
     weight=1,
     run=run_integration,
     verify=verify_integration,

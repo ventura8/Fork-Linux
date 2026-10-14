@@ -267,6 +267,7 @@ class E2E:
         # default is on; dedicated scenarios turn this back on with a stub picker.
         config = self.home / ".config" / "fork-linux" / "config.ini"
         if not config.is_file():
+            config.parent.mkdir(parents=True, exist_ok=True)
             config.write_text(
                 "[integration]\nsystem_file_dialogs = false\n",
                 encoding="utf-8",

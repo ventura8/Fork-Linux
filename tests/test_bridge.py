@@ -80,7 +80,7 @@ def test_status_enable_disable_when_built(kit: bridge_kit.Kit) -> None:
     assert info["git_version"] == "2.53.0"
     assert "not installed in the prefix" in info["reason"]
     assert "gitInstance" in info["reason"]
-    assert info["reason"].endswith(" is missing and 7 more)")
+    assert info["reason"].endswith(" is missing and 8 more)")
     integration.run_shims(ctx)
     info = bridge.status(ctx)
     assert info["ready"]

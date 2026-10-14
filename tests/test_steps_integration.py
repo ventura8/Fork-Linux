@@ -252,7 +252,7 @@ def test_host_integration_registers_redirects_and_the_home_drive(
 ) -> None:
     from fixtures.setup_ctx import FakeWine
 
-    from fork_linux import bootstrap
+    from fork_linux import bootstrap, bridge
 
     libexec = tmp_path / "libexec"
     libexec.mkdir()
@@ -282,6 +282,44 @@ def test_host_integration_registers_redirects_and_the_home_drive(
     drive.symlink_to("/srv")
     integration.run_integration(ctx)
     assert os.readlink(drive) == "/srv"
+    assert integration.verify_integration(ctx)
+
+
+def test_file_dialogs_overwrite_wine_hklm_comdlg32(
+    xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """System file dialogs replace Wine's HKLM comdlg32 InprocServer32 (HKCU alone is ignored)."""
+    from fixtures.setup_ctx import FakeWine
+
+    from fork_linux import bootstrap, bridge
+
+    shims = tmp_path / "shims"
+    shims.mkdir()
+    (shims / "fl-filedlg.dll").write_bytes(b"MZ dlg")
+    (shims / "fl-launch.exe").write_bytes(b"MZ launch")
+    monkeypatch.setenv(resources.SHIMS_ENV, str(shims))
+    monkeypatch.setenv(resources.LIBEXEC_ENV, str(tmp_path / "none"))
+    ctx = make_ctx()
+    ctx.runner = FakeWine(ctx.paths.prefix).runner()
+    bootstrap.init_prefix_meta(ctx)
+    _drives(ctx)
+    integration.run_shims(ctx)
+    assert bridge.filedlg_installed(ctx.paths)
+    dialogs = integration.file_dialog_expected(ctx)
+    assert dialogs
+    for clsid in bridge.FILE_DIALOG_CLSID:
+        key = rf"{integration.CLASSES_KEY}\CLSID\{clsid}\InprocServer32"
+        assert (key, "", bridge.FILEDLG_WIN) in dialogs
+        assert not any(item[0].startswith("HKCU\\") for item in dialogs)
+    integration.run_integration(ctx)
+    assert integration.verify_integration(ctx)
+    assert integration.HOST_INTEGRATION.rev == 3
+    ctx.config.set("integration", "system_file_dialogs", "false")
+    assert integration.file_dialog_expected(ctx) == []
+    restore = integration.file_dialog_restore()
+    assert (rf"{integration.CLASSES_KEY}\CLSID\{bridge.FILE_OPEN_CLSID}\InprocServer32",
+            "", integration.COMDLG32_WIN) in restore
+    integration.run_integration(ctx)
     assert integration.verify_integration(ctx)
 
 

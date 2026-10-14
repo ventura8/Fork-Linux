@@ -18,7 +18,7 @@ mechanics such as integrity checks and pruning; `docs/qa/UPDATE-SCENARIOS.md` ha
 | Setup | 28 | 28 | 0 |
 | Launch | 17 | 16 | 0 |
 | Git operations through Fork's UI | 66 | 66 | 0 |
-| OS integration | 30 | 29 | 0 |
+| OS integration | 31 | 30 | 0 |
 | Native-git bridge | 9 | 9 | 0 |
 | Doctor and repository fixes | 16 | 15 | 0 |
 | Uninstall | 8 | 8 | 0 |
@@ -27,7 +27,7 @@ mechanics such as integrity checks and pruning; `docs/qa/UPDATE-SCENARIOS.md` ha
 | Fork for Linux upgrades | 24 | 13 | 0 |
 | Desktop environments | 136 | 0 | 0 |
 | Non-Latin font fallback | 2 | 1 | 0 |
-| **Total** | 367 | 203 | 0 |
+| **Total** | 368 | 204 | 0 |
 
 ## Setup
 
@@ -165,6 +165,7 @@ mechanics such as integrity checks and pruning; `docs/qa/UPDATE-SCENARIOS.md` ha
 | I-OPEN-FILE | Open a file with the Linux default application | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_file_uses_the_linux_default_app` |
 | I-CONSOLE-TERMINAL | Open In Shell opens the Linux terminal in the repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_in_shell_runs_the_linux_terminal` |
 | I-HOME-DRIVE | File dialogs reach the Linux home as H: | real-fork | this repository | `tests/e2e/test_real_integration.py::test_home_drive_in_a_file_dialog` |
+| I-SYSTEM-FILE-DIALOGS | With system_file_dialogs on, Init New Repository uses zenity (not Wine's Select repository dialog) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_system_file_dialogs_use_the_linux_picker` |
 | I-CLIPBOARD-OUT | Copy Full Path / Copy Path in Fork reach the Linux clipboard (the full path as Fork sees it, Z:\...) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_copy_path_reaches_the_linux_clipboard` |
 | I-OPEN-REPO-DIALOG | File > Open Repository with an H:\ path opens the tab; fork-linux's repository checks find it at its Linux path | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_repository_dialog_takes_a_home_drive_path` |
 | I-PREFERENCES-PERSIST | Preferences survive a restart | real-fork | this repository | `tests/e2e/test_real_integration.py::test_preferences_survive_a_restart` |

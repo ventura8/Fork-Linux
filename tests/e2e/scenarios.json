@@ -1546,6 +1546,19 @@
     ]
   },
   {
+    "id": "I-SYSTEM-FILE-DIALOGS",
+    "area": "integration",
+    "title": "With system_file_dialogs on, Init New Repository uses zenity (not Wine's Select repository dialog)",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_system_file_dialogs_use_the_linux_picker"
+    ]
+  },
+  {
     "id": "I-CLIPBOARD-OUT",
     "area": "integration",
     "title": "Copy Full Path / Copy Path in Fork reach the Linux clipboard (the full path as Fork sees it, Z:\\...)",

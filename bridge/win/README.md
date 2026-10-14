@@ -10,7 +10,7 @@ MinGW-w64) that live inside the Wine prefix:
 | `fl_win.h`, `fl_win.c` | Shared Win32 helpers: UTF-16 ↔ UTF-8, `wine_get_unix_file_name` / `wine_get_dos_file_name` (via `GetProcAddress(kernel32)`), Winsock connect and framed I/O, `BCryptGenRandom` nonces, the mutual HMAC handshake, the stdin pump thread, the relay loop, exit handling, the JSON-line call log. |
 | `fl_shim.c` | `fl-shim.exe`, installed under the names `git.exe`, `bash.exe` and `sh.exe`. |
 | `fl_launch.c` | `fl-launch.exe <verb> [args]`: opens host tools (terminal, file manager, diff/merge tools, editor, file pickers) through the daemon. |
-| `fl_filedlg.c`, `fl_filedlg.def` | `fl-filedlg.dll`: InprocServer32 for FileOpenDialog / FileSaveDialog; `Show` runs `fl-launch.exe pick-*` so Fork gets zenity/kdialog (`[integration] system_file_dialogs`). |
+| `fl_filedlg.c`, `fl_filedlg.def` | `fl-filedlg.dll`: InprocServer32 for FileOpenDialog / FileSaveDialog under **HKLM** (overrides Wine's `comdlg32.dll`); `Show` runs `fl-launch.exe pick-*` so Fork gets zenity/kdialog (`[integration] system_file_dialogs`). |
 | `res/app.manifest` | asInvoker, UTF-8 active code page, long-path aware, Windows 7–11 `supportedOS`. |
 | `res/fl_shim.rc`, `res/fl_launch.rc`, `res/fl_filedlg.rc` | Manifest + `VERSIONINFO` (ProductName "Fork for Linux (unofficial) bridge", CompanyName "Fork-Linux project (unofficial)", LegalCopyright "MIT"). The version comes from a generated `fl_version.h` (see Build). |
 | `build-dev.sh` | Developer build into `build-bridge/dev/` inside `fork-linux-ci-bridge:26.04`. |

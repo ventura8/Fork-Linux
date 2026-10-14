@@ -1087,22 +1087,25 @@ def test_handoff_without_host_helper_is_spawn_error(daemon: Daemon) -> None:
 
 
 def test_handoff_only_refuses_everything_else(helper_bin: Path, tmp_path: Path) -> None:
-    """--handoff-only: hand-offs run, programs and FL_REQ_HOST_HELPER requests get SPAWN_ERR(EPERM)."""
+    """--handoff-only: hand-offs and FL_REQ_HOST_HELPER (pickers) run; plain programs get EPERM."""
     d, host, out = _recording_daemon(helper_bin, tmp_path, "--handoff-only")
     try:
         assert d.run(["true"]).spawn_errno == errno.EPERM
         assert d.run(["true"], flags=REQ_DETACH).spawn_errno == errno.EPERM
-        assert d.run(["open", "/tmp"], flags=REQ_HOST_HELPER | REQ_DETACH).spawn_errno == errno.EPERM
         assert not out.exists()
         res = d.run(["open", "/tmp"], flags=REQ_HANDOFF)
         assert (res.exit_kind, res.exit_code) == (0, 0)
         assert _wait_file(out).splitlines()[0] == f"{host}|open|/tmp|"
+        out.unlink()
+        res = d.run(["pick-dir", "/tmp"], flags=REQ_HOST_HELPER)
+        assert (res.exit_kind, res.exit_code) == (0, 0)
+        assert _wait_file(out).splitlines()[0] == f"{host}|pick-dir|/tmp|"
     finally:
         err = d.stop()
     assert_clean_stderr(err)
     log = d.log.read_text()
     assert "handoff-only=yes" in log
-    assert log.count("result=spawn-error:1 ") == 3
+    assert log.count("result=spawn-error:1 ") == 2
 
 
 def test_python_handoff_client_and_the_daemon_agree(helper_bin: Path, tmp_path: Path) -> None:

@@ -33,6 +33,7 @@ enum { FL_KIND_OPEN = 0, FL_KIND_SAVE = 1 };
 enum { FL_PATH_MAX = 32768 };
 
 typedef WCHAR *(*wine_dos_fn)(const char *);
+typedef char *(*wine_unix_fn)(const WCHAR *);
 
 struct fl_dlg {
     IFileDialogVtbl *vtbl;
@@ -111,6 +112,43 @@ static wine_dos_fn fl_wine_dos(void)
         fn = (wine_dos_fn)(void (*)(void))GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "wine_get_dos_file_name");
     }
     return fn;
+}
+
+static wine_unix_fn fl_wine_unix(void)
+{
+    static wine_unix_fn fn;
+    static int looked;
+    if (!looked) {
+        looked = 1;
+        fn = (wine_unix_fn)(void (*)(void))GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "wine_get_unix_file_name");
+    }
+    return fn;
+}
+
+/* Windows path → malloc'd UTF-16 of the Unix path for fl-launch (zenity wants Linux). */
+static WCHAR *fl_win_to_unix_arg(const WCHAR *win)
+{
+    wine_unix_fn unix_fn = fl_wine_unix();
+    char *unix_path;
+    WCHAR *out;
+    size_t n;
+    if (win == NULL || win[0] == L'\0') {
+        return NULL;
+    }
+    if (unix_fn != NULL) {
+        unix_path = unix_fn(win);
+        if (unix_path != NULL) {
+            out = fl_utf16(unix_path);
+            HeapFree(GetProcessHeap(), 0, unix_path);
+            return out;
+        }
+    }
+    n = wcslen(win) + 1u;
+    out = (WCHAR *)malloc(n * sizeof(WCHAR));
+    if (out != NULL) {
+        memcpy(out, win, n * sizeof(WCHAR));
+    }
+    return out;
 }
 
 static WCHAR *fl_unix_to_win(const char *unix_path)
@@ -420,6 +458,7 @@ static HRESULT STDMETHODCALLTYPE fl_Show(IFileDialog *iface, HWND owner)
 {
     struct fl_dlg *d = fl_from(iface);
     const WCHAR *wverb;
+    WCHAR *start_unix = NULL;
     char path[FL_PATH_MAX];
     HRESULT hr;
     (void)owner;
@@ -431,7 +470,9 @@ static HRESULT STDMETHODCALLTYPE fl_Show(IFileDialog *iface, HWND owner)
         wverb = L"pick-file";
     }
     path[0] = '\0';
-    hr = fl_run_pick(wverb, d->folder, d->filename, path, sizeof(path));
+    start_unix = fl_win_to_unix_arg(d->folder);
+    hr = fl_run_pick(wverb, start_unix != NULL ? start_unix : d->folder, d->filename, path, sizeof(path));
+    free(start_unix);
     if (FAILED(hr)) {
         return hr;
     }

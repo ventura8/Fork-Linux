@@ -1344,7 +1344,9 @@ static void serve(struct sess *s, const struct fl_req *req)
         send_spawn_err(s, REC_SETUP, EINVAL, "");
         return;
     }
-    if (g_handoff_only && !handoff) {
+    /* handoff-only: terminal/open/url (FL_REQ_HANDOFF) and file pickers (FL_REQ_HOST_HELPER).
+     * Git bridge requests (no host-helper flag) are refused. */
+    if (g_handoff_only && !handoff && (req->flags & FL_REQ_HOST_HELPER) == 0u) {
         send_spawn_err(s, REC_SETUP, EPERM, req->cwd); /* this daemon only hands off */
         return;
     }

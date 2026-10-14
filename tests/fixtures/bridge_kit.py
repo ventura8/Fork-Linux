@@ -47,6 +47,7 @@ def install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, host_helper: boo
     shims.mkdir(exist_ok=True)
     (shims / bridge.SHIM).write_bytes(b"MZ shim")
     (shims / bridge.LAUNCH).write_bytes(b"MZ launch")
+    (shims / bridge.FILEDLG).write_bytes(b"MZ dlg")
     libexec = tmp_path / "bridge-libexec"
     libexec.mkdir(exist_ok=True)
     helper = libexec / bridge.HELPER
