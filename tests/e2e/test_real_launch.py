@@ -233,7 +233,8 @@ def test_restart_replaces_a_fork_without_a_window(closed: Any) -> None:
     e2e.fork.launch(repo, args=("--restart",))
     assert e2e.fork.wait_main().is_main
     restarted = fork_pids(e2e.prefix)
-    assert restarted and not set(restarted) & set(stuck)
+    assert restarted
+    assert not set(restarted) & set(stuck)
 
 
 def test_no_setup_refuses_pending_steps(installed: Any) -> None:

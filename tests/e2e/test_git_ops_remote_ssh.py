@@ -127,7 +127,8 @@ def _fetch_asks_for_the_passphrase(ui: ForkUI, work: Path, theirs: str, extra: d
     prompt = wait_until(lambda: ui.screen.find(GIT_ERROR) or credential_prompt(ui, work.name), PROMPT_SECONDS,
                         "Fork's passphrase prompt (or its Git Error dialog)")
     ui.screen.screenshot(f"bundled-ssh-{work.name}")
-    assert isinstance(prompt, tuple) and prompt[0] == "fork", f"no passphrase prompt from the bundled ssh: {prompt}"
+    assert isinstance(prompt, tuple), f'no passphrase prompt from the bundled ssh: {prompt}'
+    assert prompt[0] == 'fork', f'no passphrase prompt from the bundled ssh: {prompt}'
     ui.answer_askpass(work.name, PASSPHRASE)
     wait_until(lambda: git(work, "rev-parse", "--verify", "--quiet", "origin/main", check=False) == theirs,
                FETCH_SECONDS, "the fetch after the passphrase")
@@ -142,7 +143,8 @@ def test_a_passphrase_key_is_named_and_bundled_ssh_asks_for_it(passphrase_key: _
     """
     synced = installed.cli("ssh", "sync").stdout
     assert f"needs a passphrase: {KEY}\n" in synced, synced
-    assert "ssh-add" in synced and "git-bridge enable" in synced
+    assert 'ssh-add' in synced
+    assert 'git-bridge enable' in synced
     status = json.loads(installed.cli("ssh", "status", "--json").stdout)
     assert status["passphrase_keys"] == [KEY]
     report = json.loads(installed.cli("doctor", "--json", "--check", "ssh.passphrase", check=False).stdout)
@@ -209,7 +211,8 @@ def test_bundled_ssh_with_the_agent_relay_off_asks_for_the_passphrase(agent: _Ag
     report = json.loads(installed.cli("doctor", "--json", "--check", "ssh.agent", check=False,
                                       extra={"SSH_AUTH_SOCK": str(agent.sock)}).stdout)
     check = next(item for item in report["checks"] if item["id"] == "ssh.agent")
-    assert check["status"] == "info" and "relay is off" in check["detail"], check
+    assert check['status'] == 'info', check
+    assert 'relay is off' in check['detail'], check
     work, theirs = _work(installed, "ssh-agent-off")
     _fetch_asks_for_the_passphrase(ForkUI(installed.fork), work, theirs, {"SSH_AUTH_SOCK": str(agent.sock)})
     socket_file = installed.prefix / "drive_c" / "fork-linux" / "ssh-agent" / "agent.sock"
@@ -226,7 +229,8 @@ def test_bundled_ssh_uses_the_agent_through_the_relay(agent: _Agent, installed: 
     extra = {"SSH_AUTH_SOCK": str(agent.sock)}
     report = json.loads(installed.cli("doctor", "--json", "--check", "ssh.agent", check=False, extra=extra).stdout)
     check = next(item for item in report["checks"] if item["id"] == "ssh.agent")
-    assert check["status"] == "ok" and "through the launcher's relay" in check["detail"], check
+    assert check['status'] == 'ok', check
+    assert "through the launcher's relay" in check['detail'], check
     bare, seed = bare_remote(installed, "ssh-agent-relay")
     work = clone(f"file://{bare}", installed.repos / "ssh-agent-relay-work")
     git(work, "remote", "set-url", "origin", f"{ALIAS}:{bare}")
@@ -256,5 +260,6 @@ def test_bundled_ssh_uses_the_agent_through_the_relay(agent: _Agent, installed: 
     wait_until(lambda: not socket_file.exists(), 60, "the relay's socket file removed after Fork closed")
     log = _newest_daemon_log(installed)
     assert "ssh-agent=on" in log, log
-    assert " agent peer=127.0.0.1:" in log and "result=done" in log, log
+    assert ' agent peer=127.0.0.1:' in log, log
+    assert 'result=done' in log, log
     assert "refused=0" in log, log

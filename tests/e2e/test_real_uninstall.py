@@ -98,7 +98,8 @@ def test_purge_shows_the_license_warning_and_needs_the_word(installed: Any) -> N
     text = output.decode("utf-8", errors="replace")
     assert answered, text
     assert status == DECLINED, text
-    assert "activation" in text and "Deactivate" in text
+    assert 'activation' in text
+    assert 'Deactivate' in text
     assert e2e.prefix.is_dir()
 
 

@@ -95,18 +95,18 @@ AREA_TITLES = {
     "desktop": "Desktop environments",
     "font-fallback": "Non-Latin font fallback",
 }
-ID_RE = re.compile(r"^(?:(?P<ns>[A-Z]{1,2})-[A-Z0-9]+(?:-[A-Z0-9]+)*|(?P<num>[FA])[0-9]{1,2})$")
+ID_RE = re.compile(r"^(?:(?P<ns>[A-Z]{1,2})-[A-Z0-9]+(?:-[A-Z0-9]+)*|(?P<num>[FA])\d{1,2})$")
 # The update scenarios of docs/qa/UPDATE-SCENARIOS.md: the only ones a unit test may cover.
-UPDATE_ID_RE = re.compile(r"^[FA][0-9]{1,2}$")
+UPDATE_ID_RE = re.compile(r"^[FA]\d{1,2}$")
 NODE_RE = re.compile(
     r"^(?P<path>tests/[A-Za-z0-9_/]+\.py)::(?P<func>[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)?)"
     r"(?:\[(?P<param>[^\]]+)\])?$"
 )
 PACKAGING_RE = re.compile(r"^packaging:(?P<cell>[a-z0-9-]+):(?P<check>[a-z_][a-z0-9_]*)$")
 SHELL_FUNCTION_RE = re.compile(r"^\s*(?P<name>[a-z_][a-z0-9_]*)\s*\(\)", re.MULTILINE)
-DECLARATION_RE = re.compile(r"^\s*Scenarios:\s*(?P<ids>.+?)\s*$", re.MULTILINE)
+DECLARATION_RE = re.compile(r"^\s*Scenarios:\s*(?P<ids>\S(?:.*\S)?)\s*$", re.MULTILINE)
 # Closing quotes at the end of a source line (a declaration may end its docstring).
-DECLARATION_TAIL_RE = re.compile(r"\s*(\"{3}|'{3})\s*$")
+DECLARATION_TAIL_RE = re.compile(r"[ \t]*(\"{3}|'{3})[ \t]*$")
 # Scenarios: lines that ``declare`` writes are wrapped at this width (indentation included).
 DECLARATION_WIDTH = 110
 FORMATS_RE = re.compile(r"^FORMATS=\((?P<cells>[^)]*)\)", re.MULTILINE)

@@ -249,12 +249,15 @@ def test_nemo_gets_an_action_on_items_and_one_on_the_folder_it_shows(
     assert installed == [dirs.kind_path(di.NEMO), dirs.kind_path(di.NEMO_FOLDER)]
     items = dirs.kind_path(di.NEMO).read_text(encoding="utf-8")
     folder = dirs.kind_path(di.NEMO_FOLDER).read_text(encoding="utf-8")
-    assert "Selection=s\n" in items and "open --from-file-manager %F\n" in items
-    assert "Selection=none\n" in folder and "open --from-file-manager %P\n" in folder
+    assert 'Selection=s\n' in items
+    assert 'open --from-file-manager %F\n' in items
+    assert 'Selection=none\n' in folder
+    assert 'open --from-file-manager %P\n' in folder
     assert dirs.kind_path(di.NEMO_FOLDER).name == "fork-linux-open-folder.nemo_action"
     assert {entry["kind"] for entry in _registry(paths).values()} == {di.NEMO, di.NEMO_FOLDER}
     di.remove(paths, env)
-    assert not dirs.kind_path(di.NEMO).exists() and not dirs.kind_path(di.NEMO_FOLDER).exists()
+    assert not dirs.kind_path(di.NEMO).exists()
+    assert not dirs.kind_path(di.NEMO_FOLDER).exists()
 
 
 # --- registry --------------------------------------------------------------------------------------

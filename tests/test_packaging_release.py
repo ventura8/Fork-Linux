@@ -181,7 +181,8 @@ def test_no_recipe_depends_on_distribution_wine() -> None:
 
 def _check_dep_names() -> Any:
     spec = importlib.util.spec_from_file_location("check_dep_names", ROOT / "scripts" / "check-dep-names.py")
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -190,12 +191,12 @@ def _check_dep_names() -> Any:
 def test_every_recipe_with_weak_dependencies_recommends_the_noto_fonts(monkeypatch: pytest.MonkeyPatch) -> None:
     """Debian / RPM Recommends and Arch optdepends name the Noto fonts (maintainer decision 2026-10-11)."""
     control = _text(ROOT / "debian" / "control")
-    assert ["fonts-noto-core", "fonts-noto-cjk"] == [
+    assert [
         entry for entry in _check_dep_names().debian_field(control, "Recommends") if "noto" in entry
-    ]
+    ] == ["fonts-noto-core", "fonts-noto-cjk"]
     for spec, family in zip(SPECS, ("fedora", "suse"), strict=True):
-        assert [f"Recommends:     {name}" for name in hostdeps.NOTO_FONTS[family]] == [
-            line for line in _text(spec).splitlines() if "noto" in line
+        assert [line for line in _text(spec).splitlines() if "noto" in line] == [
+            f"Recommends:     {name}" for name in hostdeps.NOTO_FONTS[family]
         ]
     assert [line.split(":")[0].strip().strip("'") for line in _text(PKGBUILD).splitlines() if "noto" in line] == list(
         hostdeps.NOTO_FONTS["arch"]

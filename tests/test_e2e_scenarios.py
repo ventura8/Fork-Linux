@@ -29,7 +29,8 @@ def _load() -> ModuleType:
     if name in sys.modules:
         return sys.modules[name]
     spec = importlib.util.spec_from_file_location(name, SCRIPT)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
@@ -533,7 +534,8 @@ def test_declaration_lines_wrap_after_a_comma() -> None:
     ids = [f"DE-DESKTOP{number}-FILE-MANAGER-ACTION" for number in range(5)]
     lines = gsd.declaration_lines(ids, "    ")
     assert len(lines) == 2
-    assert lines[0].endswith(",") and lines[1].startswith("    DE-")
+    assert lines[0].endswith(',')
+    assert lines[1].startswith('    DE-')
     assert all(len("    ") + len(line) <= gsd.DECLARATION_WIDTH for line in lines)
     assert gsd.parse_declaration("\n".join(lines)) == (True, ids)
 

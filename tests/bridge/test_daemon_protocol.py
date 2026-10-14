@@ -1734,7 +1734,8 @@ def msys_connect(socket_file: Path) -> socket.socket:
     assert recv_exact(sock, 16) == secret
     sock.sendall(struct.pack("<3i", os.getpid(), os.getuid(), os.getgid()))
     pid, uid, _gid = struct.unpack("<3i", recv_exact(sock, 12))
-    assert uid == os.getuid() and pid > 0
+    assert uid == os.getuid()
+    assert pid > 0
     return sock
 
 

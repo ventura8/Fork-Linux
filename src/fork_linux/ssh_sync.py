@@ -22,7 +22,6 @@ whose Linux ssh uses the agent too).
 from __future__ import annotations
 
 import base64
-import binascii
 import contextlib
 import glob
 import json
@@ -333,7 +332,7 @@ def _openssh_cipher(body: str) -> bytes | None:
     """The cipher an OpenSSH-format private key is encrypted with (``b"none"``: no passphrase)."""
     try:
         blob = base64.b64decode("".join(body.split()), validate=True)
-    except (binascii.Error, ValueError):
+    except ValueError:
         return None
     if not blob.startswith(OPENSSH_MAGIC):
         return None

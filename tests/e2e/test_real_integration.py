@@ -490,12 +490,14 @@ def test_desktop_remove_deletes_exactly_what_was_installed(desk: Any, installed:
     installed.cli("desktop", "install", "--file-managers", "all")
     before = json.loads(installed.cli("desktop", "status", "--json").stdout)
     files = [Path(entry["path"]) for entry in before["entries"]]
-    assert before["installed"] is True and before["ok"] is True
+    assert before['installed'] is True
+    assert before['ok'] is True
     assert {entry["kind"] for entry in before["entries"]} >= {"menu", "icon"}, before["entries"]
     assert all(path.exists() for path in files)
     installed.cli("desktop", "remove")
     after = json.loads(installed.cli("desktop", "status", "--json").stdout)
-    assert after["installed"] is False and after["entries"] == []
+    assert after['installed'] is False
+    assert after['entries'] == []
     assert not [path for path in files if path.exists()], "desktop remove left files behind"
     assert keep.is_file()
     assert sorted(_folders(installed) - folders) == [], "desktop remove left the folders it created behind"
@@ -511,7 +513,9 @@ def test_desktop_install_without_menu_and_icons(desk: Any, installed: Any) -> No
     installed.cli("desktop", "install", "--no-menu", "--no-icons", "--file-managers", "thunar")
     status = json.loads(installed.cli("desktop", "status", "--json").stdout)
     kinds = {entry["kind"] for entry in status["entries"]}
-    assert status["installed"] is True and kinds and not kinds & {"menu", "icon"}, status["entries"]
+    assert status['installed'] is True, status['entries']
+    assert kinds, status['entries']
+    assert not kinds & {'menu', 'icon'}, status['entries']
     share = installed.home / ".local" / "share"
     assert not (share / "applications" / f"{APP_ID}.desktop").exists()
     assert not list((share / "icons").glob(f"**/{APP_ID}.*"))

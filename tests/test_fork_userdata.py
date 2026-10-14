@@ -119,9 +119,10 @@ def test_links_are_moved_as_links(tmp_path: Path) -> None:
 
 def test_the_files_come_back_when_the_installer_fails(tmp_path: Path) -> None:
     layout = _layout(tmp_path)
-    with pytest.raises(RuntimeError, match="installer crashed"), fork_userdata.kept(layout):
+    with fork_userdata.kept(layout):
         run_velopack_setup(layout, "2.23.2")
-        raise RuntimeError("installer crashed")
+        with pytest.raises(RuntimeError, match="installer crashed"):
+            raise RuntimeError("installer crashed")
     assert _user_files(layout) == USER_FILES
 
 

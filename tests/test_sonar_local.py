@@ -208,7 +208,8 @@ def test_duplicated_blocks_across_files_and_within_one() -> None:
     }
     findings = sl.check_duplication(files, 10, 100)
     assert [(f.path, f.line) for f in findings] == [("b.py", 4), ("d.py", 1), ("d.py", 12)]
-    assert "10 lines (" in findings[0].message and "duplicated from a.py:1" in findings[0].message
+    assert '10 lines (' in findings[0].message
+    assert 'duplicated from a.py:1' in findings[0].message
 
 
 def test_short_or_overlapping_repeats_are_not_blocks() -> None:

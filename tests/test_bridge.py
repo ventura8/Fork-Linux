@@ -558,21 +558,24 @@ def test_start_handoff(kit: bridge_kit.Kit, caplog: pytest.LogCaptureFixture) ->
     ctx = _ctx(kit)
     caplog.set_level("INFO", logger="fork_linux.bridge")
     daemon = bridge.start_handoff(ctx)
-    assert daemon is not None and daemon.handoff
+    assert daemon is not None
+    assert daemon.handoff
     (start,) = kit.starts()
     argv = start["argv"]
     assert isinstance(argv, list)
     assert argv[argv.index("--handoff-only") + 1 : argv.index("--handoff-only") + 3] == [
         "--host-helper", str(kit.libexec / resources.HOST_HELPER)
     ]
-    assert "--watch-prefix" in argv and "--parent-pid" in argv
+    assert '--watch-prefix' in argv
+    assert '--parent-pid' in argv
     assert start["env"]["WINEPREFIX"] == str(ctx.paths.prefix)
     assert daemon.env == {"FL_BRIDGE_PORT": "4242", "FL_BRIDGE_TOKEN": start["token"]}
     assert bridge.launch_env(ctx, daemon) == daemon.env, "with the bridge off too"
     assert bridge.host_actions_active(ctx) is False, "Fork's tools stay off fl-launch.exe"
     assert "hand-off daemon pid" in caplog.text
     record = bridge.session_record(daemon)
-    assert record is not None and record["handoff"] is True
+    assert record is not None
+    assert record['handoff'] is True
     session = {"prefix": str(ctx.paths.prefix), "bridge": record}
     ctx.config.set("git", "bridge", "on")
     assert bridge.session_env(ctx, session) == {}, "never mistaken for the git bridge"
@@ -607,7 +610,8 @@ def test_start_handoff_for_system_file_dialogs(kit: bridge_kit.Kit, monkeypatch:
     _systemd_socket(Path(ctx.env["XDG_RUNTIME_DIR"]))
     monkeypatch.setattr(bridge.shutil, "which", lambda name, path=None: "/usr/bin/systemd-run")
     daemon = bridge.start_handoff(ctx)
-    assert daemon is not None and daemon.handoff
+    assert daemon is not None
+    assert daemon.handoff
     assert "--handoff-only" in kit.starts()[0]["argv"]
     daemon.stop()
 
@@ -680,7 +684,9 @@ def test_start_handoff_starts_for_the_relay(
     socket_file.parent.mkdir(parents=True)
     socket_file.write_text("left by a daemon that crashed", encoding="utf-8")
     daemon = bridge.start_handoff(ctx)
-    assert daemon is not None and daemon.handoff and daemon.agent
+    assert daemon is not None
+    assert daemon.handoff
+    assert daemon.agent
     (start,) = kit.starts()
     argv = start["argv"]
     assert isinstance(argv, list)
@@ -690,7 +696,8 @@ def test_start_handoff_starts_for_the_relay(
     assert daemon.env["SSH_AUTH_SOCK"] == "C:/fork-linux/ssh-agent/agent.sock"
     assert bridge.launch_env(ctx, daemon)["SSH_AUTH_SOCK"] == bridge.AGENT_SOCK_WIN
     record = bridge.session_record(daemon)
-    assert record is not None and record["agent"] is True
+    assert record is not None
+    assert record['agent'] is True
     daemon.stop()
 
 
@@ -702,7 +709,8 @@ def test_relay_that_does_not_start_leaves_fork_without_it(
     ctx.env["FL_FAKE_DAEMON"] = "agentoff"
     ctx.paths.prefix.mkdir(parents=True)
     daemon = bridge.start_handoff(ctx)
-    assert daemon is not None and not daemon.agent
+    assert daemon is not None
+    assert not daemon.agent
     assert "SSH_AUTH_SOCK" not in daemon.env
     assert "ssh-agent relay not started" in caplog.text
     daemon.stop()
@@ -735,7 +743,9 @@ def test_a_damaged_relay_file_only_leaves_the_relay_off(
         (ctx.paths.fork_linux_win_dir / "ssh-agent").write_text("", encoding="utf-8")
     with caplog.at_level(logging.WARNING, logger="fork_linux.bridge"):
         daemon = bridge.start_handoff(ctx)
-    assert daemon is not None and daemon.handoff and not daemon.agent
+    assert daemon is not None
+    assert daemon.handoff
+    assert not daemon.agent
     assert "--ssh-agent" not in kit.starts()[-1]["argv"]
     assert "SSH_AUTH_SOCK" not in daemon.env
     assert "ssh-agent relay off: " in caplog.text
@@ -769,7 +779,8 @@ def test_git_bridge_daemon_relays_only_in_record_mode(kit: bridge_kit.Kit, agent
     leftover.parent.mkdir(parents=True)
     leftover.write_text("left by a daemon that crashed", encoding="utf-8")
     daemon = bridge.start_daemon(ctx)
-    assert daemon is not None and not daemon.agent
+    assert daemon is not None
+    assert not daemon.agent
     assert not leftover.exists(), "a leftover file is removed when no relay starts too"
     assert "--ssh-agent" not in kit.starts()[-1]["argv"]
     assert "SSH_AUTH_SOCK" not in daemon.env
@@ -779,9 +790,11 @@ def test_git_bridge_daemon_relays_only_in_record_mode(kit: bridge_kit.Kit, agent
     (fork_git / "git.exe").write_bytes(b"MZ")
     ctx.config.set("git", "bridge_mode", "record")
     daemon = bridge.start_daemon(ctx)
-    assert daemon is not None and daemon.agent
+    assert daemon is not None
+    assert daemon.agent
     argv = kit.starts()[-1]["argv"]
-    assert isinstance(argv, list) and _agent_args(argv)[0] == str(agent_sock)
+    assert isinstance(argv, list)
+    assert _agent_args(argv)[0] == str(agent_sock)
     assert daemon.env["SSH_AUTH_SOCK"] == bridge.AGENT_SOCK_WIN
     assert bridge.launch_env(ctx, daemon)["SSH_AUTH_SOCK"] == bridge.AGENT_SOCK_WIN
     daemon.stop()

@@ -548,7 +548,8 @@ def test_restore_package_never_writes_through_a_planted_link(
     partial.symlink_to(outside)
     snaps.restore(paths, layout, snap)
     assert outside.read_bytes() == b"not Fork's"
-    assert package.read_bytes() == original and not package.is_symlink()
+    assert package.read_bytes() == original
+    assert not package.is_symlink()
     kept = Path(snap.path) / snaps.PACKAGES / package.name
     assert package.stat().st_mtime_ns == kept.stat().st_mtime_ns
     assert not os.path.lexists(partial)

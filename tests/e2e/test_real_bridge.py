@@ -122,7 +122,8 @@ def test_enable_starts_the_daemon_and_fork_uses_linux_git(bridged: Any, installe
     """
     ui, extra, _log = bridged
     status = json.loads(installed.cli("git-bridge", "status", "--json").stdout)
-    assert status["enabled"] is True and status["ready"] is True, status
+    assert status['enabled'] is True, status
+    assert status['ready'] is True, status
     repo = _repo(installed, "bridge-commit", {"a.txt": "a\n"})
     ui.fork.ensure_closed()
     _start(ui, repo, extra)
@@ -139,7 +140,8 @@ def test_enable_starts_the_daemon_and_fork_uses_linux_git(bridged: Any, installe
     wait_until(lambda: git(repo, "log", "-1", "--format=%s") == "committed through the bridge" or None, 60,
                "the commit")
     commits = [call for call in _shim_calls(installed) if "commit" in call.get("argv", [])]
-    assert commits and all(call["mode"] == "bridge" for call in commits), commits[-3:]
+    assert commits, commits[-3:]
+    assert all((call['mode'] == 'bridge' for call in commits)), commits[-3:]
 
 
 def test_commits_through_fork_keep_exec_bits_and_symlinks(bridged: Any, installed: Any) -> None:
@@ -324,7 +326,8 @@ def test_linux_diff_tool_runs_and_fork_waits(bridged: Any, installed: Any) -> No
     ui.local_changes()
     ui.click(ui.unstaged_row(0))
     recorded = _linux_tool(log, lambda: ui.keys("ctrl+d", settle=0.5), "the diff tool")
-    assert "old line" in recorded and "new line" in recorded
+    assert 'old line' in recorded
+    assert 'new line' in recorded
 
 
 def _conflict(repo: Path, name: str, ours: str, theirs: str) -> None:
@@ -363,7 +366,8 @@ def test_linux_merge_tool_resolves_a_conflict(bridged: Any, installed: Any) -> N
     repo = _repo(installed, "bridge-merge", {"shared.txt": "line 1\nline 2\nline 3\n"})
     _conflict(repo, "shared.txt", "line 1\nline 2 main\nline 3\n", "line 1\nline 2 other\nline 3\n")
     recorded = _merge_in_linux(ui, repo, extra, log, "shared.txt")
-    assert "line 2 main" in recorded and "line 2 other" in recorded
+    assert 'line 2 main' in recorded
+    assert 'line 2 other' in recorded
 
 
 def test_linux_merge_tool_without_a_common_base(bridged: Any, installed: Any) -> None:
@@ -375,7 +379,8 @@ def test_linux_merge_tool_without_a_common_base(bridged: Any, installed: Any) ->
     repo = _repo(installed, "bridge-merge-added", {"README.md": "# added\n"})
     _conflict(repo, "added.txt", "line 1\nline 2 main\n", "line 1\nline 2 other\n")
     recorded = _merge_in_linux(ui, repo, extra, log, "added.txt")
-    assert "line 2 main" in recorded and "line 2 other" in recorded
+    assert 'line 2 main' in recorded
+    assert 'line 2 other' in recorded
 
 
 def _ssh_setup(e2e: Any, server: SshServer, *, name: str, passphrase: str) -> tuple[Path, Path]:

@@ -30,7 +30,7 @@ from pathlib import Path
 
 SEMVER = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)")
 DEB_HEADER = re.compile(r"^fork-linux \(([^)]+)\) ([a-z]+); urgency=medium$")
-DEB_TRAILER = re.compile(r"^ -- (.+?)  \S.*$")
+DEB_TRAILER = re.compile(r"^ -- (.+) {2}\S.*$")
 RPM_HEADER = re.compile(r"^\* \w{3} \w{3} \d{2} \d{4} (.+?) - ([^-\s]+)-\d+$")
 RELEASE = re.compile(r'([ \t]*)<release version="([^"]+)"[^>]*?(?:/>|>.*?</release>)[ \t]*\n', re.DOTALL)
 APP_ID = "io.github.ventura8.ForkLinux"
@@ -179,7 +179,7 @@ def apply(tree: Path, version: str, date: dt.date) -> list[str]:
     rewrites = {
         "debian/changelog": rewrite_debian_changelog,
         METAINFO: rewrite_metainfo,
-        **{spec: rewrite_rpm_changelog for spec in SPECS},
+        **dict.fromkeys(SPECS, rewrite_rpm_changelog),
     }
     written = []
     for rel, rewrite in rewrites.items():

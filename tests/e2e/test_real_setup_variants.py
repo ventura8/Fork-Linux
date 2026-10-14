@@ -94,13 +94,15 @@ def test_list_steps_and_from_step(closed: Any) -> None:
     e2e = closed
     listed = json.loads(e2e.cli("setup", "--list-steps", "--json").stdout)
     ids = [row["id"] for row in listed["steps"]]
-    assert ids[:3] == ["preflight", "consent", "wine_runtime"] and ids[-1] == "finalize", ids
+    assert ids[:3] == ['preflight', 'consent', 'wine_runtime'], ids
+    assert ids[-1] == 'finalize', ids
     assert listed["complete"] is True
     assert {row["status"] for row in listed["steps"]} <= {"done", "always"}, listed["steps"]
     text = e2e.cli("setup", "--list-steps").stdout.splitlines()
     assert [line.split()[1] for line in text] == ids, text
     unknown = e2e.cli("setup", "--only", "no_such_step", check=False)
-    assert unknown.returncode == 2 and "unknown setup step(s): no_such_step" in unknown.stderr, unknown.stderr
+    assert unknown.returncode == 2, unknown.stderr
+    assert 'unknown setup step(s): no_such_step' in unknown.stderr, unknown.stderr
     assert "ssh_sync" in unknown.stderr, "the refusal lists the steps"
     report = json.loads(e2e.cli(*e2e.setup_args(), "--from-step", "ssh_sync", "--no-launch", "--json").stdout)
     later = ids[ids.index("ssh_sync"):]
@@ -211,7 +213,8 @@ def test_reset_rebuilds_offline_and_resumes_after_an_interrupted_dotnet(closed: 
     resumed = e2e.cli("--offline", *e2e.setup_args(), "--json", timeout=SETUP_TIMEOUT)
     ran = json.loads(resumed.stdout)["ran"]
     assert "dotnet" in ran
-    assert "wine_runtime" not in ran and "consent" not in ran, ran
+    assert 'wine_runtime' not in ran, ran
+    assert 'consent' not in ran, ran
     assert e2e.setup_complete()
     report = json.loads(e2e.cli("doctor", "--json").stdout)
     assert not [check for check in report["checks"] if check["status"] == "fail"]
@@ -246,7 +249,8 @@ def test_interrupted_wine_download_resumes(e2e: Any) -> None:
             process.kill()
             process.wait(timeout=30)
     kept = part.stat().st_size
-    assert kept > 0 and part.is_file(), "the partial download must be kept"
+    assert kept > 0, 'the partial download must be kept'
+    assert part.is_file(), 'the partial download must be kept'
     user.cli("setup", "--accept-fork-eula", "--no-gui", "--only", "wine_runtime", timeout=1200)
     log = "\n".join(path.read_text(encoding="utf-8", errors="replace")
                     for path in (user.home / ".local" / "state" / "fork-linux" / "logs").glob("*.log"))
@@ -349,7 +353,8 @@ def test_a_second_prefix_is_adopted_and_kept_apart(closed: Any) -> None:
     chosen = e2e.cli("--prefix", str(e2e.prefix), "status", "--json", extra=extra)
     assert json.loads(chosen.stdout)["prefix"] == str(e2e.prefix)
     wine = e2e.cli("--prefix", str(e2e.home / ".wine"), "status", check=False)
-    assert wine.returncode == 2 and "refusing to use" in wine.stderr, wine.stderr
+    assert wine.returncode == 2, wine.stderr
+    assert 'refusing to use' in wine.stderr, wine.stderr
 
 
 def test_dotnet472_prefix_runs_fork(closed: Any) -> None:

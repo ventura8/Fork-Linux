@@ -62,14 +62,14 @@ TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 FALLBACK_NOTE = "running inside Wine's process tree (the program inherits Wine's NoNewPrivs and seccomp filter)"
 # One line of handoff.log (note_fallback): time, program[pid], verb, the note, the reason.
 _LOG_LINE_RE = re.compile(
-    r"(?P<when>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z) "
+    r"(?P<when>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z) "
     + re.escape(PROG)
-    + r"\[[0-9]+\] (?P<verb>[a-z-]+): "
+    + r"\[\d+\] (?P<verb>[a-z-]+): "
     + re.escape(FALLBACK_NOTE)
     + r": (?P<reason>.*)"
 )
 _TOKEN_RE = re.compile(r"[0-9a-fA-F]{64}")
-_PORT_RE = re.compile(r"[0-9]{1,5}")
+_PORT_RE = re.compile(r"\d{1,5}")
 
 # fl_proto.h: frame types, REQ tags and the hand-off flag.
 MAGIC = b"FLB1"

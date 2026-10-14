@@ -1041,7 +1041,8 @@ def test_run_stops_the_daemon_when_the_exec_fails(
     first, second = bridged.starts()
     assert "--handoff-only" in second["argv"]
     assert not bridge.daemon_alive(second["pid"])
-    # With a systemd user manager there is no daemon at all.
+    # With a systemd user manager and system file dialogs off, no daemon at all.
+    ctx.config.set("integration", "system_file_dialogs", "false")
     monkeypatch.setattr(bridge, "systemd_user_manager", lambda env: True)
     with pytest.raises(WineUnavailable):
         launcher.run(flow["app"], [], execvpe=fail)

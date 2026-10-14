@@ -198,7 +198,8 @@ def test_dotnet472_only_copy_under_fonts_is_patched(xdg: Path) -> None:
     text = data[len(BOM):].decode("utf-8")
     assert text.count(ff.BEGIN) == 2  # one block per FamilyMaps section
     assert text.count(ff.END) == 2
-    assert "\r\n" in text and "\n" not in text.replace("\r\n", "")
+    assert '\r\n' in text
+    assert '\n' not in text.replace('\r\n', '')
     assert 'Target="Noto Sans CJK JP, Noto Sans CJK SC, Noto Sans CJK TC, Noto Sans CJK HK, Noto Sans CJK KR"' in text
     assert (path.stat().st_mode & 0o777) == 0o640
     # The block comes first in each section, indented one level deeper than the FamilyMaps tag.
@@ -317,7 +318,8 @@ def test_a_damaged_copy_that_is_never_read_does_not_block_the_fix(
     assert [patch.path for patch in copies.patches] == [read]
     assert copies.stale == copies.damaged == ()
     (problem,) = copies.unread
-    assert str(bad) in problem.message and "is damaged (not well-formed XML" in problem.message
+    assert str(bad) in problem.message
+    assert 'is damaged (not well-formed XML' in problem.message
     assert copies.dotnet == ff.dotnet_name(release)
 
 
@@ -348,7 +350,8 @@ def test_a_damaged_copy_that_is_read_means_no_writes(xdg: Path) -> None:
     assert bad.read_bytes() == broken
     assert unread.read_bytes() == _original()
     (warning,) = _warnings(ctx)
-    assert str(bad) in warning and "is damaged (not well-formed XML" in warning
+    assert str(bad) in warning
+    assert 'is damaged (not well-formed XML' in warning
     assert ff.verify(ctx)
 
 
@@ -364,7 +367,8 @@ def test_with_an_unknown_release_one_damaged_copy_blocks_every_write(xdg: Path) 
     assert str(bad) in warning
     copies = ff.patched_composite_fonts(ctx)
     assert [patch.path for patch in copies.patches] == [good]
-    assert copies.patches[0].stale and copies.stale == ()
+    assert copies.patches[0].stale
+    assert copies.stale == ()
     assert ff.verify(ctx)
 
 

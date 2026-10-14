@@ -671,7 +671,8 @@ def test_prefix_font_fallback_missing_and_damaged() -> None:
     fallback_step.run(ctx.boot)
     result = run(ctx, "prefix.font_fallback")
     assert result.status == "warn"
-    assert "Fonts" in result.detail and "is damaged (not well-formed XML" in result.detail
+    assert 'Fonts' in result.detail
+    assert 'is damaged (not well-formed XML' in result.detail
     assert result.detail.endswith("; nothing was patched")
     assert "setup --reset" in result.hint
     # .NET 4.8 reads only WPF\: the damaged WPF\Fonts\ copy no longer blocks it and is only reported.
@@ -683,7 +684,8 @@ def test_prefix_font_fallback_missing_and_damaged() -> None:
     result = run(ctx, "prefix.font_fallback")
     assert result.status == "info"
     assert result.detail.startswith("4 scripts mapped in WPF's composite font (WPF\\; CJK: Noto Sans CJK JP first); ")
-    assert "Fonts" in result.detail and "is damaged (not well-formed XML" in result.detail
+    assert 'Fonts' in result.detail
+    assert 'is damaged (not well-formed XML' in result.detail
     assert result.detail.endswith(", but .NET Framework 4.8 (release 528049) never reads it")
     assert result.hint == fallback_step.UNREAD_HINT
     assert doctor.get("prefix.font_fallback").fix_steps == ("font_fallback",)
@@ -697,7 +699,8 @@ def test_prefix_font_fallback_damaged_copy_that_is_read() -> None:
     write_composite_font(pfx)
     result = run(ctx, "prefix.font_fallback")
     assert result.status == "warn"
-    assert "Fonts" in result.detail and "is damaged (not well-formed XML" in result.detail
+    assert 'Fonts' in result.detail
+    assert 'is damaged (not well-formed XML' in result.detail
     assert result.detail.endswith("; nothing was patched")
     assert result.hint == fallback_step.REPAIR_HINT
 
@@ -1216,7 +1219,8 @@ def test_ssh_agent_check(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
     helper = tmp_path / "fl-bridge-helper"
     monkeypatch.setattr(bridge, "helper_path", lambda: helper)
     result = run(ctx, "ssh.agent")
-    assert result.status == "warn" and "has no fl-bridge-helper" in result.detail
+    assert result.status == 'warn'
+    assert 'has no fl-bridge-helper' in result.detail
     helper.write_text("", encoding="utf-8")
     assert run(ctx, "ssh.agent") == Result(
         "ok", f"Fork's bundled ssh uses your ssh-agent ({agent}) through the launcher's relay"

@@ -232,9 +232,11 @@ def test_stop_prefix_terms_then_kills_what_is_left(proc: Path, prefix: Path) -> 
 
 def test_stop_prefix_gives_up_after_its_timeout(proc: Path, prefix: Path) -> None:
     _process(proc, 401, env={"WINEPREFIX": str(prefix)}, cmdline=["wine"])
+    clock = _Clock(10.0)
     with pytest.raises(procs.ForkLinuxError, match="processes still run in .*: 401"):
-        procs.stop_prefix(prefix, proc_root=proc, kill=lambda _pid, _number: None, sleep=lambda _s: None,
-                          clock=_Clock(10.0))
+        procs.stop_prefix(
+            prefix, proc_root=proc, kill=lambda _pid, _number: None, sleep=lambda _s: None, clock=clock
+        )
     assert procs.stop_prefix(prefix / "nothing-here", proc_root=proc) == []
 
 

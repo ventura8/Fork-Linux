@@ -97,16 +97,24 @@ static int parse_number(const char *text, int base, unsigned long max, unsigned 
 }
 
 /* "AAAAAAAA:PPPP" (hex address as the kernel prints it, hex port). */
-static int parse_endpoint(char *field, uint32_t *addr, unsigned *port)
+static int parse_endpoint(const char *field, uint32_t *addr, unsigned *port)
 {
-    char *colon = strchr(field, ':');
+    char buf[32];
+    char *colon;
     unsigned long a;
     unsigned long p;
+    size_t len = strnlen(field, sizeof(buf));
+    if (len >= sizeof(buf)) {
+        return -1;
+    }
+    memcpy(buf, field, len);
+    buf[len] = '\0';
+    colon = strchr(buf, ':');
     if (colon == NULL) {
         return -1;
     }
     *colon = '\0';
-    if (parse_number(field, 16, 0xffffffffUL, &a) != 0 || parse_number(colon + 1, 16, 0xffffUL, &p) != 0) {
+    if (parse_number(buf, 16, 0xffffffffUL, &a) != 0 || parse_number(colon + 1, 16, 0xffffUL, &p) != 0) {
         return -1;
     }
     *addr = (uint32_t)a;

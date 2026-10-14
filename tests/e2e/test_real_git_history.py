@@ -260,7 +260,8 @@ def test_text_diff_of_a_commit(ui: ForkUI, installed: Any) -> None:
         return greens, reds
 
     greens, reds = _diff_pixels(ui, installed, "text-diff", added_removed, 500)
-    assert greens > 500 and reds > 500, f"diff colours: {greens} green, {reds} red pixels"
+    assert greens > 500, f'diff colours: {greens} green, {reds} red pixels'
+    assert reds > 500, f'diff colours: {greens} green, {reds} red pixels'
 
 
 def test_image_diff_of_a_changed_png(ui: ForkUI, installed: Any) -> None:
@@ -282,7 +283,8 @@ def test_image_diff_of_a_changed_png(ui: ForkUI, installed: Any) -> None:
         return red, blue
 
     red, blue = _diff_pixels(ui, installed, "image-diff", old_new, 1000)
-    assert red > 1000 and blue > 1000, f"image diff: {red} red, {blue} blue pixels"
+    assert red > 1000, f'image diff: {red} red, {blue} blue pixels'
+    assert blue > 1000, f'image diff: {red} red, {blue} blue pixels'
 
 
 def test_quick_launch_switches_repositories(ui: ForkUI, installed: Any) -> None:

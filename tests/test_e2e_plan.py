@@ -39,7 +39,8 @@ def _uses_main_prefix(text: str) -> bool:
 
 def _load() -> ModuleType:
     spec = importlib.util.spec_from_file_location("e2e_plan", SCRIPT)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -195,9 +196,11 @@ MODULES = sorted(path.name for path in E2E.glob("test_*.py"))
 def test_every_module_has_a_timing() -> None:
     timings = plan_mod.load_timings()
     assert sorted(timings.modules) == MODULES
-    assert timings.setup > 0 and all(value > 0 for value in timings.modules.values())
+    assert timings.setup > 0
+    assert all((value > 0 for value in timings.modules.values()))
     for module, parts in timings.parts.items():
-        assert sorted(parts) == sorted(plan_mod.PARTS[module]) and sum(parts.values()) < timings.modules[module]
+        assert sorted(parts) == sorted(plan_mod.PARTS[module])
+        assert sum(parts.values()) < timings.modules[module]
 
 
 def test_parts_name_tests_of_their_module() -> None:

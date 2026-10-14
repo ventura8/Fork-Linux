@@ -252,7 +252,7 @@ def test_host_integration_registers_redirects_and_the_home_drive(
 ) -> None:
     from fixtures.setup_ctx import FakeWine
 
-    from fork_linux import bootstrap, bridge
+    from fork_linux import bootstrap
 
     libexec = tmp_path / "libexec"
     libexec.mkdir()

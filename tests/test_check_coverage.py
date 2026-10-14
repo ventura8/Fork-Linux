@@ -111,7 +111,7 @@ class Repo:
         return cc.main(["--root", str(self.root), *extra])
 
 
-@pytest.fixture()
+@pytest.fixture
 def repo(tmp_path: Path) -> Repo:
     return Repo(tmp_path / "repo")
 

@@ -32,12 +32,13 @@ usage() {
 
 # release_command FORMAT: the release script (and its arguments) that builds FORMAT.
 release_command() {
-	case "$1" in
+	local format="$1"
+	case "${format}" in
 		deb | deb-jammy) echo "./scripts/release-deb.sh" ;;
 		rpm-fedora) echo "./scripts/release-rpm.sh fedora" ;;
 		rpm-opensuse) echo "./scripts/release-rpm.sh opensuse" ;;
 		arch) echo "./scripts/release-arch.sh" ;;
-		tarball | appimage | flatpak | snap) echo "./scripts/release-portable.sh $1" ;;
+		tarball | appimage | flatpak | snap) echo "./scripts/release-portable.sh ${format}" ;;
 		*) return 1 ;;
 	esac
 	return 0

@@ -66,7 +66,9 @@ class FakeDaemon:
     def handshake(self, conn: socket.socket, *, daemon_key: bytes = KEY) -> bool:
         """The daemon's side of the handshake; True when the client proved the token."""
         ftype, hello = _read_frame(conn)
-        assert ftype == handoff.HELLO and hello[:6] == b"FLB1\x00\x01" and len(hello) == 38
+        assert ftype == handoff.HELLO
+        assert hello[:6] == b'FLB1\x00\x01'
+        assert len(hello) == 38
         client_nonce, server_nonce = hello[6:], secrets.token_bytes(32)
         mac = handoff.auth_mac(daemon_key, b"daemon", client_nonce, server_nonce)
         conn.sendall(_frame(handoff.CHALLENGE, server_nonce + mac))
@@ -281,7 +283,8 @@ def test_main_without_a_daemon_runs_here_and_says_so(xdg: Path, capsys: pytest.C
     assert "no daemon in Fork's environment" in err
     log = _log(env)
     text = log.read_text(encoding="utf-8")
-    assert "terminal: running inside Wine's process tree" in text and "/home/ada/private" not in text
+    assert "terminal: running inside Wine's process tree" in text
+    assert '/home/ada/private' not in text
     assert stat.S_IMODE(log.stat().st_mode) == 0o600
 
 
@@ -400,4 +403,5 @@ def test_last_fallback_reads_only_the_tail(xdg: Path) -> None:
     with open(log, "a", encoding="utf-8") as handle:
         handle.write(_line("2026-10-11T12:00:00Z", "reveal"))
     found = handoff.last_fallback(log.parent)
-    assert found is not None and found.verb == "reveal"
+    assert found is not None
+    assert found.verb == 'reveal'

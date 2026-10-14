@@ -63,7 +63,8 @@ def test_an_unknown_desktop_theme_hands_control_back_to_fork(closed: Any) -> Non
     """
     e2e = closed
     # The image has no gsettings / dconf and the test home no GTK settings.ini: nothing can answer.
-    assert shutil.which("gsettings") is None and shutil.which("dconf") is None
+    assert shutil.which('gsettings') is None
+    assert shutil.which('dconf') is None
     assert "GTK_THEME" not in e2e.fork.env
     e2e.fork.start(_repo(e2e, "theme"), extra={"FORK_LINUX_DISPLAY_THEME": "dark"})
     assert e2e.fork.settings()["FollowSystemTheme"] is False

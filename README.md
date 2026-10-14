@@ -108,7 +108,7 @@ Downloads are cached in `~/.cache/fork-linux/` (winetricks' .NET and font downlo
 | `update [--check \| --fork \| --wine] [--fork-version V \| --latest] [--allow-untested]` | Check for and apply Fork / Wine runtime updates |
 | `snapshot create [--reason R] \| list \| delete ID \| prune` | Manage snapshots of Fork's install |
 | `rollback [ID \| --to-version V] [--with-settings] [--no-pin]` | Restore a snapshot and pin that version |
-| `doctor [--fix] [--deep] [--network] [--check ID …]` | 51 health checks with fix hints |
+| `doctor [--fix] [--deep] [--network] [--check ID …]` | 52 health checks with fix hints |
 | `config get \| set \| unset \| list \| path \| edit` | Fork for Linux settings (`~/.config/fork-linux/config.ini`) |
 | `settings show \| get KEY \| set [--string] KEY VALUE \| unset KEY \| apply-defaults \| backup \| restore [FILE] \| path` | Fork's own `settings.json` (edited only while Fork is closed) |
 | `desktop install [--file-managers LIST] [--no-menu] [--no-icons] [--cli-alias] \| remove \| status` | Menu entry, icon, file-manager actions |

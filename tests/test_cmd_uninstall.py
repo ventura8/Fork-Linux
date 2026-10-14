@@ -174,7 +174,8 @@ def test_purge_of_another_prefix_needs_fork_closed_in_the_default_one(
     code, _out, err = run_cli(capsys, "uninstall", "--purge", "--yes")
     assert code == 15
     assert str(ours.prefix) in err
-    assert ours.prefix.is_dir() and second.is_dir()
+    assert ours.prefix.is_dir()
+    assert second.is_dir()
     assert removed == []
 
 

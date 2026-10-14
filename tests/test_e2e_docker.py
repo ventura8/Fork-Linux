@@ -695,9 +695,11 @@ def test_ci_e2e_wine_runs_each_module_of_a_shard_in_a_scratch_root_of_its_own(bo
     seen = [row["seen"] for row in rows]
     assert seen[0] == []
     assert seen[1] == seen[2] == seen[4] == SEEDED_CACHE
-    assert PREFIX_FILE in seen[3] and "home/.cache/fork-linux/downloads/notes.txt" in seen[3]
+    assert PREFIX_FILE in seen[3]
+    assert 'home/.cache/fork-linux/downloads/notes.txt' in seen[3]
     names = [_opts(argv, "--name")[0] for argv in runs]
-    assert names[0].endswith("-template") and names[1].endswith("-test_fork_update")
+    assert names[0].endswith('-template')
+    assert names[1].endswith('-test_fork_update')
     for argv in (runs[0], runs[1], runs[3], runs[4]):
         assert len(_opts(argv, "-v")) == 2
         assert _env(argv, "FL_E2E_BRIDGE_BUILDS") == ""
@@ -724,7 +726,8 @@ def test_ci_e2e_wine_runs_each_module_of_a_shard_in_a_scratch_root_of_its_own(bo
           for module in PLANNED],
     ]
     for row in box.calls("docker"):
-        assert row["fds"]["7"] is False and row["fds"]["9"] is False
+        assert row['fds']['7'] is False
+        assert row['fds']['9'] is False
 
 
 def test_ci_e2e_wine_runs_the_modules_in_parallel(box: Box) -> None:
@@ -854,8 +857,10 @@ def test_ci_e2e_wine_keeps_a_template_cache_by_key(box: Box) -> None:
     first = box.run("--jobs", "1", shard, script="ci-e2e-wine.sh", TMPDIR=str(tmpdir), FL_E2E_TEMPLATE_CACHE=str(cache))
     assert first.returncode == 0, first.stdout + first.stderr
     (template,) = [path for path in cache.iterdir() if path.is_dir()]
-    assert len(template.name) == 16 and template != stale
-    assert (template / ".complete").is_file() and (template / "root" / PREFIX_FILE).is_file()
+    assert len(template.name) == 16
+    assert template != stale
+    assert (template / '.complete').is_file()
+    assert (template / 'root' / PREFIX_FILE).is_file()
     assert len(box.docker_runs()) == 2
     assert _root(box.docker_runs()[0]) == f"{template}:/e2e:rw"
     box.log.unlink()

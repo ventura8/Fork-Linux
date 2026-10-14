@@ -182,7 +182,8 @@ def test_e2e_wine_runs_the_real_fork_tier_under_every_desktop() -> None:
     # Same triggers as the Xvfb tier: weekly, on demand, release-branch PRs from this repository.
     assert job.split("runs-on:", 1)[0] == _job(E2E, "e2e").split("runs-on:", 1)[0]
     # Fresh downloads: no seed, no cache of any download.
-    assert "FL_E2E_SEED" not in job and "seed" not in job
+    assert 'FL_E2E_SEED' not in job
+    assert 'seed' not in job
 
 
 E2E_SCRIPT = (ROOT / "scripts" / "ci-e2e-wine.sh").read_text(encoding="utf-8")
@@ -243,7 +244,8 @@ def test_check_packaging_runs_the_real_upgrade_per_format() -> None:
     """Every packaging cell of check.yml installs N-1, upgrades to N, downgrades and goes forward again."""
     packaging = _job(CHECK, "packaging")
     assert 'run: ./scripts/ci-packaging-cell.sh "${{ matrix.format }}"' in packaging
-    assert "FL_SNAP_E2E" not in CHECK and "FL_PACKAGING_PREVIOUS" not in CHECK
+    assert 'FL_SNAP_E2E' not in CHECK
+    assert 'FL_PACKAGING_PREVIOUS' not in CHECK
     cell = (ROOT / "scripts" / "ci-packaging-cell.sh").read_text(encoding="utf-8")
     order = ["./scripts/packaging-smoke-verify.sh", "./scripts/build-version-variant.sh",
              "./scripts/packaging-e2e-install.sh"]
@@ -284,7 +286,8 @@ def test_e2e_wine_shards_cover_every_real_tier_module_once() -> None:
     assert sorted(named) == modules
     assert len(set(named)) == len(named)
     shards = _e2e_shards()
-    assert len(shards) == E2E.count("- shard: ") and len(shards) <= 8
+    assert len(shards) == E2E.count('- shard: ')
+    assert len(shards) <= 8
     assert sorted(test for _name, _jobs, tests in shards for test in tests) == modules
     assert len({name for name, _jobs, _tests in shards}) == len(shards)
     # A GitHub runner (4 cores, 16 GB) runs two real-Fork containers at once.
@@ -298,12 +301,14 @@ def test_e2e_wine_shards_cover_every_real_tier_module_once() -> None:
     assert "timeout-minutes: 70" in _job(E2E, "e2e")
     # Template + two live copies need ~8 GiB; reclaim toolcaches before the Wine tier.
     assert E2E.count("- name: Free disk space") == 2  # e2e shards and e2e-de
-    assert "/usr/share/dotnet" in E2E and "/usr/local/lib/android" in E2E
+    assert '/usr/share/dotnet' in E2E
+    assert '/usr/local/lib/android' in E2E
     assert E2E.index("- name: Free disk space") < E2E.index("./scripts/build-bridge.sh")
     # Scratch roots must not use GHA's 8 GiB /tmp tmpfs (template alone is ~2.8 GiB).
     assert "TMPDIR: /var/tmp" in _job(E2E, "e2e")
     # No template or seed is ever kept between runs.
-    assert "FL_E2E_TEMPLATE_CACHE" not in E2E and "FL_E2E_SEED" not in E2E
+    assert 'FL_E2E_TEMPLATE_CACHE' not in E2E
+    assert 'FL_E2E_SEED' not in E2E
     # Weekly, on demand and on pull requests from the release branches.
     assert "startsWith(github.head_ref, 'feature/v')" in E2E
     # The bridge scenarios need the shims: built before the tier runs.

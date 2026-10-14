@@ -37,7 +37,7 @@ RULES: tuple[tuple[str, re.Pattern[bytes]], ...] = (
     ),
     ("aws-access-key", re.compile(rb"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
     ("github-token", re.compile(rb"\bgh[pousr]_[A-Za-z0-9]{36,}\b")),
-    ("github-fine-grained-token", re.compile(rb"\bgithub_pat_[A-Za-z0-9_]{60,}\b")),
+    ("github-fine-grained-token", re.compile(rb"\bgithub_pat_\w{60,}\b")),
     ("gitlab-token", re.compile(rb"\bglpat-[A-Za-z0-9_-]{20,}\b")),
     ("slack-token", re.compile(rb"\bxox[abprs]-[A-Za-z0-9-]{10,}\b")),
     ("google-api-key", re.compile(rb"\bAIza[0-9A-Za-z_-]{35}\b")),

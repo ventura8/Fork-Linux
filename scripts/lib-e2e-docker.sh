@@ -320,9 +320,11 @@ fl_e2e_build_image() {
 
 # fl_e2e_image_tag ROOT DOCKERFILE: the tag DOCKERFILE declares in its '# Image tag:' header.
 fl_e2e_image_tag() {
+	local root="$1"
+	local dockerfile="$2"
 	local tag
-	tag="$(sed -n 's/^# Image tag: \([^ ]*\)$/\1/p' "$1/$2" | head -n 1)"
-	[[ -n "${tag}" ]] || fl_e2e_die "$2 declares no '# Image tag:'"
+	tag="$(sed -n 's/^# Image tag: \([^ ]*\)$/\1/p' "${root}/${dockerfile}" | head -n 1)"
+	[[ -n "${tag}" ]] || fl_e2e_die "${dockerfile} declares no '# Image tag:'"
 	printf '%s\n' "${tag}"
 	return 0
 }

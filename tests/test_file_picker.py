@@ -20,12 +20,19 @@ def test_zenity_and_kdialog_argv(tmp_path: Path) -> None:
     assert "out.txt" in fp.kdialog_argv("save", start, "out.txt")[-1]
 
 
+def _which_zenity(name: str) -> str | None:
+    return "/usr/bin/zenity" if name == "zenity" else None
+
+
+def _which_none(_name: str) -> None:
+    return None
+
+
 def test_pick_zenity_success(tmp_path: Path) -> None:
     chosen = tmp_path / "repo"
     chosen.mkdir()
     runner = RecordingRunner(responses={"zenity": str(chosen) + "\n"})
-    which = lambda name: "/usr/bin/zenity" if name == "zenity" else None
-    assert fp.pick("dir", str(tmp_path), env={}, runner=runner, which=which) == str(chosen)
+    assert fp.pick("dir", str(tmp_path), env={}, runner=runner, which=_which_zenity) == str(chosen)
     assert runner.calls[0]["argv"][0] == "zenity"
 
 
@@ -33,7 +40,10 @@ def test_pick_kdialog_first_on_kde(tmp_path: Path) -> None:
     chosen = tmp_path / "f.txt"
     chosen.write_text("x", encoding="utf-8")
     runner = RecordingRunner(responses={"kdialog": str(chosen) + "\n"})
-    which = lambda name: f"/usr/bin/{name}" if name in ("kdialog", "zenity") else None
+
+    def which(name: str) -> str | None:
+        return f"/usr/bin/{name}" if name in ("kdialog", "zenity") else None
+
     path = fp.pick(
         "file",
         str(tmp_path),
@@ -47,13 +57,12 @@ def test_pick_kdialog_first_on_kde(tmp_path: Path) -> None:
 
 def test_pick_cancel_and_missing(tmp_path: Path) -> None:
     runner = RecordingRunner(responses={"zenity": 1})
-    which = lambda name: "/usr/bin/zenity" if name == "zenity" else None
     with pytest.raises(fp.PickCancelled):
-        fp.pick("file", str(tmp_path), env={}, runner=runner, which=which)
+        fp.pick("file", str(tmp_path), env={}, runner=runner, which=_which_zenity)
     with pytest.raises(fp.PickNotFound):
-        fp.pick("dir", env={}, runner=RecordingRunner(), which=lambda _n: None)
+        fp.pick("dir", env={}, runner=RecordingRunner(), which=_which_none)
     with pytest.raises(ForkLinuxError, match="unknown picker kind"):
-        fp.pick("nope", env={}, runner=RecordingRunner(), which=lambda _n: None)
+        fp.pick("nope", env={}, runner=RecordingRunner(), which=_which_none)
 
 
 def test_start_dir_falls_back(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

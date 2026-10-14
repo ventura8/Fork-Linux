@@ -29,7 +29,8 @@ MANIFEST = resources.manifest_path()
 
 def _load() -> ModuleType:
     spec = importlib.util.spec_from_file_location("packaging_e2e_state", SCRIPT)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -136,7 +137,8 @@ def test_markers_and_the_ones_a_remove_cleared(seeded: Path, capsys: pytest.Capt
     code, out, _err = _tool(capsys, "markers", status)
     assert code == 0
     recorded = out.strip()
-    assert "desktop_entry" in recorded.split(",") and "finalize" not in recorded.split(",")
+    assert 'desktop_entry' in recorded.split(',')
+    assert 'finalize' not in recorded.split(',')
     assert _tool(capsys, "missing", status, recorded)[1] == "\n"
     state_file = Path(json.loads(status.read_text(encoding="utf-8"))["state_file"])
     state = json.loads(state_file.read_text(encoding="utf-8"))
@@ -234,7 +236,9 @@ def test_placeholder_fork_exe_is_a_pe_without_an_icon(tmp_path: Path) -> None:
     data = state_tool.placeholder_exe()
     pe = pe_resources.PEFile(data)
     assert (pe.machine, pe.is_pe32_plus, pe.subsystem) == (pe_resources.MACHINE_AMD64, True, 2)
-    assert pe.sections == [] and pe.best_icons() == [] and pe.version_info() == {}
+    assert pe.sections == []
+    assert pe.best_icons() == []
+    assert pe.version_info() == {}
     exe = tmp_path / "Fork.exe"
     exe.write_bytes(data)
     assert icon_extract.extract_icons(exe, tmp_path / "icons", "app") == []

@@ -354,7 +354,8 @@ def test_04_a4_wine_pin_change_and_revert(e2e: Any, releases: Releases) -> None:
     report = releases.json("setup", "--no-gui")
     # Wine's update back to the older build may reset registry values of ours: the steps whose
     # result no longer verifies run again too, but nothing that downloads or reinstalls.
-    assert report["ran"][:3] == ["preflight", "wine_runtime", "prefix_init"] and report["ran"][-1] == "finalize"
+    assert report['ran'][:3] == ['preflight', 'wine_runtime', 'prefix_init']
+    assert report['ran'][-1] == 'finalize'
     assert not set(report["ran"]) & HEAVY_STEPS, report["ran"]
     assert _downloads(e2e) == downloads, "going back to the default build downloads nothing"
     _open_fork(releases, e2e.repos / "demo", name="04-a4-back-on-the-default")
@@ -371,7 +372,8 @@ def test_05_a11_uninstall_then_reinstall_keeps_the_prefix(e2e: Any, releases: Re
     before = _markers(e2e)
     releases.cli("uninstall")
     assert not menu.exists()
-    assert e2e.prefix.is_dir() and ui.settings_file(e2e.prefix).read_bytes() == settings
+    assert e2e.prefix.is_dir()
+    assert ui.settings_file(e2e.prefix).read_bytes() == settings
     assert sorted(set(before) - set(_markers(e2e))) == ["desktop_entry", "icon"]
     listed = releases.json("setup", "--list-steps")
     assert [row["id"] for row in listed["steps"] if row["recorded"] is False] == ["icon", "desktop_entry"]

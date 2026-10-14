@@ -137,7 +137,8 @@ def test_fetch_and_push_over_ssh_with_a_shared_key(ui: ForkUI, installed: Any) -
         assert "id_e2e" in status
         # Already shared: a dry run has nothing to do.
         dry = installed.cli("ssh", "sync", "--dry-run").stdout
-        assert "nothing would change" in dry and "would link" not in dry, dry
+        assert 'nothing would change' in dry, dry
+        assert 'would link' not in dry, dry
         work = clone(f"file://{bare}", installed.repos / "ssh-work")
         git(work, "remote", "set-url", "origin", f"{alias}:{bare}")
         fetch_pull_push(ui, work, seed, bare, open_work=ui.open)

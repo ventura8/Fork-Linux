@@ -183,7 +183,9 @@ def test_integration_tier_builds_the_tarball_and_runs_without_wine(box: DeBox) -
     assert not any(value.startswith(("FL_E2E_DE_FORK", "FL_E2E_SEED", "DISPLAY")) for value in envs)
     assert _opts(opts, "--label") == ["fl-e2e=de-xfce"]
     assert _opts(opts, "--user") == [f"{os.getuid()}:{os.getgid()}"]
-    assert "--privileged" not in tier and "--rm" in opts and "--init" in opts
+    assert '--privileged' not in tier
+    assert '--rm' in opts
+    assert '--init' in opts
     # No E2E slot for the Wine-free tier, only the name lock.
     assert [row["lock"] for row in box.calls("flock")] == ["name-de-xfce"]
     for row in box.calls("docker"):
@@ -296,7 +298,8 @@ def test_help(box: DeBox) -> None:
 def test_scratch_refusals(box: DeBox, scratch: str, message: str) -> None:
     result = box.run("xfce", FL_E2E_SCRATCH=scratch.format(home=box.home))
     assert result.returncode == 2
-    assert "refusing" in result.stderr and message in result.stderr
+    assert 'refusing' in result.stderr
+    assert message in result.stderr
     assert box.calls("docker") == []
 
 
@@ -355,7 +358,8 @@ def test_matrix_runs_every_desktop(tmp_path: Path) -> None:
     result, runs, logs = _matrix(tmp_path)
     assert result.returncode == 0, result.stderr
     assert runs == ["kde", "xfce"]
-    assert "kde        PASS" in result.stdout and "xfce       PASS" in result.stdout
+    assert 'kde        PASS' in result.stdout
+    assert 'xfce       PASS' in result.stdout
     assert (logs / "matrix-de-xfce.out").is_file()
 
 

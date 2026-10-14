@@ -28,7 +28,8 @@ def _load_desktops() -> ModuleType:
     if "desktops" in sys.modules:
         return sys.modules["desktops"]
     spec = importlib.util.spec_from_file_location("desktops", E2E_DE / "desktops.py")
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules["desktops"] = module
     spec.loader.exec_module(module)
@@ -105,7 +106,8 @@ def test_image_tag_and_packages(path: Path) -> None:
     key = path.name.rsplit(".", 1)[1]
     text = path.read_text(encoding="utf-8")
     assert f"# Image tag: fork-linux-e2e-de-{key}:26.04" in text
-    assert not re.search(r"^(COPY|ADD) ", text, re.MULTILINE) and "latest" not in text
+    assert not re.search('^(COPY|ADD) ', text, re.MULTILINE)
+    assert 'latest' not in text
     packages = _packages(path)
     wine_host = {
         alternatives.split("|")[0] for name, alternatives in hostdeps.PACKAGES["debian"].items()
@@ -128,15 +130,18 @@ def test_recipe_is_complete(key: str) -> None:
     assert {name.partition(":")[0] for name in recipe.themes} == {desktops.LIGHT, desktops.DARK}
     assert all(recipe.themes.values()), "each theme needs the commands that set it"
     expected = [case.expected for case in recipe.scales]
-    assert 100 in expected and 200 in expected, "scaling is checked at 100 and 200 %"
+    assert 100 in expected, 'scaling is checked at 100 and 200 %'
+    assert 200 in expected, 'scaling is checked at 100 and 200 %'
     assert len({case.id for case in recipe.scales}) == len(recipe.scales)
     assert recipe.reset, "theme and scale cases start from the desktop's defaults"
     for name in ("XDG_CURRENT_DESKTOP", "DESKTOP_SESSION", "XDG_SESSION_DESKTOP"):
         assert recipe.session_env.get(name), name
-    assert recipe.open_in_fork_keys and recipe.open_in_fork_keys[-1] == "Return"
+    assert recipe.open_in_fork_keys
+    assert recipe.open_in_fork_keys[-1] == 'Return'
     assert recipe.settings_daemon
     # The session checks that the desktop's own programs run (dekit.Session.start).
-    assert recipe.components and all(recipe.components)
+    assert recipe.components
+    assert all(recipe.components)
     assert recipe.portal == "" or recipe.portal.startswith("xdg-desktop-portal-")
     # An empty window manager or file-manager service: the session manager starts it.
     for command in (recipe.settings_daemon, recipe.window_manager, recipe.file_manager_service):
