@@ -1,3 +1,11 @@
+fork-linux (1.0.2) resolute; urgency=medium
+
+  * Fix system file dialogs: register fl-filedlg.dll under HKLM (Wine's
+    comdlg32 FileOpen/Save CLSIDs); allow pick-* on the hand-off-only daemon.
+  * Not affiliated with Fork's developers; buy Fork at https://git-fork.com/buy.
+
+ -- Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com>  Wed, 14 Oct 2026 08:11:17 +0000
+
 fork-linux (1.0.1) resolute; urgency=medium
 
   * System file dialogs: Fork's Open / Save / folder pickers use zenity or
