@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .. import bridge, desktop_integration, fork_tools, fsutil, gitconfig, ssh_sync
+from .. import bridge, desktop_integration, editors, fork_tools, fsutil, gitconfig, ssh_sync
 from ..bootstrap import Ctx, Step
 from ..errors import ForkLinuxError
 from ..registry import RegBatch
@@ -145,6 +145,8 @@ def integration_expected(ctx: Ctx) -> list[tuple[str, str, object]]:
     explorer = fork_tools.script_win(fork_tools.EXPLORER_SCRIPT, _pathmap(ctx))
     if explorer is not None:
         expected += [(rf"{APP_PATHS_KEY}\{name}", "", explorer) for name in EXPLORER_NAMES]
+    for name, win_path in editors.app_path_entries(ctx.paths, editors.discover(ctx.env)):
+        expected.append((rf"{APP_PATHS_KEY}\{name}", "", win_path))
     expected += file_dialog_expected(ctx)
     return expected
 
@@ -170,13 +172,23 @@ def integration_inputs(ctx: Ctx) -> dict[str, Any]:
     so replaces one of our open associations (E2E 2026-10-11, Kron4ek 11.0 -> 11.x). Setup checks
     this step before ``prefix_init`` runs, so only the Wine in the inputs makes it run afterwards.
     """
+    found = editors.discover(ctx.env)
     return {
         "registry": [list(item) for item in integration_expected(ctx)],
         "home": str(ctx.host_home),
         "wine": runtime.wine_inputs(ctx),
         "system_file_dialogs": bridge.system_file_dialogs_enabled(ctx),
         "filedlg": bridge.filedlg_installed(ctx.paths),
+        "editors": editors.inputs_signature(found),
+        "launch": _launch_sha(ctx),
     }
+
+
+def _launch_sha(ctx: Ctx) -> str | None:
+    """sha256 of the built ``fl-launch.exe``, or None when it was not built."""
+    sources = bridge.shim_sources()
+    launch = sources.get(bridge.LAUNCH)
+    return None if launch is None else fsutil.sha256_file(launch)
 
 
 def run_integration(ctx: Ctx) -> None:
@@ -188,8 +200,10 @@ def run_integration(ctx: Ctx) -> None:
     never uses ``H:`` for Linux-to-Windows conversion). System file dialogs
     overwrite Wine's HKLM FileOpenDialog / FileSaveDialog InprocServer32 entries
     (``comdlg32.dll``); turning them off restores those defaults and drops any
-    leftover HKCU CLSID keys from rev ≤2.
+    leftover HKCU CLSID keys from rev ≤2. Host IDEs found on PATH get
+    ``fl-launch.exe`` stubs so Fork's "Open in" menu lists them.
     """
+    _install_editors(ctx)
     batch = RegBatch()
     for key, name, value in integration_expected(ctx):
         batch.set_sz(key, name, str(value))
@@ -205,6 +219,25 @@ def run_integration(ctx: Ctx) -> None:
         drive.symlink_to(ctx.host_home)
 
 
+def _install_editors(ctx: Ctx) -> None:
+    """Copy ``fl-launch.exe`` to the Windows names of every host IDE on PATH."""
+    sources = bridge.shim_sources()
+    launch = sources.get(bridge.LAUNCH)
+    if launch is None:
+        return
+    editors.install(ctx.paths, ctx.user, launch, editors.discover(ctx.env))
+
+
+def _editors_installed(ctx: Ctx) -> bool:
+    """Every discovered IDE has its ``C:\\fork-linux\\editors`` stubs in place."""
+    sources = bridge.shim_sources()
+    if bridge.LAUNCH not in sources:
+        return True
+    found = editors.discover(ctx.env)
+    root = editors.editors_win_dir(ctx.paths)
+    return all((root / name).is_file() for editor in found for name in editor.win_names)
+
+
 def verify_integration(ctx: Ctx) -> bool:
     """The registry values are in place and ``h:`` exists (ours or the user's)."""
     if not file_dialog_expected(ctx):
@@ -214,6 +247,8 @@ def verify_integration(ctx: Ctx) -> bool:
             key = rf"HKCU\Software\Classes\CLSID\{clsid}\InprocServer32"
             if prefix_steps.reg_matches(ctx, [(key, "", bridge.FILEDLG_WIN)]):
                 return False
+    if not _editors_installed(ctx):
+        return False
     return prefix_steps.reg_matches(ctx, integration_expected(ctx)) and (
         os.path.lexists(home_drive(ctx)) or not ctx.host_home.is_dir()
     )
@@ -347,7 +382,7 @@ HOST_SHIMS = Step(
 HOST_INTEGRATION = Step(
     id="host_integration",
     title="Connecting Fork to your file manager and apps",
-    rev=3,
+    rev=4,
     weight=1,
     run=run_integration,
     verify=verify_integration,

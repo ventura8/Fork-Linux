@@ -260,7 +260,11 @@ def test_host_integration_registers_redirects_and_the_home_drive(
     explorer.write_text("#!/bin/sh\n", encoding="utf-8")
     explorer.chmod(0o755)
     monkeypatch.setenv(resources.LIBEXEC_ENV, str(libexec))
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))  # no host IDEs → no Open-in App Paths
     ctx = make_ctx()
+    ctx.env["PATH"] = str(empty_bin)
     assert integration.integration_expected(ctx) == integration.open_expected()  # no prefix yet
     fake = FakeWine(ctx.paths.prefix)
     ctx.runner = fake.runner()
@@ -313,7 +317,7 @@ def test_file_dialogs_overwrite_wine_hklm_comdlg32(
         assert not any(item[0].startswith("HKCU\\") for item in dialogs)
     integration.run_integration(ctx)
     assert integration.verify_integration(ctx)
-    assert integration.HOST_INTEGRATION.rev == 3
+    assert integration.HOST_INTEGRATION.rev == 4
     ctx.config.set("integration", "system_file_dialogs", "false")
     assert integration.file_dialog_expected(ctx) == []
     restore = integration.file_dialog_restore()

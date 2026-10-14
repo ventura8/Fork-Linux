@@ -1,3 +1,13 @@
+fork-linux (1.0.3) resolute; urgency=medium
+
+  * Open in lists host IDEs on PATH (VS Code, Cursor, IntelliJ, …) via
+    fl-launch stubs and fork-linux-host run; host_integration rev 4.
+  * repo fix/undo default to every repository Fork knows (core.filemode /
+    skip-worktree) so Stage All and file diffs work under Wine.
+  * Not affiliated with Fork's developers; buy Fork at https://git-fork.com/buy.
+
+ -- Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com>  Wed, 14 Oct 2026 20:00:00 +0000
+
 fork-linux (1.0.2) resolute; urgency=medium
 
   * Fix system file dialogs: register fl-filedlg.dll under HKLM (Wine's

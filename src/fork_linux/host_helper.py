@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote_to_bytes, urlsplit
 
-from . import file_picker, sandbox
+from . import editors, file_picker, sandbox
 from .config import Config
 from .errors import ForkLinuxError, NotSetUpError, UsageError
 from .pathmap import PathMap
@@ -64,6 +64,7 @@ verbs:
   diff LEFT RIGHT                  compare two files (waits)
   merge BASE LOCAL REMOTE MERGED   three-way merge into MERGED (waits)
   edit PATH [LINE]                 open PATH in its default editor (waits)
+  run IDE [PATH...]                open PATH in a host IDE (code, cursor, idea, …; detached)
   pick-dir [START]                 choose a folder (prints the path; cancel: 1)
   pick-file [START]                choose an existing file (prints the path; cancel: 1)
   save-file [START [NAME]]         choose a save path (prints the path; cancel: 1)
@@ -395,6 +396,27 @@ class Host:
             raise UsageError(f"not a line number: {line!r}")
         return self.wait(["xdg-open", self.existing(target)])
 
+    def run(self, ide: str, *paths: str) -> int:
+        """Start host IDE ``ide`` (an :data:`editors.ALLOWED_IDS` name) on ``paths``, detached.
+
+        Used by ``fl-launch.exe`` copies named ``Code.exe`` / ``Cursor.exe`` / … that
+        Fork's "Open in" menu starts. Only allowlisted ids are accepted.
+        """
+        if ide not in editors.ALLOWED_IDS:
+            raise UsageError(
+                f"unknown IDE {ide!r}",
+                hint=f"allowed: {', '.join(sorted(editors.ALLOWED_IDS))}",
+            )
+        found = {item.id: item for item in editors.discover(self.env)}
+        editor = found.get(ide)
+        if editor is None:
+            raise ToolNotFound(
+                f"{ide} is not installed on this computer",
+                hint=f"install {ide}, or open the repository from the desktop",
+            )
+        argv = [editor.command, *[self.existing(path) for path in paths]]
+        return self.spawn(argv)
+
     # --- diff and merge -----------------------------------------------------------
 
     def _tool(self, merge: bool) -> tuple[str, tuple[str, ...]]:
@@ -496,6 +518,8 @@ VERBS: dict[str, tuple[str, tuple[int, ...]]] = {
     "diff": ("diff", (2,)),
     "merge": ("merge", (4,)),
     "edit": ("edit", (1, 2)),
+    # ide id + up to three paths (repository, file, line-as-path rarely)
+    "run": ("run", (1, 2, 3, 4)),
     "pick-dir": ("pick_dir", (0, 1)),
     "pick-file": ("pick_file", (0, 1)),
     "save-file": ("save_file", (0, 1, 2)),

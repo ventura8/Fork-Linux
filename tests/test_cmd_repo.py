@@ -123,6 +123,28 @@ def test_fix_options(capsys: pytest.CaptureFixture[str], repo: Path) -> None:
     assert "skip-worktree for link" in out
 
 
+def test_fix_and_undo_default_to_known_repos(
+    capsys: pytest.CaptureFixture[str], repo: Path, xdg: Path
+) -> None:
+    """With no paths, ``repo fix`` / ``undo`` use every repository Fork knows."""
+    make_prefix(paths())
+    forkdata = layout().forkdata_dir
+    forkdata.mkdir(parents=True)
+    win = "Z:" + str(repo).replace("/", "\\")
+    fork_data.path(forkdata).write_text(f"[[repository]]\npath = '{win}'\n", encoding="utf-8")
+    code, out, _err = run_cli(capsys, "repo", "fix", "--yes")
+    assert code == 0
+    assert "core.filemode = false" in out
+    assert _git(repo, "config", "core.filemode").strip() == "false"
+    code, out, _err = run_cli(capsys, "repo", "undo")
+    assert code == 0
+    assert "skip-worktree removed from link" in out
+    fork_data.path(forkdata).write_text("version = 1\n", encoding="utf-8")
+    code, out, _err = run_cli(capsys, "repo", "fix", "--yes")
+    assert code == 0
+    assert "no repositories" in out
+
+
 def test_errors(capsys: pytest.CaptureFixture[str], xdg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     code, _out, err = run_cli(capsys, "repo", "fix", str(xdg / "missing"))
     assert code != 0

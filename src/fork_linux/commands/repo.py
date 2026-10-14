@@ -35,13 +35,23 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     check.add_argument("paths", metavar="PATH", nargs="*", help="repository to check")
     check.set_defaults(func=run_check)
     fix = actions.add_parser("fix", help="set core.filemode=false and skip-worktree for tracked symlinks")
-    fix.add_argument("paths", metavar="PATH", nargs="+", help="repository to change")
+    fix.add_argument(
+        "paths",
+        metavar="PATH",
+        nargs="*",
+        help="repository to change (default: every repository Fork knows)",
+    )
     fix.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     fix.add_argument("--no-filemode", action="store_true", help="leave core.filemode alone")
     fix.add_argument("--no-symlinks", action="store_true", help="leave symbolic links alone")
     fix.set_defaults(func=run_fix)
     undo = actions.add_parser("undo", help="revert what 'fix' changed")
-    undo.add_argument("paths", metavar="PATH", nargs="+", help="repository to restore")
+    undo.add_argument(
+        "paths",
+        metavar="PATH",
+        nargs="*",
+        help="repository to restore (default: every repository Fork knows)",
+    )
     undo.set_defaults(func=run_undo)
 
 
@@ -136,14 +146,18 @@ def run_fix(args: argparse.Namespace, ctx: AppContext) -> int:
     git = _git(ctx)
     filemode = not args.no_filemode
     symlinks = not args.no_symlinks
-    reports = repos.scan(git, _paths(args.paths), "")
+    targets = _paths(args.paths) if args.paths else _known(ctx)
+    if not targets:
+        print("no repositories (open some in Fork, or pass a path)")
+        return 0
+    reports = repos.scan(git, targets, "")
     todo = [r for r in reports if not r.error and ((filemode and r.filemode) or (symlinks and r.symlinks))]
     if not todo:
         print("nothing to change")
         return 0
     plan = _plan(todo, filemode=filemode, symlinks=symlinks)
     ui = ui_mod.choose(ctx.env, gui=ctx.gui, mode=ctx.config.get("ui", "progress"), runner=ctx.runner)
-    text = "\n".join(plan) + "\n\nUndo with 'fork-linux repo undo PATH'."
+    text = "\n".join(plan) + "\n\nUndo with 'fork-linux repo undo' (or 'repo undo PATH')."
     if not args.yes and not ui.confirm("Change these repositories?", text, default=False):
         print("nothing changed")
         return 1
@@ -156,7 +170,11 @@ def run_fix(args: argparse.Namespace, ctx: AppContext) -> int:
 def run_undo(args: argparse.Namespace, ctx: AppContext) -> int:
     """Revert what ``fix`` recorded."""
     git = _git(ctx)
-    for repo in _paths(args.paths):
+    targets = _paths(args.paths) if args.paths else _known(ctx)
+    if not targets:
+        print("no repositories (open some in Fork, or pass a path)")
+        return 0
+    for repo in targets:
         done = repos.undo(git, repo)
         print("\n".join(done) if done else f"{repo}: nothing to undo")
     return 0

@@ -1846,8 +1846,12 @@ def test_source_dirs(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_integration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from fork_linux.steps import integration
 
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
     _libexec(tmp_path, monkeypatch)
     ctx = make()
+    ctx.env["PATH"] = str(empty_bin)
     assert run(ctx, "prefix.integration").status == "info"
     prefix(ctx)
     result = run(ctx, "prefix.integration")

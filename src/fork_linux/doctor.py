@@ -34,6 +34,7 @@ from . import (
     bridge,
     desktop_integration,
     download,
+    editors,
     feeds,
     fork_data,
     fork_tools,
@@ -1314,6 +1315,11 @@ def check_integration(ctx: DoctorCtx) -> Result:
     if not explorer:
         parts.append("fork-linux-explorer is not installed: 'Show in File Explorer' opens Wine's explorer")
     parts.append(f"H: -> {os.readlink(drive)}" if drive.is_symlink() else "no H: drive")
+    ide_ids = [item.id for item in editors.discover(ctx.env)]
+    if ide_ids:
+        parts.append(f"Open in: {', '.join(ide_ids)}")
+    elif bridge.LAUNCH in bridge.shim_sources():
+        parts.append("Open in: no host IDE on PATH (install code, cursor, …)")
     return Result("ok" if explorer else "info", "; ".join(parts))
 
 
@@ -1400,8 +1406,8 @@ def check_repo_symlinks(ctx: DoctorCtx) -> Result:
         ctx,
         "symlinks",
         "track symbolic links that Fork always lists as modified (they block rebase)",
-        "'fork-linux repo fix PATH' marks them skip-worktree after asking ('fork-linux repo undo PATH' "
-        "reverts); with --fix, doctor asks too",
+        "'fork-linux repo fix --yes' marks them skip-worktree in every repository Fork knows "
+        "('fork-linux repo undo' reverts); with --fix, doctor asks too",
     )
 
 
@@ -1432,9 +1438,10 @@ def check_repo_filemode(ctx: DoctorCtx) -> Result:
     return _repo_result(
         ctx,
         "filemode",
-        "have core.filemode = true, so Fork shows executable files as modified",
-        "'git config core.filemode false' in each (or 'fork-linux repo fix PATH', undo with "
-        "'fork-linux repo undo PATH'); with --fix, doctor asks first",
+        "have core.filemode = true, so Fork shows executable files as modified "
+        "(empty diffs, Stage All looks broken)",
+        "'fork-linux repo fix --yes' sets core.filemode=false in every repository Fork knows "
+        "(undo with 'fork-linux repo undo'); with --fix, doctor asks first",
     )
 
 

@@ -506,6 +506,25 @@ def test_edit(tmp_path: Path) -> None:
         host.edit(path, "twelve")
 
 
+def test_run_opens_a_host_ide(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``run code PATH`` starts the host ``code`` on PATH (Fork's Open in → fl-launch persona)."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    code = bin_dir / "code"
+    code.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    code.chmod(0o755)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    host, _runner, popen = _host({"PATH": str(bin_dir)})
+    assert host.run("code", str(repo)) == 0
+    assert popen.argvs == [[str(code.resolve()), str(repo)]]
+    assert hh.main(["run", "code", str(repo)], host=host) == 0
+    with pytest.raises(UsageError, match="unknown IDE"):
+        host.run("not-an-ide", str(repo))
+    with pytest.raises(hh.ToolNotFound, match="cursor is not installed"):
+        host.run("cursor", str(repo))
+
+
 # --- diff and merge -------------------------------------------------------------------------------------
 
 

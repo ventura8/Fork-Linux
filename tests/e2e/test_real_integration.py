@@ -31,7 +31,7 @@ if os.environ.get("FL_E2E_FORK") != "1":
 real_tier.enforce()
 
 APP_ID = "io.github.ventura8.ForkLinux"
-STUBS = ("xdg-open", "gdbus", "e2e-terminal")
+STUBS = ("xdg-open", "gdbus", "e2e-terminal", "code", "cursor", "intellij-idea", "subl")
 # Offsets inside popups and dialogs (from their top-left corner).
 HELP_MENU = (220, 16)
 HELP_WEBSITE = 78
@@ -522,6 +522,52 @@ def test_desktop_install_without_menu_and_icons(desk: Any, installed: Any) -> No
     assert "--from-file-manager" in (installed.home / ".config" / "Thunar" / "uca.xml").read_text(encoding="utf-8")
     installed.cli("desktop", "remove")
     assert json.loads(installed.cli("desktop", "status", "--json").stdout)["entries"] == []
+
+
+def test_open_in_ides_on_path_get_wine_stubs(installed: Any) -> None:
+    """Host IDEs on PATH become ``Code.exe`` / ``Cursor.exe`` / … stubs; ``fork-linux-host run``
+    opens them with the repository path (Fork's Open in menu uses those stubs under Wine).
+
+    Scenarios: I-OPEN-IN-IDES
+    """
+    from fork_linux import bridge, editors
+    from fork_linux.host_helper import Host, main as host_main
+    from fork_linux.paths import Paths
+    from fork_linux.procrun import Runner
+
+    if bridge.LAUNCH not in bridge.shim_sources():
+        pytest.skip("fl-launch.exe is not built: run scripts/build-bridge.sh")
+    stubs, log = _stub_dir(installed)
+    env_path = f"{stubs}:{installed.env['PATH']}"
+    extra = {"PATH": env_path}
+    installed.fork.ensure_closed()
+    installed.cli("setup", "--only", "host_integration", "--accept-fork-eula", "--no-gui", extra=extra)
+    paths = Paths.from_env(installed.env)
+    root = editors.editors_win_dir(paths)
+    assert (root / "Code.exe").is_file(), list(root.iterdir()) if root.is_dir() else root
+    assert (root / "Cursor.exe").is_file(), root
+    assert (root / "idea64.exe").is_file(), root
+    assert (root / "subl.exe").is_file() or (root / "sublime_text.exe").is_file()
+    repo = make_repo(installed.repos / "open-in-ides", {".gitignore": "*.tmp\n"})
+    host = Host(env={**installed.env, **extra}, runner=Runner())
+    assert host_main(["run", "code", str(repo)], host=host) == 0
+    wait_until(
+        lambda: any(str(repo) in args for args, _cwd in _calls(log, "code")),
+        30,
+        "stub code opened the repository",
+    )
+    assert host_main(["run", "cursor", str(repo)], host=host) == 0
+    wait_until(
+        lambda: any(str(repo) in args for args, _cwd in _calls(log, "cursor")),
+        30,
+        "stub cursor opened the repository",
+    )
+    report = json.loads(
+        installed.cli("doctor", "--check", "prefix.integration", "--json", extra=extra).stdout
+    )
+    check = next(item for item in report["checks"] if item["id"] == "prefix.integration")
+    assert "Open in:" in check["detail"], check
+    assert "code" in check["detail"] and "cursor" in check["detail"], check
 
 
 def _folders(e2e: Any) -> set[Path]:

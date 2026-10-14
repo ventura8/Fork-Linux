@@ -4,12 +4,18 @@
  *
  *   fl-launch.exe <verb> [args...]
  *
- *   terminal | open | reveal   start the host tool detached and return 0 at once
+ *   terminal | open | reveal | run
+ *                              start the host tool detached and return 0 at once
  *                              (FL_REQ_HOST_HELPER | FL_REQ_DETACH)
- *   diff | merge | edit | run  wait for the host tool and return its exit status
+ *   diff | merge | edit        wait for the host tool and return its exit status
  *                              (FL_REQ_HOST_HELPER)
  *   pick-dir | pick-file | save-file
  *                              Linux file/folder picker; path on stdout (cancel: 1)
+ *
+ * When this PE is installed under an editor name Fork's "Open in" menu looks for
+ * (Code.exe, Cursor.exe, idea64.exe, …), the basename selects a host IDE id and
+ * the call becomes a detached ``run <id> [args…]`` (same transport). Copies live
+ * under C:\fork-linux\editors\ and Local\Programs\… (step host_integration).
  *
  * Windows-absolute arguments ("C:\x", "Z:/x", "\\?\...", "file://C:/...") are
  * translated to Unix paths; everything else is passed on unchanged. Transport and
@@ -44,11 +50,50 @@ static const struct verb verbs[] = {
     { "diff", FL_REQ_HOST_HELPER },
     { "merge", FL_REQ_HOST_HELPER },
     { "edit", FL_REQ_HOST_HELPER },
-    { "run", FL_REQ_HOST_HELPER },
+    /* Detached: IDEs (and any long-lived tool) must not block Fork. */
+    { "run", FL_REQ_HOST_HELPER | FL_REQ_DETACH },
     { "pick-dir", FL_REQ_HOST_HELPER },
     { "pick-file", FL_REQ_HOST_HELPER },
     { "save-file", FL_REQ_HOST_HELPER },
 };
+
+/* Basename (with .exe) -> fork-linux-host run <id>. Keep in sync with editors.py. */
+struct editor {
+    const char *win;
+    const char *host;
+};
+
+static const struct editor editors[] = {
+    { "Code.exe", "code" },
+    { "Code - Insiders.exe", "code-insiders" },
+    { "Cursor.exe", "cursor" },
+    { "idea64.exe", "idea" },
+    { "idea.exe", "idea" },
+    { "pycharm64.exe", "pycharm" },
+    { "pycharm.exe", "pycharm" },
+    { "webstorm64.exe", "webstorm" },
+    { "webstorm.exe", "webstorm" },
+    { "phpstorm64.exe", "phpstorm" },
+    { "phpstorm.exe", "phpstorm" },
+    { "rider64.exe", "rider" },
+    { "rider.exe", "rider" },
+    { "studio64.exe", "android-studio" },
+    { "studio.exe", "android-studio" },
+    { "sublime_text.exe", "sublime" },
+    { "subl.exe", "sublime" },
+    { "atom.exe", "atom" },
+};
+
+static const char *editor_host(const char *exe)
+{
+    const char *base = flw_basename(exe);
+    for (size_t i = 0; i < sizeof(editors) / sizeof(editors[0]); i++) {
+        if (_stricmp(base, editors[i].win) == 0) {
+            return editors[i].host;
+        }
+    }
+    return NULL;
+}
 
 struct call {
     ULONGLONG t0;
@@ -129,18 +174,25 @@ static char *launch_cwd(const char *cwd)
     return u;
 }
 
-/* argv for the daemon: the verb, then the arguments with Windows-absolute paths translated. */
-static void launch_args(struct call *c, const struct fl_xlate *x)
+/* argv for the daemon: leading words, then translated path arguments from argv[skip..]. */
+static void launch_args(struct call *c, const struct fl_xlate *x, const char *const *lead, size_t nlead,
+                        int skip)
 {
     struct fl_strvec t = { 0, 0, NULL };
-    if (flw_xlate_args(x, c->argc - 2, c->argv + 2, &t) != 0) {
+    int rest = c->argc - skip;
+    if (rest < 0) {
+        rest = 0;
+    }
+    if (flw_xlate_args(x, rest, c->argv + skip, &t) != 0) {
         flw_fail("out of memory");
     }
-    c->xargc = t.n + 1;
+    c->xargc = nlead + t.n;
     c->xargv = flw_xcalloc(c->xargc + 1, sizeof(char *));
-    c->xargv[0] = flw_xstrdup(c->argv[1]);
+    for (size_t i = 0; i < nlead; i++) {
+        c->xargv[i] = flw_xstrdup(lead[i]);
+    }
     for (size_t i = 0; i < t.n; i++) {
-        c->xargv[i + 1] = t.v[i];
+        c->xargv[nlead + i] = t.v[i];
     }
     free(t.v);
 }
@@ -148,7 +200,8 @@ static void launch_args(struct call *c, const struct fl_xlate *x)
 int wmain(int argc, wchar_t **wargv)
 {
     struct call *c = &g_call;
-    const struct verb *v;
+    const struct verb *v = NULL;
+    const char *ide = NULL;
     struct flw_cfg cfg;
     struct fl_xlate x;
     struct fl_envops ops;
@@ -157,6 +210,8 @@ int wmain(int argc, wchar_t **wargv)
     struct flw_sink s_err;
     char **real = NULL;
     size_t nreal = 0;
+    uint32_t flags;
+    const char *label;
 
     memset(c, 0, sizeof(*c));
     memset(&ops, 0, sizeof(ops));
@@ -170,7 +225,19 @@ int wmain(int argc, wchar_t **wargv)
     if (c->log != NULL && c->log[0] != '\0') {
         flw_set_exit_hook(log_hook, c);
     }
-    v = find_verb(c);
+    {
+        char *module = flw_module_path();
+        ide = module != NULL ? editor_host(module) : NULL;
+        free(module);
+    }
+    if (ide == NULL) {
+        v = find_verb(c);
+        flags = v->flags;
+        label = v->name;
+    } else {
+        flags = FL_REQ_HOST_HELPER | FL_REQ_DETACH;
+        label = "run";
+    }
     if (flw_load_cfg(&cfg, 0) != 0) {
         flw_exit(FLW_EXIT_BRIDGE);
     }
@@ -179,7 +246,13 @@ int wmain(int argc, wchar_t **wargv)
     }
     flw_xlate_init(&x, &cfg);
     c->unix_cwd = launch_cwd(c->cwd);
-    launch_args(c, &x);
+    if (ide != NULL) {
+        const char *lead[2] = { "run", ide };
+        launch_args(c, &x, lead, 2, 1);
+    } else {
+        const char *lead[1] = { c->argv[1] };
+        launch_args(c, &x, lead, 1, 2);
+    }
     flw_translate_environ(&x, &ops);
 
     req.cwd = c->unix_cwd;
@@ -189,11 +262,11 @@ int wmain(int argc, wchar_t **wargv)
     req.set = ops.set.v;
     req.nunset = ops.unset.n;
     req.unset = ops.unset.v;
-    req.flags = v->flags;
+    req.flags = flags;
 
     flw_start_call(&cfg, &req);
-    (void)flw_wait_spawn(v->name, &real, &nreal);
+    (void)flw_wait_spawn(label, &real, &nreal);
     flw_sink_init(&s_out, STD_OUTPUT_HANDLE, NULL);
     flw_sink_init(&s_err, STD_ERROR_HANDLE, NULL);
-    flw_relay(&s_out, &s_err, (v->flags & FL_REQ_DETACH) == 0);
+    flw_relay(&s_out, &s_err, (flags & FL_REQ_DETACH) == 0);
 }
