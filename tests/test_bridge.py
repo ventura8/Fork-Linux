@@ -864,3 +864,15 @@ def test_status_reports_the_running_daemon(kit: bridge_kit.Kit) -> None:
     assert bridge.status(ctx, session)["daemon"] == {"pid": daemon.pid, "port": 4242}
     assert json.dumps(bridge.status(ctx, session)).count(daemon.env["FL_BRIDGE_TOKEN"]) == 0
     daemon.stop()
+
+
+def test_system_file_dialogs_enabled_defaults_on_when_invalid(kit: bridge_kit.Kit) -> None:
+    ctx = _ctx(kit)
+    assert bridge.system_file_dialogs_enabled(ctx) is True
+    ctx.config.set("integration", "system_file_dialogs", "false")
+    assert bridge.system_file_dialogs_enabled(ctx) is False
+    path = ctx.paths.config_file
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("[integration]\nsystem_file_dialogs = maybe\n", encoding="utf-8")
+    ctx.config = type(ctx.config).load(ctx.paths, ctx.env)
+    assert bridge.system_file_dialogs_enabled(ctx) is True

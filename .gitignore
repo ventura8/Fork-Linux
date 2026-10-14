@@ -55,6 +55,9 @@ coverage.xml
 *.cover
 *.py.cover
 *.lcov
+*.gcov
+*.gcda
+*.gcno
 .hypothesis/
 .pytest_cache/
 cover/

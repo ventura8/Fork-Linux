@@ -96,9 +96,7 @@ def _try(run: RunPick, argv: Sequence[str], env: Mapping[str, str]) -> str | Non
     path = _parse_path(result)
     if path is not None:
         return path
-    if result.returncode != 0:
-        raise PickCancelled()
-    return None
+    raise PickCancelled()
 
 
 def pick(
@@ -141,7 +139,7 @@ def pick(
         chosen = _try(execute, builders[program](kind, folder, name), environ)
         if chosen is not None:
             return chosen
-        raise PickCancelled()
+        # _try returns None only when the binary vanished between which() and exec.
     if not saw_picker:
         raise PickNotFound()
     raise PickCancelled()

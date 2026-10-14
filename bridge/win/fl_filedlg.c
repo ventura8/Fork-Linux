@@ -56,6 +56,24 @@ struct fl_factory {
 static LONG g_locks;
 static HMODULE g_module;
 
+#ifdef FL_FILEDLG_UNIT
+/* Test-only hooks (fl-filedlg-unit.exe); never defined in the shipped DLL. */
+void fl_filedlg_unit_set_module(HMODULE module);
+void fl_filedlg_unit_force_wine(int enable);
+
+static int g_force_no_wine;
+
+void fl_filedlg_unit_set_module(HMODULE module)
+{
+    g_module = module;
+}
+
+void fl_filedlg_unit_force_wine(int enable)
+{
+    g_force_no_wine = enable ? 0 : 1;
+}
+#endif
+
 /* ---- small helpers ------------------------------------------------------ */
 
 static WCHAR *fl_wcsdup(const WCHAR *s)
@@ -107,6 +125,11 @@ static wine_dos_fn fl_wine_dos(void)
 {
     static wine_dos_fn fn;
     static int looked;
+#ifdef FL_FILEDLG_UNIT
+    if (g_force_no_wine) {
+        return NULL;
+    }
+#endif
     if (!looked) {
         looked = 1;
         fn = (wine_dos_fn)(void (*)(void))GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "wine_get_dos_file_name");
@@ -118,6 +141,11 @@ static wine_unix_fn fl_wine_unix(void)
 {
     static wine_unix_fn fn;
     static int looked;
+#ifdef FL_FILEDLG_UNIT
+    if (g_force_no_wine) {
+        return NULL;
+    }
+#endif
     if (!looked) {
         looked = 1;
         fn = (wine_unix_fn)(void (*)(void))GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "wine_get_unix_file_name");

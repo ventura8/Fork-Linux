@@ -1971,3 +1971,63 @@ def test_repo_fixers_ask_first(xdg: Path) -> None:
     assert doctor.fix_repo_filemode(ctx) == "nothing to do"
     assert doctor.fix_repo_symlinks(ctx) == f"{messy}: skip-worktree for l"
     assert run(ctx, "repo.symlinks").status == "ok"
+
+
+def test_prefix_system_file_dialogs_off_and_missing() -> None:
+    ctx = make()
+    result = run(ctx, "prefix.system_file_dialogs")
+    assert result.status == "info"
+    assert "Wine prefix does not exist" in result.detail
+    prefix(ctx)
+    ctx.config.set("integration", "system_file_dialogs", "false")
+    result = run(ctx, "prefix.system_file_dialogs")
+    assert result.status == "info"
+    assert "system file dialogs are off" in result.detail
+    ctx.config.set("integration", "system_file_dialogs", "true")
+    result = run(ctx, "prefix.system_file_dialogs")
+    assert result.status == "warn"
+    assert "fl-filedlg" in result.detail or "not installed" in result.detail or "FileOpen" in result.detail
+
+
+def _register_file_dialogs(ctx: DoctorCtx, *, dll_value: str | None = None) -> None:
+    from fork_linux import bridge
+    from fork_linux.steps import integration as integration_step
+
+    dlg = ctx.paths.fork_linux_win_dir / "bin" / bridge.FILEDLG
+    dlg.parent.mkdir(parents=True, exist_ok=True)
+    dlg.write_bytes(b"MZ dlg")
+    by_key: dict[str, list[str]] = {}
+    for key, name, value in integration_step.file_dialog_expected(ctx.boot):
+        raw = dll_value if name == "" and dll_value is not None else str(value)
+        escaped = raw.replace("\\", "\\\\").replace('"', '\\"')
+        line = f'@="{escaped}"' if name == "" else f'"{name}"="{escaped}"'
+        by_key.setdefault(key, []).append(line)
+    for key, lines in by_key.items():
+        add_values(ctx.paths.prefix, "system.reg", key.replace("HKLM\\", ""), lines)
+
+
+def test_prefix_system_file_dialogs_ok_when_registered() -> None:
+    ctx = make()
+    prefix(ctx)
+    _register_file_dialogs(ctx)
+    result = run(ctx, "prefix.system_file_dialogs")
+    assert result.status == "ok", result.detail
+    assert "Linux file picker" in result.detail
+
+
+def test_prefix_system_file_dialogs_warns_on_wrong_registration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fork_linux.steps import integration as integration_step
+
+    ctx = make()
+    prefix(ctx)
+    _register_file_dialogs(ctx, dll_value=r"C:\windows\system32\comdlg32.dll")
+    result = run(ctx, "prefix.system_file_dialogs")
+    assert result.status == "warn"
+    assert "not registered" in result.detail
+    _register_file_dialogs(ctx)
+    monkeypatch.setattr(integration_step, "file_dialog_expected", lambda _ctx: [])
+    result = run(ctx, "prefix.system_file_dialogs")
+    assert result.status == "warn"
+    assert "CLSID registrations are missing" in result.detail

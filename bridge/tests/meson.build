@@ -149,4 +149,24 @@ if fl_have_mingw
     ],
     build_by_default: true,
   )
+  # fl-filedlg.c coverage under Wine: compile the DLL sources into the unit plus a
+  # stub fl-launch.exe beside the copied unit executable.
+  fl_filedlg_unit_exe = custom_target(
+    'fl-filedlg-unit.exe',
+    input: files('../win/tests/fl_filedlg_unit.c', '../win/fl_filedlg.c') + fl_pe_cov_sources,
+    output: 'fl-filedlg-unit.exe',
+    depend_files: files('../win/fl_filedlg.def'),
+    command: [
+      fl_mingw, fl_testdrv_cflags, fl_pe_cov_cflags, '-DFL_FILEDLG_UNIT', '-I' + fl_win_dir,
+      '-o', '@OUTPUT@', '@INPUT@', fl_pe_ldflags, '-lole32', '-lshell32', '-luuid', '-lshlwapi',
+    ],
+    build_by_default: true,
+  )
+  fl_filedlg_stub_launch_exe = custom_target(
+    'fl-filedlg-stub-launch.exe',
+    input: files('../win/tests/fl_filedlg_stub_launch.c'),
+    output: 'fl-filedlg-stub-launch.exe',
+    command: [fl_mingw, fl_testdrv_cflags, '-o', '@OUTPUT@', '@INPUT@', fl_pe_ldflags],
+    build_by_default: true,
+  )
 endif

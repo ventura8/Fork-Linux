@@ -97,6 +97,37 @@ def test_win_unit_pure(env: Env, unit_exe: Path) -> None:
     assert (env.root / "fl-unit.log").read_text() == "two\n"
 
 
+@pytest.fixture(scope="module")
+def filedlg_kit(env: Env) -> Path:
+    """Directory with fl-filedlg-unit.exe and stub fl-launch.exe (Show looks beside the unit)."""
+    win = base._default_win_dir()
+    unit = win / "tests" / "fl-filedlg-unit.exe"
+    stub = win / "tests" / "fl-filedlg-stub-launch.exe"
+    if not unit.is_file():
+        pytest.skip(f"{unit} is missing: run scripts/build-bridge.sh")
+    if not stub.is_file():
+        pytest.skip(f"{stub} is missing: run scripts/build-bridge.sh")
+    kit = env.root / "filedlg-kit"
+    kit.mkdir()
+    shutil.copyfile(unit, kit / "fl-filedlg-unit.exe")
+    shutil.copyfile(stub, kit / "fl-launch.exe")
+    (kit / "picked.txt").write_text("chosen\n", encoding="utf-8")
+    return kit
+
+
+def test_filedlg_unit_exercises_com(env: Env, filedlg_kit: Path) -> None:
+    """Drive fl_filedlg.c (linked into fl-filedlg-unit.exe) through IFileDialog / Show.
+
+    Scenarios: coverage of bridge/win/fl_filedlg.c under Wine (gcov via Z:).
+    """
+    exe = filedlg_kit / "fl-filedlg-unit.exe"
+    picked = filedlg_kit / "picked.txt"
+    proc = env.run([exe, filedlg_kit, str(picked)])
+    out = proc.stdout.decode("utf-8", "replace")
+    assert proc.returncode == 0, out + err_text(proc)
+    assert ", 0 failed" in out
+
+
 def test_win_unit_from_a_long_module_path(env: Env, unit_exe: Path) -> None:
     """GetModuleFileNameW needs a second, larger buffer past 512 characters."""
     deep = env.root

@@ -15,6 +15,7 @@ MinGW-w64) that live inside the Wine prefix:
 | `res/fl_shim.rc`, `res/fl_launch.rc`, `res/fl_filedlg.rc` | Manifest + `VERSIONINFO` (ProductName "Fork for Linux (unofficial) bridge", CompanyName "Fork-Linux project (unofficial)", LegalCopyright "MIT"). The version comes from a generated `fl_version.h` (see Build). |
 | `build-dev.sh` | Developer build into `build-bridge/dev/` inside `fork-linux-ci-bridge:26.04`. |
 | `tests/fl_testdrv.c` | **Test only, never installed**: `fl-testdrv.exe` spawns a program the way Fork's .NET `Process.Start` does, for the Wine tier (`tests/bridge/test_shims_wine.py`). |
+| `tests/fl_filedlg_unit.c`, `tests/fl_filedlg_stub_launch.c` | **Test only**: Wine-tier coverage of `fl_filedlg.c` (`fl-filedlg-unit.exe` links the sources with `-DFL_FILEDLG_UNIT`; stub renamed to `fl-launch.exe` beside it). |
 
 Both programs code against the frozen C contract in [`bridge/common/`](../common/)
 (`fl_proto.h`, `fl_sha256.h`, `fl_translate.h`, `fl_shquote.h`). The Linux side is the

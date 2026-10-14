@@ -17,7 +17,8 @@
 #   bridge/win (+ common)       the Wine tier (FL_REAL_WINE=1 tests/bridge/test_shims_wine.py,
 #                               test_shims_wine_coverage.py and tests/bridge/wine) against
 #                               MinGW --coverage builds of fl-shim.exe / fl-launch.exe /
-#                               tests/fl-win-unit.exe; libgcov writes the .gcda files
+#                               fl-filedlg.dll / tests/fl-win-unit.exe /
+#                               tests/fl-filedlg-unit.exe; libgcov writes the .gcda files
 #                               through Wine's Z: drive, x86_64-w64-mingw32-gcov reads them
 #
 # The coverage builds link two test-only files from bridge/tests/coverage/ that write

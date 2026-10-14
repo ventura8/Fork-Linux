@@ -349,3 +349,39 @@ def test_integration_inputs_follow_the_wine_build(xdg: Path) -> None:
     assert after["wine"]["build"] == other
     assert after["registry"] == before["registry"]
     assert after != before
+
+
+def test_verify_rejects_leftover_hkcu_filedlg_when_dialogs_are_off(
+    xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fixtures.setup_ctx import FakeWine, add_values
+
+    from fork_linux import bootstrap, bridge
+    from fork_linux.steps import prefix as prefix_steps
+
+    shims = tmp_path / "shims"
+    shims.mkdir()
+    (shims / "fl-filedlg.dll").write_bytes(b"MZ dlg")
+    (shims / "fl-launch.exe").write_bytes(b"MZ launch")
+    monkeypatch.setenv(resources.SHIMS_ENV, str(shims))
+    monkeypatch.setenv(resources.LIBEXEC_ENV, str(tmp_path / "none"))
+    ctx = make_ctx()
+    fake = FakeWine(ctx.paths.prefix)
+    ctx.runner = fake.runner()
+    bootstrap.init_prefix_meta(ctx)
+    _drives(ctx)
+    integration.run_shims(ctx)
+    ctx.config.set("integration", "system_file_dialogs", "false")
+    # Wine's default HKLM InprocServer32 (comdlg32) plus a leftover HKCU override.
+    by_key: dict[str, list[str]] = {}
+    for key, name, value in integration.file_dialog_restore():
+        escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+        line = f'@="{escaped}"' if name == "" else f'"{name}"="{escaped}"'
+        by_key.setdefault(key, []).append(line)
+    for key, lines in by_key.items():
+        add_values(ctx.paths.prefix, "system.reg", key.replace("HKLM\\", ""), lines)
+    leftover = rf"HKCU\Software\Classes\CLSID\{bridge.FILE_OPEN_CLSID}\InprocServer32"
+    batch = prefix_steps.RegBatch()
+    batch.set_default(leftover, bridge.FILEDLG_WIN)
+    prefix_steps.import_batch(ctx, batch, "leftover-filedlg")
+    assert not integration.verify_integration(ctx)

@@ -679,6 +679,14 @@ def test_main_pick_missing_picker(tmp_path: Path) -> None:
     assert hh.main(["pick-dir"], host=host) == hh.EXIT_NOT_FOUND
 
 
+def test_main_save_file_prints_path(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    chosen = tmp_path / "out.txt"
+    host, runner, _popen = _host(installed=("zenity",), responses={"zenity": str(chosen) + "\n"})
+    assert hh.main(["save-file", str(tmp_path), "out.txt"], host=host) == 0
+    assert capsys.readouterr().out.strip() == str(chosen)
+    assert "--save" in runner.argvs[0]
+
+
 def test_main_handoff_goes_to_the_daemon_else_runs_here(
     xdg: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
