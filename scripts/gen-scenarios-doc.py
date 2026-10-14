@@ -106,7 +106,8 @@ PACKAGING_RE = re.compile(r"^packaging:(?P<cell>[a-z0-9-]+):(?P<check>[a-z_][a-z
 SHELL_FUNCTION_RE = re.compile(r"^\s*(?P<name>[a-z_][a-z0-9_]*)\s*\(\)", re.MULTILINE)
 DECLARATION_RE = re.compile(r"^\s*Scenarios:\s*(?P<ids>\S(?:.*\S)?)\s*$", re.MULTILINE)
 # Closing quotes at the end of a source line (a declaration may end its docstring).
-DECLARATION_TAIL_RE = re.compile(r"[ \t]*(\"{3}|'{3})[ \t]*$")
+# Bounded spaces: unbounded ``[ \t]*…[ \t]*`` is super-linear on long space runs (S8786).
+DECLARATION_TAIL_RE = re.compile(r"[ \t]{0,64}(\"{3}|'{3})[ \t]{0,64}$")
 # Scenarios: lines that ``declare`` writes are wrapped at this width (indentation included).
 DECLARATION_WIDTH = 110
 FORMATS_RE = re.compile(r"^FORMATS=\((?P<cells>[^)]*)\)", re.MULTILINE)

@@ -229,6 +229,52 @@ static int fl_launch_path(WCHAR *out, size_t out_wchars)
     return 0;
 }
 
+static int fl_pick_cmdline(WCHAR *cmdline, size_t cap, const WCHAR *launch, const WCHAR *verb,
+                           const WCHAR *start, const WCHAR *name)
+{
+    int ncmd;
+    if (name != NULL && name[0] != L'\0' && wcscmp(verb, L"save-file") == 0) {
+        ncmd = _snwprintf(cmdline, cap, L"\"%s\" %s \"%s\" \"%s\"", launch, verb,
+                          start != NULL && start[0] != L'\0' ? start : L".", name);
+    } else if (start != NULL && start[0] != L'\0') {
+        ncmd = _snwprintf(cmdline, cap, L"\"%s\" %s \"%s\"", launch, verb, start);
+    } else {
+        ncmd = _snwprintf(cmdline, cap, L"\"%s\" %s", launch, verb);
+    }
+    return (ncmd < 0 || (size_t)ncmd >= cap) ? -1 : 0;
+}
+
+static size_t fl_read_stdout(HANDLE rd, char *out, size_t outsz)
+{
+    size_t got = 0;
+    char buf[4096];
+    while (got + 1u < outsz) {
+        DWORD n = 0;
+        size_t room = outsz - 1u - got;
+        if (!ReadFile(rd, buf, sizeof(buf), &n, NULL) || n == 0) {
+            break;
+        }
+        if ((size_t)n > room) {
+            n = (DWORD)room;
+        }
+        memcpy(out + got, buf, n);
+        got += n;
+    }
+    out[got] = '\0';
+    return got;
+}
+
+static void fl_trim_first_line(char *out)
+{
+    char *nl = strchr(out, '\n');
+    if (nl != NULL) {
+        *nl = '\0';
+    }
+    if (out[0] != '\0' && out[strlen(out) - 1u] == '\r') {
+        out[strlen(out) - 1u] = '\0';
+    }
+}
+
 /* Run fl-launch.exe pick-* ; write the first stdout line (UTF-8) into out. */
 static HRESULT fl_run_pick(const WCHAR *verb, const WCHAR *start, const WCHAR *name, char *out, size_t outsz)
 {
@@ -240,22 +286,11 @@ static HRESULT fl_run_pick(const WCHAR *verb, const WCHAR *start, const WCHAR *n
     STARTUPINFOW si;
     PROCESS_INFORMATION pi;
     DWORD code = 1;
-    size_t got = 0;
-    char buf[4096];
-    int ncmd;
 
     if (fl_launch_path(launch, MAX_PATH) != 0) {
         return E_FAIL;
     }
-    if (name != NULL && name[0] != L'\0' && wcscmp(verb, L"save-file") == 0) {
-        ncmd = _snwprintf(cmdline, FL_PATH_MAX, L"\"%s\" %s \"%s\" \"%s\"", launch, verb,
-                          start != NULL && start[0] != L'\0' ? start : L".", name);
-    } else if (start != NULL && start[0] != L'\0') {
-        ncmd = _snwprintf(cmdline, FL_PATH_MAX, L"\"%s\" %s \"%s\"", launch, verb, start);
-    } else {
-        ncmd = _snwprintf(cmdline, FL_PATH_MAX, L"\"%s\" %s", launch, verb);
-    }
-    if (ncmd < 0 || (size_t)ncmd >= FL_PATH_MAX) {
+    if (fl_pick_cmdline(cmdline, FL_PATH_MAX, launch, verb, start, name) != 0) {
         return E_FAIL;
     }
 
@@ -280,21 +315,7 @@ static HRESULT fl_run_pick(const WCHAR *verb, const WCHAR *start, const WCHAR *n
     }
     CloseHandle(wr);
     CloseHandle(pi.hThread);
-    for (;;) {
-        DWORD n = 0;
-        if (!ReadFile(rd, buf, sizeof(buf), &n, NULL) || n == 0) {
-            break;
-        }
-        if (got + n >= outsz) {
-            n = (DWORD)(outsz - 1u - got);
-        }
-        memcpy(out + got, buf, n);
-        got += n;
-        if (got + 1u >= outsz) {
-            break;
-        }
-    }
-    out[got] = '\0';
+    (void)fl_read_stdout(rd, out, outsz);
     CloseHandle(rd);
     WaitForSingleObject(pi.hProcess, INFINITE);
     GetExitCodeProcess(pi.hProcess, &code);
@@ -305,15 +326,7 @@ static HRESULT fl_run_pick(const WCHAR *verb, const WCHAR *start, const WCHAR *n
     if (code != 0) {
         return E_FAIL;
     }
-    {
-        char *nl = strchr(out, '\n');
-        if (nl != NULL) {
-            *nl = '\0';
-        }
-        if (out[0] != '\0' && out[strlen(out) - 1u] == '\r') {
-            out[strlen(out) - 1u] = '\0';
-        }
-    }
+    fl_trim_first_line(out);
     return out[0] != '\0' ? S_OK : HRESULT_FROM_WIN32(ERROR_CANCELLED);
 }
 

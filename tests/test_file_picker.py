@@ -73,14 +73,22 @@ def test_pick_kdialog_first_on_lxqt(tmp_path: Path) -> None:
     assert "--getsavefilename" in runner.calls[0]["argv"]
 
 
-def test_pick_cancel_and_missing(tmp_path: Path) -> None:
+def test_pick_cancel(tmp_path: Path) -> None:
     runner = RecordingRunner(responses={"zenity": 1})
     with pytest.raises(fp.PickCancelled):
         fp.pick("file", str(tmp_path), env={}, runner=runner, which=_which_zenity)
+
+
+def test_pick_missing_picker() -> None:
+    runner = RecordingRunner()
     with pytest.raises(fp.PickNotFound):
-        fp.pick("dir", env={}, runner=RecordingRunner(), which=_which_none)
+        fp.pick("dir", env={}, runner=runner, which=_which_none)
+
+
+def test_pick_unknown_kind() -> None:
+    runner = RecordingRunner()
     with pytest.raises(ForkLinuxError, match="unknown picker kind"):
-        fp.pick("nope", env={}, runner=RecordingRunner(), which=_which_none)
+        fp.pick("nope", env={}, runner=runner, which=_which_none)
 
 
 def test_pick_empty_stdout_is_cancel(tmp_path: Path) -> None:
