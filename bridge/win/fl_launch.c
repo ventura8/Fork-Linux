@@ -4,10 +4,9 @@
  *
  *   fl-launch.exe <verb> [args...]
  *
- *   terminal | open | reveal | run
- *                              start the host tool detached and return 0 at once
+ *   terminal | open | reveal   start the host tool detached and return 0 at once
  *                              (FL_REQ_HOST_HELPER | FL_REQ_DETACH)
- *   diff | merge | edit        wait for the host tool and return its exit status
+ *   diff | merge | edit | run  wait for the host tool and return its exit status
  *                              (FL_REQ_HOST_HELPER)
  *   pick-dir | pick-file | save-file
  *                              Linux file/folder picker; path on stdout (cancel: 1)
@@ -50,8 +49,8 @@ static const struct verb verbs[] = {
     { "diff", FL_REQ_HOST_HELPER },
     { "merge", FL_REQ_HOST_HELPER },
     { "edit", FL_REQ_HOST_HELPER },
-    /* Detached: IDEs (and any long-lived tool) must not block Fork. */
-    { "run", FL_REQ_HOST_HELPER | FL_REQ_DETACH },
+    /* Waits; the IDE personas below start their ``run <id>`` detached on their own. */
+    { "run", FL_REQ_HOST_HELPER },
     { "pick-dir", FL_REQ_HOST_HELPER },
     { "pick-file", FL_REQ_HOST_HELPER },
     { "save-file", FL_REQ_HOST_HELPER },
