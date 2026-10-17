@@ -40,7 +40,7 @@ DIAGNOSTICS = (
 )
 # The git-instance dialog's one button stays centred 41 px above its bottom edge.
 GIT_INSTANCE_BUTTON_FROM_BOTTOM = 41
-SEED_PATTERNS = ("wine-*.tar.xz", "Fork-*.exe", "winetricks-*", "selawik-*.zip")
+SEED_PATTERNS = ("wine-*.tar.xz", "Fork-*.exe", "winetricks-*", "*-notosans-*.ttf")
 
 
 def seed_caches(home: Path) -> None:

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fixtures.setup_ctx import USER, FakeUI, FakeWine, seed_ui_font
+from fixtures.setup_ctx import USER, FakeUI, FakeWine, ui_font_override
 
 from fork_linux import bootstrap, cli, manifest
 from fork_linux import ui as ui_mod
@@ -63,8 +63,8 @@ class Harness:
         self.ui = FakeUI()
         override = {
             "winetricks": {"sha256": hashlib.sha256(SCRIPT).hexdigest(), "size": len(SCRIPT)},
-            # The interface font comes from the download cache: a fake archive pinned by the override.
-            "ui_font": seed_ui_font(self.paths, manifest.load().ui_font),
+            # The interface font comes from the download cache: fake faces pinned by the override.
+            "ui_font": ui_font_override(self.paths, manifest.load().ui_font),
         }
         self.paths.config_dir.mkdir(parents=True, exist_ok=True)
         self.paths.manifest_override.write_text(json.dumps(override))

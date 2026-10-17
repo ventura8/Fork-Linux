@@ -2,7 +2,7 @@
   {
     "id": "S-FRESH-MANAGED",
     "area": "setup",
-    "title": "Fresh setup with the managed Wine runtime, .NET, fonts, Selawik and the official Fork",
+    "title": "Fresh setup with the managed Wine runtime, .NET, fonts, the interface font and the official Fork",
     "tiers": [
       "real-fork"
     ],
@@ -1535,7 +1535,7 @@
   {
     "id": "I-OPEN-IN-IDES",
     "area": "integration",
-    "title": "Every IDE Fork supports appears in Open in and starts its Linux program on the repository",
+    "title": "Every IDE Fork supports appears in Open in with its own icon and starts its Linux program on the repository",
     "tiers": [
       "real-fork"
     ],
@@ -1860,16 +1860,16 @@
     ]
   },
   {
-    "id": "I-FONT-SELAWIK",
+    "id": "I-FONT-UI",
     "area": "integration",
-    "title": "Fork's interface font is Selawik",
+    "title": "Fork's interface font is Noto Sans (as FL UI Sans), semibold included",
     "tiers": [
       "real-fork"
     ],
     "provided_by": "this-branch",
     "pending_merge": false,
     "tests": [
-      "tests/e2e/test_real_display.py::test_interface_text_is_drawn_in_selawik"
+      "tests/e2e/test_real_display.py::test_interface_text_is_drawn_in_the_interface_font"
     ]
   },
   {

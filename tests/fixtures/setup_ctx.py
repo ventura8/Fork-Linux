@@ -5,17 +5,16 @@ Wine, wineserver and winetricks would, with the effects the steps verify:
 ``wineboot`` writes 64-bit hives and the drive links, ``regedit /S`` merges the
 batch into ``user.reg`` / ``system.reg``, ``winetricks dotnet48`` records the
 .NET release (and writes WPF's composite font where that version keeps it) and ``corefonts``
-drops ``arial.ttf``. :func:`ui_font_archive`
-builds a stand-in for the pinned interface font zip, so no test downloads it.
+drops ``arial.ttf``. :func:`fake_face` builds a tiny TrueType stand-in for each
+pinned interface font face, so no test downloads it.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import hashlib
-import io
 import os
-import zipfile
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -128,35 +127,47 @@ def make_ctx(
 # -- interface font ------------------------------------------------------------------------------
 
 
-def ui_font_archive(font: manifest_mod.UiFont, extra: dict[str, bytes] | None = None) -> bytes:
-    """A zip with a small fake TrueType file for every face of ``font`` (plus ``extra`` members)."""
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as bundle:
-        for file_name, face in font.faces:
-            bundle.writestr(file_name, b"\x00\x01\x00\x00" + face.encode("ascii"))
-        for name, data in (extra or {}).items():
-            bundle.writestr(name, data)
-    return buffer.getvalue()
+def fake_face(label: str) -> bytes:
+    """A minimal TrueType file (``head`` and a one-record ``name`` table) that :mod:`fork_linux.font_names` accepts."""
+    head = struct.pack(">IIII", 0x00010000, 0x00010000, 0, 0x5F0F3CF5) + b"\x00" * 38
+    text = label.encode("utf-16-be")
+    name = struct.pack(">HHH", 0, 1, 18) + struct.pack(">6H", 3, 1, 0x409, 1, len(text), 0) + text
+    tables = [(b"head", head), (b"name", name)]
+    out = bytearray(struct.pack(">IHHHH", 0x00010000, len(tables), 32, 1, 0))
+    offset = 12 + 16 * len(tables)
+    body = b""
+    for tag, data in tables:
+        out.extend(struct.pack(">4sIII", tag, 0, offset + len(body), len(data)))
+        body += data + b"\x00" * (-len(data) % 4)
+    return bytes(out) + body
 
 
-def ui_font_pin(data: bytes) -> dict[str, Any]:
-    """The ``ui_font`` manifest fields that pin ``data`` (an override or :func:`dataclasses.replace` input)."""
-    return {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+def seed_ui_font(paths: Paths, font: manifest_mod.UiFont,
+                 data: dict[str, bytes] | None = None) -> manifest_mod.UiFont:
+    """Put a fake face for every file of ``font`` in the download cache; return ``font`` pinned to them.
+
+    ``data`` overrides the bytes of some faces (by installed file name).
+    """
+    files = []
+    for item in font.files:
+        payload = (data or {}).get(item.file, fake_face(item.face))
+        pinned = dataclasses.replace(item, sha256=hashlib.sha256(payload).hexdigest(), size=len(payload))
+        target = paths.downloads_dir / pinned.cache_name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
+        files.append(pinned)
+    return dataclasses.replace(font, files=tuple(files))
 
 
-def seed_ui_font(paths: Paths, font: manifest_mod.UiFont, data: bytes | None = None) -> dict[str, Any]:
-    """Put a fake interface font archive in the download cache; return the ``ui_font`` fields pinning it."""
-    payload = ui_font_archive(font) if data is None else data
-    target = paths.downloads_dir / font.archive_name
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(payload)
-    return ui_font_pin(payload)
+def ui_font_override(paths: Paths, font: manifest_mod.UiFont) -> dict[str, Any]:
+    """Seed fake faces (:func:`seed_ui_font`); return the manifest override ``ui_font`` entry pinning them."""
+    pinned = seed_ui_font(paths, font)
+    return {"faces": {item.file: {"sha256": item.sha256, "size": item.size} for item in pinned.files}}
 
 
-def use_fake_ui_font(ctx: Ctx, data: bytes | None = None) -> manifest_mod.UiFont:
-    """Pin ``ctx``'s manifest to a fake interface font archive already in the download cache."""
-    font = ctx.manifest.ui_font
-    ctx.manifest.ui_font = dataclasses.replace(font, **seed_ui_font(ctx.paths, font, data))
+def use_fake_ui_font(ctx: Ctx, data: dict[str, bytes] | None = None) -> manifest_mod.UiFont:
+    """Pin ``ctx``'s manifest to fake interface font faces already in the download cache."""
+    ctx.manifest.ui_font = seed_ui_font(ctx.paths, ctx.manifest.ui_font, data)
     return ctx.manifest.ui_font
 
 

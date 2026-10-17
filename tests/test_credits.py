@@ -53,7 +53,7 @@ def test_prior_art_entries() -> None:
     assert "https://github.com/jasonnicholson/fork-wine-setup" in urls
     assert "https://github.com/fork-dev/Tracker/issues/2033" in urls
     assert "https://www.winehq.org" in urls
-    assert "https://github.com/microsoft/Selawik" in urls
+    assert "https://github.com/notofonts/latin-greek-cyrillic" in urls
     assert "https://notofonts.github.io" in urls
     assert credits.PRIOR_ART == [*credits.COMMUNITY_PRIOR_ART, *credits.UPSTREAM_PROJECTS]
 

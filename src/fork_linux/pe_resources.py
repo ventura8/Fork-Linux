@@ -5,7 +5,8 @@ limited to three levels, 4096 entries per directory, a visited-offset set and
 64 MiB of resource data; icon groups are capped and each icon image is read
 once. Any malformation raises :class:`IntegrityFailed`.
 Only what icon and version extraction needs is parsed; nothing is executed,
-patched or written back.
+patched or written back (:mod:`fork_linux.pe_icon` writes icons into copies of our own
+``fl-launch.exe`` only).
 """
 
 from __future__ import annotations
@@ -324,6 +325,10 @@ class PEFile:
         end = min(section.raw_pointer + section.raw_size, len(self._data))
         # A view, not a copy: the section may be large and is only read sparsely.
         return _ResourceWalker(memoryview(self._data)[start:end]).walk()
+
+    def resources(self) -> list[tuple[tuple[ResourceKey, ...], bytes]]:
+        """Every resource as ``((type, name, language), data)``, in directory order."""
+        return [(leaf.path, self._rva_slice(leaf.rva, leaf.size)) for leaf in self._resource_leaves()]
 
     def _leaves_of(self, resource_type: int) -> list[_Leaf]:
         return [leaf for leaf in self._resource_leaves() if leaf.path[0] == resource_type]

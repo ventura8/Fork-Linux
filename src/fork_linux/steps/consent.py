@@ -48,7 +48,7 @@ def downloads(ctx: Ctx) -> list[str]:
         f"winetricks {winetricks.version} from GitHub: {_mb(winetricks.size)}",
         f"Microsoft .NET Framework 4.8 from Microsoft, via winetricks: {DOTNET_SIZE}",
         f"Microsoft core fonts (Arial, Verdana, ...) via winetricks: {COREFONTS_SIZE}",
-        f"{font.family} {font.version} interface font ({font.license}) from GitHub (Microsoft): {_mb(font.size)}",
+        f"{font.source} {font.version} interface font ({font.license}) from GitHub (Noto project): {_mb(font.size)}",
         f"Fork {version} installer from {credits.INSTALLER_HOST}: {_mb(size)}",
     ]
 

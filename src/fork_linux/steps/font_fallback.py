@@ -1,4 +1,4 @@
-"""Step ``font_fallback``: Linux fonts for the scripts Selawik lacks, through WPF's composite font.
+"""Step ``font_fallback``: Linux fonts for the scripts the interface font lacks, through WPF's composite font.
 
 When Fork's interface font has no glyph for a character (Cyrillic, Greek,
 Chinese, Japanese, Korean, ...), WPF falls back to its composite font

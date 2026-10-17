@@ -54,6 +54,7 @@ _VERB = re.compile(r"dotnet\d{2,3}", re.ASCII)
 _WINETRICKS_VERSION = re.compile(r"\d{8}", re.ASCII)
 _FONT_FILE = re.compile(r"[a-z0-9_-]{1,64}\.ttf", re.ASCII)
 _FONT_FACE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ]{0,62}", re.ASCII)
+_FONT_WEIGHTS = ("Regular", "Bold", "Semibold", "Semilight", "Light")
 _LICENSE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+-]{0,63}", re.ASCII)
 _HOSTNAME = re.compile(r"(?=.{1,253}\Z)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*")
 
@@ -86,21 +87,42 @@ class Winetricks:
 
 
 @dataclass(frozen=True)
-class UiFont:
-    """The pinned font that stands in for Segoe UI: a zip of TrueType faces."""
+class FontFile:
+    """One pinned face of the interface font: where it comes from and how it is installed."""
 
-    family: str
-    version: str
-    license: str
+    file: str  # the file name in C:\\windows\\Fonts
+    face: str  # the face name it is registered under
+    weight: str  # Regular, Bold, Semibold, Light (the name it gets in :attr:`UiFont.family`)
     url: str
     sha256: str
     size: int
-    faces: tuple[tuple[str, str], ...]
 
     @property
-    def archive_name(self) -> str:
-        """The download cache file name (``selawik-1.01.zip``)."""
-        return f"{self.family.lower().replace(' ', '-')}-{self.version}.zip"
+    def cache_name(self) -> str:
+        """The download cache file name: the URL's file name behind its sha256 prefix."""
+        return f"{self.sha256[:16]}-{self.url.rsplit('/', 1)[-1].lower()}"
+
+
+@dataclass(frozen=True)
+class UiFont:
+    """The pinned font that stands in for Segoe UI: one downloaded TrueType file per face,
+    installed renamed to :attr:`family` (:mod:`fork_linux.font_names`)."""
+
+    family: str
+    source: str
+    version: str
+    license: str
+    files: tuple[FontFile, ...]
+
+    @property
+    def faces(self) -> tuple[tuple[str, str], ...]:
+        """``(file name, face name)`` of every face."""
+        return tuple((item.file, item.face) for item in self.files)
+
+    @property
+    def size(self) -> int:
+        """Bytes downloaded for all faces."""
+        return sum(item.size for item in self.files)
 
 
 @dataclass(frozen=True)
@@ -318,26 +340,31 @@ class Manifest:
         self.dotnet_min_release = _int(dotnet["min_release"], "dotnet.min_release", 1)
 
     def _load_ui_font(self, value: Any) -> None:
-        font = _obj(value, "ui_font", ("family", "version", "license", "url", "sha256", "size", "faces"))
+        font = _obj(value, "ui_font", ("family", "source", "version", "license", "faces"))
         family = _str(font["family"], "ui_font.family", _FONT_FACE)
-        raw_faces = _entries(font["faces"], _UI_FONT_FACES)
-        faces = tuple(
-            (_str(name, _UI_FONT_FACES, _FONT_FILE), _str(face, f"{_UI_FONT_FACES}.{name}", _FONT_FACE))
-            for name, face in raw_faces.items()
-        )
-        names = [face for _name, face in faces]
+        files = []
+        for name, entry in _entries(font["faces"], _UI_FONT_FACES).items():
+            where = f"{_UI_FONT_FACES}.{name}"
+            face = _obj(entry, where, ("face", "weight", "url", "sha256", "size"))
+            files.append(FontFile(
+                file=_str(name, _UI_FONT_FACES, _FONT_FILE),
+                face=_str(face["face"], f"{where}.face", _FONT_FACE),
+                weight=_choice(face["weight"], f"{where}.weight", _FONT_WEIGHTS),
+                url=_https(face["url"], f"{where}.url"),
+                sha256=_str(face["sha256"], f"{where}.sha256", _SHA256),
+                size=_int(face["size"], f"{where}.size", 1),
+            ))
+        names = [item.face for item in files]
         if len(set(names)) != len(names):
             raise _fail(_UI_FONT_FACES, "contains duplicate face names")
         if family not in names:
             raise _fail(_UI_FONT_FACES, f"must include the regular face {family!r}")
         self.ui_font = UiFont(
             family=family,
+            source=_str(font["source"], "ui_font.source", _FONT_FACE),
             version=_version(font["version"], "ui_font.version"),
             license=_str(font["license"], "ui_font.license", _LICENSE),
-            url=_https(font["url"], "ui_font.url"),
-            sha256=_str(font["sha256"], "ui_font.sha256", _SHA256),
-            size=_int(font["size"], "ui_font.size", 1),
-            faces=faces,
+            files=tuple(files),
         )
 
     def _load_fork(self, value: Any) -> None:

@@ -28,7 +28,7 @@ WELCOME_NAME = (460, 138)
 WELCOME_EMAIL = (460, 194)
 WELCOME_FINISH = (523, 337)
 # The git-instance dialog ("Fork", 680 wide) changes height with its state and the UI font
-# (Selawik: 382 to start, 446 while updating, 340 when done), but its one button, Start
+# (Selawik, before 1.0.5: 382 to start, 446 while updating, 340 when done), but its one button, Start
 # (disabled while updating) or Close, stays centred 41 px above the bottom edge.
 GIT_INSTANCE_BUTTON_FROM_BOTTOM = 41
 

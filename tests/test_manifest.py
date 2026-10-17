@@ -10,12 +10,12 @@ from typing import Any
 import pytest
 
 from fork_linux import manifest
-from fork_linux.errors import ExitCode, IntegrityFailed, NotFound, UsageError
+from fork_linux.errors import ExitCode, ForkLinuxError, IntegrityFailed, NotFound, UsageError
 
 WINE_ID = "kron4ek-11.18-staging-wow64"
 # The previous default, still listed so `config set wine.build` can go back to it.
 OLD_WINE_ID = "kron4ek-11.0-staging-wow64"
-REVISION = "2026.10.3"
+REVISION = "2026.10.4"
 DELETE = object()
 GOOD_SHA = "a" * 64
 
@@ -119,35 +119,42 @@ def test_winetricks_pin() -> None:
     )
 
 
+NOTO_URL = "https://raw.githubusercontent.com/notofonts/notofonts.github.io/5c3913063bb189df4edc94b766584dfb4c04a187/fonts/NotoSans/hinted/ttf/NotoSans-"
+
+
 def test_ui_font_pin() -> None:
     font = manifest.load().ui_font
-    assert font == manifest.UiFont(
-        family="Selawik",
-        version="1.01",
-        license="OFL-1.1",
-        url="https://github.com/microsoft/Selawik/releases/download/1.01/Selawik_Release.zip",
-        sha256="3f62c51e05e3b5a1e6241cf92a371f0be2ea1183aa87b30718bbd40832a8d423",
-        size=530652,
-        faces=(
-            ("selawk.ttf", "Selawik"),
-            ("selawkb.ttf", "Selawik Bold"),
-            ("selawkl.ttf", "Selawik Light"),
-            ("selawksb.ttf", "Selawik Semibold"),
-            ("selawksl.ttf", "Selawik Semilight"),
-        ),
+    assert (font.family, font.source, font.version, font.license) == ("FL UI Sans", "Noto Sans", "2.015", "OFL-1.1")
+    assert font.files == (
+        manifest.FontFile("flui.ttf", "FL UI Sans", "Regular", NOTO_URL + "Regular.ttf",
+                          "478c558ea716033cd60c03438f628dfa75694dcf6b5f6d505a2f05fd2b4f3823", 621572),
+        manifest.FontFile("fluib.ttf", "FL UI Sans Bold", "Bold", NOTO_URL + "Bold.ttf",
+                          "1df075a380fc7cb898acf64c1f7b3b4dd780de3caa860178bf929de35817a913", 631484),
+        manifest.FontFile("fluisb.ttf", "FL UI Sans Semibold", "Semibold", NOTO_URL + "SemiBold.ttf",
+                          "a4e91fd530ac2b4ef5367240144ff37d7d65d66cf76f2e9a2187b93c676f92d0", 625052),
+        manifest.FontFile("fluil.ttf", "FL UI Sans Light", "Light", NOTO_URL + "Light.ttf",
+                          "8bf10e8d399c5b70554eb76fe2629899a1098f1a8acb599804b76c619845ce0c", 607136),
     )
-    assert font.archive_name == "selawik-1.01.zip"
-
-
-def test_ui_font_archive_name_has_no_spaces() -> None:
-    data = mutate(base_data(), ("ui_font", "family"), "Open Sans")
-    data["ui_font"]["faces"] = {"opensans.ttf": "Open Sans"}
-    assert manifest.Manifest(data).ui_font.archive_name == "open-sans-1.01.zip"
+    assert font.faces[0] == ("flui.ttf", "FL UI Sans")
+    assert font.size == 621572 + 631484 + 625052 + 607136
+    assert font.files[2].cache_name == "a4e91fd530ac2b4e-notosans-semibold.ttf"
 
 
 def test_ui_font_comment_keys_are_ignored() -> None:
     data = mutate(base_data(), ("ui_font", "faces", "_comment"), "regular first")
-    assert len(manifest.Manifest(data).ui_font.faces) == 5
+    assert len(manifest.Manifest(data).ui_font.faces) == 4
+
+
+def test_ui_font_rejects_bad_faces() -> None:
+    face = base_data()["ui_font"]["faces"]["fluib.ttf"]
+    for key, value, message in (("weight", "Heavy", "must be one of"), ("url", "http://x/a.ttf", "https"),
+                                ("sha256", "abc", "invalid value"), ("size", 0, ">= 1")):
+        data = mutate(base_data(), ("ui_font", "faces", "fluib.ttf", key), value)
+        with pytest.raises(ForkLinuxError, match=message):
+            manifest.Manifest(data)
+    duplicate = mutate(base_data(), ("ui_font", "faces", "copy.ttf"), {**face})
+    with pytest.raises(ForkLinuxError, match="duplicate face names"):
+        manifest.Manifest(duplicate)
 
 
 SHIPPED_INSTALLER_SHA = "fee9b2bf84aca6297d7b7e10b29a09c624ac16a82486f2c04136f5ebaf8f079e"
@@ -545,23 +552,27 @@ INVALID: list[tuple[tuple[str, ...], Any]] = [
     (("dotnet", "min_release"), 0),
     (("ui_font",), DELETE),
     (("ui_font",), []),
-    (("ui_font", "family"), "Selawik!"),
-    (("ui_font", "family"), " Selawik"),
+    (("ui_font", "family"), "Noto!"),
+    (("ui_font", "family"), " FL UI Sans"),
     (("ui_font", "family"), "Noto Sans"),
+    (("ui_font", "source"), ""),
     (("ui_font", "version"), "1.01-beta"),
     (("ui_font", "license"), "OFL 1.1"),
     (("ui_font", "license"), ""),
-    (("ui_font", "url"), "http://github.com/microsoft/Selawik/Selawik_Release.zip"),
-    (("ui_font", "sha256"), "PENDING"),
-    (("ui_font", "size"), 0),
+    (("ui_font", "faces", "fluib.ttf", "url"), "http://github.com/notofonts/NotoSans-Bold.ttf"),
+    (("ui_font", "faces", "fluib.ttf", "sha256"), "PENDING"),
+    (("ui_font", "faces", "fluib.ttf", "size"), 0),
+    (("ui_font", "faces", "fluib.ttf", "extra"), 1),
+    (("ui_font", "faces", "fluib.ttf", "face"), "FL UI Sans"),
+    (("ui_font", "faces", "fluib.ttf", "face"), "FL/Bold"),
+    (("ui_font", "faces", "fluib.ttf"), 1),
+    (("ui_font", "faces", "fluib.ttf"), "FL UI Sans Bold"),
     (("ui_font", "faces"), []),
     (("ui_font", "faces"), {}),
-    (("ui_font", "faces", "../selawk.ttf"), "Selawik Other"),
-    (("ui_font", "faces", "Selawk.TTF"), "Selawik Other"),
-    (("ui_font", "faces", "selawk.otf"), "Selawik Other"),
-    (("ui_font", "faces", "selawkb.ttf"), "Selawik"),
-    (("ui_font", "faces", "selawkb.ttf"), "Selawik/Bold"),
-    (("ui_font", "faces", "selawkb.ttf"), 1),
+    (("ui_font", "faces", "../flui.ttf"), {"face": "X", "weight": "Bold", "url": "https://a.b/c", "sha256": "0" * 64,
+                                           "size": 1}),
+    (("ui_font", "faces", "FLUI.TTF"), {"face": "X", "weight": "Bold", "url": "https://a.b/c", "sha256": "0" * 64,
+                                        "size": 1}),
     (("ui_font", "extra"), 1),
     (("fork", "default"), "2.0.0"),
     (("fork", "default"), "v2.23.2"),

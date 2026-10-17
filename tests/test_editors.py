@@ -169,3 +169,96 @@ def test_inputs_signature_lists_stubs(tmp_path: Path) -> None:
     _exe(tmp_path, "zed")
     signature = editors.inputs_signature(editors.discover({"PATH": str(tmp_path)}))
     assert signature["editors"][0]["stubs"] == [["programs", "Zed\\Zed.exe"]]
+
+
+# -- icons -----------------------------------------------------------------------------------------
+
+
+def _png(path: Path, size: int, rgba: tuple[int, int, int, int] = (0, 120, 215, 255)) -> Path:
+    from fork_linux import imaging
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(imaging.png_encode(size, size, bytes(rgba) * size * size))
+    return path
+
+
+def _desktop(directory: Path, name: str, exec_line: str, icon: str, extra: str = "") -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / name).write_text(
+        f"[Desktop Entry]\nType=Application\nExec={exec_line}\nIcon={icon}\n{extra}"
+        f"[Desktop Action new]\nExec=other\nIcon=ignored\n",
+        encoding="utf-8",
+    )
+
+
+def test_find_icon_from_the_desktop_entry(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    data = tmp_path / "data"
+    system = tmp_path / "system"
+    code = _exe(bin_dir, "code")
+    _exe(bin_dir, "cursor")
+    _exe(bin_dir, "zed")
+    _exe(bin_dir, "subl")
+    _exe(bin_dir, "atom")
+    _exe(bin_dir, "fleet")
+    snap_icon = _png(tmp_path / "snap" / "vscode.png", 32)
+    _desktop(data / "applications", "code.desktop", f"{code} --force-user-env %F", str(snap_icon))
+    _desktop(system / "applications", "cursor.desktop", '/opt/cursor/cursor "%F', "co.anysphere.cursor")
+    themed = _png(system / "icons" / "hicolor" / "256x256" / "apps" / "co.anysphere.cursor.png", 256)
+    _png(system / "icons" / "hicolor" / "32x32" / "apps" / "co.anysphere.cursor.png", 32)
+    _desktop(system / "applications", "zed.desktop", "zed %U", "zed.png")
+    pixmap = _png(system / "pixmaps" / "zed.png", 48)
+    _desktop(system / "applications", "subl.desktop", "subl", "/opt/subl/icon.svg")
+    _desktop(system / "applications", "subl2.desktop", "subl", "/opt/subl/missing.png")
+    _desktop(system / "applications", "atom.desktop", "atom", "no-such-icon")
+    _desktop(system / "applications", "fleet.desktop", "fleet", "", "NoDisplay=true\n")
+    (system / "applications" / "huge.desktop").write_bytes(b"#" * (editors.MAX_DESKTOP_FILE + 1))
+    (system / "applications" / "broken.desktop").symlink_to(tmp_path / "missing")
+    env = {"PATH": str(bin_dir), "XDG_DATA_HOME": str(data), "XDG_DATA_DIRS": f"{system}:{tmp_path / 'none'}"}
+    icons = {item.id: editors.find_icon(item, env) for item in editors.discover(env)}
+    assert icons == {"code": str(snap_icon), "cursor": str(themed), "sublime": None, "atom": None,
+                     "zed": str(pixmap), "fleet": None}
+    assert editors.data_dirs({}) == []
+    assert editors.data_dirs({"HOME": "/h", "XDG_DATA_DIRS": "/s"}) == [
+        "/h/.local/share", "/s", "/h/.local/share/flatpak/exports/share"]
+
+
+def test_stub_payload_falls_back_to_the_plain_launcher(tmp_path: Path) -> None:
+    from fixtures.pe_builder import build_pe
+
+    from fork_linux.pe_resources import PEFile
+
+    launch = build_pe()
+    good = _png(tmp_path / "good.png", 32)
+    assert PEFile(editors.stub_payload(launch, str(good))).group_icons()[0].entries[0].width == 16
+    assert editors.stub_payload(launch, None) == launch
+    assert editors.stub_payload(launch, str(tmp_path / "missing.png")) == launch
+    (tmp_path / "bad.png").write_bytes(b"not a png")
+    assert editors.stub_payload(launch, str(tmp_path / "bad.png")) == launch
+    big = tmp_path / "big.png"
+    big.write_bytes(b"\x00" * (editors.MAX_ICON_FILE + 1))
+    assert editors.stub_payload(launch, str(big)) == launch
+
+
+def test_install_gives_each_stub_its_icon(paths: Paths, tmp_path: Path) -> None:
+    from fixtures.pe_builder import build_pe
+
+    from fork_linux.pe_resources import PEFile
+
+    paths.prefix.mkdir(parents=True)
+    launch = tmp_path / "fl-launch.exe"
+    launch.write_bytes(build_pe())
+    bin_dir = tmp_path / "bin"
+    zed = _exe(bin_dir, "zed")
+    _exe(bin_dir, "cursor")
+    data = tmp_path / "data"
+    _desktop(data / "applications", "dev.zed.Zed.desktop", str(zed), str(_png(tmp_path / "zed.png", 64)))
+    env = {"PATH": str(bin_dir), "XDG_DATA_HOME": str(data), "XDG_DATA_DIRS": str(tmp_path / "none")}
+    editors.install(paths, "ada", launch, editors.discover(env), env)
+    zed_stub = editors.programs_root(paths, "ada") / "Zed" / "Zed.exe"
+    assert [entry.width for entry in PEFile.from_path(zed_stub).group_icons()[0].entries] == [16, 20, 24, 32, 40, 48,
+                                                                                               64]
+    assert (editors.editors_win_dir(paths) / "Zed.exe").read_bytes() == zed_stub.read_bytes()
+    assert (editors.programs_root(paths, "ada") / "cursor" / "Cursor.exe").read_bytes() == launch.read_bytes()
+    signature = editors.inputs_signature(editors.discover(env), env)
+    assert [item["icon"] for item in signature["editors"]] == [None, str(tmp_path / "zed.png")]

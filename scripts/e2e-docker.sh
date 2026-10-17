@@ -25,7 +25,7 @@
 #   /e2e           the scratch root FL_E2E_SCRATCH or /var/tmp/fork-linux-e2e/<NAME> (rw, 0700);
 #                  HOME=/e2e/home, FL_E2E_ROOT=/e2e/root, screenshots in /e2e/root/shots
 #   /seed          FL_E2E_SEED_DIR or /var/tmp/fork-linux-e2e/seed (read-only, when present):
-#                  wine-*.tar.xz, Fork-*.exe, winetricks-*, selawik-*.zip, winetricks/ cache;
+#                  wine-*.tar.xz, Fork-*.exe, winetricks-*, *-notosans-*.ttf, winetricks/ cache;
 #                  FL_E2E_SEED=/seed FL_E2E_WINETRICKS_CACHE=/seed/winetricks (our code
 #                  re-verifies every file by size and sha256)
 # Runs as your uid:gid with --init --rm, a label fl-e2e=<NAME>, network on, no host X socket,

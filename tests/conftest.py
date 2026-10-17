@@ -37,6 +37,8 @@ def _no_system_editors(monkeypatch: pytest.MonkeyPatch) -> None:
     from fork_linux import editors
 
     monkeypatch.setattr(editors, "SYSTEM_DIRS", ())
+    monkeypatch.setattr(editors, "SYSTEM_DATA_DIRS", ())
+    monkeypatch.setattr(editors, "DEFAULT_DATA_DIRS", ())
 
 
 @pytest.fixture

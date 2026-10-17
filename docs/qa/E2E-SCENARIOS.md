@@ -33,7 +33,7 @@ mechanics such as integrity checks and pruning; `docs/qa/UPDATE-SCENARIOS.md` ha
 
 | Id | Scenario | Tiers | Provided by | Tests |
 |---|---|---|---|---|
-| S-FRESH-MANAGED | Fresh setup with the managed Wine runtime, .NET, fonts, Selawik and the official Fork | real-fork | this repository | `tests/e2e/test_real_fork.py::test_01_setup_completes_and_resumes` |
+| S-FRESH-MANAGED | Fresh setup with the managed Wine runtime, .NET, fonts, the interface font and the official Fork | real-fork | this repository | `tests/e2e/test_real_fork.py::test_01_setup_completes_and_resumes` |
 | S-IDEMPOTENT | A second setup is a quick no-op | real-fork | this repository | `tests/e2e/test_real_fork.py::test_01_setup_completes_and_resumes` |
 | S-FORK-VERSION | --fork-version installs that version; a malformed or unpinned one is refused before any step | real-fork | this repository | `tests/e2e/test_real_fork.py::test_01_setup_completes_and_resumes`<br>`tests/e2e/test_real_setup_errors.py::test_unpinned_or_malformed_fork_version_is_refused_first` |
 | S-LATEST | --latest installs the newest Fork of Fork's feed, verified against the feed (trust on first use) | real-fork | this repository | `tests/e2e/test_real_setup_variants.py::test_latest_installs_the_newest_fork` |
@@ -164,7 +164,7 @@ mechanics such as integrity checks and pruning; `docs/qa/UPDATE-SCENARIOS.md` ha
 | I-SHOW-IN-EXPLORER | Show in File Explorer selects the file in the Linux file manager | real-fork | this repository | `tests/e2e/test_real_integration.py::test_show_in_file_explorer_selects_the_file` |
 | I-OPEN-FILE | Open a file with the Linux default application | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_file_uses_the_linux_default_app` |
 | I-CONSOLE-TERMINAL | Open In Shell opens the Linux terminal in the repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_in_shell_runs_the_linux_terminal` |
-| I-OPEN-IN-IDES | Every IDE Fork supports appears in Open in and starts its Linux program on the repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_in_lists_and_starts_every_supported_ide` |
+| I-OPEN-IN-IDES | Every IDE Fork supports appears in Open in with its own icon and starts its Linux program on the repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_in_lists_and_starts_every_supported_ide` |
 | I-HOME-DRIVE | File dialogs reach the Linux home as H: | real-fork | this repository | `tests/e2e/test_real_integration.py::test_home_drive_in_a_file_dialog` |
 | I-SYSTEM-FILE-DIALOGS | With system_file_dialogs on, Init New Repository uses zenity (not Wine's Select repository dialog) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_system_file_dialogs_use_the_linux_picker` |
 | I-CLIPBOARD-OUT | Copy Full Path / Copy Path in Fork reach the Linux clipboard (the full path as Fork sees it, Z:\...) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_copy_path_reaches_the_linux_clipboard` |
@@ -189,7 +189,7 @@ mechanics such as integrity checks and pruning; `docs/qa/UPDATE-SCENARIOS.md` ha
 | I-HIDPI-144 | 144 DPI: Fork scaled 1.5x, once | real-fork | this repository | `tests/e2e/test_real_display.py::test_dpi_scales_fork_once[144]` |
 | I-HIDPI-192 | 192 DPI: Fork scaled 2x, once | real-fork | this repository | `tests/e2e/test_real_display.py::test_dpi_scales_fork_once[192]` |
 | I-SCALE-USER-KEPT | A LayoutScaling the user picked in Fork is kept by setup and every launch, even when it equals the desktop's scale | real-fork | this repository | `tests/e2e/test_real_display.py::test_a_layout_scaling_the_user_picked_is_kept` |
-| I-FONT-SELAWIK | Fork's interface font is Selawik | real-fork | this repository | `tests/e2e/test_real_display.py::test_interface_text_is_drawn_in_selawik` |
+| I-FONT-UI | Fork's interface font is Noto Sans (as FL UI Sans), semibold included | real-fork | this repository | `tests/e2e/test_real_display.py::test_interface_text_is_drawn_in_the_interface_font` |
 | I-HANDOFF-DAEMON | Without a systemd user session, the terminal and apps Fork opens start outside Wine's process tree through the launcher's hand-off daemon (FL_REQ_HANDOFF), never inheriting Wine's NoNewPrivs and seccomp filter | de | `fix/de-e2e` | `tests/e2e_de/test_de_fork.py::test_05_open_in_shell_opens_the_desktops_terminal` |
 
 ## Native-git bridge

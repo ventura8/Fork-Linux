@@ -594,7 +594,7 @@ def test_prefix_ui_font() -> None:
     result = run(ctx, "prefix.ui_font")
     assert result.status == "fail"
     assert result.detail == (
-        "Selawik is not installed (missing selawk.ttf, selawkb.ttf, selawkl.ttf, selawksb.ttf, selawksl.ttf)"
+        "FL UI Sans is not installed (missing flui.ttf, fluib.ttf, fluisb.ttf, fluil.ttf)"
     )
     assert "doctor --fix" in result.hint
     folder = pfx / "drive_c" / "windows" / "Fonts"
@@ -604,12 +604,13 @@ def test_prefix_ui_font() -> None:
         (folder / file_name).write_bytes(b"ttf")
     result = run(ctx, "prefix.ui_font")
     assert result.status == "warn"
-    assert result.detail.startswith("Selawik faces are not registered: Selawik (TrueType), Selawik Bold (TrueType)")
+    assert result.detail.startswith(
+        "FL UI Sans faces are not registered: FL UI Sans (TrueType), FL UI Sans Bold (TrueType)")
     batch = RegBatch()
     for key, name, value in fonts_step.ui_font_registry(font):
         batch.set_sz(key, name, str(value))
     apply_reg(pfx, batch.render_text())
-    assert run(ctx, "prefix.ui_font") == Result("ok", "Selawik 1.01 (OFL-1.1), 5 faces")
+    assert run(ctx, "prefix.ui_font") == Result("ok", "FL UI Sans (Noto Sans 2.015, OFL-1.1), 4 faces")
     assert doctor.get("prefix.ui_font").fix_steps == ("ui_font",)
 
 
@@ -635,7 +636,7 @@ def test_prefix_font_replacements() -> None:
     assert result.status == "warn"
     assert "Segoe UI" in result.detail
     assert "Consolas" in result.detail
-    # A Linux font for Segoe UI itself (instead of Selawik) counts as outdated.
+    # A Linux font for Segoe UI itself (instead of the interface font) counts as outdated.
     lines = [f'"{name}"="Noto Sans"' for name in ("Segoe UI", "Segoe UI Semibold", "Segoe UI Light")]
     user_values(ctx, FONT_KEY, *lines, '"Consolas"="DejaVu Sans Mono"', '"Segoe UI Symbol"="Noto Sans"')
     result = run(ctx, "prefix.font_replacements")
@@ -650,7 +651,7 @@ def test_prefix_font_replacements() -> None:
     result = run(ctx, "prefix.font_replacements")
     assert result.status == "ok"
     assert "Consolas -> DejaVu Sans Mono" in result.detail
-    assert "Segoe UI Light -> Selawik Light | Selawik" in result.detail
+    assert "Segoe UI Light -> FL UI Sans Light | FL UI Sans" in result.detail
     assert "Segoe UI Symbol -> Noto Sans" in result.detail
     assert result.detail.endswith("; system fonts: Segoe UI")
 

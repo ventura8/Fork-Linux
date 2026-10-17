@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "revision": "2026.10.3",
+  "revision": "2026.10.4",
   "bootstrap_revision": 1,
   "wine": {
     "_comment": "Default: the newest Kron4ek staging WoW64 build Fork runs on, E2E-tested on 2026-10-11 in a fresh prefix and in a prefix Kron4ek 11.0 staging created (tests/e2e/RESULTS.md). Kron4ek 11.19 staging is not taken: Fork 2.23.2 (and 2.23.1) exits at start on it with System.IO.FileLoadException 0x80131047 'The given assembly name or codebase was invalid', fresh or upgraded prefix, any locale; a bisection over 11.0..11.19 found 11.18 the newest good build. 11.0 stays listed so 'fork-linux config set wine.build kron4ek-11.0-staging-wow64' goes back to it.",
@@ -40,23 +40,47 @@
     "size": 830687
   },
   "dotnet": {
-    "verbs": ["dotnet48", "dotnet472"],
+    "verbs": [
+      "dotnet48",
+      "dotnet472"
+    ],
     "min_release": 461808
   },
   "ui_font": {
-    "_comment": "Selawik: Microsoft's SIL OFL 1.1 fallback for Segoe UI with matching metrics; Fork's interface font under Wine (spike S10).",
-    "family": "Selawik",
-    "version": "1.01",
+    "_comment": "Noto Sans 2.015 (SIL OFL 1.1, no reserved font name; the Noto Project Authors), the hinted static faces from notofonts.github.io at a pinned commit. Installed renamed to its own family 'FL UI Sans' (font_names.py): Wine also sees the desktop's own Noto Sans (often Regular and Bold only), and WPF then drew Fork's semibold text regular. Replaced Selawik 1.01 in 1.0.5: Selawik's hinted advances gave uneven letter spacing under Wine (E2E 2026-10-17, RESULTS.md).",
+    "family": "FL UI Sans",
+    "source": "Noto Sans",
+    "version": "2.015",
     "license": "OFL-1.1",
-    "url": "https://github.com/microsoft/Selawik/releases/download/1.01/Selawik_Release.zip",
-    "sha256": "3f62c51e05e3b5a1e6241cf92a371f0be2ea1183aa87b30718bbd40832a8d423",
-    "size": 530652,
     "faces": {
-      "selawk.ttf": "Selawik",
-      "selawkb.ttf": "Selawik Bold",
-      "selawkl.ttf": "Selawik Light",
-      "selawksb.ttf": "Selawik Semibold",
-      "selawksl.ttf": "Selawik Semilight"
+      "flui.ttf": {
+        "face": "FL UI Sans",
+        "weight": "Regular",
+        "url": "https://raw.githubusercontent.com/notofonts/notofonts.github.io/5c3913063bb189df4edc94b766584dfb4c04a187/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf",
+        "sha256": "478c558ea716033cd60c03438f628dfa75694dcf6b5f6d505a2f05fd2b4f3823",
+        "size": 621572
+      },
+      "fluib.ttf": {
+        "face": "FL UI Sans Bold",
+        "weight": "Bold",
+        "url": "https://raw.githubusercontent.com/notofonts/notofonts.github.io/5c3913063bb189df4edc94b766584dfb4c04a187/fonts/NotoSans/hinted/ttf/NotoSans-Bold.ttf",
+        "sha256": "1df075a380fc7cb898acf64c1f7b3b4dd780de3caa860178bf929de35817a913",
+        "size": 631484
+      },
+      "fluisb.ttf": {
+        "face": "FL UI Sans Semibold",
+        "weight": "Semibold",
+        "url": "https://raw.githubusercontent.com/notofonts/notofonts.github.io/5c3913063bb189df4edc94b766584dfb4c04a187/fonts/NotoSans/hinted/ttf/NotoSans-SemiBold.ttf",
+        "sha256": "a4e91fd530ac2b4ef5367240144ff37d7d65d66cf76f2e9a2187b93c676f92d0",
+        "size": 625052
+      },
+      "fluil.ttf": {
+        "face": "FL UI Sans Light",
+        "weight": "Light",
+        "url": "https://raw.githubusercontent.com/notofonts/notofonts.github.io/5c3913063bb189df4edc94b766584dfb4c04a187/fonts/NotoSans/hinted/ttf/NotoSans-Light.ttf",
+        "sha256": "8bf10e8d399c5b70554eb76fe2629899a1098f1a8acb599804b76c619845ce0c",
+        "size": 607136
+      }
     }
   },
   "fork": {
@@ -64,7 +88,11 @@
     "installer_url_template": "https://cdn.fork.dev/win/Fork-{version}.exe",
     "feed_url": "https://git-fork.com/update/win/releases.win.json",
     "legacy_feed_url": "https://git-fork.com/update/win/RELEASES",
-    "allowed_hosts": ["cdn.fork.dev", "git-fork.com", "fork.dev"],
+    "allowed_hosts": [
+      "cdn.fork.dev",
+      "git-fork.com",
+      "fork.dev"
+    ],
     "requires": {
       "dotnet_framework": "4.7.2"
     },
@@ -74,7 +102,10 @@
         "sha256": "fee9b2bf84aca6297d7b7e10b29a09c624ac16a82486f2c04136f5ebaf8f079e",
         "full_nupkg_sha256": "B70E7BE92B73BAEAB9FEE700AD352AE9E261DAFCDED0D10E5C94133F639B1C1F",
         "status": "known-good",
-        "tested_with": ["kron4ek-11.18-staging-wow64", "kron4ek-11.0-staging-wow64"]
+        "tested_with": [
+          "kron4ek-11.18-staging-wow64",
+          "kron4ek-11.0-staging-wow64"
+        ]
       }
     },
     "known_bad": {}

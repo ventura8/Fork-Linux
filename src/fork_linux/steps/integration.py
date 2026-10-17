@@ -179,7 +179,7 @@ def integration_inputs(ctx: Ctx) -> dict[str, Any]:
         "wine": runtime.wine_inputs(ctx),
         "system_file_dialogs": bridge.system_file_dialogs_enabled(ctx),
         "filedlg": bridge.filedlg_installed(ctx.paths),
-        "editors": editors.inputs_signature(found),
+        "editors": editors.inputs_signature(found, ctx.env),
         # The IDE stubs are copies of fl-launch.exe: a new build re-copies them (none: nothing to do).
         "launch": _launch_sha(ctx) if found else None,
     }
@@ -226,7 +226,7 @@ def _install_editors(ctx: Ctx) -> None:
     launch = sources.get(bridge.LAUNCH)
     if launch is None:
         return
-    editors.install(ctx.paths, ctx.user, launch, editors.discover(ctx.env))
+    editors.install(ctx.paths, ctx.user, launch, editors.discover(ctx.env), ctx.env)
 
 
 def _editors_installed(ctx: Ctx) -> bool:

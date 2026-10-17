@@ -118,3 +118,28 @@ Selawik is downloaded per user at setup time and never redistributed by this rep
 packages; it is credited in `credits.py` (`UPSTREAM_PROJECTS`), the README credits block and
 [docs/CREDITS.md](../CREDITS.md) (SIL Open Font License 1.1). The consent dialog lists the
 download with its license.
+
+## Finding 8: Noto Sans instead of Selawik (2026-10-17, v1.0.5)
+
+Measured in containers (`scripts/e2e-docker.sh`, Fork 2.23.2, Kron4ek Wine 11.18 staging, 96 DPI) against
+Fork's own Windows screenshots on git-fork.com. With Selawik the interface text was thin and unevenly spaced:
+"Quick La unch", "Pu ll", "Sta sh" in the toolbar. One launch per variant, same window and repository:
+
+| Variant | Uneven spacing | Weights |
+|---|---|---|
+| Selawik (1.0.4) | yes | ok |
+| `FREETYPE_PROPERTIES=truetype:interpreter-version=35` / `=40` | yes (no change) | ok |
+| WPF hardware rendering (`Avalon.Graphics\DisableHWAcceleration=0`) | yes (no change) | ok |
+| WPF ClearType registry (`Avalon.Graphics\DISPLAY1` ClearTypeLevel 100, PixelStructure 1, GammaLevel 1900, TextContrastLevel 1) | yes (no change) | ok |
+| `Segoe UI` → the desktop's Noto Sans | **no**, crisp | semibold and bold drawn regular |
+| `Segoe UI*` → the Noto Sans faces installed in the prefix | **no** | semibold and bold drawn regular |
+| the same faces with name IDs 16/17 removed | **no** | semibold and bold drawn regular |
+| the same faces **renamed to their own family** (`FL UI Sans`, Selawik's name layout) | **no** | **ok** |
+
+So the spacing came from Selawik's own hinting, not from Wine's rasteriser or WPF's settings, and the lost
+weights from the desktop's own "Noto Sans" family (Regular + Bold only) that Wine also sees: under a family name
+no other font uses, WPF finds every weight. Setup now downloads Noto Sans 2.015's hinted Regular, Bold, SemiBold
+and Light faces (notofonts.github.io at a pinned commit, sha256 per face, 2.4 MB) and `font_names.py` installs them
+as `FL UI Sans` / `FL UI Sans Bold` / `FL UI Sans Semibold` / `FL UI Sans Light`. Noto Sans is slightly wider than
+Segoe UI; no label in the main window, the commit list, the toolbar or the menus was cut off. It also covers Greek
+and Cyrillic, which Selawik did not.

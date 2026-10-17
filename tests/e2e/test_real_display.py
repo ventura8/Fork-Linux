@@ -1,5 +1,5 @@
 """How Fork looks: the light or dark theme of the desktop, Wine's DPI applied once (96, 144, 192)
-and Selawik as the interface font.
+and the interface font (Noto Sans installed as FL UI Sans), semibold included.
 
 Gated by ``FL_E2E_FORK=1``; containers only.
 """
@@ -137,8 +137,8 @@ def _mapped_fonts(pid: int) -> set[str]:
     return {Path(line.split()[-1]).name.lower() for line in lines if line.lower().endswith((".ttf", ".ttc", ".otf"))}
 
 
-# One commit subject per script WPF's composite font falls back for (font_fallback): Cyrillic and Greek
-# (Selawik has neither), Hangul and Han.
+# Commit subjects in Cyrillic and Greek (the interface font draws them) and in Hangul and Han (WPF's
+# composite font falls back to the Linux Noto Sans CJK for them: font_fallback).
 NON_LATIN_SUBJECTS = ("Привет, мир", "Καλημέρα κόσμε", "안녕하세요 세계", "你好，世界")
 
 
@@ -150,9 +150,9 @@ def _font_file(family: str) -> str:
 
 
 def test_non_latin_text_is_drawn_with_the_linux_fonts(closed: Any) -> None:
-    """Commit subjects and a branch name in Cyrillic, Greek, Korean and Chinese are drawn with the Linux
-    Noto fonts setup mapped into WPF's composite font (not boxes, not left out): Fork maps those font files
-    as it draws its history.
+    """Commit subjects and a branch name in Cyrillic, Greek, Korean and Chinese are drawn (not boxes, not left
+    out): Cyrillic and Greek by the interface font itself, Korean and Chinese by the Linux Noto Sans CJK setup
+    mapped into WPF's composite font. Fork maps those font files as it draws its history.
 
     Scenarios: FF-NON-LATIN
     """
@@ -165,24 +165,23 @@ def test_non_latin_text_is_drawn_with_the_linux_fonts(closed: Any) -> None:
             git(repo, "add", "-A")
             git(repo, "commit", "-qm", subject)
         git(repo, "branch", "ветка-분기-分支")
-    sans, cjk = _font_file("Noto Sans"), _font_file("Noto Sans CJK KR")
+    cjk = _font_file("Noto Sans CJK KR")
     report = json.loads(e2e.cli("doctor", "--json", "--check", "prefix.font_fallback").stdout)
     assert [check["status"] for check in report["checks"]] == ["ok"], report
     ui = ForkUI(e2e.fork)
     window = ui.open(repo)
     pid = fork_pids(e2e.prefix)[0]
-    wait_until(lambda: {sans, cjk} <= _mapped_fonts(pid) or None, 60,
-               f"{sans} and {cjk} (the fallback fonts) in Fork's process")
+    wait_until(lambda: {"flui.ttf", cjk} <= _mapped_fonts(pid) or None, 60,
+               f"flui.ttf (the interface font) and {cjk} (the CJK fallback) in Fork's process")
     e2e.screen.screenshot("non-latin-history", window)
-    names = _mapped_fonts(pid)
-    assert "selawk.ttf" in names, sorted(names)
 
 
-def test_interface_text_is_drawn_in_selawik(closed: Any) -> None:
-    """Fork draws its interface with Selawik (installed by setup), not Wine's Tahoma, and its diff in the
-    host's monospace font that replaces Consolas (no missing-font fallback).
+def test_interface_text_is_drawn_in_the_interface_font(closed: Any) -> None:
+    """Fork draws its interface with the interface font setup installed (``flui.ttf``, and its semibold face
+    ``fluisb.ttf`` for headings and the repository name), not Wine's Tahoma, and its diff in the host's
+    monospace font that replaces Consolas (no missing-font fallback).
 
-    Scenarios: I-FONT-SELAWIK
+    Scenarios: I-FONT-UI
     """
     e2e = closed
     repo = _repo(e2e, "font")
@@ -197,8 +196,8 @@ def test_interface_text_is_drawn_in_selawik(closed: Any) -> None:
     wait_until(lambda: mono in _mapped_fonts(pid) or None, 30, f"{mono} (Consolas' replacement) in the diff")
     names = _mapped_fonts(pid)
     e2e.screen.screenshot("font-diff", window)
-    assert "selawk.ttf" in names, sorted(names)
-    assert not {"tahoma.ttf", "tahomabd.ttf"} & names, sorted(names)
+    assert {"flui.ttf", "fluisb.ttf"} <= names, sorted(names)
+    assert not {"tahoma.ttf", "tahomabd.ttf", "selawk.ttf"} & names, sorted(names)
     report = json.loads(e2e.cli("doctor", "--json", "--check", "prefix.ui_font", "prefix.font_replacements").stdout)
     assert {check["status"] for check in report["checks"]} == {"ok"}
     (repo / "README.md").write_text("# display\n", encoding="utf-8")

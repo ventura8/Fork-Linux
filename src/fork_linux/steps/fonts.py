@@ -5,11 +5,14 @@ sets to its own Tahoma; Fork's layout is designed around Segoe UI. Spike S10
 compared the candidates under Wine at 192 DPI:
 
 * ``fonts``: ``winetricks corefonts`` (Arial & co.) for documents and fallbacks;
-* ``ui_font``: Selawik, Microsoft's open-source (SIL OFL 1.1) stand-in for
-  Segoe UI with matching metrics, downloaded (pinned + sha256) into the
-  prefix's ``windows\\Fonts`` and registered like an installed font;
+* ``ui_font``: Noto Sans (SIL OFL 1.1), its Regular, Bold, Semibold and Light
+  faces downloaded (pinned + sha256), renamed to their own family ``FL UI Sans``
+  (:mod:`fork_linux.font_names`), copied into the prefix's ``windows\\Fonts`` and
+  registered like installed fonts. It replaced Selawik (Segoe UI's metric
+  stand-in) in 1.0.5: under Wine Selawik's hinted advances spaced letters
+  unevenly ("Quick La unch"), Noto Sans renders evenly and crisply;
 * ``font_replacements``: ``Segoe UI`` (and its Semibold / Light / Semilight
-  faces) -> Selawik, ``Segoe UI Symbol`` / ``Consolas`` -> the best installed
+  faces) -> the interface font, ``Segoe UI Symbol`` / ``Consolas`` -> the best installed
   Linux font (``fc-list``), and Windows 10's system fonts (Segoe UI 9 pt) in
   ``Control Panel\\Desktop\\WindowMetrics``, so WPF and Wine's own dialogs ask
   for Segoe UI instead of Tahoma.
@@ -20,14 +23,13 @@ from __future__ import annotations
 import logging
 import os
 import struct
-import zipfile
 from pathlib import Path
 from typing import Any
 
-from .. import download, fsutil, sandbox, winetricks
+from .. import download, font_names, fsutil, sandbox, winetricks
 from ..bootstrap import Ctx, Step
 from ..errors import ForkLinuxError, IntegrityFailed, SetupFailed
-from ..manifest import UiFont
+from ..manifest import FontFile, UiFont
 from ..registry import RegBatch
 from . import prefix as prefix_steps
 
@@ -53,8 +55,8 @@ COREFONTS = "corefonts"
 # occasional "Application could not be started" of regedit under Wine staging.
 COREFONTS_ATTEMPTS = 2
 
-# The interface font archive comes from GitHub release assets, like the Wine runtime.
-UI_FONT_HOSTS = ("github.com",)
+# The interface font's faces come from the Noto project's repository at a pinned commit.
+UI_FONT_HOSTS = ("raw.githubusercontent.com",)
 MAX_FACE_BYTES = 16 * 1024 * 1024
 
 # Windows 10's system fonts: Segoe UI 9 pt (-12 px at 96 DPI; Wine scales to LogPixels).
@@ -127,7 +129,7 @@ def fonts_dir(ctx: Ctx) -> Path:
 
 
 def _registry_name(face: str) -> str:
-    """How Windows lists an installed TrueType face: ``Selawik Bold (TrueType)``."""
+    """How Windows lists an installed TrueType face: ``FL UI Sans Bold (TrueType)``."""
     return f"{face} (TrueType)"
 
 
@@ -147,66 +149,44 @@ def missing_faces(ctx: Ctx) -> list[str]:
     return missing
 
 
-def _corrupt(archive: Path, problem: str) -> IntegrityFailed:
-    return IntegrityFailed(
-        f"{archive.name}: {problem}",
-        hint="delete the download cache and run setup again",
-    )
-
-
-def _member(bundle: zipfile.ZipFile, archive: Path, file_name: str) -> bytes:
-    """One listed member's bytes (size-capped; :mod:`zipfile` checks the CRC)."""
+def install_face(source: Path, font: UiFont, item: FontFile, dest: Path) -> Path:
+    """Write the verified download ``source`` renamed into ``font.family`` as ``dest/<item.file>`` (0644)."""
     try:
-        info = bundle.getinfo(file_name)
-    except KeyError:
-        raise _corrupt(archive, f"{file_name} is missing from the archive") from None
-    if info.file_size > MAX_FACE_BYTES:
-        raise _corrupt(archive, f"{file_name} is implausibly large ({info.file_size} bytes)")
-    return bundle.read(info)
-
-
-def extract_faces(archive: Path, font: UiFont, dest: Path) -> list[Path]:
-    """Copy the listed ``.ttf`` members of the verified ``archive`` into ``dest`` (0644 each).
-
-    Only the exact member names from the manifest are read (never paths taken
-    from the archive), so nothing else in it can land anywhere.
-    """
+        if source.stat().st_size > MAX_FACE_BYTES:
+            raise IntegrityFailed(f"{source.name} is implausibly large",
+                                  hint="delete the download cache and run setup again")
+        data = font_names.rename(source.read_bytes(), font.family, item.weight)
+    except OSError as exc:
+        raise SetupFailed("ui_font", f"cannot read {source}: {exc}") from None
+    target = dest / item.file
     try:
-        with zipfile.ZipFile(archive) as bundle:
-            faces = [(file_name, _member(bundle, archive, file_name)) for file_name, _face in font.faces]
-    except (zipfile.BadZipFile, OSError) as exc:
-        raise _corrupt(archive, f"cannot unpack: {exc}") from None
-    written = []
-    for file_name, data in faces:
-        target = dest / file_name
-        try:
-            fsutil.atomic_write(target, data, mode=0o644)
-        except OSError as exc:
-            raise SetupFailed("ui_font", f"cannot write {target}: {exc}") from None
-        written.append(target)
-    return written
+        fsutil.atomic_write(target, data, mode=0o644)
+    except OSError as exc:
+        raise SetupFailed("ui_font", f"cannot write {target}: {exc}") from None
+    return target
 
 
 def ui_font_inputs(ctx: Ctx) -> dict[str, Any]:
-    """The pinned interface font (family, version and archive sha256)."""
+    """The pinned interface font (family, version and every face's sha256)."""
     font = ctx.manifest.ui_font
-    return {"family": font.family, "version": font.version, "sha256": font.sha256}
+    return {"family": font.family, "version": font.version, "sha256": [item.sha256 for item in font.files]}
 
 
 def run_ui_font(ctx: Ctx) -> None:
-    """Download the pinned archive (size + sha256 checked), install its faces and register them."""
+    """Download every pinned face (size + sha256 checked), install it under the family's name and register it."""
     font = ctx.manifest.ui_font
-    archive = download.fetch(
-        font.url,
-        font.archive_name,
-        cache_dir=ctx.paths.downloads_dir,
-        sha256=font.sha256,
-        size=font.size,
-        offline=ctx.offline,
-        allowed_hosts=UI_FONT_HOSTS,
-        max_size=font.size,
-    )
-    extract_faces(archive, font, fonts_dir(ctx))
+    for item in font.files:
+        source = download.fetch(
+            item.url,
+            item.cache_name,
+            cache_dir=ctx.paths.downloads_dir,
+            sha256=item.sha256,
+            size=item.size,
+            offline=ctx.offline,
+            allowed_hosts=UI_FONT_HOSTS,
+            max_size=item.size,
+        )
+        install_face(source, font, item, fonts_dir(ctx))
     batch = RegBatch()
     for key, name, value in ui_font_registry(font):
         batch.set_sz(key, name, str(value))
@@ -335,7 +315,7 @@ FONTS = Step(
 
 UI_FONT = Step(
     id="ui_font",
-    title="Installing the interface font (Selawik)",
+    title="Installing the interface font (Noto Sans)",
     rev=1,
     weight=2,
     run=run_ui_font,

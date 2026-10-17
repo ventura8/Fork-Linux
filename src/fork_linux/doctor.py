@@ -590,7 +590,7 @@ def _families(ctx: DoctorCtx) -> set[str] | None:
 
 
 def check_fonts(ctx: DoctorCtx) -> Result:
-    """Linux fonts that can stand in for Segoe UI Symbol and Consolas (Segoe UI itself is Selawik)."""
+    """Linux fonts that can stand in for Segoe UI Symbol and Consolas (Segoe UI itself is the interface font)."""
     families = _families(ctx)
     if families is None:
         return Result("warn", "fc-list is not available; cannot check the fonts", _install_hint(["fc-list"], []))
@@ -787,7 +787,7 @@ def check_corefonts(ctx: DoctorCtx) -> Result:
 
 
 def check_ui_font(ctx: DoctorCtx) -> Result:
-    """The interface font (Selawik, standing in for Segoe UI) is installed and registered in the prefix."""
+    """The interface font (Noto Sans as ``FL UI Sans``, standing in for Segoe UI) is installed and registered."""
     if not _has_prefix(ctx):
         return _skip(NO_PREFIX)
     font = ctx.manifest.ui_font
@@ -799,7 +799,7 @@ def check_ui_font(ctx: DoctorCtx) -> Result:
     ]
     if unregistered:
         return Result("warn", f"{font.family} faces are not registered: {', '.join(unregistered)}", _RUN_FIX)
-    return Result("ok", f"{font.family} {font.version} ({font.license}), {len(font.faces)} faces")
+    return Result("ok", f"{font.family} ({font.source} {font.version}, {font.license}), {len(font.faces)} faces")
 
 
 def _shown(target: str | list[str]) -> str:

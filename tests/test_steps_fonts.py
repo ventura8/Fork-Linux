@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import dataclasses
-import io
 import struct
-import zipfile
 from pathlib import Path
 
 import pytest
-from fixtures.setup_ctx import FakeWine, make_ctx, ui_font_archive, use_fake_ui_font
+from fixtures.setup_ctx import FakeWine, fake_face, make_ctx, use_fake_ui_font
 
-from fork_linux import bootstrap
+from fork_linux import bootstrap, font_names
 from fork_linux.bootstrap import Ctx
 from fork_linux.errors import DownloadFailed, ForkLinuxError, IntegrityFailed, SetupFailed
 from fork_linux.procrun import Completed, RecordingRunner
@@ -107,19 +105,19 @@ def test_parse_families() -> None:
     assert fonts.parse_families("A,B\n\n C \nD\\-E\n") == {"A", "B", "C", "D-E"}
 
 
-SELAWIK_REPLACEMENTS = {
-    "Segoe UI": "Selawik",
-    "Segoe UI Semibold": ["Selawik Semibold", "Selawik"],
-    "Segoe UI Semilight": ["Selawik Semilight", "Selawik"],
-    "Segoe UI Light": ["Selawik Light", "Selawik"],
+UI_REPLACEMENTS = {
+    "Segoe UI": "FL UI Sans",
+    "Segoe UI Semibold": ["FL UI Sans Semibold", "FL UI Sans"],
+    "Segoe UI Semilight": "FL UI Sans",
+    "Segoe UI Light": ["FL UI Sans Light", "FL UI Sans"],
 }
 
 
-def test_replacements_use_selawik_then_installed_fonts(xdg: Path) -> None:
+def test_replacements_use_the_interface_font_then_installed_fonts(xdg: Path) -> None:
     ctx, _fake = _ctx({"fc-list": FC_LIST})
     chosen = fonts.replacements(ctx)
     assert chosen == {
-        **SELAWIK_REPLACEMENTS,
+        **UI_REPLACEMENTS,
         # DejaVu Sans is preferred for symbols but missing here: Noto Sans is next.
         "Segoe UI Symbol": "Noto Sans",
         "Consolas": "DejaVu Sans Mono",
@@ -145,8 +143,8 @@ def test_symbols_prefer_dejavu_sans(xdg: Path) -> None:
 def test_replacements_without_known_fonts(xdg: Path, response: object) -> None:
     ctx, _fake = _ctx({"fc-list": response})
     chosen = fonts.replacements(ctx)
-    # Segoe UI never depends on fc-list: Selawik is installed into the prefix.
-    assert chosen["Segoe UI"] == "Selawik"
+    # Segoe UI never depends on fc-list: the interface font is installed into the prefix.
+    assert chosen["Segoe UI"] == "FL UI Sans"
     assert chosen["Segoe UI Symbol"] == fonts.SYMBOL_FALLBACK
     assert chosen["Consolas"] == fonts.MONO_FALLBACK
 
@@ -158,13 +156,13 @@ def test_pick() -> None:
 
 def test_segoe_ui_weights_without_a_matching_face(xdg: Path) -> None:
     ctx, _fake = _ctx()
-    faces = (("selawk.ttf", "Selawik"), ("selawkl.ttf", "Selawik Light"))
-    font = dataclasses.replace(ctx.manifest.ui_font, faces=faces)
+    files = tuple(item for item in ctx.manifest.ui_font.files if item.weight in ("Regular", "Light"))
+    font = dataclasses.replace(ctx.manifest.ui_font, files=files)
     assert fonts.segoe_ui_replacements(font) == {
-        "Segoe UI": "Selawik",
-        "Segoe UI Semibold": "Selawik",
-        "Segoe UI Semilight": "Selawik",
-        "Segoe UI Light": ["Selawik Light", "Selawik"],
+        "Segoe UI": "FL UI Sans",
+        "Segoe UI Semibold": "FL UI Sans",
+        "Segoe UI Semilight": "FL UI Sans",
+        "Segoe UI Light": ["FL UI Sans Light", "FL UI Sans"],
     }
 
 
@@ -216,11 +214,11 @@ def test_font_replacements_are_imported_and_verified(xdg: Path) -> None:
     assert fonts.wrong_system_fonts(ctx) == []
     reg = (ctx.paths.fork_linux_win_dir / "tmp" / "font-replacements.reg").read_bytes().decode("utf-16")
     assert "[HKEY_CURRENT_USER\\Software\\Wine\\Fonts\\Replacements]" in reg
-    assert '"Segoe UI"="Selawik"' in reg
+    assert '"Segoe UI"="FL UI Sans"' in reg
     assert '"Segoe UI Semibold"=hex(7):' in reg
     assert "[HKEY_CURRENT_USER\\Control Panel\\Desktop\\WindowMetrics]" in reg
     assert '"MessageFont"=hex:f4,ff,ff,ff,' in reg
-    assert prefix_steps.reg_value(ctx, fonts.REPLACEMENTS_KEY, "Segoe UI Light") == ["Selawik Light", "Selawik"]
+    assert prefix_steps.reg_value(ctx, fonts.REPLACEMENTS_KEY, "Segoe UI Light") == ["FL UI Sans Light", "FL UI Sans"]
 
 
 def test_system_fonts_left_on_tahoma_are_not_verified(xdg: Path) -> None:
@@ -244,21 +242,38 @@ def test_system_fonts_unreadable_registry(xdg: Path) -> None:
 def test_ui_font_inputs(xdg: Path) -> None:
     ctx, _fake = _ctx()
     font = ctx.manifest.ui_font
-    assert fonts.ui_font_inputs(ctx) == {"family": "Selawik", "version": "1.01", "sha256": font.sha256}
+    assert fonts.ui_font_inputs(ctx) == {"family": "FL UI Sans", "version": "2.015",
+                                         "sha256": [item.sha256 for item in font.files]}
 
 
 def test_ui_font_registry_lists_every_face(xdg: Path) -> None:
     ctx, _fake = _ctx()
     assert fonts.ui_font_registry(ctx.manifest.ui_font) == [
-        (fonts.SYSTEM_FONTS_KEY, "Selawik (TrueType)", "selawk.ttf"),
-        (fonts.SYSTEM_FONTS_KEY, "Selawik Bold (TrueType)", "selawkb.ttf"),
-        (fonts.SYSTEM_FONTS_KEY, "Selawik Light (TrueType)", "selawkl.ttf"),
-        (fonts.SYSTEM_FONTS_KEY, "Selawik Semibold (TrueType)", "selawksb.ttf"),
-        (fonts.SYSTEM_FONTS_KEY, "Selawik Semilight (TrueType)", "selawksl.ttf"),
+        (fonts.SYSTEM_FONTS_KEY, "FL UI Sans (TrueType)", "flui.ttf"),
+        (fonts.SYSTEM_FONTS_KEY, "FL UI Sans Bold (TrueType)", "fluib.ttf"),
+        (fonts.SYSTEM_FONTS_KEY, "FL UI Sans Semibold (TrueType)", "fluisb.ttf"),
+        (fonts.SYSTEM_FONTS_KEY, "FL UI Sans Light (TrueType)", "fluil.ttf"),
     ]
 
 
-def test_ui_font_is_installed_from_the_cache_and_registered(xdg: Path) -> None:
+def _family(font: bytes) -> dict[int, str]:
+    """Windows name records (ID -> text) of a TrueType file."""
+    count = struct.unpack_from(">H", font, 4)[0]
+    for index in range(count):
+        tag, _sum, offset, _length = struct.unpack_from(">4sIII", font, 12 + 16 * index)
+        if tag == b"name":
+            _fmt, records, strings = struct.unpack_from(">HHH", font, offset)
+            found = {}
+            for row in range(records):
+                platform, _enc, _lang, name_id, size, at = struct.unpack_from(">6H", font, offset + 6 + 12 * row)
+                if platform == 3:
+                    start = offset + strings + at
+                    found[name_id] = font[start : start + size].decode("utf-16-be")
+            return found
+    return {}
+
+
+def test_ui_font_is_installed_from_the_cache_renamed_and_registered(xdg: Path) -> None:
     ctx, _fake = _ctx(offline=True)
     font = use_fake_ui_font(ctx)
     assert not fonts.verify_ui_font(ctx)
@@ -267,38 +282,40 @@ def test_ui_font_is_installed_from_the_cache_and_registered(xdg: Path) -> None:
     assert fonts.verify_ui_font(ctx)
     folder = ctx.paths.prefix / "drive_c" / "windows" / "Fonts"
     assert sorted(path.name for path in folder.iterdir()) == sorted(name for name, _face in font.faces)
-    assert (folder / "selawkb.ttf").read_bytes() == b"\x00\x01\x00\x00Selawik Bold"
+    assert _family((folder / "fluisb.ttf").read_bytes())[1] == "FL UI Sans Semibold"
+    assert _family((folder / "fluisb.ttf").read_bytes())[16] == "FL UI Sans"
+    assert _family((folder / "fluib.ttf").read_bytes())[2] == "Bold"
     assert all((folder / name).stat().st_mode & 0o777 == 0o644 for name, _face in font.faces)
     reg = (ctx.paths.fork_linux_win_dir / "tmp" / "ui-font.reg").read_bytes().decode("utf-16")
     assert "[HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts]" in reg
-    assert '"Selawik Semibold (TrueType)"="selawksb.ttf"' in reg
+    assert '"FL UI Sans Semibold (TrueType)"="fluisb.ttf"' in reg
 
 
 def test_ui_font_download_is_pinned(xdg: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     ctx, _fake = _ctx()
-    archive = tmp_path / "font.zip"
-    archive.write_bytes(ui_font_archive(ctx.manifest.ui_font))
+    face = tmp_path / "face.ttf"
+    face.write_bytes(fake_face("x"))
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
     def fetch(*args: object, **kwargs: object) -> Path:
         calls.append((args, kwargs))
-        return archive
+        return face
 
     monkeypatch.setattr(fonts.download, "fetch", fetch)
     fonts.run_ui_font(ctx)
-    font = ctx.manifest.ui_font
     assert calls == [
         (
-            (font.url, "selawik-1.01.zip"),
+            (item.url, item.cache_name),
             {
                 "cache_dir": ctx.paths.downloads_dir,
-                "sha256": font.sha256,
-                "size": font.size,
+                "sha256": item.sha256,
+                "size": item.size,
                 "offline": False,
-                "allowed_hosts": ("github.com",),
-                "max_size": font.size,
+                "allowed_hosts": ("raw.githubusercontent.com",),
+                "max_size": item.size,
             },
         )
+        for item in ctx.manifest.ui_font.files
     ]
 
 
@@ -309,7 +326,7 @@ def test_ui_font_keeps_the_existing_fonts_folder_spelling(xdg: Path) -> None:
     folder.mkdir(parents=True)
     assert fonts.fonts_dir(ctx) == folder
     fonts.run_ui_font(ctx)
-    assert (folder / "selawk.ttf").is_file()
+    assert (folder / "flui.ttf").is_file()
     assert not (ctx.paths.prefix / "drive_c" / "windows").exists()
 
 
@@ -318,12 +335,12 @@ def test_ui_font_faces_must_be_real_non_empty_files(xdg: Path) -> None:
     use_fake_ui_font(ctx)
     fonts.run_ui_font(ctx)
     folder = fonts.fonts_dir(ctx)
-    (folder / "selawk.ttf").write_bytes(b"")
-    (folder / "selawkb.ttf").unlink()
-    (folder / "selawkb.ttf").symlink_to(folder / "selawkl.ttf")
-    (folder / "selawkl.ttf").unlink()
-    (folder / "selawkl.ttf").mkdir()
-    assert fonts.missing_faces(ctx) == ["selawk.ttf", "selawkb.ttf", "selawkl.ttf"]
+    (folder / "flui.ttf").write_bytes(b"")
+    (folder / "fluib.ttf").unlink()
+    (folder / "fluib.ttf").symlink_to(folder / "fluil.ttf")
+    (folder / "fluil.ttf").unlink()
+    (folder / "fluil.ttf").mkdir()
+    assert fonts.missing_faces(ctx) == ["flui.ttf", "fluib.ttf", "fluil.ttf"]
     assert not fonts.verify_ui_font(ctx)
 
 
@@ -337,65 +354,42 @@ def test_ui_font_unregistered_is_not_verified(xdg: Path) -> None:
     assert not fonts.verify_ui_font(ctx)
 
 
-def test_ui_font_extracts_only_the_listed_members(xdg: Path, tmp_path: Path) -> None:
-    ctx, _fake = _ctx()
-    font = ctx.manifest.ui_font
-    archive = tmp_path / "font.zip"
-    archive.write_bytes(ui_font_archive(font, {"../evil.ttf": b"x", "/abs.ttf": b"x", "readme.txt": b"x"}))
-    dest = tmp_path / "Fonts"
-    written = fonts.extract_faces(archive, font, dest)
-    assert written == [dest / name for name, _face in font.faces]
-    assert sorted(path.name for path in dest.iterdir()) == sorted(name for name, _face in font.faces)
-    assert not (tmp_path / "evil.ttf").exists()
-
-
-def _zip(members: dict[str, bytes]) -> bytes:
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as bundle:
-        for name, data in members.items():
-            bundle.writestr(name, data)
-    return buffer.getvalue()
-
-
-def test_ui_font_archive_problems_raise_integrity_failed(
-    xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    ctx, _fake = _ctx()
-    font = ctx.manifest.ui_font
-    archive = tmp_path / "font.zip"
-    dest = tmp_path / "Fonts"
-    archive.write_bytes(_zip({"selawk.ttf": b"x"}))
-    with pytest.raises(IntegrityFailed, match="selawkb.ttf is missing from the archive") as caught:
-        fonts.extract_faces(archive, font, dest)
+def test_ui_font_bad_downloads_raise_integrity_failed(xdg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ctx, _fake = _ctx(offline=True)
+    use_fake_ui_font(ctx, {"fluib.ttf": b"not a font at all"})
+    with pytest.raises(IntegrityFailed, match="not a TrueType font") as caught:
+        fonts.run_ui_font(ctx)
     assert caught.value.hint == "delete the download cache and run setup again"
-    archive.write_bytes(b"not a zip")
-    with pytest.raises(IntegrityFailed, match="cannot unpack"):
-        fonts.extract_faces(archive, font, dest)
-    with pytest.raises(IntegrityFailed, match="cannot unpack"):
-        fonts.extract_faces(tmp_path / "missing.zip", font, dest)
+    use_fake_ui_font(ctx)
     monkeypatch.setattr(fonts, "MAX_FACE_BYTES", 4)
-    archive.write_bytes(ui_font_archive(font))
-    with pytest.raises(IntegrityFailed, match="selawk.ttf is implausibly large"):
-        fonts.extract_faces(archive, font, dest)
-    assert not dest.exists()
+    with pytest.raises(IntegrityFailed, match="implausibly large"):
+        fonts.run_ui_font(ctx)
 
 
-def test_ui_font_unwritable_folder_fails_the_step(xdg: Path, tmp_path: Path) -> None:
+def test_ui_font_unreadable_or_unwritable_fails_the_step(xdg: Path, tmp_path: Path) -> None:
     ctx, _fake = _ctx()
     font = ctx.manifest.ui_font
-    archive = tmp_path / "font.zip"
-    archive.write_bytes(ui_font_archive(font))
+    item = font.files[0]
+    source = tmp_path / "face.ttf"
+    source.write_bytes(fake_face("x"))
     blocker = tmp_path / "file"
     blocker.write_bytes(b"")
     with pytest.raises(SetupFailed, match="cannot write") as caught:
-        fonts.extract_faces(archive, font, blocker / "Fonts")
+        fonts.install_face(source, font, item, blocker / "Fonts")
     assert caught.value.step == "ui_font"
+    with pytest.raises(SetupFailed, match="cannot read"):
+        fonts.install_face(tmp_path / "missing.ttf", font, item, tmp_path)
 
 
-def test_ui_font_offline_without_a_cached_archive(xdg: Path) -> None:
+def test_ui_font_offline_without_a_cached_face(xdg: Path) -> None:
     ctx, _fake = _ctx(offline=True)
     with pytest.raises(DownloadFailed, match="offline"):
         fonts.run_ui_font(ctx)
+
+
+def test_installed_faces_render_with_the_new_names(tmp_path: Path) -> None:
+    renamed = font_names.rename(fake_face("Noto Sans"), "FL UI Sans", "Bold")
+    assert _family(renamed) == {1: "FL UI Sans", 2: "Bold", 4: "FL UI Sans Bold", 6: "FLUISans-Bold"}
 
 
 def test_steps_order_and_revisions() -> None:

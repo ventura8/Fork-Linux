@@ -56,6 +56,11 @@ OPEN_IN_ITEM_FIRST = 22
 OPEN_IN_ITEM_PITCH = 23
 OPEN_IN_SEPARATOR = 10
 OPEN_IN_MENU_CHROME = 32
+OPEN_IN_ICON_X = 27  # the centre of an item's 16 px icon, from the menu's left edge
+# One solid colour per IDE stand-in's icon (RGB), so each menu row's icon names its IDE.
+IDE_COLORS = [(230, 25, 75), (60, 180, 75), (255, 225, 25), (0, 130, 200), (245, 130, 48), (145, 30, 180),
+              (70, 240, 240), (240, 50, 230), (210, 245, 60), (250, 190, 212), (0, 128, 128), (220, 190, 255),
+              (170, 110, 40), (128, 0, 0), (0, 0, 128), (128, 128, 0)]
 
 
 def _stub_dir(e2e: Any) -> tuple[Path, Path]:
@@ -552,7 +557,8 @@ def test_desktop_install_without_menu_and_icons(desk: Any, installed: Any) -> No
 def test_open_in_lists_and_starts_every_supported_ide(desk: Any, installed: Any) -> None:
     """Every IDE Fork's Open in menu supports (VS Code, Insiders, Cursor, IntelliJ IDEA, PyCharm,
     WebStorm, PhpStorm, Rider, GoLand, Fleet, Sublime Text, Atom, Zed, Antigravity, Antigravity IDE,
-    CodeBuddy) is listed once its Linux program is installed, and each item starts that program
+    CodeBuddy) is listed once its Linux program is installed, with the icon of its .desktop entry (one
+    colour per stand-in, checked on screen), and each item starts that program
     on the repository (``fl-launch`` stub -> ``fork-linux-host run``). Fork itself lists IntelliJ
     IDEA, PyCharm, PhpStorm, GoLand only for a JetBrains project (``.idea``) and Rider only for a
     .NET solution (``*.sln``, ``*.csproj``, ...), so the repository has both.
@@ -564,7 +570,10 @@ def test_open_in_lists_and_starts_every_supported_ide(desk: Any, installed: Any)
 
     if bridge.LAUNCH not in bridge.shim_sources():
         pytest.skip("fl-launch.exe is not built: run scripts/build-bridge.sh")
-    ui, log, extra = desk
+    ui, log, desk_env = desk
+    stubs, _log = _stub_dir(installed)
+    colors = _ide_icons(installed.root / "ide-icons", stubs)
+    extra = {**desk_env, "XDG_DATA_DIRS": f"{installed.root / 'ide-icons'}:/usr/local/share:/usr/share"}
     installed.fork.ensure_closed()
     result = installed.cli("setup", "--only", "host_integration", "--accept-fork-eula", "--no-gui", extra=extra)
     assert result.returncode == 0, result.stderr
@@ -582,10 +591,14 @@ def test_open_in_lists_and_starts_every_supported_ide(desk: Any, installed: Any)
     before = ui.screen.windows()
     ui.screen.click_in(window, *OPEN_IN_BUTTON, settle=2.0)
     menu = ui.screen.new_window(before, timeout=30)
-    ui.screen.screenshot("open-in-menu")
+    time.sleep(1.0)
+    shot = ui.screen.screenshot("open-in-menu")
     items = round((menu.height - OPEN_IN_MENU_CHROME) / OPEN_IN_ITEM_PITCH)
     ui.screen.key("Escape", settle=1.0)
     assert items - OPEN_IN_FIXED_ITEMS == len(IDE_COMMANDS), f"{items} Open in items; menu {menu}"
+    icon_at = {index: _pixel(shot, menu.x + OPEN_IN_ICON_X,
+                             menu.y + OPEN_IN_ITEM_FIRST + OPEN_IN_SEPARATOR + index * OPEN_IN_ITEM_PITCH)
+               for index in range(OPEN_IN_FIXED_ITEMS, items)}
     started: dict[str, str] = {}
     for index in range(OPEN_IN_FIXED_ITEMS, items):
         seen = {name: len(_calls(log, name)) for name in IDE_COMMANDS}
@@ -602,8 +615,38 @@ def test_open_in_lists_and_starts_every_supported_ide(desk: Any, installed: Any)
         name, args = wait_until(new_call, 60, f"Open in item {index} starting an IDE")
         assert name not in started, f"item {index} started {name} again ({started})"
         assert str(repo) in args, f"{name} got {args!r}, not {repo}"
+        assert _near(icon_at[index], colors[name]), f"item {index} ({name}) shows {icon_at[index]}, not {colors[name]}"
         started[name] = args
     assert set(started) == set(IDE_COMMANDS), started
+
+
+def _ide_icons(root: Path, stubs: Path) -> dict[str, tuple[int, int, int]]:
+    """A .desktop file and a solid 64 px PNG per IDE stand-in under ``root``; returns command -> colour."""
+    from fork_linux import imaging
+
+    colors = dict(zip(IDE_COMMANDS, IDE_COLORS, strict=True))
+    (root / "applications").mkdir(parents=True, exist_ok=True)
+    for command, rgb in colors.items():
+        icon = root / f"{command}.png"
+        icon.write_bytes(imaging.png_encode(64, 64, bytes((*rgb, 255)) * 64 * 64))
+        (root / "applications" / f"fl-e2e-{command}.desktop").write_text(
+            f"[Desktop Entry]\nType=Application\nName={command}\nExec={stubs / command} %F\nIcon={icon}\n",
+            encoding="utf-8",
+        )
+    return colors
+
+
+def _pixel(image: Path, x: int, y: int) -> tuple[int, int, int]:
+    """The RGB colour of one pixel of a screenshot."""
+    out = subprocess.run(["magick", str(image), "-format", f"%[fx:int(255*p{{{x},{y}}}.r)],"
+                          f"%[fx:int(255*p{{{x},{y}}}.g)],%[fx:int(255*p{{{x},{y}}}.b)]", "info:"],
+                         capture_output=True, text=True, check=True, timeout=60).stdout
+    red, green, blue = (int(part) for part in out.strip().split(","))
+    return red, green, blue
+
+
+def _near(have: tuple[int, int, int], want: tuple[int, int, int], tolerance: int = 12) -> bool:
+    return all(abs(a - b) <= tolerance for a, b in zip(have, want, strict=True))
 
 
 def _folders(e2e: Any) -> set[Path]:

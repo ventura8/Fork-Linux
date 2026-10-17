@@ -34,7 +34,7 @@ Environment:
   ``home/.config``) so a developer can re-run one module without a new setup
   (``scripts/e2e-docker.sh --keep``); CI never sets it.
 * ``FL_E2E_SEED``: a directory whose files (``wine-*.tar.xz``,
-  ``Fork-*.exe``, ``winetricks-*``, ``selawik-*.zip``) are copied into the download cache; our
+  ``Fork-*.exe``, ``winetricks-*``, ``*-notosans-*.ttf``) are copied into the download cache; our
   code re-verifies every one of them by size and sha256.
 * ``FL_E2E_WINETRICKS_CACHE``: a winetricks cache to copy to
   ``$XDG_CACHE_HOME/winetricks`` (dotnet48 and corefonts installers); setup only reads
@@ -81,7 +81,7 @@ REPO = Path(__file__).resolve().parents[2]
 SRC = REPO / "src"
 ROOT_MARKER = ".fl-e2e-root"
 TOOLS = ("Xvfb", "xdotool", "magick", "git")
-SEED_PATTERNS = ("wine-*.tar.xz", "Fork-*.exe", "winetricks-*", "selawik-*.zip")
+SEED_PATTERNS = ("wine-*.tar.xz", "Fork-*.exe", "winetricks-*", "*-notosans-*.ttf")
 SCREEN = "1600x1000x24"
 # Host variables that would point the tier at the real session or another Wine.
 DROPPED = ("WAYLAND_DISPLAY", "XAUTHORITY", "GNOME_SETUP_DISPLAY", "PYTHONPATH", "FORK_LINUX_LIBDIR",

@@ -80,7 +80,7 @@ scripts/e2e-docker.sh --name trace --ptrace shell -- strace -f -o /e2e/t.txt pyt
 The container sees only this worktree (read-only), the git common dir (read-only), the scratch
 root `/var/tmp/fork-linux-e2e/<NAME>` (`/e2e`, 0700; `FL_E2E_SCRATCH` overrides, never under
 `$HOME`) and the seed `/var/tmp/fork-linux-e2e/seed` (`/seed`, read-only: `wine-*.tar.xz`,
-`Fork-*.exe`, `winetricks-*`, `selawik-*.zip`, `winetricks/` cache; `FL_E2E_SEED_DIR` overrides).
+`Fork-*.exe`, `winetricks-*`, `*-notosans-*.ttf`, `winetricks/` cache; `FL_E2E_SEED_DIR` overrides).
 Logs land in `logs/e2e-docker/<NAME>/`; screenshots stay in `<scratch>/root/shots/` (Fork's logo:
 never commit them). At most `FL_E2E_SLOTS` (default: one per two cores and per 2 GiB of available memory, `fl_e2e_default_slots`) such containers run at once on the host.
 Runbook: [`.agents/skills/e2e-docker/SKILL.md`](../.agents/skills/e2e-docker/SKILL.md).
