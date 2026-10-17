@@ -1,5 +1,16 @@
 # E2E results: official Fork 2.23.2 on the managed Wine runtime
 
+## 2026-10-17 (evening): v1.0.5 — IDE icons, Noto Sans interface font (`main` `f869333` + coordinate fixes)
+
+| Gate | Result |
+|---|---|
+| unit (host + coverage image without a bridge build: every module 100 %) / lint / sonar-local | OK on the laptop; GitHub Build & Check green on `f869333` |
+| Text rendering variants (S10 Finding 8): FreeType v35/v40, WPF hardware rendering, WPF ClearType registry, Noto Sans (desktop, prefix, IDs 16/17 stripped, renamed) | only the font changed anything; renamed Noto Sans (`FL UI Sans`) fixed the spacing and kept every weight |
+| `I-OPEN-IN-IDES` with one coloured icon per IDE stand-in | OK: every row of Fork's menu shows its IDE's colour and starts that IDE (588 s) |
+| `ci-e2e-wine.sh --all --jobs 1 --remote nuc --remote-jobs 8` (`f869333`) | **1339 s (22 min)**; every module exit 0 except three on the NUC: `test_real_git_remotes` / `test_git_ops_remote_bridge` (Push's "Push all tags" box moved 9 px right with the new font) and `test_real_integration` (Preferences' "Show -+ marks" moved 10 px right, 3 px up; the CLI settings test after it failed in turn). `test_real_display` (I-FONT-UI: `flui.ttf` and `fluisb.ttf` mapped) passed |
+| `TMPDIR=/var/tmp ci-e2e-wine.sh --jobs 3` those three modules with the new coordinates (fresh template) | **OK**: all exit 0 |
+| `ci-e2e-de-matrix.sh --fork` on the NUC (`f869333`) | **OK**: budgie, cinnamon, gnome, kde, kdewayland, lxqt, mate, xfce 10/10 each |
+
 ## 2026-10-17: v1.0.4 — every IDE in Open in (`main` `a9b6b84` → `bd16b2f`)
 
 | Gate | Result |

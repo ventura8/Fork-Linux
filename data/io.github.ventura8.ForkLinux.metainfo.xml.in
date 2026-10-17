@@ -40,6 +40,11 @@
   </supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.0.5" date="2026-10-17">
+      <description>
+        <p>Open in shows each IDE with its own icon. Fork's interface text is crisp and evenly spaced: the interface font is now Noto Sans (installed as FL UI Sans) instead of Selawik.</p>
+      </description>
+    </release>
     <release version="1.0.4" date="2026-10-17">
       <description>
         <p>Open in now lists every IDE Fork supports that is installed (VS Code, Cursor, JetBrains IDEs, Sublime Text, Zed, Antigravity, …), including snaps, Flatpak apps and JetBrains Toolbox scripts.</p>

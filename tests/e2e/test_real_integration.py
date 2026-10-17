@@ -46,7 +46,7 @@ FILE_MENU_COPY_FULL_PATH = 337
 # Fork adds "External Diff" (2nd item of a file's menu) once it sees a diff-capable editor's stub.
 FILE_MENU_PITCH = 23
 EXTERNAL_DIFF_IDES = ("code", "cursor", "codebuddy")
-PREFS_SHOW_MARKS = (189, 326)
+PREFS_SHOW_MARKS = (199, 323)
 CREATE_PATCH_SAVE = (475, 205)
 # The toolbar's "Open in" button (main window), and its menu: Open Git Bash, Open In Shell,
 # Open In File Explorer, a separator, then one "Open in <IDE>" item per editor Fork found.

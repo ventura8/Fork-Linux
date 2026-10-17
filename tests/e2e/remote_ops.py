@@ -26,9 +26,9 @@ GCM_TITLE = "Git Credential Manager"
 GCM_USER_Y = 167
 GCM_PASSWORD_Y = 208
 # Inside Fork's Push dialog and Clone dialog.
-PUSH_ALL_TAGS = (155, 158)
+PUSH_ALL_TAGS = (164, 154)
 # The inside of that box (x, y, width, height) and the mean red level below which it is ticked.
-PUSH_ALL_TAGS_BOX = (151, 147, 12, 10)
+PUSH_ALL_TAGS_BOX = (159, 149, 10, 9)
 # A ticked box is filled blue; an empty one is grey: white in the light theme, dark grey in the dark one.
 TICKED_BLUE = 0.2
 BOX_CLICKS = 3

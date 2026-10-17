@@ -1,3 +1,15 @@
+fork-linux (1.0.5) resolute; urgency=medium
+
+  * Open in: every IDE entry shows the IDE's own icon (taken from its
+    desktop entry and written into the fl-launch stub Fork reads).
+  * Crisp, evenly spaced interface text: the interface font is Noto Sans
+    2.015 (pinned faces, installed renamed as FL UI Sans) instead of
+    Selawik, whose hinting spaced letters unevenly under Wine; semibold
+    and bold text keep their weight.
+  * Not affiliated with Fork's developers; buy Fork at https://git-fork.com/buy.
+
+ -- Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com>  Sat, 17 Oct 2026 22:00:00 +0000
+
 fork-linux (1.0.4) resolute; urgency=medium
 
   * Open in: stubs now sit exactly where Fork probes, so IntelliJ IDEA,
