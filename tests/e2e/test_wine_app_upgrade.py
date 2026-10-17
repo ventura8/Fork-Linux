@@ -68,6 +68,15 @@ FORK_OLD = "2.23.1"
 FORK_NEW = manifest_mod.load().fork_default
 SETUP = ("setup", "--accept-fork-eula", "--no-gui", "--fork-version", FORK_OLD, "--allow-untested")
 SETUP_TIMEOUT = 3600.0
+
+
+def _later(step: int) -> str:
+    """A version ``step`` patch releases after this tree's ``VERSION`` (the N-1 release): always an upgrade."""
+    major, minor, patch = (REPO / "VERSION").read_text(encoding="utf-8").strip().split(".")[:3]
+    return f"{major}.{minor}.{int(patch) + step}"
+
+
+V_N, V_N1, V_N2 = _later(1), _later(2), _later(3)
 FAST_PATH_SECONDS = 30.0
 # A second Fork.exe gives its paths to the running one through Fork's single-instance pipe, then exits.
 HAND_OVER_SECONDS = 30.0
@@ -280,7 +289,7 @@ def test_01_setup_with_the_previous_fork(e2e: Any, releases: Releases) -> None:
 def test_02_a3_upgrade_reruns_only_the_bumped_step(e2e: Any, releases: Releases) -> None:
     """Scenarios: A3"""
     downloads, before = _downloads(e2e), _markers(e2e)
-    releases.upgrade(releases.make("n", "1.0.1", bump=("display_dpi",), revisions=True))
+    releases.upgrade(releases.make("n", V_N, bump=("display_dpi",), revisions=True))
     listed = releases.json("setup", "--list-steps")
     assert listed["needs_setup"] is True
     assert [row["id"] for row in listed["steps"] if row["recorded"] is False] == ["display_dpi"]
@@ -291,7 +300,7 @@ def test_02_a3_upgrade_reruns_only_the_bumped_step(e2e: Any, releases: Releases)
     state = _state(e2e)
     assert state["setup"]["bootstrap_revision"] == listed["revisions"]["bootstrap"]
     assert state["setup"]["manifest_revision"] == listed["revisions"]["manifest"]
-    assert state["written_by"] == "1.0.1-dev"
+    assert state["written_by"] == f"{V_N}-dev"
     assert _downloads(e2e) == downloads, "an app upgrade must not download anything again"
     assert releases.json("setup", "--list-steps")["needs_setup"] is False
 
@@ -300,7 +309,7 @@ def test_03_a5_upgrade_while_fork_runs(e2e: Any, releases: Releases) -> None:
     """Scenarios: A5"""
     (pid,) = ui.fork_pids(e2e.prefix)
     before = _markers(e2e)
-    releases.upgrade(releases.make("n1", "1.0.2", bump=("fork_settings",)))
+    releases.upgrade(releases.make("n1", V_N1, bump=("fork_settings",)))
     started = time.monotonic()
     handed_over = releases.launch(e2e.repos / "second", log_name="03-a5-fast-path")
     assert handed_over.wait(timeout=FAST_PATH_SECONDS) == 0
@@ -511,7 +520,7 @@ def test_07_a12_app_upgrade_and_fork_self_update_on_one_launch(e2e: Any, release
     fork_dir = e2e.prefix / "drive_c" / "users" / winecmd.windows_user(e2e.env) / "AppData" / "Local" / "Fork"
     _open_fork(releases, e2e.repos / "demo", name="07-a12-before")
     before = _markers(e2e)
-    releases.upgrade(releases.make("n2", "1.0.3", bump=("host_integration",)))
+    releases.upgrade(releases.make("n2", V_N2, bump=("host_integration",)))
     _forks_own_update(e2e)
     assert f"<version>{FORK_NEW}</version>" in (fork_dir / "current" / "sq.version").read_text(encoding="utf-8-sig")
     assert _state(e2e)["fork"]["version"] == FORK_OLD, "fork-linux took no part in Fork's update"

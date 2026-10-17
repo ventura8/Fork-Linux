@@ -61,6 +61,9 @@ def test_discover_finds_flatpak_and_toolbox_launchers(tmp_path: Path) -> None:
 
 def test_discover_skips_missing(tmp_path: Path) -> None:
     assert editors.discover({"PATH": str(tmp_path)}) == []
+    # An empty PATH entry is skipped, not read as the current directory.
+    _exe(tmp_path / "bin", "cursor")
+    assert editors.discover({"PATH": f"::{tmp_path / 'none'}", "HOME": str(tmp_path / "home")}) == []
 
 
 def test_every_fork_editor_has_its_probe_path(paths: Paths, tmp_path: Path) -> None:

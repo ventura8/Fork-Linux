@@ -44,10 +44,12 @@ SHELL_PERSONAS = ("bin/bash.exe", "bin/sh.exe", "usr/bin/bash.exe", "usr/bin/sh.
 RUN_TIMEOUT = 300.0
 
 FAKE_HOST_HELPER = """#!/bin/sh
-# Test stand-in for fork-linux-host: "run [--] PROG ARGS..." runs PROG and returns its status.
+# Test stand-in for fork-linux-host: "run -- PROG ARGS..." runs PROG and returns its status;
+# "run IDE ARGS..." (an Open in persona) appends "IDE ARGS..." to $HOME/ide-calls.log.
 verb="$1"; shift
 case "$verb" in
-  run) [ "$1" = "--" ] && shift; exec "$@" ;;
+  run) if [ "$1" = "--" ]; then shift; exec "$@"; fi
+       printf '%s\n' "$*" >>"$HOME/ide-calls.log"; exit 0 ;;
   *) printf 'fake host helper: %s\\n' "$verb" >&2; exit 3 ;;
 esac
 """

@@ -289,6 +289,44 @@ def test_host_integration_registers_redirects_and_the_home_drive(
     assert integration.verify_integration(ctx)
 
 
+def test_host_integration_installs_open_in_stubs(
+    xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host IDE gets its stubs and App Paths; a missing stub (or a new fl-launch.exe) makes the step run again."""
+    from fixtures.setup_ctx import FakeWine
+
+    from fork_linux import bootstrap, editors
+
+    shims = tmp_path / "shims"
+    shims.mkdir()
+    (shims / "fl-launch.exe").write_bytes(b"MZ launch")
+    monkeypatch.setenv(resources.SHIMS_ENV, str(shims))
+    ide_bin = tmp_path / "ide-bin"
+    ide_bin.mkdir()
+    zed = ide_bin / "zed"
+    zed.write_text("#!/bin/sh\n", encoding="utf-8")
+    zed.chmod(0o755)
+    ctx = make_ctx()
+    ctx.env["PATH"] = str(ide_bin)
+    fake = FakeWine(ctx.paths.prefix)
+    ctx.runner = fake.runner()
+    bootstrap.init_prefix_meta(ctx)
+    _drives(ctx)
+    assert (integration.APP_PATHS_KEY + "\\Zed.exe", "", "C:\\fork-linux\\editors\\Zed.exe") in (
+        integration.integration_expected(ctx))
+    inputs = integration.integration_inputs(ctx)
+    assert inputs["launch"] is not None
+    assert inputs["editors"]["editors"][0]["id"] == "zed"
+    integration.run_integration(ctx)
+    assert integration.verify_integration(ctx)
+    stub = editors.programs_root(ctx.paths, ctx.user) / "Zed" / "Zed.exe"
+    assert stub.read_bytes() == b"MZ launch"
+    stub.unlink()
+    assert not integration.verify_integration(ctx)
+    ctx.env["PATH"] = str(tmp_path / "none")
+    assert integration.integration_inputs(ctx)["launch"] is None
+
+
 def test_file_dialogs_overwrite_wine_hklm_comdlg32(
     xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

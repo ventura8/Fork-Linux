@@ -426,6 +426,26 @@ def test_fl_launch_run_waits_and_returns_the_status(bridge: WineBridge) -> None:
     assert r.ms >= 1000
 
 
+def test_fl_launch_ide_persona_runs_the_host_ide_detached(bridge: WineBridge) -> None:
+    """A copy named like an Open in IDE (``Zed.exe``) asks for ``run zed <unix path>`` and returns at once."""
+    import shutil
+
+    persona = bridge.prefix / "drive_c" / "fork-linux" / "editors" / "Zed.exe"
+    persona.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(bridge.launch_exe, persona)
+    calls = bridge.home / "ide-calls.log"
+    if calls.exists():
+        calls.unlink()
+    r = bridge.drive("C:\\fork-linux\\editors\\Zed.exe", ["C:\\windows", "-g"])
+    assert r.rc == 0, r.err
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline and not calls.is_file():
+        time.sleep(0.2)
+    ide, path, option = calls.read_text(encoding="utf-8").split()
+    assert (ide, option) == ("zed", "-g")
+    assert os.path.realpath(path) == os.path.realpath(bridge.prefix / "drive_c" / "windows")
+
+
 @pytest.mark.parametrize(
     "rel", ["bin/bash.exe", "bin/sh.exe", "usr/bin/bash.exe", "usr/bin/sh.exe"]
 )

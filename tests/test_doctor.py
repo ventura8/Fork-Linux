@@ -1876,6 +1876,17 @@ def test_integration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     result = run(ctx, "prefix.integration")
     assert result.status == "ok"
     assert f"H: -> {ctx.host_home}" in result.detail
+    from fork_linux import bridge
+
+    with monkeypatch.context() as patch:
+        patch.setattr(bridge, "shim_sources", dict)  # no fl-launch.exe and no IDE: Open in is not mentioned
+        assert "Open in" not in run(ctx, "prefix.integration").detail
+    ide = empty_bin / "cursor"
+    ide.write_text("#!/bin/sh\n", encoding="utf-8")
+    ide.chmod(0o755)
+    key = integration.APP_PATHS_KEY.replace("HKLM\\", "") + "\\Cursor.exe"
+    add_values(ctx.paths.prefix, "system.reg", key, ['@="C:\\\\fork-linux\\\\editors\\\\Cursor.exe"'])
+    assert "Open in: cursor" in run(ctx, "prefix.integration").detail
 
 
 # -- repositories ----------------------------------------------------------------------------------

@@ -143,6 +143,9 @@ def test_fix_and_undo_default_to_known_repos(
     code, out, _err = run_cli(capsys, "repo", "fix", "--yes")
     assert code == 0
     assert "no repositories" in out
+    code, out, _err = run_cli(capsys, "repo", "undo")
+    assert code == 0
+    assert "no repositories" in out
 
 
 def test_errors(capsys: pytest.CaptureFixture[str], xdg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
