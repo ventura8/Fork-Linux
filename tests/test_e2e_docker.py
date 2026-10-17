@@ -719,7 +719,8 @@ def test_ci_e2e_wine_runs_each_module_of_a_shard_in_a_scratch_root_of_its_own(bo
     assert "the last 60 lines of" in result.stdout
     assert "==> e2e-wine: template exit 0" in result.stdout
     results = [line.split("\t") for line in (logs / "results.tsv").read_text(encoding="utf-8").splitlines()]
-    assert all(row[4] == "0" for row in results)
+    # No slot was waited for; the wait is in whole seconds ($SECONDS), so a tick may land inside the lock call.
+    assert all(int(row[4]) <= 1 for row in results), results
     assert [(row[0], row[1], row[3]) for row in results] == [
         ("template", "0", "-"),
         *[(f"tests/e2e/{module}", "3", "template" if module == "test_real_bridge.py" else "fresh")

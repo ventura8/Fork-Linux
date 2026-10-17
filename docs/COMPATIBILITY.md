@@ -23,7 +23,7 @@ user) passed in a container of that distribution; it does not start Fork. The re
 
 | Cell | meson + tests | Evidence |
 |---|---|---|
-| jammy (22.04, Python 3.10), resolute (26.04), noble (24.04), Debian 13.7, Fedora 44, openSUSE Leap 16.0, Arch (base-20261004.0.606936) | ✅ | `./scripts/ci-matrix.sh`, v1.0.0 tree, 2026-10-12 |
+| jammy (22.04, Python 3.10), resolute (26.04), noble (24.04), Debian 13.7, Fedora 44, openSUSE Leap 16.0, Arch (base-20261011.0.609700) | ✅ | `./scripts/ci-matrix.sh`, v1.0.0 tree, 2026-10-12 |
 
 ## Desktops (desktop E2E tier)
 

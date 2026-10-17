@@ -112,6 +112,10 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/%{app_id}.metain
 %{_datadir}/fish/vendor_completions.d/fork.fish
 
 %changelog
+* Sat Oct 17 2026 Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com> - 1.0.4-1
+- Open in lists every installed IDE Fork supports (stubs at Fork's probe paths; snaps, Flatpak, Toolbox).
+- Not affiliated; buy Fork at https://git-fork.com/buy.
+
 * Wed Oct 14 2026 Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com> - 1.0.3-1
 - Open in host IDEs on PATH; repo fix for core.filemode / Stage All under Wine.
 - Not affiliated; buy Fork at https://git-fork.com/buy.

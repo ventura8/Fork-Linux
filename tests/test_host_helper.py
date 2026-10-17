@@ -517,12 +517,43 @@ def test_run_opens_a_host_ide(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     repo.mkdir()
     host, _runner, popen = _host({"PATH": str(bin_dir)})
     assert host.run("code", str(repo)) == 0
-    assert popen.argvs == [[str(code.resolve()), str(repo)]]
+    assert popen.argvs == [[str(code), str(repo)]]
     assert hh.main(["run", "code", str(repo)], host=host) == 0
     with pytest.raises(UsageError, match="unknown IDE"):
         host.run("not-an-ide", str(repo))
     with pytest.raises(hh.ToolNotFound, match="cursor is not installed"):
         host.run("cursor", str(repo))
+
+
+def test_run_passes_editor_options_and_line_suffixes(tmp_path: Path) -> None:
+    """Fork's "reveal line" calls (``-g FILE:LINE``, ``--line N FILE``) reach the IDE intact."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    cursor = bin_dir / "cursor"
+    cursor.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    cursor.chmod(0o755)
+    source = tmp_path / "repo" / "main.c"
+    source.parent.mkdir()
+    source.write_text("int x;\n", encoding="utf-8")
+    host, _runner, popen = _host({"PATH": str(bin_dir)})
+    assert host.run("cursor", "-g", f"{source}:12:3") == 0
+    assert host.run("cursor", "--line", "7", str(source)) == 0
+    assert popen.argvs == [[str(cursor), "-g", f"{source}:12:3"], [str(cursor), "--line", "7", str(source)]]
+    with pytest.raises(UsageError, match="no such file"):
+        host.run("cursor", f"{tmp_path / 'missing.c'}:3")
+
+
+def test_run_keeps_the_snap_launcher(tmp_path: Path) -> None:
+    """``/snap/bin/code`` links to ``/usr/bin/snap``; the link itself is started (snap reads argv[0])."""
+    bin_dir = tmp_path / "snap-bin"
+    bin_dir.mkdir()
+    snap = tmp_path / "snap"
+    snap.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    snap.chmod(0o755)
+    (bin_dir / "code").symlink_to(snap)
+    host, _runner, popen = _host({"PATH": str(bin_dir)})
+    assert host.run("code", str(tmp_path)) == 0
+    assert popen.argvs == [[str(bin_dir / "code"), str(tmp_path)]]
 
 
 # --- diff and merge -------------------------------------------------------------------------------------

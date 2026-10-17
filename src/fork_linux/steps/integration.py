@@ -180,7 +180,8 @@ def integration_inputs(ctx: Ctx) -> dict[str, Any]:
         "system_file_dialogs": bridge.system_file_dialogs_enabled(ctx),
         "filedlg": bridge.filedlg_installed(ctx.paths),
         "editors": editors.inputs_signature(found),
-        "launch": _launch_sha(ctx),
+        # The IDE stubs are copies of fl-launch.exe: a new build re-copies them (none: nothing to do).
+        "launch": _launch_sha(ctx) if found else None,
     }
 
 
@@ -220,7 +221,7 @@ def run_integration(ctx: Ctx) -> None:
 
 
 def _install_editors(ctx: Ctx) -> None:
-    """Copy ``fl-launch.exe`` to the Windows names of every host IDE on PATH."""
+    """Copy ``fl-launch.exe`` to the Windows paths Fork checks for every installed host IDE."""
     sources = bridge.shim_sources()
     launch = sources.get(bridge.LAUNCH)
     if launch is None:
@@ -229,13 +230,12 @@ def _install_editors(ctx: Ctx) -> None:
 
 
 def _editors_installed(ctx: Ctx) -> bool:
-    """Every discovered IDE has its ``C:\\fork-linux\\editors`` stubs in place."""
+    """Every discovered IDE has its stubs in place (``C:\\fork-linux\\editors`` and where Fork looks)."""
     sources = bridge.shim_sources()
     if bridge.LAUNCH not in sources:
         return True
     found = editors.discover(ctx.env)
-    root = editors.editors_win_dir(ctx.paths)
-    return all((root / name).is_file() for editor in found for name in editor.win_names)
+    return all(path.is_file() for path in editors.stub_targets(ctx.paths, ctx.user, found))
 
 
 def verify_integration(ctx: Ctx) -> bool:

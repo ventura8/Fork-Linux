@@ -31,6 +31,14 @@ def pytest_configure(config: pytest.Config) -> None:
     real_tier.enforce()
 
 
+@pytest.fixture(autouse=True)
+def _no_system_editors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """IDE discovery never sees the host's system-wide Flatpak apps."""
+    from fork_linux import editors
+
+    monkeypatch.setattr(editors, "SYSTEM_DIRS", ())
+
+
 @pytest.fixture
 def xdg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point HOME and every XDG base and search directory at a fresh temp tree; return the fake HOME."""

@@ -164,7 +164,7 @@ mechanics such as integrity checks and pruning; `docs/qa/UPDATE-SCENARIOS.md` ha
 | I-SHOW-IN-EXPLORER | Show in File Explorer selects the file in the Linux file manager | real-fork | this repository | `tests/e2e/test_real_integration.py::test_show_in_file_explorer_selects_the_file` |
 | I-OPEN-FILE | Open a file with the Linux default application | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_file_uses_the_linux_default_app` |
 | I-CONSOLE-TERMINAL | Open In Shell opens the Linux terminal in the repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_in_shell_runs_the_linux_terminal` |
-| I-OPEN-IN-IDES | Host IDEs on PATH appear in Fork Open in (Wine stubs + fork-linux-host run) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_in_ides_on_path_get_wine_stubs` |
+| I-OPEN-IN-IDES | Every IDE Fork supports appears in Open in and starts its Linux program on the repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_in_lists_and_starts_every_supported_ide` |
 | I-HOME-DRIVE | File dialogs reach the Linux home as H: | real-fork | this repository | `tests/e2e/test_real_integration.py::test_home_drive_in_a_file_dialog` |
 | I-SYSTEM-FILE-DIALOGS | With system_file_dialogs on, Init New Repository uses zenity (not Wine's Select repository dialog) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_system_file_dialogs_use_the_linux_picker` |
 | I-CLIPBOARD-OUT | Copy Full Path / Copy Path in Fork reach the Linux clipboard (the full path as Fork sees it, Z:\...) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_copy_path_reaches_the_linux_clipboard` |

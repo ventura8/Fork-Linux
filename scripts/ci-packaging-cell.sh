@@ -59,7 +59,7 @@ case "${FORMAT}" in
 		BUILD=(./scripts/release-rpm.sh opensuse)
 		;;
 	arch)
-		DOCKERFILE=docker/Dockerfile.arch IMAGE=fork-linux-ci-arch-pkg:base-devel-20261004.0.606936 DEP_FAMILY=arch
+		DOCKERFILE=docker/Dockerfile.arch IMAGE=fork-linux-ci-arch-pkg:base-devel-20261011.0.609700 DEP_FAMILY=arch
 		BUILD=(./scripts/release-arch.sh)
 		;;
 	tarball)

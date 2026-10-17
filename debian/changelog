@@ -1,3 +1,20 @@
+fork-linux (1.0.4) resolute; urgency=medium
+
+  * Open in: stubs now sit exactly where Fork probes, so IntelliJ IDEA,
+    PyCharm, WebStorm, PhpStorm, Rider, GoLand, Sublime Text and Atom are
+    listed (only VS Code, Insiders and Cursor were before); add GoLand,
+    Fleet, Zed, Antigravity, Antigravity IDE and CodeBuddy.
+  * Snap IDEs start again (the snap launcher is no longer resolved to
+    snapd); Flatpak apps and JetBrains Toolbox scripts are found too.
+  * Editor options (-g FILE:LINE) reach the IDE; Android Studio stubs,
+    which Fork never lists, are removed.
+  * Includes 1.0.3 (not published on its own): repo fix/undo default to
+    every repository Fork knows, so Stage All works under Wine.
+  * ruff 0.17.1; Arch CI base 20261011.0.609700.
+  * Not affiliated with Fork's developers; buy Fork at https://git-fork.com/buy.
+
+ -- Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com>  Sat, 17 Oct 2026 18:00:00 +0000
+
 fork-linux (1.0.3) resolute; urgency=medium
 
   * Open in lists host IDEs on PATH (VS Code, Cursor, IntelliJ, …) via

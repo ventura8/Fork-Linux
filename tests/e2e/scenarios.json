@@ -1535,14 +1535,14 @@
   {
     "id": "I-OPEN-IN-IDES",
     "area": "integration",
-    "title": "Host IDEs on PATH appear in Fork Open in (Wine stubs + fork-linux-host run)",
+    "title": "Every IDE Fork supports appears in Open in and starts its Linux program on the repository",
     "tiers": [
       "real-fork"
     ],
     "provided_by": "this-branch",
     "pending_merge": false,
     "tests": [
-      "tests/e2e/test_real_integration.py::test_open_in_ides_on_path_get_wine_stubs"
+      "tests/e2e/test_real_integration.py::test_open_in_lists_and_starts_every_supported_ide"
     ]
   },
   {

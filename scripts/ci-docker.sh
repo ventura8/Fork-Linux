@@ -81,7 +81,7 @@ resolve_stage() {
 				debian13) DOCKERFILE="docker/Dockerfile.ci.debian13" IMAGE="fork-linux-ci-debian13:13.7" ;;
 				fedora44) DOCKERFILE="docker/Dockerfile.ci.fedora44" IMAGE="fork-linux-ci-fedora44:44" ;;
 				leap16) DOCKERFILE="docker/Dockerfile.ci.leap16" IMAGE="fork-linux-ci-leap16:16.0" ;;
-				arch) DOCKERFILE="docker/Dockerfile.ci.arch" IMAGE="fork-linux-ci-arch:base-20261004.0.606936" ;;
+				arch) DOCKERFILE="docker/Dockerfile.ci.arch" IMAGE="fork-linux-ci-arch:base-20261011.0.609700" ;;
 				*) die "unknown FL_CI_CELL='${FL_CI_CELL}' (expected: ${COMPAT_CELLS[*]})" ;;
 			esac
 			BUILD_DIR="build-ci-${FL_CI_CELL}"

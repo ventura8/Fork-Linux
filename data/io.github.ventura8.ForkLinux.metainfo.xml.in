@@ -40,6 +40,11 @@
   </supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.0.4" date="2026-10-17">
+      <description>
+        <p>Open in now lists every IDE Fork supports that is installed (VS Code, Cursor, JetBrains IDEs, Sublime Text, Zed, Antigravity, …), including snaps, Flatpak apps and JetBrains Toolbox scripts.</p>
+      </description>
+    </release>
     <release version="1.0.3" date="2026-10-14">
       <description>
         <p>Open in lists host IDEs on PATH (VS Code, Cursor, IntelliJ, …). repo fix sets core.filemode so Stage All and file diffs work under Wine.</p>

@@ -13,9 +13,9 @@
  *                              Linux file/folder picker; path on stdout (cancel: 1)
  *
  * When this PE is installed under an editor name Fork's "Open in" menu looks for
- * (Code.exe, Cursor.exe, idea64.exe, …), the basename selects a host IDE id and
+ * (Code.exe, Cursor.exe, idea64.exe, Zed.exe, …), the basename selects a host IDE id and
  * the call becomes a detached ``run <id> [args…]`` (same transport). Copies live
- * under C:\fork-linux\editors\ and Local\Programs\… (step host_integration).
+ * under C:\fork-linux\editors\ and the paths Fork probes (step host_integration).
  *
  * Windows-absolute arguments ("C:\x", "Z:/x", "\\?\...", "file://C:/...") are
  * translated to Unix paths; everything else is passed on unchanged. Transport and
@@ -68,20 +68,18 @@ static const struct editor editors[] = {
     { "Code - Insiders.exe", "code-insiders" },
     { "Cursor.exe", "cursor" },
     { "idea64.exe", "idea" },
-    { "idea.exe", "idea" },
     { "pycharm64.exe", "pycharm" },
-    { "pycharm.exe", "pycharm" },
     { "webstorm64.exe", "webstorm" },
-    { "webstorm.exe", "webstorm" },
     { "phpstorm64.exe", "phpstorm" },
-    { "phpstorm.exe", "phpstorm" },
     { "rider64.exe", "rider" },
-    { "rider.exe", "rider" },
-    { "studio64.exe", "android-studio" },
-    { "studio.exe", "android-studio" },
+    { "goland64.exe", "goland" },
+    { "Fleet.exe", "fleet" },
     { "sublime_text.exe", "sublime" },
-    { "subl.exe", "sublime" },
     { "atom.exe", "atom" },
+    { "Zed.exe", "zed" },
+    { "Antigravity.exe", "antigravity" },
+    { "Antigravity IDE.exe", "antigravity-ide" },
+    { "CodeBuddy.exe", "codebuddy" },
 };
 
 static const char *editor_host(const char *exe)

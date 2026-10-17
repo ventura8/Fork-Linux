@@ -20,7 +20,7 @@ from types import ModuleType
 import pytest
 from fixtures.cli_run import isolate, run_cli
 
-from fork_linux import resources
+from fork_linux import editors, resources
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "packaging-e2e-state.py"
@@ -56,6 +56,8 @@ def _tool(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, str, str
 def seeded(xdg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> Path:
     """The simulated setup of this tree, recorded from its own step list; returns the work directory."""
     isolate(monkeypatch)
+    # No host IDE: their Open in stubs would tie host_integration to fl-launch.exe's bytes.
+    monkeypatch.setattr(editors, "search_dirs", lambda _env: [])
     shims = tmp_path / "shims"
     shims.mkdir()
     for name in ("fl-shim.exe", "fl-launch.exe", "fl-filedlg.dll"):

@@ -141,6 +141,9 @@ FILE_MANAGER1_PATH = "/org/freedesktop/FileManager1"
 
 _WINDOWS_PATH = re.compile(r"^(?:[A-Za-z]:(?:[\\/]|$)|\\\\[?.]\\)")
 # A URL scheme has at least two characters, so a drive path such as C:\x never looks like one.
+# Editor options Fork passes to an Open in IDE (``-g FILE:LINE``, ``--line N``, ...).
+_IDE_OPTION = re.compile(r"^--?[A-Za-z][A-Za-z-]*$")
+_LINE_SUFFIX = re.compile(r"^(.+?)((?::\d+){1,2})$")
 _URL = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]+):")
 _FIELD = re.compile(r"\{(\w+)\}")
 # Desktop Entry field codes (%f, %U, ...): Cinnamon's Preferred Applications stores a terminal's Exec.
@@ -414,8 +417,19 @@ class Host:
                 f"{ide} is not installed on this computer",
                 hint=f"install {ide}, or open the repository from the desktop",
             )
-        argv = [editor.command, *[self.existing(path) for path in paths]]
+        argv = [editor.command, *[self._ide_arg(arg) for arg in paths]]
         return self.spawn(argv)
+
+    def _ide_arg(self, arg: str) -> str:
+        """One Open in argument: an option or a number as is, else an existing path (``PATH:LINE[:COL]`` too)."""
+        if _IDE_OPTION.match(arg) or arg.isdigit():
+            return arg
+        if os.path.lexists(self.path(arg)):
+            return self.existing(arg)
+        line = _LINE_SUFFIX.match(arg)
+        if line is not None and os.path.lexists(self.path(line.group(1))):
+            return self.existing(line.group(1)) + line.group(2)
+        return self.existing(arg)
 
     # --- diff and merge -----------------------------------------------------------
 
@@ -518,8 +532,8 @@ VERBS: dict[str, tuple[str, tuple[int, ...]]] = {
     "diff": ("diff", (2,)),
     "merge": ("merge", (4,)),
     "edit": ("edit", (1, 2)),
-    # ide id + up to three paths (repository, file, line-as-path rarely)
-    "run": ("run", (1, 2, 3, 4)),
+    # ide id + up to five arguments (repository or file, options such as -g FILE:LINE)
+    "run": ("run", (1, 2, 3, 4, 5, 6)),
     "pick-dir": ("pick_dir", (0, 1)),
     "pick-file": ("pick_file", (0, 1)),
     "save-file": ("save_file", (0, 1, 2)),

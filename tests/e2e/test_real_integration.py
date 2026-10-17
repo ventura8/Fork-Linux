@@ -25,13 +25,16 @@ from fork_driver import fork_pids, git, make_repo, wait_until, windows_path
 from fork_ui import ForkUI
 
 from fixtures import real_tier
+from fork_linux import editors as _editors
 
 if os.environ.get("FL_E2E_FORK") != "1":
     pytest.skip("requires FL_E2E_FORK=1 (the official Fork under Wine)", allow_module_level=True)
 real_tier.enforce()
 
 APP_ID = "io.github.ventura8.ForkLinux"
-STUBS = ("xdg-open", "gdbus", "e2e-terminal", "code", "cursor", "intellij-idea", "subl")
+# Every Open in IDE Fork supports, by the first host command fork-linux looks for.
+IDE_COMMANDS = {item.commands[0]: item.id for item in _editors.EDITORS}
+STUBS = ("xdg-open", "gdbus", "e2e-terminal", *IDE_COMMANDS)
 # Offsets inside popups and dialogs (from their top-left corner).
 HELP_MENU = (220, 16)
 HELP_WEBSITE = 78
@@ -40,8 +43,19 @@ FILE_MENU_OPEN = 24
 FILE_MENU_SHOW = 47
 FILE_MENU_COPY_PATH = 314
 FILE_MENU_COPY_FULL_PATH = 337
+# Fork adds "External Diff" (2nd item of a file's menu) once it sees a diff-capable editor's stub.
+FILE_MENU_PITCH = 23
+EXTERNAL_DIFF_IDES = ("code", "cursor", "codebuddy")
 PREFS_SHOW_MARKS = (189, 326)
 CREATE_PATCH_SAVE = (475, 205)
+# The toolbar's "Open in" button (main window), and its menu: Open Git Bash, Open In Shell,
+# Open In File Explorer, a separator, then one "Open in <IDE>" item per editor Fork found.
+OPEN_IN_BUTTON = (1312, 48)
+OPEN_IN_FIXED_ITEMS = 3
+OPEN_IN_ITEM_FIRST = 22
+OPEN_IN_ITEM_PITCH = 23
+OPEN_IN_SEPARATOR = 10
+OPEN_IN_MENU_CHROME = 32
 
 
 def _stub_dir(e2e: Any) -> tuple[Path, Path]:
@@ -94,6 +108,16 @@ def _repo(e2e: Any, name: str) -> Path:
     path = make_repo(e2e.repos / name, {".gitignore": "*.tmp\n", "notes.txt": "notes\n", "src/main.c": "int x;\n"})
     (path / "notes.txt").write_text("notes changed\n", encoding="utf-8")
     return path
+
+
+def _file_menu(e2e: Any, from_top: int) -> int:
+    """``from_top`` of an item below "Open" in a file's context menu, after Fork's "External Diff" if it shows."""
+    from fork_linux.paths import Paths
+
+    paths = Paths.from_env(e2e.env)
+    found = [item for item in _editors.EDITORS if item.id in EXTERNAL_DIFF_IDES]
+    stubs = [_editors.stub_path(paths, e2e.fork.user, stub) for item in found for stub in item.stubs]
+    return from_top + FILE_MENU_PITCH if any(path.is_file() for path in stubs) else from_top
 
 
 def _popup_item(ui: ForkUI, opener: Any, from_top: int) -> None:
@@ -156,7 +180,7 @@ def test_show_in_file_explorer_selects_the_file(desk: Any, installed: Any) -> No
     ui.open(repo)
     ui.local_changes()
     ui.click(ui.unstaged_row(0))
-    _popup_item(ui, lambda: ui.click(ui.unstaged_row(0), button=3), FILE_MENU_SHOW)
+    _popup_item(ui, lambda: ui.click(ui.unstaged_row(0), button=3), _file_menu(installed, FILE_MENU_SHOW))
     uri = f"file://{repo / 'notes.txt'}"
     wait_until(lambda: any("FileManager1.ShowItems" in args and uri in args for args, _ in _calls(log, "gdbus")),
                60, "FileManager1.ShowItems for notes.txt")
@@ -300,10 +324,11 @@ def test_copy_path_reaches_the_linux_clipboard(desk: Any, installed: Any) -> Non
     ui.open(repo)
     ui.local_changes()
     ui.click(ui.unstaged_row(0))
-    _popup_item(ui, lambda: ui.click(ui.unstaged_row(0), button=3), FILE_MENU_COPY_FULL_PATH)
+    _popup_item(ui, lambda: ui.click(ui.unstaged_row(0), button=3),
+                _file_menu(installed, FILE_MENU_COPY_FULL_PATH))
     full = windows_path(repo / "notes.txt")
     wait_until(lambda: ui.screen.clipboard() == full, 30, f"{full} on the clipboard")
-    _popup_item(ui, lambda: ui.click(ui.unstaged_row(0), button=3), FILE_MENU_COPY_PATH)
+    _popup_item(ui, lambda: ui.click(ui.unstaged_row(0), button=3), _file_menu(installed, FILE_MENU_COPY_PATH))
     wait_until(lambda: ui.screen.clipboard() == "notes.txt", 30, "notes.txt on the clipboard")
 
 
@@ -524,50 +549,61 @@ def test_desktop_install_without_menu_and_icons(desk: Any, installed: Any) -> No
     assert json.loads(installed.cli("desktop", "status", "--json").stdout)["entries"] == []
 
 
-def test_open_in_ides_on_path_get_wine_stubs(installed: Any) -> None:
-    """Host IDEs on PATH become ``Code.exe`` / ``Cursor.exe`` / … stubs; ``fork-linux-host run``
-    opens them with the repository path (Fork's Open in menu uses those stubs under Wine).
+def test_open_in_lists_and_starts_every_supported_ide(desk: Any, installed: Any) -> None:
+    """Every IDE Fork's Open in menu supports (VS Code, Insiders, Cursor, IntelliJ IDEA, PyCharm,
+    WebStorm, PhpStorm, Rider, GoLand, Fleet, Sublime Text, Atom, Zed, Antigravity, Antigravity IDE,
+    CodeBuddy) is listed once its Linux program is installed, and each item starts that program
+    on the repository (``fl-launch`` stub -> ``fork-linux-host run``). Fork itself lists IntelliJ
+    IDEA, PyCharm, PhpStorm, GoLand only for a JetBrains project (``.idea``) and Rider only for a
+    .NET solution (``*.sln``, ``*.csproj``, ...), so the repository has both.
 
     Scenarios: I-OPEN-IN-IDES
     """
-    from fork_linux import bridge, editors
-    from fork_linux.host_helper import Host, main as host_main
+    from fork_linux import bridge
     from fork_linux.paths import Paths
-    from fork_linux.procrun import Runner
 
     if bridge.LAUNCH not in bridge.shim_sources():
         pytest.skip("fl-launch.exe is not built: run scripts/build-bridge.sh")
-    stubs, log = _stub_dir(installed)
-    env_path = f"{stubs}:{installed.env['PATH']}"
-    extra = {"PATH": env_path}
+    ui, log, extra = desk
     installed.fork.ensure_closed()
-    installed.cli("setup", "--only", "host_integration", "--accept-fork-eula", "--no-gui", extra=extra)
+    result = installed.cli("setup", "--only", "host_integration", "--accept-fork-eula", "--no-gui", extra=extra)
+    assert result.returncode == 0, result.stderr
     paths = Paths.from_env(installed.env)
-    root = editors.editors_win_dir(paths)
-    assert (root / "Code.exe").is_file(), list(root.iterdir()) if root.is_dir() else root
-    assert (root / "Cursor.exe").is_file(), root
-    assert (root / "idea64.exe").is_file(), root
-    assert (root / "subl.exe").is_file() or (root / "sublime_text.exe").is_file()
-    repo = make_repo(installed.repos / "open-in-ides", {".gitignore": "*.tmp\n"})
-    host = Host(env={**installed.env, **extra}, runner=Runner())
-    assert host_main(["run", "code", str(repo)], host=host) == 0
-    wait_until(
-        lambda: any(str(repo) in args for args, _cwd in _calls(log, "code")),
-        30,
-        "stub code opened the repository",
-    )
-    assert host_main(["run", "cursor", str(repo)], host=host) == 0
-    wait_until(
-        lambda: any(str(repo) in args for args, _cwd in _calls(log, "cursor")),
-        30,
-        "stub cursor opened the repository",
-    )
-    report = json.loads(
-        installed.cli("doctor", "--check", "prefix.integration", "--json", extra=extra).stdout
-    )
-    check = next(item for item in report["checks"] if item["id"] == "prefix.integration")
-    assert "Open in:" in check["detail"], check
-    assert "code" in check["detail"] and "cursor" in check["detail"], check
+    found = _editors.discover({**installed.env, **extra})
+    assert {item.id for item in found} == set(IDE_COMMANDS.values()), found
+    missing = [str(path) for path in _editors.stub_targets(paths, installed.fork.user, found) if not path.is_file()]
+    assert not missing, missing
+    repo = _repo(installed, "open-in-ides")
+    (repo / ".idea").mkdir()
+    (repo / ".idea" / "misc.xml").write_text("<project version=\"4\" />\n", encoding="utf-8")
+    (repo / "App.sln").write_text("Microsoft Visual Studio Solution File, Format Version 12.00\n", encoding="utf-8")
+    window = ui.fork.start(repo, extra=extra)
+    ui.fork.focus(window)
+    before = ui.screen.windows()
+    ui.screen.click_in(window, *OPEN_IN_BUTTON, settle=2.0)
+    menu = ui.screen.new_window(before, timeout=30)
+    ui.screen.screenshot("open-in-menu")
+    items = round((menu.height - OPEN_IN_MENU_CHROME) / OPEN_IN_ITEM_PITCH)
+    ui.screen.key("Escape", settle=1.0)
+    assert items - OPEN_IN_FIXED_ITEMS == len(IDE_COMMANDS), f"{items} Open in items; menu {menu}"
+    started: dict[str, str] = {}
+    for index in range(OPEN_IN_FIXED_ITEMS, items):
+        seen = {name: len(_calls(log, name)) for name in IDE_COMMANDS}
+        _popup_item(ui, lambda: ui.screen.click_in(window, *OPEN_IN_BUTTON),
+                    OPEN_IN_ITEM_FIRST + OPEN_IN_SEPARATOR + index * OPEN_IN_ITEM_PITCH)
+
+        def new_call(seen: dict[str, int] = seen) -> tuple[str, str] | None:
+            for name, count in seen.items():
+                calls = _calls(log, name)
+                if len(calls) > count:
+                    return name, calls[-1][0]
+            return None
+
+        name, args = wait_until(new_call, 60, f"Open in item {index} starting an IDE")
+        assert name not in started, f"item {index} started {name} again ({started})"
+        assert str(repo) in args, f"{name} got {args!r}, not {repo}"
+        started[name] = args
+    assert set(started) == set(IDE_COMMANDS), started
 
 
 def _folders(e2e: Any) -> set[Path]:
