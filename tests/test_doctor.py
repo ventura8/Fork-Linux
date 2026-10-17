@@ -1881,6 +1881,8 @@ def test_integration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     with monkeypatch.context() as patch:
         patch.setattr(bridge, "shim_sources", dict)  # no fl-launch.exe and no IDE: Open in is not mentioned
         assert "Open in" not in run(ctx, "prefix.integration").detail
+        patch.setattr(bridge, "shim_sources", lambda: {bridge.LAUNCH: tmp_path / bridge.LAUNCH})
+        assert "Open in: no host IDE on PATH" in run(ctx, "prefix.integration").detail
     ide = empty_bin / "cursor"
     ide.write_text("#!/bin/sh\n", encoding="utf-8")
     ide.chmod(0o755)

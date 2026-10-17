@@ -1,5 +1,21 @@
 # E2E results: official Fork 2.23.2 on the managed Wine runtime
 
+## 2026-10-17: v1.0.4 — every IDE in Open in (`main` `a9b6b84` → `bd16b2f`)
+
+| Gate | Result |
+|---|---|
+| unit (host) / lint (ruff 0.17.1) / bridge (Wine tier, 223) / coverage (per-file gate) / compat arch (`base-20261011.0.609700`) | OK on the laptop |
+| `I-OPEN-IN-IDES` (`--keep` root, after a `WINEDEBUG=+file` trace of Fork's probes) | OK: Fork 2.23.2's menu lists all 16 IDEs; every item starts its Linux program on the repository (428 s) |
+| `test_real_integration.py` whole module (`--keep` root, stubs left from earlier runs) | 17 passed (1898 s) |
+| `ci-e2e-wine.sh --all --jobs 1 --remote nuc --remote-jobs 8` (`a9b6b84`) | **1381 s (23 min)**; every module exit 0 except, on the NUC, `test_real_integration.py` (file dialog + Open in click timeouts under 8 parallel jobs) and `test_wine_app_upgrade.py` (its N/N+1/N+2 releases were hardcoded 1.0.1-1.0.3: downgrades from 1.0.4) |
+| `TMPDIR=/var/tmp ci-e2e-wine.sh --jobs 2` the two modules (`bd16b2f`, fresh template) | **OK in 1272 s**: both exit 0. A first attempt with the default TMPDIR hit "Disk quota exceeded" copying the 2.8 GB template into `/tmp` |
+
+Before the fix Fork listed only VS Code, VS Code Insiders and Cursor: the v1.0.3 stubs for IntelliJ IDEA,
+PyCharm, WebStorm, PhpStorm, Rider, Sublime Text and Atom were not where Fork looks. Fork itself shows IntelliJ
+IDEA / PyCharm / PhpStorm / GoLand only with `.idea` in the repository and Rider only with `*.sln` / `*.slnx` /
+`*.slnf` / `*.csproj` / `*.uproject`. With a VS Code, Cursor or CodeBuddy stub, a file's context menu gains
+"External Diff" as its 2nd item (`_file_menu` in the tests).
+
 ## 2026-10-13: v1.0.0 release proof (`fix/integration` `9fa7d53`)
 
 | Gate | Result |
