@@ -630,12 +630,37 @@ fi
 """
 
 
+BRIDGE_OUTPUTS = ("fl-bridge-helper", "fl-launch.exe", "fl-shim.exe", "fl-filedlg.dll")
+
+
 def _bridge_built(box: Box) -> None:
-    """The worktree already holds a bridge build (scripts/build-bridge.sh is not run again)."""
-    helper = box.wt / "build-bridge" / "bridge" / "fl-bridge-helper"
-    helper.parent.mkdir(parents=True)
-    helper.write_text("#!/bin/sh\n", encoding="utf-8")
-    helper.chmod(0o755)
+    """The worktree already holds an up-to-date bridge build (scripts/build-bridge.sh is not run again)."""
+    out = box.wt / "build-bridge" / "bridge"
+    out.mkdir(parents=True)
+    for name in BRIDGE_OUTPUTS:
+        (out / name).write_text("#!/bin/sh\n", encoding="utf-8")
+        (out / name).chmod(0o755)
+
+
+def test_ci_e2e_wine_rebuilds_a_stale_or_incomplete_bridge(box: Box) -> None:
+    """A build older than a bridge source, or one without fl-filedlg.dll, is built again first."""
+    import os
+
+    tmpdir = box.tmp / "var" / "tmp"
+    tmpdir.mkdir()
+    _variant_tools(box)
+    _bridge_built(box)
+    source = box.wt / "bridge" / "win" / "fl_launch.c"
+    source.parent.mkdir(parents=True)
+    source.write_text("/* newer */\n", encoding="utf-8")
+    built = box.wt / "build-bridge" / "bridge" / "fl-launch.exe"
+    os.utime(source, (built.stat().st_mtime + 60,) * 2)
+    box.run("-k", "setup", script="ci-e2e-wine.sh", TMPDIR=str(tmpdir))
+    assert [row["args"] for row in box.calls() if row["tool"] == "build-bridge"] == [""]
+    os.utime(source, (built.stat().st_mtime - 60,) * 2)
+    (box.wt / "build-bridge" / "bridge" / "fl-filedlg.dll").unlink()
+    box.run("-k", "setup", script="ci-e2e-wine.sh", TMPDIR=str(tmpdir))
+    assert [row["args"] for row in box.calls() if row["tool"] == "build-bridge"] == ["", ""]
 
 
 TEMPLATE_TEST = ["tests/e2e/test_real_fork.py", "-k", "test_01_setup_completes_and_resumes"]

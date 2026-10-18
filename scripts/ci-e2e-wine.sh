@@ -53,7 +53,8 @@
 # Slots: every container holds one of the host-wide slots shared with scripts/e2e-docker.sh
 # (FL_E2E_SLOTS; default one per two cores and per 2 GiB of available memory).
 # The bridge scenarios need the shims: scripts/build-bridge.sh (its own CI image) runs first
-# when build-bridge/ has none.
+# when build-bridge/ lacks one of them or is older than a bridge source (a clone that was
+# checked out again, e.g. the --remote one, must not test yesterday's fl-launch.exe).
 # Every session runs even when an earlier one failed; the exit status is the first failure's
 # (in the order the modules finish). Each finished module prints its status and time; a failed
 # one the end of its log. logs/e2e-wine/results.tsv lists module, status, seconds, root and the
@@ -190,8 +191,22 @@ if [[ -n "${REMOTE}" ]]; then
 	done <<<"${split}"
 fi
 
+# bridge_stale: true when build-bridge/ misses an output or a bridge source is newer than it.
+bridge_stale() {
+	local out="${ROOT}/build-bridge/bridge" name
+	for name in fl-bridge-helper fl-launch.exe fl-shim.exe fl-filedlg.dll; do
+		[[ -e "${out}/${name}" ]] || return 0
+	done
+	local sources=()
+	for name in bridge meson.build VERSION; do
+		[[ -e "${ROOT}/${name}" ]] && sources+=("${ROOT}/${name}")
+	done
+	((${#sources[@]} > 0)) || return 1
+	[[ -n "$(find "${sources[@]}" -newer "${out}/fl-launch.exe" -print -quit)" ]]
+}
+
 fl_e2e_build_image "${ROOT}" "${IMAGE}"
-if [[ ! -x "${ROOT}/build-bridge/bridge/fl-bridge-helper" ]]; then
+if bridge_stale; then
 	"${ROOT}/scripts/build-bridge.sh"
 fi
 if [[ " ${MODULES[*]} " == *" ${APP_UPGRADE} "* ]]; then
