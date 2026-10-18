@@ -220,6 +220,21 @@ def test_build_spec_includes_bridge_env_and_drops_the_bundled_git_overlay(ctx: b
     assert keys(env)[:3] == ["core.filemode", "core.autocrlf", "core.checkStat"]
 
 
+def test_build_spec_sends_git_bash_to_the_linux_terminal(ctx: bootstrap.Ctx) -> None:
+    """With ``C:\\fork-linux\\git-bash.sh`` in place, bundled bash reads it (``ENV`` in POSIX mode);
+    not when the native-git bridge runs git (Fork's bash.exe is then our shim)."""
+    from fork_linux import git_bash
+
+    assert "ENV" not in launcher.build_spec(ctx, []).env
+    target = git_bash.script_path(ctx.paths)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("exec\n", encoding="utf-8")
+    env = launcher.build_spec(ctx, []).env
+    assert (env["POSIXLY_CORRECT"], env["ENV"]) == ("1", "/c/fork-linux/git-bash.sh")
+    bridged = {"FORKGITINSTANCE": "C:\\fork-linux\\gitInstance", "FL_BRIDGE_PORT": "4242"}
+    assert "ENV" not in launcher.build_spec(ctx, [], bridge_env=bridged).env
+
+
 # -- pre_launch -----------------------------------------------------------------------------
 
 

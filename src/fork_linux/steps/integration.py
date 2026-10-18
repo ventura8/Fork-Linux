@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .. import bridge, desktop_integration, editors, fork_tools, fsutil, gitconfig, ssh_sync
+from .. import bridge, desktop_integration, editors, fork_tools, fsutil, git_bash, gitconfig, ssh_sync
 from ..bootstrap import Ctx, Step
 from ..errors import ForkLinuxError
 from ..registry import RegBatch
@@ -180,6 +180,7 @@ def integration_inputs(ctx: Ctx) -> dict[str, Any]:
         "system_file_dialogs": bridge.system_file_dialogs_enabled(ctx),
         "filedlg": bridge.filedlg_installed(ctx.paths),
         "editors": editors.inputs_signature(found, ctx.env),
+        "git_bash": git_bash.wanted_text(),
         # The IDE stubs are copies of fl-launch.exe: a new build re-copies them (none: nothing to do).
         "launch": _launch_sha(ctx) if found else None,
     }
@@ -202,9 +203,11 @@ def run_integration(ctx: Ctx) -> None:
     overwrite Wine's HKLM FileOpenDialog / FileSaveDialog InprocServer32 entries
     (``comdlg32.dll``); turning them off restores those defaults and drops any
     leftover HKCU CLSID keys from rev ≤2. Host IDEs found on PATH get
-    ``fl-launch.exe`` stubs so Fork's "Open in" menu lists them.
+    ``fl-launch.exe`` stubs so Fork's "Open in" menu lists them, and
+    ``C:\\fork-linux\\git-bash.sh`` makes its "Open Git Bash" open the Linux terminal.
     """
     _install_editors(ctx)
+    git_bash.install(ctx.paths)
     batch = RegBatch()
     for key, name, value in integration_expected(ctx):
         batch.set_sz(key, name, str(value))
@@ -247,7 +250,7 @@ def verify_integration(ctx: Ctx) -> bool:
             key = rf"HKCU\Software\Classes\CLSID\{clsid}\InprocServer32"
             if prefix_steps.reg_matches(ctx, [(key, "", bridge.FILEDLG_WIN)]):
                 return False
-    if not _editors_installed(ctx):
+    if not _editors_installed(ctx) or not git_bash.installed(ctx.paths):
         return False
     return prefix_steps.reg_matches(ctx, integration_expected(ctx)) and (
         os.path.lexists(home_drive(ctx)) or not ctx.host_home.is_dir()

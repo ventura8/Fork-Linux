@@ -99,9 +99,12 @@ def test_tool_env_drops_wine_and_bundle_variables() -> None:
         {
             "WINEPREFIX": "/p", "WINEDEBUG": "-all", "WINE_X": "1", "LD_LIBRARY_PATH": "/bundle", "KEEP": "1",
             "FL_BRIDGE_TOKEN": "a" * 64, "FL_BRIDGE_PORT": "4242", "FL_WINE": "/w", "FORKGITINSTANCE": "C:\\x",
+            "POSIXLY_CORRECT": "1", "ENV": "/c/fork-linux/git-bash.sh", "ENVIRONMENT": "kept",
         }
     )
     assert "KEEP" in host.tool_env
+    assert "POSIXLY_CORRECT" not in host.tool_env and "ENV" not in host.tool_env
+    assert host.tool_env["ENVIRONMENT"] == "kept"
     assert not any(key.startswith(("WINE", "FL_")) or key == "FORKGITINSTANCE" for key in host.tool_env)
     assert "LD_LIBRARY_PATH" not in host.tool_env
     assert host.env["WINEPREFIX"] == "/p"

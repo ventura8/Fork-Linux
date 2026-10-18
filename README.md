@@ -143,7 +143,7 @@ fork-linux git-bridge disable    # back to Fork's bundled git at the next start
 What it changes, verified with Fork 2.23.2:
 
 - **Hooks run natively**: a `pre-commit` hook that fails now blocks the commit and Fork shows its output (bundled git skips such hooks and commits anyway). **Submodule update**, pushes and fetches to `file://` / `/home/…` remotes, interactive rebase from Fork's dialog and **Git Flow** (with `git-flow` installed) work; commits keep exec bits and symlinks.
-- **Open in Shell / Console** and **Diff in Linux (fork-linux)** (Ctrl+D on a changed file) open your Linux terminal and diff tool (meld, kdiff3, Beyond Compare or VS Code), and Fork waits for the diff tool.
+- **Open in Shell / Console**, **Open in > Open Git Bash** and **Diff in Linux (fork-linux)** (Ctrl+D on a changed file) open your Linux terminal and diff tool (meld, kdiff3, Beyond Compare or VS Code), and Fork waits for the diff tool.
 - **ssh and HTTPS** use your Linux ssh (with your ssh-agent; a key's passphrase is asked in Fork's own prompt) and your Linux credential helpers; without a helper, Fork's prompt asks for the user name and password.
 - Each git call is much faster (about 13 ms against about 90 ms for bundled git).
 

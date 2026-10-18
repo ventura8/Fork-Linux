@@ -18,7 +18,7 @@ mechanics such as integrity checks and pruning; `docs/qa/UPDATE-SCENARIOS.md` ha
 | Setup | 28 | 28 | 0 |
 | Launch | 17 | 16 | 0 |
 | Git operations through Fork's UI | 66 | 66 | 0 |
-| OS integration | 32 | 31 | 0 |
+| OS integration | 33 | 32 | 0 |
 | Native-git bridge | 9 | 9 | 0 |
 | Doctor and repository fixes | 16 | 15 | 0 |
 | Uninstall | 8 | 8 | 0 |
@@ -27,7 +27,7 @@ mechanics such as integrity checks and pruning; `docs/qa/UPDATE-SCENARIOS.md` ha
 | Fork for Linux upgrades | 24 | 13 | 0 |
 | Desktop environments | 136 | 0 | 0 |
 | Non-Latin font fallback | 2 | 1 | 0 |
-| **Total** | 369 | 205 | 0 |
+| **Total** | 370 | 206 | 0 |
 
 ## Setup
 
@@ -164,6 +164,7 @@ mechanics such as integrity checks and pruning; `docs/qa/UPDATE-SCENARIOS.md` ha
 | I-SHOW-IN-EXPLORER | Show in File Explorer selects the file in the Linux file manager | real-fork | this repository | `tests/e2e/test_real_integration.py::test_show_in_file_explorer_selects_the_file` |
 | I-OPEN-FILE | Open a file with the Linux default application | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_file_uses_the_linux_default_app` |
 | I-CONSOLE-TERMINAL | Open In Shell opens the Linux terminal in the repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_in_shell_runs_the_linux_terminal` |
+| I-OPEN-GIT-BASH | Open in > Open Git Bash opens the Linux terminal in the repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_git_bash_opens_the_linux_terminal` |
 | I-OPEN-IN-IDES | Every IDE Fork supports appears in Open in with its own icon and starts its Linux program on the repository | real-fork | this repository | `tests/e2e/test_real_integration.py::test_open_in_lists_and_starts_every_supported_ide` |
 | I-HOME-DRIVE | File dialogs reach the Linux home as H: | real-fork | this repository | `tests/e2e/test_real_integration.py::test_home_drive_in_a_file_dialog` |
 | I-SYSTEM-FILE-DIALOGS | With system_file_dialogs on, Init New Repository uses zenity (not Wine's Select repository dialog) | real-fork | this repository | `tests/e2e/test_real_integration.py::test_system_file_dialogs_use_the_linux_picker` |

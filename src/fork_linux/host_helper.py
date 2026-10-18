@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote_to_bytes, urlsplit
 
-from . import editors, file_picker, sandbox
+from . import editors, file_picker, git_bash, sandbox
 from .config import Config
 from .errors import ForkLinuxError, NotSetUpError, UsageError
 from .pathmap import PathMap
@@ -177,9 +177,10 @@ class Host:
         popen: Callable[..., Any] | None = None,
     ) -> None:
         self.env: dict[str, str] = dict(os.environ if env is None else env)
-        # Neither Wine's variables nor the bridge's (its token) reach the tools.
+        # Neither Wine's variables, the bridge's (its token) nor Git Bash's shell hook reach the tools.
         self.tool_env = {
-            k: v for k, v in sandbox.clean_env(self.env).items() if not k.startswith(_NOT_FOR_TOOLS)
+            k: v for k, v in sandbox.clean_env(self.env).items()
+            if not k.startswith(_NOT_FOR_TOOLS) and k not in git_bash.ENV_VARS
         }
         self.runner = Runner() if runner is None else runner
         self.popen = subprocess.Popen if popen is None else popen

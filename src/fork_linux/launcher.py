@@ -47,6 +47,7 @@ from . import (
     fork_tools,
     fork_userdata,
     fsutil,
+    git_bash,
     gitconfig,
     procs,
     snapshots,
@@ -188,7 +189,11 @@ def _spec(
     git, the bundled-git-only ``GIT_CONFIG_*`` overrides are left out.
     """
     native = bridge.native_git(extra)
-    overrides = {**gitconfig.env_overrides(config, git_version=git_version, native=native), **extra}
+    overrides = {
+        **gitconfig.env_overrides(config, git_version=git_version, native=native),
+        **git_bash.launch_env(paths, native_git=native),
+        **extra,
+    }
     dll_overrides = config.get("wine", "extra_dll_overrides").strip()
     wine_env = winecmd.build_env(
         paths,

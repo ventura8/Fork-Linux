@@ -554,6 +554,21 @@ def test_desktop_install_without_menu_and_icons(desk: Any, installed: Any) -> No
     assert json.loads(installed.cli("desktop", "status", "--json").stdout)["entries"] == []
 
 
+def test_open_git_bash_opens_the_linux_terminal(desk: Any, installed: Any) -> None:
+    """Open in > Open Git Bash opens the Linux terminal in the repository: Fork's bundled bash reads only
+    ``C:\\fork-linux\\git-bash.sh`` (``ENV`` in POSIX mode), which hands the folder to fork-linux-terminal.
+
+    Scenarios: I-OPEN-GIT-BASH
+    """
+    ui, log, _extra = desk
+    repo = _repo(installed, "git-bash")
+    window = ui.open(repo)
+    before = len(_calls(log, "e2e-terminal"))
+    _popup_item(ui, lambda: ui.screen.click_in(window, *OPEN_IN_BUTTON), OPEN_IN_ITEM_FIRST)
+    wait_until(lambda: any(args == str(repo) for args, _cwd in _calls(log, "e2e-terminal")[before:]), 60,
+               "the terminal in the repository")
+
+
 def test_open_in_lists_and_starts_every_supported_ide(desk: Any, installed: Any) -> None:
     """Every IDE Fork's Open in menu supports (VS Code, Insiders, Cursor, IntelliJ IDEA, PyCharm,
     WebStorm, PhpStorm, Rider, GoLand, Fleet, Sublime Text, Atom, Zed, Antigravity, Antigravity IDE,

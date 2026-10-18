@@ -278,6 +278,8 @@ def test_host_integration_registers_redirects_and_the_home_drive(
     assert not integration.verify_integration(ctx)
     integration.run_integration(ctx)
     assert integration.verify_integration(ctx)
+    # "Open Git Bash": the ENV file for Fork's bundled bash (fork-linux-terminal is missing here: none).
+    assert integration.integration_inputs(ctx)["git_bash"] is None
     drive = integration.home_drive(ctx)
     assert drive.is_symlink()
     assert os.readlink(drive) == str(ctx.host_home)
@@ -323,6 +325,18 @@ def test_host_integration_installs_open_in_stubs(
     assert stub.read_bytes() == b"MZ launch"
     stub.unlink()
     assert not integration.verify_integration(ctx)
+    integration.run_integration(ctx)
+    assert integration.verify_integration(ctx)
+    git_bash_script = ctx.paths.fork_linux_win_dir / "git-bash.sh"
+    terminal = tmp_path / "libexec" / "fork-linux-terminal"
+    terminal.parent.mkdir()
+    terminal.write_text("#!/bin/sh\n", encoding="utf-8")
+    terminal.chmod(0o755)
+    monkeypatch.setenv(resources.LIBEXEC_ENV, str(terminal.parent))
+    assert not integration.verify_integration(ctx)
+    integration.run_integration(ctx)
+    assert str(terminal) in git_bash_script.read_text(encoding="utf-8")
+    assert integration.verify_integration(ctx)
     ctx.env["PATH"] = str(tmp_path / "none")
     assert integration.integration_inputs(ctx)["launch"] is None
 

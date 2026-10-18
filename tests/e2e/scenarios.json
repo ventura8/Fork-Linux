@@ -1533,6 +1533,19 @@
     ]
   },
   {
+    "id": "I-OPEN-GIT-BASH",
+    "area": "integration",
+    "title": "Open in > Open Git Bash opens the Linux terminal in the repository",
+    "tiers": [
+      "real-fork"
+    ],
+    "provided_by": "this-branch",
+    "pending_merge": false,
+    "tests": [
+      "tests/e2e/test_real_integration.py::test_open_git_bash_opens_the_linux_terminal"
+    ]
+  },
+  {
     "id": "I-OPEN-IN-IDES",
     "area": "integration",
     "title": "Every IDE Fork supports appears in Open in with its own icon and starts its Linux program on the repository",
