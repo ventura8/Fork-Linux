@@ -116,6 +116,10 @@ appstreamcli validate --no-net %{buildroot}%{_datadir}/metainfo/%{app_id}.metain
 %{_datadir}/fish/vendor_completions.d/fork.fish
 
 %changelog
+* Sun Oct 18 2026 Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com> - 1.0.6-1
+- Open in > Open Git Bash opens the Linux terminal in the repository.
+- Not affiliated; buy Fork at https://git-fork.com/buy.
+
 * Sat Oct 17 2026 Sergiu Alexandrescu <alexandrescu.sergiu@gmail.com> - 1.0.5-1
 - Open in shows each IDE's own icon; crisp interface text with Noto Sans (as FL UI Sans).
 - Not affiliated; buy Fork at https://git-fork.com/buy.

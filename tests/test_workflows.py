@@ -195,7 +195,7 @@ def test_e2e_wine_runs_the_fork_update_tier() -> None:
     assert '-e FL_E2E_FORK_UPDATES="${updates}"' in E2E_SCRIPT
     assert '[[ "${module}" != "${FORK_UPDATE}" ]] || updates=1' in E2E_SCRIPT
     build = E2E_SCRIPT.index('"${ROOT}/scripts/build-bridge.sh"\n')
-    gate = E2E_SCRIPT.index('if [[ ! -x "${ROOT}/build-bridge/bridge/fl-bridge-helper" ]]; then')
+    gate = E2E_SCRIPT.index("if bridge_stale; then")
     assert gate < build < E2E_SCRIPT.index("docker run --rm --init")
     # The whole tier (no paths) takes it only when asked.
     assert '"${module}" == "${FORK_UPDATE}" && "${FL_E2E_FORK_UPDATES:-0}" != "1"' in E2E_SCRIPT

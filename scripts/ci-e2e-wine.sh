@@ -203,6 +203,7 @@ bridge_stale() {
 	done
 	((${#sources[@]} > 0)) || return 1
 	[[ -n "$(find "${sources[@]}" -newer "${out}/fl-launch.exe" -print -quit)" ]]
+	return $?
 }
 
 fl_e2e_build_image "${ROOT}" "${IMAGE}"

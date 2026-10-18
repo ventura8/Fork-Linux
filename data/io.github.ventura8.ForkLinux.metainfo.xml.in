@@ -40,6 +40,11 @@
   </supports>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.0.6" date="2026-10-18">
+      <description>
+        <p>Open in &gt; Open Git Bash opens your Linux terminal in the repository (Fork's bundled Git Bash cannot run under Wine).</p>
+      </description>
+    </release>
     <release version="1.0.5" date="2026-10-17">
       <description>
         <p>Open in shows each IDE with its own icon. Fork's interface text is crisp and evenly spaced: the interface font is now Noto Sans (installed as FL UI Sans) instead of Selawik.</p>
